@@ -961,6 +961,13 @@ void PeerData::setBarSettings(PeerBarSettings which) {
 				history->refreshHiddenLinksItems();
 			});
 		}
+		if (const auto from = migrateFrom()) {
+			if (const auto history = owner().historyLoaded(from)) {
+				crl::on_main(&history->session(), [=] {
+					history->refreshHiddenLinksItems();
+				});
+			}
+		}
 	}
 }
 
@@ -989,6 +996,9 @@ bool PeerData::hideLinks() const {
 	//if (!isUser()) {
 	//	return false;
 	//}
+	if (const auto to = migrateTo()) {
+		return to->hideLinks();
+	}
 	const auto settings = barSettings();
 	return !settings || (*settings & PeerBarSetting::ReportSpam);
 }
@@ -1900,7 +1910,9 @@ int PeerData::slowmodeSecondsLeft() const {
 }
 
 bool PeerData::canManageGroupCall() const {
-	if (const auto chat = asChat()) {
+	if (const auto user = asUser()) {
+		return user->isSelf();
+	} else if (const auto chat = asChat()) {
 		return chat->amCreator()
 			|| (chat->adminRights() & ChatAdminRight::ManageCall);
 	} else if (const auto group = asChannel()) {
@@ -1910,7 +1922,7 @@ bool PeerData::canManageGroupCall() const {
 		return group->amCreator()
 			|| (group->adminRights() & ChatAdminRight::ManageCall);
 	}
-	return false;
+	Unexpected("Peer type in PeerData::canManageGroupCall.");
 }
 
 bool PeerData::amMonoforumAdmin() const {
@@ -2028,6 +2040,15 @@ bool PeerData::hasUnreadStories() const {
 		return user->hasUnreadStories();
 	} else if (const auto channel = asChannel()) {
 		return channel->hasUnreadStories();
+	}
+	return false;
+}
+
+bool PeerData::hasActiveVideoStream() const {
+	if (const auto user = asUser()) {
+		return user->hasActiveVideoStream();
+	} else if (const auto channel = asChannel()) {
+		return channel->hasActiveVideoStream();
 	}
 	return false;
 }

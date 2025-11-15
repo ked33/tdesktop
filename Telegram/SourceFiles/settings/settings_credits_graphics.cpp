@@ -18,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/gift_premium_box.h"
 #include "boxes/share_box.h"
 #include "boxes/star_gift_box.h"
+#include "boxes/star_gift_resale_box.h"
 #include "boxes/transfer_gift_box.h"
 #include "chat_helpers/stickers_gift_box_pack.h"
 #include "chat_helpers/stickers_lottie.h"
@@ -454,7 +455,8 @@ void FillCreditOptions(
 		Fn<void()> paid,
 		rpl::producer<> showFinishes,
 		rpl::producer<QString> subtitle,
-		std::vector<Data::CreditTopupOption> preloadedTopupOptions) {
+		std::vector<Data::CreditTopupOption> preloadedTopupOptions,
+		bool dark) {
 	const auto options = container->add(
 		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
 			container,
@@ -491,9 +493,15 @@ void FillCreditOptions(
 	const auto fillLoading = [=] {
 		Ui::AddSkip(content, st::settingsPremiumOptionsPadding.top());
 		if (subtitle) {
-			Ui::AddSubsectionTitle(content, std::move(subtitle));
+			Ui::AddSubsectionTitle(
+				content,
+				std::move(subtitle),
+				{},
+				dark ? &st::groupCallSubsectionTitle : nullptr);
 		}
-		const auto &st = st::creditsTopupButton;
+		const auto &st = dark
+			? st::videoStreamTopupButton
+			: st::creditsTopupButton;
 		const auto loadingList = content;
 		const auto isRtl = QLocale().textDirection() == Qt::RightToLeft;
 		using WidgetPtr = object_ptr<Ui::RpWidget>;
@@ -533,7 +541,11 @@ void FillCreditOptions(
 		}
 		Ui::AddSkip(content, st::settingsPremiumOptionsPadding.top());
 		if (subtitle) {
-			Ui::AddSubsectionTitle(content, std::move(subtitle));
+			Ui::AddSubsectionTitle(
+				content,
+				std::move(subtitle),
+				{},
+				dark ? &st::groupCallSubsectionTitle : nullptr);
 		}
 
 		const auto buttons = content->add(
@@ -545,14 +557,18 @@ void FillCreditOptions(
 				object_ptr<Ui::SettingsButton>(
 					content,
 					tr::lng_credits_more_options(),
-					st::statisticsShowMoreButton)));
+					(dark
+						? st::videoStreamShowMoreButton
+						: st::statisticsShowMoreButton))));
 		const auto showMore = showMoreWrap->entity();
 		showMore->setClickedCallback([=] {
 			showMoreWrap->toggle(false, anim::type::instant);
 		});
 		Ui::AddToggleUpDownArrowToMoreButton(showMore);
 
-		const auto &st = st::creditsTopupButton;
+		const auto &st = dark
+			? st::videoStreamTopupButton
+			: st::creditsTopupButton;
 		const auto diffBetweenTextAndStar = st.padding.left()
 			- st.iconLeft
 			- int(singleStarWidth * 1.5);
@@ -593,7 +609,7 @@ void FillCreditOptions(
 			const auto price = Ui::CreateChild<Ui::FlatLabel>(
 				button,
 				Ui::FillAmountAndCurrency(option.amount, option.currency),
-				st::creditsTopupPrice);
+				dark ? st::videoStreamTopupPrice : st::creditsTopupPrice);
 			const auto inner = Ui::CreateChild<Ui::RpWidget>(button);
 			const auto getStars = [=] {
 				const auto starIndex = i + 1;
@@ -665,7 +681,11 @@ void FillCreditOptions(
 				}),
 				Ui::Text::RichLangValue);
 			Ui::AddSkip(content);
-			Ui::AddDividerText(content, std::move(text));
+			Ui::AddDividerText(
+				content,
+				std::move(text),
+				st::defaultBoxDividerLabelPadding,
+				dark ? st::groupCallDividerLabel : st::defaultDividerLabel);
 		}
 
 		content->resizeToWidth(container->width());
@@ -707,7 +727,8 @@ not_null<Ui::RpWidget*> AddBalanceWidget(
 		not_null<Main::Session*> session,
 		rpl::producer<CreditsAmount> balanceValue,
 		bool rightAlign,
-		rpl::producer<float64> opacityValue) {
+		rpl::producer<float64> opacityValue,
+		bool dark) {
 	struct State final {
 		float64 opacity = 1.0;
 		Ui::Text::String label;
@@ -760,7 +781,7 @@ not_null<Ui::RpWidget*> AddBalanceWidget(
 		auto p = QPainter(balance);
 
 		p.setOpacity(state->opacity);
-		p.setPen(st::boxTextFg);
+		p.setPen(dark ? st::groupCallMembersFg : st::boxTextFg);
 
 		state->label.draw(p, {
 			.position = QPoint(
@@ -2417,7 +2438,7 @@ void UniqueGiftValueBox(
 					platform(Ui::Text::WithEntities),
 					lt_arrow,
 					rpl::single(Ui::Text::IconEmoji(&st::textMoreIconEmoji)),
-					[](const QString &text) { return Ui::Text::Link(text); }),
+					tr::link),
 				st::uniqueGiftValueAvailableLink,
 				st::defaultPopupMenu,
 				Core::TextContext({ .session = &show->session() })),
@@ -2864,6 +2885,7 @@ void SmallBalanceBox(
 		paid();
 	};
 
+	auto dark = false;
 	const auto owner = &show->session().data();
 	const auto name = v::match(source, [&](SmallBalanceBot value) {
 		return value.botId
@@ -2871,6 +2893,9 @@ void SmallBalanceBox(
 			: QString();
 	}, [&](SmallBalanceReaction value) {
 		return owner->peer(peerFromChannel(value.channelId))->name();
+	}, [&](SmallBalanceVideoStream value) {
+		dark = true;
+		return owner->peer(value.streamerId)->name();
 	}, [](SmallBalanceSubscription value) {
 		return value.name;
 	}, [](SmallBalanceDeepLink) {
@@ -2896,7 +2921,9 @@ void SmallBalanceBox(
 	const auto content = [&]() -> Ui::Premium::TopBarAbstract* {
 		return box->setPinnedToTopContent(object_ptr<Ui::Premium::TopBar>(
 			box,
-			st::creditsLowBalancePremiumCover,
+			(dark
+				? st::videoStreamStarsCover
+				: st::creditsLowBalancePremiumCover),
 			Ui::Premium::TopBarDescriptor{
 				.title = tr::lng_credits_small_balance_title(
 					lt_count,
@@ -2915,6 +2942,11 @@ void SmallBalanceBox(
 					: v::is<SmallBalanceReaction>(source)
 					? tr::lng_credits_small_balance_reaction(
 						lt_channel,
+						rpl::single(Ui::Text::Bold(name)),
+						Ui::Text::RichLangValue)
+					: v::is<SmallBalanceVideoStream>(source)
+					? tr::lng_credits_small_balance_video_stream(
+						lt_name,
 						rpl::single(Ui::Text::Bold(name)),
 						Ui::Text::RichLangValue)
 					: v::is<SmallBalanceDeepLink>(source)
@@ -2961,7 +2993,8 @@ void SmallBalanceBox(
 		[=] { show->session().credits().load(true); },
 		box->showFinishes(),
 		tr::lng_credits_summary_options_subtitle(),
-		{});
+		{},
+		dark);
 
 	content->setMaximumHeight(st::creditsLowBalancePremiumCoverHeight);
 	content->setMinimumHeight(st::infoLayerTopBarHeight);
@@ -2982,7 +3015,9 @@ void SmallBalanceBox(
 			content,
 			&show->session(),
 			show->session().credits().balanceValue(),
-			true);
+			true,
+			nullptr,
+			dark);
 		show->session().credits().load(true);
 
 		rpl::combine(
@@ -3072,7 +3107,6 @@ void AddWithdrawalWidget(
 	const auto buttonsContainer = withdrawalWrap->entity()->add(
 		Ui::CreateSkipWidget(withdrawalWrap->entity(), stButton.height),
 		st::boxRowPadding);
-	withdrawalWrap->toggle(withdrawalEnabled, anim::type::instant);
 
 	const auto button = Ui::CreateChild<Ui::RoundButton>(
 		buttonsContainer,
@@ -3085,14 +3119,47 @@ void AddWithdrawalWidget(
 		stButton);
 	buttonCredits->setTextTransform(
 		Ui::RoundButton::TextTransform::NoTransform);
+	{
+		const auto icon = Ui::CreateChild<Ui::RpWidget>(buttonCredits);
+		const auto &st = st::msgBotKbUrlIcon;
+		icon->resize(st.width(), st.height());
+		icon->paintRequest() | rpl::start_with_next([=] {
+			auto p = QPainter(icon);
+			st.paint(p, { 0, 0 }, icon->width(), stButton.textFg->c);
+		}, icon->lifetime());
+		buttonCredits->sizeValue(
+		) | rpl::start_with_next([=, padding = st::msgBotKbIconPadding] {
+			icon->moveToRight(padding, padding);
+		}, icon->lifetime());
+		icon->setAttribute(Qt::WA_TransparentForMouseEvents);
+	}
 
 	Ui::ToggleChildrenVisibility(buttonsContainer, true);
+
+	const auto updateButtonState = [=](bool disabled) {
+		button->setBrushOverride(disabled
+			? std::optional(st::windowSubTextFg)
+			: std::nullopt);
+		button->setAttribute(Qt::WA_TransparentForMouseEvents, disabled);
+	};
+
+	struct UrlState {
+		QString url;
+		base::unique_qptr<Ui::PopupMenu> menu;
+	};
+	const auto urlState = buttonsContainer->lifetime().make_state<UrlState>();
 
 	rpl::combine(
 		std::move(secondButtonUrl),
 		buttonsContainer->sizeValue()
 	) | rpl::start_with_next([=](const QString &url, const QSize &size) {
-		if (url.isEmpty()) {
+		const auto secondVisible = !url.isEmpty();
+		urlState->url = url;
+		withdrawalWrap->toggle(
+			withdrawalEnabled || secondVisible,
+			anim::type::instant);
+		updateButtonState(!withdrawalEnabled);
+		if (!secondVisible) {
 			button->resize(size.width(), size.height());
 			buttonCredits->resize(0, 0);
 		} else {
@@ -3103,6 +3170,27 @@ void AddWithdrawalWidget(
 			buttonCredits->setClickedCallback([=] {
 				UrlClickHandler::Open(url);
 			});
+			buttonCredits->events(
+			) | rpl::filter([](not_null<QEvent*> e) {
+				return e->type() == QEvent::ContextMenu;
+			}) | rpl::start_with_next([=](not_null<QEvent*> e) {
+				if (urlState->url.isEmpty()) {
+					return;
+				}
+				urlState->menu = base::make_unique_q<Ui::PopupMenu>(
+					buttonCredits,
+					st::popupMenuWithIcons);
+				urlState->menu->addAction(
+					tr::lng_context_copy_link(tr::now),
+					[=, show = controller->uiShow()] {
+						TextUtilities::SetClipboardText({ urlState->url });
+						show->showToast(
+							tr::lng_channel_public_link_copied(tr::now));
+					},
+					&st::menuIconCopy);
+				urlState->menu->popup(QCursor::pos());
+				e->accept();
+			}, buttonCredits->lifetime());
 		}
 	}, buttonsContainer->lifetime());
 
@@ -3113,7 +3201,9 @@ void AddWithdrawalWidget(
 	rpl::duplicate(
 		lockedValue
 	) | rpl::start_with_next([=](bool v) {
-		button->setAttribute(Qt::WA_TransparentForMouseEvents, v);
+		if (withdrawalEnabled) {
+			updateButtonState(v);
+		}
 	}, button->lifetime());
 
 	const auto session = &controller->session();
@@ -3303,8 +3393,7 @@ void AddWithdrawalWidget(
 	container->add(object_ptr<Ui::DividerLabel>(
 		container,
 		std::move(about),
-		st::defaultBoxDividerLabelPadding,
-		RectPart::Top | RectPart::Bottom));
+		st::defaultBoxDividerLabelPadding));
 
 	Ui::AddSkip(container);
 }
