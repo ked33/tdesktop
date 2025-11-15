@@ -613,7 +613,7 @@ struct ActionWebViewDataSent {
 
 struct ActionGiftPremium {
 	Utf8String cost;
-	int months = 0;
+	int days = 0;
 };
 
 struct ActionTopicCreate {
@@ -638,7 +638,7 @@ struct ActionSetChatWallPaper {
 struct ActionGiftCode {
 	QByteArray code;
 	PeerId boostPeerId = 0;
-	int months = 0;
+	int days = 0;
 	bool viaGiveaway = false;
 	bool unclaimed = false;
 };
