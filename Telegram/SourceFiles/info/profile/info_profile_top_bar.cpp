@@ -2406,7 +2406,7 @@ void TopBar::setupStoryOutline(const QRect &geometry) {
 
 void TopBar::updateStoryOutline(std::optional<QColor> edgeColor) {
 	const auto user = _peer->asUser();
-	if (!user) {
+	if (!user || GetEnhancedBool("hide_stories")) {
 		return;
 	}
 
