@@ -2486,9 +2486,13 @@ void TopBar::setupStoryOutline(const QRect &geometry) {
 }
 
 void TopBar::updateStoryOutline(std::optional<QColor> edgeColor) {
+	if (GetEnhancedBool("hide_stories")) {
+		return;
+	}
+
 	const auto user = _peer->asUser();
 	const auto channel = _peer->asChannel();
-	if (!user && !channel || GetEnhancedBool("hide_stories")) {
+	if (!user && !channel) {
 		return;
 	}
 
