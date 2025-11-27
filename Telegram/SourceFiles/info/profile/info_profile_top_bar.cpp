@@ -358,6 +358,7 @@ TopBar::TopBar(
 	});
 	return owned;
 }())
+, _backToggles(std::move(descriptor.backToggles))
 , _id(this, st::infoProfileMegagroupCover.status) {
 	_peer->updateFull();
 	if (const auto broadcast = _peer->monoforumBroadcast()) {
@@ -422,17 +423,14 @@ TopBar::TopBar(
 	badgeUpdates = rpl::merge(
 		std::move(badgeUpdates),
 		nameValue() | rpl::to_empty,
-		rpl::duplicate(descriptor.backToggles) | rpl::to_empty);
+		_backToggles.value() | rpl::to_empty);
 	std::move(badgeUpdates) | rpl::start_with_next([=] {
 		updateLabelsPosition();
 	}, _title->lifetime());
 
 	setupChatId();
 	setupUniqueBadgeTooltip();
-	setupButtons(
-		controller,
-		rpl::duplicate(descriptor.backToggles),
-		descriptor.source);
+	setupButtons(controller, descriptor.source);
 	setupUserpicButton(controller);
 	if (_hasActions) {
 		_peer->session().changes().peerFlagsValue(
@@ -616,9 +614,6 @@ void TopBar::adjustColors(const std::optional<QColor> &edgeColor) {
 }
 
 void TopBar::updateCollectibleStatus() {
-	if (width() <= 0) {
-		return;
-	}
 	const auto collectible = effectiveCollectible();
 	const auto colorProfile = effectiveColorProfile();
 	_hasGradientBg = (collectible != nullptr)
@@ -637,10 +632,14 @@ void TopBar::updateCollectibleStatus() {
 		: _peer->profileBackgroundEmojiId();
 	if (patternEmojiId) {
 		const auto document = _peer->owner().document(patternEmojiId);
-		_patternEmoji = document->owner().customEmojiManager().create(
-			document,
-			[=] { update(); },
-			Data::CustomEmojiSizeTag::Normal);
+		if (!_patternEmoji
+			|| _patternEmoji->entityData()
+				!= Data::SerializeCustomEmojiId(document)) {
+			_patternEmoji = document->owner().customEmojiManager().create(
+				document,
+				[=] { update(); },
+				Data::CustomEmojiSizeTag::Normal);
+		}
 	} else {
 		_patternEmoji = nullptr;
 	}
@@ -1871,7 +1870,6 @@ void TopBar::paintEvent(QPaintEvent *e) {
 
 void TopBar::setupButtons(
 		not_null<Window::SessionController*> controller,
-		rpl::producer<bool> backToggles,
 		Source source) {
 	if (source == Source::Preview) {
 		setRoundEdges(false);
@@ -1880,7 +1878,7 @@ void TopBar::setupButtons(
 	rpl::combine(
 		_wrap.value(),
 		_edgeColor.value()
-	) | rpl::start_with_next([=, backToggles = std::move(backToggles)](
+	) | rpl::start_with_next([=](
 			Wrap wrap,
 			std::optional<QColor> edgeColor) mutable {
 		const auto isLayer = (wrap == Wrap::Layer);
@@ -1907,7 +1905,7 @@ void TopBar::setupButtons(
 		_back->QWidget::show();
 		_back->setDuration(0);
 		_back->toggleOn(isLayer || isSide
-			? rpl::duplicate(backToggles)
+			? (_backToggles.value() | rpl::type_erased())
 			: rpl::single(wrap == Wrap::Narrow));
 		_back->entity()->clicks() | rpl::to_empty | rpl::start_to_stream(
 			_backClicks,
