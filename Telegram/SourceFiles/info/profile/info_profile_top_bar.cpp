@@ -358,8 +358,8 @@ TopBar::TopBar(
 	});
 	return owned;
 }())
-, _backToggles(std::move(descriptor.backToggles))
-, _id(this, st::infoProfileMegagroupCover.status) {
+, _id(this, st::infoProfileMegagroupCover.status)
+, _backToggles(std::move(descriptor.backToggles)) {
 	_peer->updateFull();
 	if (const auto broadcast = _peer->monoforumBroadcast()) {
 		broadcast->updateFull();
