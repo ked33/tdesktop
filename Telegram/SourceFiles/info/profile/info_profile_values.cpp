@@ -134,8 +134,8 @@ rpl::producer<TextWithEntities> PhoneValue(not_null<UserData*> user) {
 			user,
 			UpdateFlag::PhoneNumber) | rpl::to_empty
 	) | rpl::map([=] {
-		return Ui::FormatPhone(user->phone());
-	}) | Ui::Text::ToWithEntities();
+		return tr::marked(Ui::FormatPhone(user->phone()));
+	});
 }
 
 rpl::producer<TextWithEntities> PhoneOrHiddenValue(not_null<UserData*> user) {
@@ -150,9 +150,9 @@ rpl::producer<TextWithEntities> PhoneOrHiddenValue(not_null<UserData*> user) {
 			const QString &about,
 			const QString &hidden) {
 		if (phone.text.isEmpty() && username.isEmpty() && about.isEmpty()) {
-			return Ui::Text::WithEntities(hidden);
+			return tr::marked(hidden);
 		} else if (IsCollectiblePhone(user)) {
-			return Ui::Text::Link(phone, u"internal:collectible_phone/"_q
+			return tr::link(phone, u"internal:collectible_phone/"_q
 				+ user->phone() + '@' + QString::number(user->id.value));
 		} else {
 			return phone;
@@ -168,9 +168,9 @@ rpl::producer<TextWithEntities> UsernameValue(
 		: (PlainUsernameValue(peer) | rpl::type_erased)
 	) | rpl::map([](QString &&username) {
 		return username.isEmpty()
-			? QString()
-			: ('@' + username);
-	}) | Ui::Text::ToWithEntities();
+			? tr::marked()
+			: tr::marked('@' + username);
+	});
 }
 
 QString UsernameUrl(
@@ -196,7 +196,7 @@ rpl::producer<std::vector<TextWithEntities>> UsernamesValue(
 		return ranges::views::all(
 			usernames
 		) | ranges::views::transform([&](const QString &u) {
-			return Ui::Text::Link(u, UsernameUrl(peer, u));
+			return tr::link(u, UsernameUrl(peer, u));
 		}) | ranges::to_vector;
 	};
 	auto value = rpl::merge(
