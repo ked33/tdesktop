@@ -717,7 +717,7 @@ void ApiWrap::exportMessageAsBase64(not_null<HistoryItem*> item, Fn<void(const Q
 		};
 	if (item->history()->peer->isChannel()) {
 		request(MTPchannels_GetMessages(
-			item->history()->peer->asChannel()->inputChannel,
+			item->history()->peer->asChannel()->inputChannel(),
 			MTP_vector<MTPInputMessage>(ids)
 		)).done(requestDone).fail([=](const MTP::Error& error, mtpRequestId requestId) {
 			fail();
