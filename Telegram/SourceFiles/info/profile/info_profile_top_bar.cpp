@@ -2615,9 +2615,6 @@ void TopBar::updateStoryOutline(std::optional<QColor> edgeColor) {
 	if (GetEnhancedBool("hide_stories")) {
 		return;
 	}
-	if (width() <= 0) {
-		return;
-	}
 
 	const auto user = _peer->asUser();
 	const auto channel = _peer->asChannel();
