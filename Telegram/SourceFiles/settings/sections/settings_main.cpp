@@ -414,6 +414,13 @@ void BuildSectionButtons(SectionBuilder &builder) {
 		.keywords = { u"sessions"_q, u"calls"_q },
 	});
 
+	builder.addSectionButton({
+		.title = tr::lng_settings_enhanced(),
+		.targetSection = Enhanced::Id(),
+		.icon = { &st::menuIconManage },
+		.keywords = { u"enhanced"_q },
+	});
+
 	builder.addButton({
 		.id = u"main/power"_q,
 		.title = tr::lng_settings_power_menu(),
@@ -983,10 +990,6 @@ void SetupValidatePasswordSuggestion(
 	Ui::AddSkip(content);
 }
 
-	addSection(
-		tr::lng_settings_enhanced(),
-		Enhanced::Id(),
-		{ &st::menuIconManage });
 bool HasInterfaceScale() {
 	return true;
 }

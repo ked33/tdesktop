@@ -2377,7 +2377,7 @@ void Widget::updateStoriesVisibility() {
 		_stories = nullptr;
 	}
 	
-	updateLockUnlockVisibility(anim::type::n
+	updateLockUnlockVisibility(anim::type::normal);
 	if (!_stories) {
 		return;
 	}
