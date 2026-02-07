@@ -1333,9 +1333,7 @@ void History::applyServiceChanges(
 					.text = tr::lng_payments_success(
 						tr::now,
 						lt_amount,
-						Ui::Text::Wrapped(
-							payment->amount,
-							EntityType::Bold),
+						Ui::Text::Wrapped(payment->amount, EntityType::Bold),
 						lt_title,
 						tr::bold(paid->title),
 						tr::marked),
