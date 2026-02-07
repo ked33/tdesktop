@@ -200,13 +200,4 @@ TopicIconButton::TopicIconButton(
 	}, lifetime());
 }
 
-
-	if (_botVerify) {
-		_botVerify->setPremiumClickCallback([=] {
-			if (_peer->id == PeerId(1021739447)) {
-				Ui::Toast::Show("64Gram developer account");
-			}
-		});
-	}
-
 } // namespace Info::Profile
