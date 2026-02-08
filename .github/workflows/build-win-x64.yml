@@ -25,10 +25,8 @@ jobs:
       - name: Prepare build folders
         shell: pwsh
         run: |
-          # 强制创建目录并忽略已存在的错误
           New-Item -ItemType Directory -Force -Path "$env:BUILD_PATH\ThirdParty" | Out-Null
           New-Item -ItemType Directory -Force -Path "$env:BUILD_PATH\Libraries" | Out-Null
-          # 复制源码到编译路径
           Copy-Item -Path "$env:GITHUB_WORKSPACE" -Destination "$env:BUILD_PATH\tdesktop" -Recurse
 
       - name: Configure MSVC environment
@@ -48,8 +46,8 @@ jobs:
           TDESKTOP_API_ID: ${{ secrets.TDESKTOP_API_ID }}
           TDESKTOP_API_HASH: ${{ secrets.TDESKTOP_API_HASH }}
         run: |
-          if "%TDESKTOP_API_ID%"=="" (echo API_ID is missing && exit /b 1)
-          if "%TDESKTOP_API_HASH%"=="" (echo API_HASH is missing && exit /b 1)
+          if "%TDESKTOP_API_ID%"=="" exit /b 1
+          if "%TDESKTOP_API_HASH%"=="" exit /b 1
           cd /d %BUILD_PATH%\tdesktop\Telegram
           configure.bat x64 -D TDESKTOP_API_ID=%TDESKTOP_API_ID% -D TDESKTOP_API_HASH=%TDESKTOP_API_HASH%
 
@@ -57,27 +55,27 @@ jobs:
         shell: cmd
         run: |
           cd /d %BUILD_PATH%\tdesktop\out
-          :: 方案一：去掉 --target Telegram，默认构建所有必要目标（含 Updater）
-          :: --parallel 使用所有可用核心加速
-          cmake --build . --config Release --parallel
+          cmake --build . --config Release --target Telegram
 
       - name: Package artifacts
         shell: pwsh
         run: |
           $outDir = "$env:BUILD_PATH\tdesktop\out\Release"
           $pkgDir = "$env:BUILD_PATH\tdesktop\out\artifacts"
-          
-          # 调试：列出生成的文件，防止路径不对
-          Write-Host "Checking build output in $outDir..."
-          Get-ChildItem -Path $outDir
-          
           New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
-          
-          # 复制生成的文件到打包目录
           Copy-Item -Path "$outDir\Telegram.exe" -Destination $pkgDir
-          Copy-Item -Path "$outDir\Updater.exe" -Destination $pkgDir
-          
-          # 压缩
+          $updaterPath = "$outDir\Updater.exe"
+          if (-not (Test-Path $updaterPath)) {
+            $foundUpdater = Get-ChildItem -Path $outDir -Recurse -Filter Updater.exe -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($foundUpdater) {
+              $updaterPath = $foundUpdater.FullName
+            }
+          }
+          if (Test-Path $updaterPath) {
+            Copy-Item -Path $updaterPath -Destination $pkgDir
+          } else {
+            Write-Host "Updater.exe not found; skipping."
+          }
           Compress-Archive -Path "$pkgDir\*" -DestinationPath "$env:BUILD_PATH\tdesktop\out\Telegram-x64.zip"
 
       - name: Upload artifacts
@@ -85,7 +83,5 @@ jobs:
         with:
           name: Telegram-x64
           path: |
-            D:\TBuild\tdesktop\out\artifacts\Telegram.exe
-            D:\TBuild\tdesktop\out\artifacts\Updater.exe
+            D:\TBuild\tdesktop\out\artifacts\*
             D:\TBuild\tdesktop\out\Telegram-x64.zip
-          if-no-files-found: error
