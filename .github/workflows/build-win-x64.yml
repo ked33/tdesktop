@@ -15,6 +15,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          fetch-depth: 1
           submodules: recursive
 
       - name: Set up Python 3.10
@@ -25,9 +26,21 @@ jobs:
       - name: Prepare build folders
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path "$env:BUILD_PATH" | Out-Null
           New-Item -ItemType Directory -Force -Path "$env:BUILD_PATH\ThirdParty" | Out-Null
           New-Item -ItemType Directory -Force -Path "$env:BUILD_PATH\Libraries" | Out-Null
-          Copy-Item -Path "$env:GITHUB_WORKSPACE" -Destination "$env:BUILD_PATH\tdesktop" -Recurse
+          New-Item -ItemType Directory -Force -Path "$env:BUILD_PATH\Libraries\win64" | Out-Null
+          New-Item -ItemType Junction -Path "$env:BUILD_PATH\tdesktop" -Target "$env:GITHUB_WORKSPACE" | Out-Null
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            D:\TBuild\ThirdParty
+            D:\TBuild\Libraries
+          key: win64-deps-${{ hashFiles('Telegram/build/prepare/**') }}
+          restore-keys: |
+            win64-deps-
 
       - name: Configure MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
@@ -55,7 +68,7 @@ jobs:
         shell: cmd
         run: |
           cd /d %BUILD_PATH%\tdesktop\out
-          cmake --build . --config Release --target Telegram
+          cmake --build . --config Release --target Telegram --parallel
 
       - name: Package artifacts
         shell: pwsh
