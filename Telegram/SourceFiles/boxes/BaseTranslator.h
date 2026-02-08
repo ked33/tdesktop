@@ -97,7 +97,7 @@ protected:
             reply->deleteLater();
 
             if (statusCode == 429) {
-                throw std::runtime_error("HTTP 429 Too Many Requests");
+                return "HTTP 429 Too Many Requests";
             }
 
             return QString::fromUtf8(response);

@@ -77,10 +77,10 @@ BaseTranslator::Result GoogleAppTranslator::getResult(const QString& jsonData) c
 
     if (obj.contains("error")) {
         QJsonObject errorObj = obj["error"].toObject();
-        throw std::runtime_error(errorObj["message"].toString().toStdString());
+        return { errorObj["message"].toString(), obj["sourceLanguage"].toString() };
     }
 
-    throw std::runtime_error("Unexpected response: " + jsonData.toStdString());
+    return { "Unexpected response", obj["sourceLanguage"].toString() };
 }
 
 QString GoogleAppTranslator::sign(const QString& str) {
