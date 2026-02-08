@@ -206,11 +206,13 @@ private:
 	void drawCornerStatus(
 		Painter &p,
 		const PaintContext &context,
-		QPoint position) const;
+		QPoint position,
+		bool allowDownload) const;
 	[[nodiscard]] TextState cornerStatusTextState(
 		QPoint point,
 		StateRequest request,
-		QPoint position) const;
+		QPoint position,
+		bool allowDownload) const;
 	[[nodiscard]] ClickHandlerPtr currentVideoLink() const;
 
 	void togglePollingStory(bool enabled) const;
