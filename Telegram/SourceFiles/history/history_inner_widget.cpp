@@ -2965,7 +2965,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 									action.options.sendAs = nullptr;
 								}
 								if (const auto sublist = item->savedSublist()) {
-									action.replyTo.monoforumPeerId = sublist->monoforumPeerId();
+									action.replyTo.monoforumPeerId = item->history()->peer->isSelf() ? nullptr : sublist->monoforumPeerId();
 								}
 
 								const auto history = item->history()->peer->owner().history(item->history()->peer);
@@ -2991,7 +2991,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 															};
 								}
 								if (const auto sublist = item->savedSublist()) {
-									message.action.replyTo.monoforumPeerId = sublist->monoforumPeerId();
+									message.action.replyTo.monoforumPeerId = item->history()->peer->isSelf() ? nullptr : sublist->monoforumPeerId();
 								}
 								api->sendMessage(std::move(message));
 							}, &st::menuIconDiscussion);
@@ -3011,7 +3011,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 														};
 									}
 									if (const auto sublist = item->savedSublist()) {
-										action.replyTo.monoforumPeerId = sublist->monoforumPeerId();
+										action.replyTo.monoforumPeerId = item->history()->peer->isSelf() ? nullptr : sublist->monoforumPeerId();
 									}
 
 									const auto history = item->history()->peer->owner().history(item->history()->peer);
@@ -3032,7 +3032,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 										message.action.options.sendAs = nullptr;
 									}
 									if (const auto sublist = item->savedSublist()) {
-										message.action.replyTo.monoforumPeerId = sublist->monoforumPeerId();
+										message.action.replyTo.monoforumPeerId = item->history()->peer->isSelf() ? nullptr : sublist->monoforumPeerId();
 									}
 									Api::SendExistingDocument(std::move(message), document);
 								}, & st::menuIconDiscussion);
@@ -3359,7 +3359,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 									action.options.sendAs = nullptr;
 								}
 								if (const auto sublist = item->savedSublist()) {
-									action.replyTo.monoforumPeerId = sublist->monoforumPeerId();
+									action.replyTo.monoforumPeerId = item->history()->peer->isSelf() ? nullptr : sublist->monoforumPeerId();
 								}
 
 								const auto history = item->history()->peer->owner().history(item->history()->peer);
@@ -3385,7 +3385,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 															};
 								}
 								if (const auto sublist = item->savedSublist()) {
-									message.action.replyTo.monoforumPeerId = sublist->monoforumPeerId();
+									message.action.replyTo.monoforumPeerId = item->history()->peer->isSelf() ? nullptr : sublist->monoforumPeerId();
 								}
 								api->sendMessage(std::move(message));
 							}, &st::menuIconDiscussion);
@@ -3400,7 +3400,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 										action.options.sendAs = nullptr;
 									}
 									if (const auto sublist = item->savedSublist()) {
-										action.replyTo.monoforumPeerId = sublist->monoforumPeerId();
+										action.replyTo.monoforumPeerId = item->history()->peer->isSelf() ? nullptr : sublist->monoforumPeerId();
 									}
 
 									const auto history = item->history()->peer->owner().history(item->history()->peer);
@@ -3421,7 +3421,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 										message.action.options.sendAs = nullptr;
 									}
 									if (const auto sublist = item->savedSublist()) {
-										message.action.replyTo.monoforumPeerId = sublist->monoforumPeerId();
+										message.action.replyTo.monoforumPeerId = item->history()->peer->isSelf() ? nullptr : sublist->monoforumPeerId();
 									}
 									Api::SendExistingDocument(std::move(message), document);
 								}, & st::menuIconDiscussion);
