@@ -731,7 +731,7 @@ void Gif::draw(Painter &p, const PaintContext &context) const {
 		const auto sponsoredSkip = !_data->isVideoFile()
 			&& _realParent->isSponsored();
 		if ((!isRound || !inWebPage) && !sponsoredSkip) {
-			drawCornerStatus(p, context, QPoint());
+			drawCornerStatus(p, context, QPoint(), true);
 		}
 	} else if (!skipDrawingSurrounding) {
 		if (isRound) {
@@ -1119,25 +1119,55 @@ void Gif::validateSpoilerImageCache(
 void Gif::drawCornerStatus(
 		Painter &p,
 		const PaintContext &context,
-		QPoint position) const {
+		QPoint position,
+		bool allowDownload) const {
 	if (!needCornerStatusDisplay()) {
 		return;
 	}
 	const auto own = activeOwnStreamed();
 	const auto st = context.st;
 	const auto sti = context.imageStyle();
-	const auto text = (own && !own->frozenStatusText.isEmpty())
+	const auto baseText = (own && !own->frozenStatusText.isEmpty())
 		? own->frozenStatusText
 		: _statusText;
 	const auto padding = st::msgDateImgPadding;
 	const auto radial = _animation && _animation->radial.animating();
-	const auto cornerDownload = downloadInCorner() && !dataLoaded() && !_data->loadedInMediaCache();
+	const auto cornerDownload = allowDownload
+		&& downloadInCorner()
+		&& !dataLoaded()
+		&& !_data->loadedInMediaCache();
 	const auto cornerMute = _streamed && _data->isVideoFile() && !cornerDownload;
+	const auto isVideo = _data->isVideoFile();
+	const auto durationText = [&] {
+		if (!isVideo) {
+			return baseText;
+		} else if (_statusSize < 0) {
+			return baseText;
+		}
+		const auto duration = _data->duration();
+		return duration > 0
+			? Ui::FormatDurationText(duration / 1000)
+			: baseText;
+	}();
+	const auto dcText = isVideo
+		? QString("DC%1").arg(_data->getDC())
+		: QString();
+	const auto text = isVideo
+		? (durationText.isEmpty()
+			? dcText
+			: (durationText + ' ' + dcText))
+		: baseText;
+	const auto showSecondLine = isVideo || cornerDownload;
+	const auto secondLine = showSecondLine ? _downloadSize : QString();
 	const auto addLeft = cornerDownload ? (st::historyVideoDownloadSize + 2 * padding.y()) : 0;
 	const auto addRight = cornerMute ? st::historyVideoMuteSize : 0;
-	const auto downloadWidth = cornerDownload ? st::normalFont->width(_downloadSize) : 0;
-	const auto statusW = std::max(downloadWidth, st::normalFont->width(text)) + 2 * padding.x() + addLeft + addRight;
-	const auto statusH = cornerDownload ? (st::historyVideoDownloadSize + 2 * padding.y()) : (st::normalFont->height + 2 * padding.y());
+	const auto textWidth = std::max(
+		st::normalFont->width(text),
+		showSecondLine ? st::normalFont->width(secondLine) : 0);
+	const auto statusW = textWidth + 2 * padding.x() + addLeft + addRight;
+	const auto statusH = cornerDownload
+		? (st::historyVideoDownloadSize + 2 * padding.y())
+		: ((showSecondLine ? 2 : 1) * st::normalFont->height + 2 * padding.y());
 	const auto statusX = position.x() + st::msgDateImgDelta + padding.x();
 	const auto statusY = position.y() + st::msgDateImgDelta + padding.y();
 	const auto around = style::rtlrect(statusX - padding.x(), statusY - padding.y(), statusW, statusH, width());
@@ -1146,9 +1176,16 @@ void Gif::drawCornerStatus(
 	p.setFont(st::normalFont);
 	p.setPen(st->msgDateImgFg());
 	p.drawTextLeft(statusX + addLeft, statusTextTop, width(), text, statusW - 2 * padding.x());
+	if (showSecondLine) {
+		const auto secondLineTop = cornerDownload
+			? (statusY
+				+ st::normalFont->height
+				+ (2 * (statusH - 2 * st::normalFont->height) / 3)
+				- padding.y())
+			: (statusTextTop + st::normalFont->height);
+		p.drawTextLeft(statusX + addLeft, secondLineTop, width(), secondLine, statusW - 2 * padding.x());
+	}
 	if (cornerDownload) {
-		const auto downloadTextTop = statusY + st::normalFont->height + (2 * (statusH - 2 * st::normalFont->height) / 3) - padding.y();
-		p.drawTextLeft(statusX + addLeft, downloadTextTop, width(), _downloadSize, statusW - 2 * padding.x());
 		const auto inner = QRect(statusX + padding.y() - padding.x(), statusY, st::historyVideoDownloadSize, st::historyVideoDownloadSize);
 		const auto &icon = _data->loading()
 			? sti->historyVideoCancel
@@ -1166,9 +1203,13 @@ void Gif::drawCornerStatus(
 TextState Gif::cornerStatusTextState(
 		QPoint point,
 		StateRequest request,
-		QPoint position) const {
+		QPoint position,
+		bool allowDownload) const {
 	auto result = TextState(_parent);
-	if (!needCornerStatusDisplay() || !downloadInCorner() || dataLoaded()) {
+	if (!allowDownload
+		|| !needCornerStatusDisplay()
+		|| !downloadInCorner()
+		|| dataLoaded()) {
 		return result;
 	}
 	const auto padding = st::msgDateImgPadding;
@@ -1283,7 +1324,7 @@ TextState Gif::textState(QPoint point, StateRequest request) const {
 		}
 	}
 	if (!unwrapped) {
-		if (const auto state = cornerStatusTextState(point, request, QPoint()); state.link) {
+		if (const auto state = cornerStatusTextState(point, request, QPoint(), true); state.link) {
 			return state;
 		}
 	}
@@ -1600,8 +1641,8 @@ void Gif::drawGrouped(
 		}
 		p.setOpacity(1.);
 	}
-	if (!_smallGroupPart) {
-		drawCornerStatus(p, context, geometry.topLeft());
+	if (_data->isVideoFile() || !_smallGroupPart) {
+		drawCornerStatus(p, context, geometry.topLeft(), false);
 	}
 }
 
@@ -1613,11 +1654,12 @@ TextState Gif::getStateGrouped(
 	if (!geometry.contains(point)) {
 		return {};
 	}
-	if (!_smallGroupPart) {
+	if (_data->isVideoFile() || !_smallGroupPart) {
 		const auto state = cornerStatusTextState(
 			point,
 			request,
-			geometry.topLeft());
+			geometry.topLeft(),
+			false);
 		if (state.link) {
 			return state;
 		}
