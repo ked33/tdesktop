@@ -138,6 +138,7 @@ constexpr auto kMaxZoomLevel = 7; // x8
 constexpr auto kZoomToScreenLevel = 1024;
 constexpr auto kOverlayLoaderPriority = 2;
 constexpr auto kSeekTimeMs = 5 * crl::time(1000);
+constexpr auto kArrowHoldTimeoutMs = crl::time(350);
 
 // macOS OpenGL renderer fails to render larger texture
 // even though it reports that max texture size is 16384.
@@ -669,6 +670,8 @@ OverlayWidget::OverlayWidget()
 			updateControlsGeometry();
 		} else if (type == QEvent::KeyPress) {
 			handleKeyPress(static_cast<QKeyEvent*>(e.get()));
+		} else if (type == QEvent::KeyRelease) {
+			handleKeyRelease(static_cast<QKeyEvent*>(e.get()));
 		}
 		return base::EventFilterResult::Continue;
 	});
@@ -786,6 +789,7 @@ OverlayWidget::OverlayWidget()
 
 	_widget->setAttribute(Qt::WA_AcceptTouchEvents);
 	_touchTimer.setCallback([=] { handleTouchTimer(); });
+	_arrowHoldTimer.setCallback([=] { handleArrowHoldTimeout(); });
 
 	_controlsHideTimer.setCallback([=] { hideControls(); });
 	_helper->controlsActivations(
@@ -5761,6 +5765,35 @@ void OverlayWidget::handleKeyPress(not_null<QKeyEvent*> e) {
 	const auto key = e->key();
 	const auto modifiers = e->modifiers();
 	const auto ctrl = modifiers.testFlag(Qt::ControlModifier);
+	const auto shift = modifiers.testFlag(Qt::ShiftModifier);
+	const auto alt = modifiers.testFlag(Qt::AltModifier);
+	const auto meta = modifiers.testFlag(Qt::MetaModifier);
+	const auto handleStreamedArrowPress = [&] {
+		if (key != Qt::Key_Left && key != Qt::Key_Right) {
+			return false;
+		}
+		if (e->isAutoRepeat()) {
+			return true;
+		}
+		if (_arrowHoldPressed && _arrowHoldKey == key) {
+			return true;
+		}
+		if (_arrowHoldPressed) {
+			_arrowHoldTimer.cancel();
+			if (_arrowHoldSpeedActive) {
+				activateControls();
+				playbackControlsSpeedChanged(1.);
+			}
+			_arrowHoldPressed = false;
+			_arrowHoldSpeedActive = false;
+			_arrowHoldKey = 0;
+		}
+		_arrowHoldPressed = true;
+		_arrowHoldSpeedActive = false;
+		_arrowHoldKey = key;
+		_arrowHoldTimer.callOnce(kArrowHoldTimeoutMs);
+		return true;
+	};
 	if (_stories) {
 		if (key == Qt::Key_Space && _down != Over::Video) {
 			_stories->togglePaused(!_stories->paused());
@@ -5776,6 +5809,21 @@ void OverlayWidget::handleKeyPress(not_null<QKeyEvent*> e) {
 		} else if (key == Qt::Key_Space) {
 			playbackPauseResume();
 			return;
+		} else if (!modifiers.testFlag(Qt::KeypadModifier)
+			&& (key == Qt::Key_1
+				|| key == Qt::Key_2
+				|| key == Qt::Key_3)) {
+			if (shift && !ctrl && !alt && !meta && key == Qt::Key_1) {
+				activateControls();
+				playbackControlsSpeedChanged(0.5);
+				return;
+			} else if (!shift && !ctrl && !alt && !meta) {
+				activateControls();
+				playbackControlsSpeedChanged(key - Qt::Key_0);
+				return;
+			}
+		} else if (handleStreamedArrowPress()) {
+			return;
 		} else if (_fullScreenVideo) {
 			if (key == Qt::Key_Escape) {
 				playbackToggleFullScreen();
@@ -5787,12 +5835,6 @@ void OverlayWidget::handleKeyPress(not_null<QKeyEvent*> e) {
 				activateControls();
 				const auto index = int(key - Qt::Key_0);
 				restartAtProgress(index / 10.0);
-			} else if (key == Qt::Key_Left) {
-				activateControls();
-				seekRelativeTime(-kSeekTimeMs);
-			} else if (key == Qt::Key_Right) {
-				activateControls();
-				seekRelativeTime(kSeekTimeMs);
 			}
 			return;
 		}
@@ -5861,6 +5903,48 @@ void OverlayWidget::handleKeyPress(not_null<QKeyEvent*> e) {
 	} else if (_stories) {
 		_stories->tryProcessKeyInput(e);
 	}
+}
+
+void OverlayWidget::handleKeyRelease(not_null<QKeyEvent*> e) {
+	if (_processingKeyPress) {
+		return;
+	}
+	_processingKeyPress = true;
+	const auto guard = gsl::finally([&] { _processingKeyPress = false; });
+	if (!_streamed || _stories || e->isAutoRepeat()) {
+		return;
+	}
+	const auto key = e->key();
+	if (key != Qt::Key_Left && key != Qt::Key_Right) {
+		return;
+	}
+	if (!_arrowHoldPressed || _arrowHoldKey != key) {
+		return;
+	}
+	_arrowHoldTimer.cancel();
+	_arrowHoldPressed = false;
+	_arrowHoldKey = 0;
+	if (_arrowHoldSpeedActive) {
+		_arrowHoldSpeedActive = false;
+		activateControls();
+		playbackControlsSpeedChanged(1.);
+		return;
+	}
+	activateControls();
+	seekRelativeTime((key == Qt::Key_Left) ? -kSeekTimeMs : kSeekTimeMs);
+}
+
+void OverlayWidget::handleArrowHoldTimeout() {
+	if (!_streamed || _stories || !_arrowHoldPressed || _arrowHoldSpeedActive) {
+		return;
+	}
+	const auto key = _arrowHoldKey;
+	if (key != Qt::Key_Left && key != Qt::Key_Right) {
+		return;
+	}
+	_arrowHoldSpeedActive = true;
+	activateControls();
+	playbackControlsSpeedChanged((key == Qt::Key_Left) ? 0.5 : 3.);
 }
 
 void OverlayWidget::handleWheelEvent(not_null<QWheelEvent*> e) {
