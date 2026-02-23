@@ -1,0 +1,14 @@
+拉取远程仓库代码到本地
+
+git reset --hard origin/dev
+
+
+
+暂存 - 提交 
+本地 pull 到仓库
+git push origin dev
+
+
+回滚已经pull的提交
+git reset --hard HEAD~1
+git push origin dev --force
