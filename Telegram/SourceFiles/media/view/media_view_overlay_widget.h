@@ -221,6 +221,8 @@ private:
 	bool handleTouchEvent(not_null<QTouchEvent*> e);
 	void handleWheelEvent(not_null<QWheelEvent*> e);
 	void handleKeyPress(not_null<QKeyEvent*> e);
+	void handleKeyRelease(not_null<QKeyEvent*> e);
+	void handleArrowHoldTimeout();
 
 	void toggleApplicationEventFilter(bool install);
 	bool filterApplicationEvent(
@@ -738,6 +740,10 @@ private:
 
 	bool _receiveMouse = true;
 	bool _processingKeyPress = false;
+	base::Timer _arrowHoldTimer;
+	int _arrowHoldKey = 0;
+	bool _arrowHoldPressed = false;
+	bool _arrowHoldSpeedActive = false;
 
 	bool _touchPress = false;
 	bool _touchMove = false;
