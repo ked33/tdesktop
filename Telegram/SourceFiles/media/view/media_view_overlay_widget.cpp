@@ -5768,6 +5768,13 @@ void OverlayWidget::handleKeyPress(not_null<QKeyEvent*> e) {
 	const auto shift = modifiers.testFlag(Qt::ShiftModifier);
 	const auto alt = modifiers.testFlag(Qt::AltModifier);
 	const auto meta = modifiers.testFlag(Qt::MetaModifier);
+	const auto applySpeed = [&](float64 speed) {
+		activateControls();
+		playbackControlsSpeedChanged(std::clamp(
+			speed,
+			Media::kSpeedMin,
+			Media::kSpeedMax));
+	};
 	const auto handleStreamedArrowPress = [&] {
 		if (key != Qt::Key_Left && key != Qt::Key_Right) {
 			return false;
@@ -5814,12 +5821,22 @@ void OverlayWidget::handleKeyPress(not_null<QKeyEvent*> e) {
 				|| key == Qt::Key_2
 				|| key == Qt::Key_3)) {
 			if (shift && !ctrl && !alt && !meta && key == Qt::Key_1) {
-				activateControls();
-				playbackControlsSpeedChanged(0.5);
+				applySpeed(0.5);
 				return;
 			} else if (!shift && !ctrl && !alt && !meta) {
-				activateControls();
-				playbackControlsSpeedChanged(key - Qt::Key_0);
+				applySpeed(key - Qt::Key_0);
+				return;
+			}
+		} else if (!ctrl && !alt && !meta
+			&& (key == Qt::Key_QuoteLeft
+				|| key == Qt::Key_AsciiTilde)) {
+			applySpeed(Media::kSpeedMin);
+			return;
+		} else if (!ctrl && !alt && !meta && key == Qt::Key_PageUp) {
+			applySpeed(1.);
+			return;
+		} else if (!ctrl && !alt && !meta && key == Qt::Key_PageDown) {
+			applySpeed(2.);
 				return;
 			}
 		} else if (handleStreamedArrowPress()) {
@@ -5944,7 +5961,9 @@ void OverlayWidget::handleArrowHoldTimeout() {
 	}
 	_arrowHoldSpeedActive = true;
 	activateControls();
-	playbackControlsSpeedChanged((key == Qt::Key_Left) ? 0.5 : 3.);
+	playbackControlsSpeedChanged((key == Qt::Key_Left)
+		? Media::kSpeedMin
+		: Media::kSpeedMax);
 }
 
 void OverlayWidget::handleWheelEvent(not_null<QWheelEvent*> e) {
