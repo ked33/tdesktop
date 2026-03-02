@@ -54,12 +54,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/themes/window_theme.h" // IsNightMode.
 #include "window/window_session_controller.h"
 #include "apiwrap.h"
-#include "base/qt/qt_key_modifiers.h"
 #include "main/main_account.h"
 #include "styles/style_chat.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_dialogs.h"
-#include "window/window_peer_menu.h"
 
 namespace HistoryView {
 namespace {
@@ -67,10 +65,6 @@ namespace {
 constexpr auto kSummarizeThreshold = 512;
 constexpr auto kPlayStatusLimit = 2;
 const auto kPsaTooltipPrefix = "cloud_lng_tooltip_psa_";
-
-QString FastForwardText() {
-	return tr::lng_selected_forward(tr::now);
-}
 
 
 [[nodiscard]] ClickHandlerPtr MakeTopicButtonLink(
@@ -3648,9 +3642,6 @@ void Message::refreshDataIdHook() {
 	if (base::take(_fastReplyLink)) {
 		_fastReplyLink = fastReplyLink();
 	}
-	if (base::take(_fastForwardLink)) {
-		_fastForwardLink = fastForwardLink();
-	}
 	if (_viewButton) {
 		_viewButton = nullptr;
 		updateViewButtonExistence();
@@ -4237,18 +4228,6 @@ ClickHandlerPtr Message::fastReplyLink() const {
 		delegate()->elementReplyTo({ itemId });
 	}));
 	return _fastReplyLink;
-}
-
-ClickHandlerPtr Message::fastForwardLink() const {
-	if (_fastForwardLink) {
-		return _fastForwardLink;
-	}
-	const auto itemId = data()->fullId();
-	_fastForwardLink = std::make_shared<LambdaClickHandler>([=](ClickContext context) {
-		const auto my = context.other.value<ClickHandlerContext>();
-		ShowForwardMessagesBox(my.sessionWindow.get(), { 1, itemId }, nullptr);
-	});
-	return _fastForwardLink;
 }
 
 bool Message::isPinnedContext() const {
