@@ -635,27 +635,6 @@ bool ChannelData::lastParticipantsRequestNeeded() const {
 			& MegagroupInfo::LastParticipantsCountOutdated);
 }
 
-// Source from kotatogram
-QString ChannelData::adminTitle(not_null<UserData*> user) const {
-	if (!isGroupAdmin(user)) {
-		return QString();
-	}
-	const auto info = mgInfo.get();
-	const auto i = mgInfo->admins.find(peerToUser(user->id));
-	const auto custom = (i != mgInfo->admins.end())
-		? i->second
-		: (info->creator == user)
-		? info->creatorRank
-		: QString();
-	return !custom.isEmpty()
-		? custom
-		: (info->creator == user)
-		? tr::lng_owner_badge(tr::now)
-		: (i != mgInfo->admins.end())
-		? tr::lng_admin_badge(tr::now)
-		: QString();
-}
-
 auto ChannelData::unavailableReasons() const
 -> const std::vector<Data::UnavailableReason> & {
 	return _unavailableReasons;
