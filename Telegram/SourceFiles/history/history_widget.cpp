@@ -7849,16 +7849,9 @@ void HistoryWidget::keyPressEvent(QKeyEvent *e) {
 	} else if ((e->key() == Qt::Key_O)
 		&& (e->modifiers() == Qt::ControlModifier)) {
 		chooseAttach();
-	} else if (e->key() == Qt::Key_Control) {
-		_list->repaint();
-		e->ignore();
 	} else {
 		e->ignore();
 	}
-}
-
-void HistoryWidget::keyReleaseEvent(QKeyEvent *e) {
-	_list->repaint();
 }
 
 void HistoryWidget::handlePeerMigration() {
