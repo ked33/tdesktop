@@ -317,7 +317,6 @@ public:
 	void markForbidden();
 
 	[[nodiscard]] bool isGroupAdmin(not_null<UserData*> user) const;
-	[[nodiscard]] QString adminTitle(not_null<UserData*> user) const;
 	[[nodiscard]] bool lastParticipantsRequestNeeded() const;
 	[[nodiscard]] bool isMegagroup() const {
 		return flags() & Flag::Megagroup;

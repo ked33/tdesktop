@@ -283,10 +283,6 @@ void Message::refreshRightBadge() {
 		}
 		const auto channel = item->history()->peer->asMegagroup();
 		const auto user = item->author()->asUser();
-		const auto isSendAs = data()->history()->peer->isMegagroup() && data()->from()->isChannel();
-		if (isSendAs) {
-			return tr::lng_channel_status(tr::now);
-		}
 		if (!channel) {
 			if (const auto chat = item->history()->peer->asChat()) {
 				if (user) {
@@ -1749,9 +1745,6 @@ void Message::paintFromName(
 	if (badgeWidth) {
 		p.setPen(stm->msgDateFg);
 		if (const auto badge = Get<RightBadge>()) {
-			const auto activeLink = displayFastForward() ? _fastForwardLink : _fastReplyLink;
-			const auto text = displayFastForward() ? FastForwardText() : FastReplyText();
-			p.setFont(ClickHandler::showAsActive(activeLink)
 			const auto badgeColor = (badge->role == BadgeRole::Creator)
 				? st::rankOwnerFg->c
 				: (badge->role == BadgeRole::Admin)
@@ -2773,24 +2766,6 @@ bool Message::getStateFromName(
 		not_null<TextState*> outResult) const {
 	if (!displayFromName()) {
 		return false;
-	}
-	const auto replyWidth = [&] {
-		if (isUnderCursor()) {
-			if (displayFastForward()) {
-				return st::msgFont->width(FastForwardText());
-			} else if (displayFastReply()) {
-				return st::msgFont->width(FastReplyText());
-			}
-		}
-		return 0;
-	}();
-	if (replyWidth
-		&& point.x() >= trect.left() + trect.width() - replyWidth
-		&& point.x() < trect.left() + trect.width() + st::msgPadding.right()
-		&& point.y() >= trect.top() - st::msgPadding.top()
-		&& point.y() < trect.top() + st::msgServiceFont->height) {
-		outResult->link = displayFastForward() ? fastForwardLink() : fastReplyLink();
-		return true;
 	}
 	if (point.y() >= trect.top() && point.y() < trect.top() + st::msgNameFont->height) {
 		auto availableLeft = trect.left();
