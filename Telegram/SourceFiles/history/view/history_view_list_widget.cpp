@@ -3053,7 +3053,7 @@ void ListWidget::mousePressEvent(QMouseEvent *e) {
 	if (e->button() == Qt::MiddleButton) {
 		mouseActionCancel();
 		ClickHandler::unpressed();
-		_middleClickAutoscroll.start(e->globalPos());
+		_middleClickAutoscroll.toggleOrBeginHold(e->globalPos());
 		e->accept();
 		return;
 	}
@@ -3285,6 +3285,10 @@ void ListWidget::mouseMoveEvent(QMouseEvent *e) {
 }
 
 void ListWidget::mouseReleaseEvent(QMouseEvent *e) {
+	if (_middleClickAutoscroll.finishHold(e->button())) {
+		e->accept();
+		return;
+	}
 	if (_middleClickAutoscroll.active()) {
 		e->accept();
 		return;
@@ -3873,7 +3877,7 @@ void ListWidget::mouseActionUpdate() {
 		lnkhost = reactionView;
 	} else if (overReplyBtn) {
 		dragState = replyBtnState;
-		lnkhost = replyBtnView;
+		lnkhost = _replyButtonManager.get();
 	} else if (view) {
 		auto cursorDeltaLength = [&] {
 			auto cursorDelta = (_overState.point - _pressState.point);

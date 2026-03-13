@@ -763,12 +763,14 @@ not_null<UserData*> Session::processUser(const MTPUser &data) {
 			status = data.vstatus();
 			if (!minimal) {
 				const auto newUsername = uname;
-				const auto newUsernames = data.vusernames()
-					? Api::Usernames::FromTL(*data.vusernames())
-					: !newUsername.isEmpty()
-					? Data::Usernames{{ newUsername, true, true }}
-					: Data::Usernames();
-				result->setUsernames(newUsernames);
+				if (data.vusernames()) {
+					result->setUsernames(
+						Api::Usernames::FromTL(*data.vusernames()));
+				} else if (!newUsername.isEmpty()) {
+					result->setUsernames({{ newUsername, true, true }});
+				} else {
+					result->setUsernames({});
+				}
 			}
 		}
 		if (const auto &status = data.vemoji_status()) {
@@ -985,15 +987,17 @@ not_null<PeerData*> Session::processChat(const MTPChat &data) {
 
 		{
 			const auto newUsername = qs(data.vusername().value_or_empty());
-			const auto newUsernames = data.vusernames()
-				? Api::Usernames::FromTL(*data.vusernames())
-				: !newUsername.isEmpty()
-				? Data::Usernames{ Data::Username{ newUsername, true, true } }
-				: Data::Usernames();
 			channel->setName(
 				qs(data.vtitle()),
 				TextUtilities::SingleLine(newUsername));
-			channel->setUsernames(newUsernames);
+			if (data.vusernames()) {
+				channel->setUsernames(
+					Api::Usernames::FromTL(*data.vusernames()));
+			} else if (!newUsername.isEmpty()) {
+				channel->setUsernames({ { newUsername, true, true } });
+			} else {
+				channel->setUsernames({});
+			}
 		}
 		const auto hasUsername = !channel->username().isEmpty();
 
@@ -1733,7 +1737,7 @@ void Session::enumerateItemViews(
 		not_null<const HistoryItem*> item,
 		Method method) {
 	if (const auto i = _views.find(item); i != _views.end()) {
-		for (const auto view : i->second) {
+		for (const auto &view : i->second) {
 			method(view);
 		}
 	}
@@ -2031,6 +2035,14 @@ rpl::producer<not_null<const HistoryItem*>> Session::itemRepaintRequest() const 
 	return _itemRepaintRequest.events();
 }
 
+void Session::requestDrawToReply(DrawToReplyRequest request) {
+	_drawToReplyRequests.fire_copy(std::move(request));
+}
+
+rpl::producer<DrawToReplyRequest> Session::drawToReplyRequests() const {
+	return _drawToReplyRequests.events();
+}
+
 void Session::requestViewRepaint(not_null<const ViewElement*> view, QRect r) {
 	_viewRepaintRequest.fire_copy({ view, r });
 }
@@ -2321,7 +2333,7 @@ void Session::unloadHeavyViewParts(
 				remove.push_back(view);
 			}
 		}
-		for (const auto view : remove) {
+		for (const auto &view : remove) {
 			view->unloadHeavyPart();
 		}
 	}
@@ -2341,7 +2353,7 @@ void Session::unloadHeavyViewParts(
 			remove.push_back(view);
 		}
 	}
-	for (const auto view : remove) {
+	for (const auto &view : remove) {
 		view->unloadHeavyPart();
 	}
 }
@@ -4703,7 +4715,7 @@ void Session::registerContactItem(
 	}
 
 	if (const auto i = _views.find(item); i != _views.end()) {
-		for (const auto view : i->second) {
+		for (const auto &view : i->second) {
 			if (const auto media = view->media()) {
 				media->updateSharedContactUserId(contactId);
 			}
@@ -4770,7 +4782,7 @@ void Session::unregisterStoryItem(
 void Session::refreshStoryItemViews(FullStoryId id) {
 	const auto i = _storyItems.find(id);
 	if (i != _storyItems.end()) {
-		for (const auto item : i->second) {
+		for (const auto &item : i->second) {
 			if (const auto media = item->media()) {
 				if (media->storyMention()) {
 					item->updateStoryMentionText();
