@@ -2503,7 +2503,9 @@ bool PeerMenuShowAddTodoListTasks(not_null<HistoryItem*> item) {
 		&& !item->Has<HistoryMessageForwarded>()
 		&& todolist
 		&& (todolist->items.size() < appConfig->todoListItemsLimit())
-		&& (item->out() || todolist->othersCanAppend());
+		&& (item->out()
+			|| item->history()->peer->isSelf()
+			|| todolist->othersCanAppend());
 }
 
 void PeerMenuAddTodoListTasks(
@@ -3356,7 +3358,7 @@ base::weak_qptr<Ui::BoxContent> ShowForwardMessagesBox(
 	const auto sendMenuType = [=] {
 		const auto selected = state->box->collectSelectedRows();
 		const auto hasPaid = [&] {
-			for (const auto peer : selected) {
+			for (const auto &peer : selected) {
 				if (peer->starsPerMessageChecked()) {
 					return true;
 				}
@@ -4201,16 +4203,21 @@ void AddSenderUserpicModerateAction(
 	const auto moderateChannel = moderateItem
 		? moderateItem->history()->peer->asChannel()
 		: nullptr;
-	const auto moderateUser = moderateItem
-		? moderateItem->from()->asUser()
+	const auto moderateFrom = moderateItem
+		? moderateItem->from().get()
+		: nullptr;
+	const auto moderateUser = moderateFrom
+		? moderateFrom->asUser()
 		: nullptr;
 	const auto canDeleteAndBan = moderateItem
 		&& moderateChannel
 		&& moderateChannel->isMegagroup()
-		&& moderateUser
-		&& !moderateChannel->isGroupAdmin(moderateUser)
+		&& moderateFrom
+		&& (!moderateUser || !moderateChannel->isGroupAdmin(moderateUser))
 		&& moderateItem->suggestBanReport()
-		&& moderateItem->suggestDeleteAllReport();
+		&& moderateItem->suggestDeleteAllReport()
+		&& CanCreateModerateMessagesBox(
+			HistoryItemsList{ not_null<HistoryItem*>(moderateItem) });
 	if (canDeleteAndBan) {
 		addAction({ .isSeparator = true });
 		addAction({
