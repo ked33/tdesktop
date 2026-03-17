@@ -5813,40 +5813,40 @@ void OverlayWidget::handleKeyPress(not_null<QKeyEvent*> e) {
 		if (toggleFull) {
 			playbackToggleFullScreen();
 			return;
-			} else if (key == Qt::Key_Space) {
-				playbackPauseResume();
-				return;
-			} else if (!modifiers.testFlag(Qt::KeypadModifier)
-				&& (key == Qt::Key_1
-					|| key == Qt::Key_2
-					|| key == Qt::Key_3)
-				&& !shift
-				&& !ctrl
-				&& !alt
-				&& !meta) {
-				if (key == Qt::Key_1) {
-					applySpeed(1.);
-				} else if (key == Qt::Key_2) {
-					applySpeed(0.5);
-				} else {
-					applySpeed(2.);
-				}
-				return;
-			} else if (!ctrl && !alt && !meta
-				&& (key == Qt::Key_QuoteLeft
-					|| key == Qt::Key_AsciiTilde)) {
-				applySpeed(Media::kSpeedMin);
-				return;
-			} else if (!ctrl && !alt && !meta && key == Qt::Key_PageUp) {
-				activateControls();
-				playbackControlsRotate();
-				return;
-			} else if (!ctrl && !alt && !meta && key == Qt::Key_PageDown) {
+		} else if (key == Qt::Key_Space) {
+			playbackPauseResume();
+			return;
+		} else if (!modifiers.testFlag(Qt::KeypadModifier)
+			&& (key == Qt::Key_1
+				|| key == Qt::Key_2
+				|| key == Qt::Key_3)
+			&& !shift
+			&& !ctrl
+			&& !alt
+			&& !meta) {
+			if (key == Qt::Key_1) {
+				applySpeed(1.);
+			} else if (key == Qt::Key_2) {
+				applySpeed(0.5);
+			} else {
 				applySpeed(2.);
-				return;
-			} else if (handleStreamedArrowPress()) {
-				return;
-			} else if (_fullScreenVideo) {
+			}
+			return;
+		} else if (!ctrl && !alt && !meta
+			&& (key == Qt::Key_QuoteLeft
+				|| key == Qt::Key_AsciiTilde)) {
+			applySpeed(Media::kSpeedMin);
+			return;
+		} else if (!ctrl && !alt && !meta && key == Qt::Key_PageUp) {
+			activateControls();
+			playbackControlsRotate();
+			return;
+		} else if (!ctrl && !alt && !meta && key == Qt::Key_PageDown) {
+			applySpeed(2.);
+			return;
+		} else if (handleStreamedArrowPress()) {
+			return;
+		} else if (_fullScreenVideo) {
 			if (key == Qt::Key_Escape) {
 				playbackToggleFullScreen();
 			} else if (ctrl) {
