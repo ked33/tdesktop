@@ -136,6 +136,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "boxes/abstract_box.h"
 #include "data/business/data_shortcut_messages.h"
+#include "data/data_types.h"
 
 namespace Window {
 namespace {
@@ -1556,15 +1557,68 @@ void Filler::addPinnedMessages() {
 }
 
 void Filler::addFirstMessage() {
-	const auto peer = _peer->isMegagroup() ? _peer->asMegagroup() : _peer->asChannel();
+	const auto peer = _peer->isMegagroup()
+		? _peer->asMegagroup()
+		: _peer->asChannel();
 	if (!peer) {
 		return;
 	}
+	const auto controller = _controller;
+	const auto history = _request.key.history();
 	_addAction(tr::lng_go_to_first_message(tr::now), [=] {
-		App::wnd()->sessionController()->showPeerHistory(
-				peer,
-				Window::SectionShow::Way::Forward,
-				1);
+		controller->showPeerHistory(peer, Window::SectionShow::Way::Forward, 1);
+	}, &st::menuIconShowInChat);
+	_addAction(tr::lng_go_to_random_id_message(tr::now), [=] {
+		const auto weak = base::make_weak(controller);
+		const auto jump = [=](MsgId maxId) {
+			if (!IsServerMsgId(maxId)) {
+				return;
+			}
+			const auto limit = uint64(maxId.bare);
+			if (!limit) {
+				return;
+			}
+			const auto randomId = MsgId(
+				1 + (base::RandomValue<uint64>() % limit));
+			if (const auto strong = weak.get()) {
+				strong->showPeerHistory(
+					peer,
+					Window::SectionShow::Way::Forward,
+					randomId);
+			}
+		};
+		if (history) {
+			if (const auto last = history->lastServerMessage()) {
+				jump(last->id);
+				return;
+			}
+		}
+		peer->session().api().request(MTPmessages_GetHistory(
+			peer->input(),
+			MTP_int(0),
+			MTP_int(0),
+			MTP_int(0),
+			MTP_int(1),
+			MTP_int(0),
+			MTP_int(0),
+			MTP_long(0)
+		)).done([=](const MTPmessages_Messages &result) {
+			const auto from = [](const auto &data) {
+				return data.vmessages().v.isEmpty()
+					? MsgId()
+					: IdFromMessage(data.vmessages().v.front());
+			};
+			const auto maxId = result.match([&](const MTPDmessages_messages &data) {
+				return from(data);
+			}, [&](const MTPDmessages_messagesSlice &data) {
+				return from(data);
+			}, [&](const MTPDmessages_channelMessages &data) {
+				return from(data);
+			}, [&](const MTPDmessages_messagesNotModified &) {
+				return MsgId();
+			});
+			jump(maxId);
+		}).send();
 	}, &st::menuIconShowInChat);
 }
 
