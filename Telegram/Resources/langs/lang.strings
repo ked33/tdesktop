@@ -2203,6 +2203,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_sure_delete_history" = "Are you sure you want to delete all message history with {contact}?\n\nThis action cannot be undone.";
 "lng_sure_delete_group_history" = "Are you sure you want to delete all messages in \"{group}\"?\n\nThis action cannot be undone.";
 "lng_sure_delete_channel_history" = "Are you sure you want to delete all messages in \"{channel}\"?\n\n**This action cannot be undone.**";
+"lng_sure_delete_own_messages" = "Are you sure you want to delete all messages you sent in this chat?\n\nThis action cannot be undone.";
 "lng_sure_delete_and_exit" = "Are you sure you want to delete all message history and leave «{group}»?\n\nThis action cannot be undone.";
 "lng_sure_leave_channel" = "Are you sure you want to leave\nthis channel?";
 "lng_sure_delete_channel" = "Are you sure you want to delete this channel? All subscribers will be removed and all messages will be lost.";
@@ -4920,6 +4921,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_context_send_now_msg" = "Send Now";
 "lng_context_reschedule" = "Reschedule";
 "lng_context_delete_msg" = "Delete";
+"lng_context_delete_own_messages" = "Delete own messages";
 "lng_context_auto_delete_in" = "auto-deletes in {duration}";
 "lng_context_select_msg" = "Select";
 "lng_context_select_msg_bulk" = "Select up to this message";
