@@ -108,6 +108,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat.h"
 #include "data/data_forum.h"
 #include "data/data_forum_topic.h"
+#include "data/data_search_controller.h"
 #include "data/data_user.h"
 #include "data/data_saved_messages.h"
 #include "data/data_saved_sublist.h"
@@ -131,6 +132,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QClipboard>
 #include <api/api_text_entities.h>
 #include <history/view/history_view_pinned_section.h>
+#include <algorithm>
 
 #include "boxes/abstract_box.h"
 #include "data/business/data_shortcut_messages.h"
@@ -194,6 +196,7 @@ namespace {
 
 constexpr auto kArchivedToastDuration = crl::time(5000);
 constexpr auto kMaxUnreadWithoutConfirmation = 1000;
+constexpr auto kDeleteOwnMessagesBatchSize = 100;
 
 base::options::toggle ViewProfileInChatsListContextMenu({
 	.id = kOptionViewProfileInChatsListContextMenu,
@@ -218,6 +221,121 @@ void MarkAsReadChatList(not_null<Dialogs::MainList*> list) {
 		}
 	}
 	ranges::for_each(mark, MarkAsReadThread);
+}
+
+void DeleteOwnMessagesAfterConfirm(not_null<PeerData*> peer) {
+	const auto session = &peer->session();
+	const auto channel = peer->asChannel();
+	const auto collected = std::make_shared<std::vector<MsgId>>();
+	const auto removeNext = std::make_shared<Fn<void(int)>>();
+	const auto requestNext = std::make_shared<Fn<void(MsgId)>>();
+
+	*removeNext = [=](int index) {
+		if (index >= int(collected->size())) {
+			return;
+		}
+
+		auto ids = QVector<MTPint>();
+		const auto count = std::min(
+			kDeleteOwnMessagesBatchSize,
+			int(collected->size()) - index);
+		ids.reserve(count);
+		for (auto i = 0; i != count; ++i) {
+			ids.push_back(MTP_int((*collected)[index + i].bare));
+		}
+
+		const auto done = [=](const MTPmessages_AffectedMessages &result) {
+			session->api().applyAffectedMessages(peer, result);
+			if (channel) {
+				session->data().processMessagesDeleted(peer->id, ids);
+			} else {
+				session->data().processNonChannelMessagesDeleted(ids);
+			}
+			base::call_delayed(
+				crl::time(500 + (base::RandomValue<int>() % 500)),
+				[=] { (*removeNext)(index + ids.size()); });
+		};
+		const auto fail = [=](const MTP::Error &) {
+			base::call_delayed(crl::time(1000), [=] { (*removeNext)(index); });
+		};
+
+		if (channel) {
+			session->api().request(MTPchannels_DeleteMessages(
+				channel->inputChannel(),
+				MTP_vector<MTPint>(ids)
+			)).done(done).fail(fail).handleFloodErrors().send();
+		} else {
+			using Flag = MTPmessages_DeleteMessages::Flag;
+			session->api().request(MTPmessages_DeleteMessages(
+				MTP_flags(Flag::f_revoke),
+				MTP_vector<MTPint>(ids)
+			)).done(done).fail(fail).handleFloodErrors().send();
+		}
+	};
+
+	*requestNext = [=](MsgId from) {
+		using Flag = MTPmessages_Search::Flag;
+		session->api().request(MTPmessages_Search(
+			MTP_flags(Flag::f_from_id),
+			peer->input(),
+			MTP_string(),
+			MTP_inputPeerSelf(),
+			MTPInputPeer(),
+			MTPVector<MTPReaction>(),
+			MTP_int(0),
+			MTP_inputMessagesFilterEmpty(),
+			MTP_int(0),
+			MTP_int(0),
+			MTP_int(from.bare),
+			MTP_int(0),
+			MTP_int(kDeleteOwnMessagesBatchSize),
+			MTP_int(0),
+			MTP_int(0),
+			MTP_long(0)
+		)).done([=](const Api::HistoryRequestResult &result) {
+			auto parsed = Api::ParseHistoryResult(
+				peer,
+				from,
+				Data::LoadDirection::Before,
+				result);
+			auto minId = MsgId();
+			for (const auto &id : parsed.messageIds) {
+				if (!minId || (id < minId)) {
+					minId = id;
+				}
+				collected->push_back(id);
+			}
+			if (parsed.messageIds.size() == kDeleteOwnMessagesBatchSize
+				&& minId) {
+				(*requestNext)(minId - MsgId(1));
+			} else {
+				(*removeNext)(0);
+			}
+		}).fail([=](const MTP::Error &) {
+		}).send();
+	};
+
+	(*requestNext)(MsgId(0));
+}
+
+Fn<void()> DeleteOwnMessagesHandler(
+		not_null<Window::SessionController*> controller,
+		not_null<PeerData*> peer) {
+	return [=] {
+		if (controller->showFrozenError()) {
+			return;
+		}
+		controller->show(Ui::MakeConfirmBox({
+			.text = tr::lng_sure_delete_own_messages(),
+			.confirmed = [=](Fn<void()> &&close) {
+				DeleteOwnMessagesAfterConfirm(peer);
+				close();
+			},
+			.confirmText = tr::lng_box_delete(),
+			.cancelText = tr::lng_cancel(),
+			.confirmStyle = &st::attentionBoxButton,
+		}));
+	};
 }
 
 void PeerMenuAddMuteSubmenuAction(
@@ -290,6 +408,7 @@ private:
 	void addToggleUnreadMark();
 	void addToggleArchive();
 	void addClearHistory();
+	void addDeleteOwnMessages();
 	void addDeleteChat();
 	void addLeaveChat();
 	void addJoinChat();
@@ -789,6 +908,32 @@ void Filler::addClearHistory() {
 		tr::lng_profile_clear_history(tr::now),
 		ClearHistoryHandler(_controller, _peer),
 		&st::menuIconClear);
+}
+
+void Filler::addDeleteOwnMessages() {
+	if (!_peer || _topic) {
+		return;
+	}
+	if (const auto chat = _peer->asChat()) {
+		if (!chat->amIn()
+			|| chat->amCreator()
+			|| chat->hasAdminRights()) {
+			return;
+		}
+	} else if (const auto channel = _peer->asChannel()) {
+		if (!channel->isMegagroup()
+			|| !channel->amIn()
+			|| channel->amCreator()
+			|| channel->hasAdminRights()) {
+			return;
+		}
+	} else {
+		return;
+	}
+	_addAction(
+		tr::lng_context_delete_own_messages(tr::now),
+		DeleteOwnMessagesHandler(_controller, _peer),
+		&st::menuIconTTL);
 }
 
 void Filler::addDeleteChat() {
@@ -1630,6 +1775,7 @@ void Filler::fillContextMenuActions() {
 		}
 	}
 	addClearHistory();
+	addDeleteOwnMessages();
 	addDeleteChat();
 	addLeaveChat();
 	addDeleteTopic();
