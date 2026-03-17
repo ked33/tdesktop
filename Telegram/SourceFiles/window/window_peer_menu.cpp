@@ -1782,6 +1782,7 @@ void Filler::fillContextMenuActions() {
 }
 
 void Filler::fillHistoryActions() {
+	addNewWindow(false);
 	addToggleMuteSubmenu(true);
 	addCreateTopic();
 	addInfo();
@@ -1800,6 +1801,7 @@ void Filler::fillHistoryActions() {
 	addDirectMessages();
 	addExportChat();
 	addTranslate();
+	addToggleFolder();
 	addReport();
 	addClearHistory();
 	addDeleteChat();
