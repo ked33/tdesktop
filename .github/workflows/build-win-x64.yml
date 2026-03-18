@@ -87,6 +87,7 @@ jobs:
           for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALLPATH=%%i"
           if not defined VSINSTALLPATH exit /b 1
           call "%VSINSTALLPATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          echo Platform=x64>>"%GITHUB_ENV%"
           for /f "delims=" %%i in ('set') do @echo %%i>>"%GITHUB_ENV%"
 
       - name: NuGet sources
