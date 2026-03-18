@@ -744,6 +744,8 @@ private:
 	int _arrowHoldKey = 0;
 	bool _arrowHoldPressed = false;
 	bool _arrowHoldSpeedActive = false;
+	bool _clickHandlerActive = false;
+	bool _clickHandlerPressed = false;
 
 	bool _touchPress = false;
 	bool _touchMove = false;

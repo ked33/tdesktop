@@ -215,7 +215,9 @@ void ToggleStarGiftSaved(
 		if (const auto onstack = done) {
 			onstack(false);
 		}
-		show->showToast(error.type());
+		if (!Ui::ShowGiftErrorToast(show, error)) {
+			show->showToast(error.type());
+		}
 	}).send();
 }
 
@@ -271,7 +273,9 @@ void ConvertStarGift(
 				tr::rich));
 		done(true);
 	}).fail([=](const MTP::Error &error) {
-		show->showToast(error.type());
+		if (!Ui::ShowGiftErrorToast(show, error)) {
+			show->showToast(error.type());
+		}
 		done(false);
 	}).send();
 }
@@ -1135,6 +1139,9 @@ void FillUniqueGiftMenu(
 			if (Ui::ShowCraftLaterError(show, unique)) {
 				return;
 			}
+			if (Ui::ShowCraftAddressError(show, unique)) {
+				return;
+			}
 			const auto savedId = EntryToSavedStarGiftId(&show->session(), e);
 			if (const auto window = show->resolveWindow()) {
 				Ui::ShowGiftCraftInfoBox(window, unique, savedId);
@@ -1365,7 +1372,8 @@ void GenericCreditsEntryCover(
 		if (e.bareGiftOwnerId == session->userPeerId().value) {
 			if (const auto fromId = PeerId(e.barePeerId)) {
 				const auto from = session->data().peer(fromId);
-				AttachGiftSenderBadge(box, show, from, e.date);
+				const auto crafted = uniqueGift->crafted;
+				AttachGiftSenderBadge(box, show, from, e.date, crafted);
 			}
 		}
 	} else if (const auto callback = Ui::PaintPreviewCallback(session, e)) {
@@ -1601,6 +1609,9 @@ void GenericCreditsEntryBody(
 		const auto craft = canCraft ? [=] {
 			const auto unique = e.uniqueGift;
 			if (Ui::ShowCraftLaterError(show, unique)) {
+				return;
+			}
+			if (Ui::ShowCraftAddressError(show, unique)) {
 				return;
 			}
 			const auto savedId = EntryToSavedStarGiftId(&show->session(), e);
