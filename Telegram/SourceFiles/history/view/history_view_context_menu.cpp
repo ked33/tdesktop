@@ -352,12 +352,17 @@ void AddPostLinkAction(
 		? request.view->context()
 		: Context::History;
 	const auto controller = request.navigation->parentController();
-	menu->addAction(
-		(item->history()->peer->isMegagroup()
-			? tr::lng_context_copy_message_link
-			: tr::lng_context_copy_post_link)(tr::now),
-		[=] { CopyPostLink(controller, itemId, context); },
-		&st::menuIconLink);
+	menu->insertAction(0, base::make_unique_q<Ui::Menu::Action>(
+		menu->menu(),
+		menu->st().menu,
+		Ui::Menu::CreateAction(
+			menu->menu(),
+			(item->history()->peer->isMegagroup()
+				? tr::lng_context_copy_message_link
+				: tr::lng_context_copy_post_link)(tr::now),
+			[=] { CopyPostLink(controller, itemId, context); }),
+		&st::menuIconLink,
+		&st::menuIconLink));
 }
 
 MessageIdsList ExtractIdsList(const SelectedItems &items) {
