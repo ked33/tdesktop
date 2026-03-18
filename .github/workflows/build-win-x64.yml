@@ -10,7 +10,6 @@ jobs:
 
     env:
       BUILD_PATH: D:\TBuild
-      CACHE_KEY: ${{ hashFiles('Telegram/build/prepare/**', 'docs/building-win.md') }}
 
     steps:
       - name: Checkout
@@ -47,7 +46,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: D:\TBuild\ThirdParty
-          key: win64-third-party-${{ env.CACHE_KEY }}
+          key: win64-third-party-${{ hashFiles('Telegram/build/prepare/**', 'docs/building-win.md') }}
           restore-keys: |
             win64-third-party-
 
@@ -60,7 +59,7 @@ jobs:
             !D:\TBuild\Libraries\win64\[qQ]t[_-]*
             D:\TBuild\Libraries\win64\cache_keys\*
             !D:\TBuild\Libraries\win64\cache_keys\[qQ]t[_-]*
-          key: win64-libs-${{ env.CACHE_KEY }}
+          key: win64-libs-${{ hashFiles('Telegram/build/prepare/**', 'docs/building-win.md') }}
           restore-keys: |
             win64-libs-
 
@@ -70,7 +69,7 @@ jobs:
           path: |
             D:\TBuild\Libraries\win64\[qQ]t[_-]*
             D:\TBuild\Libraries\win64\cache_keys\[qQ]t[_-]*
-          key: win64-qt-${{ env.CACHE_KEY }}
+          key: win64-qt-${{ hashFiles('Telegram/build/prepare/**', 'docs/building-win.md') }}
           restore-keys: |
             win64-qt-
 
