@@ -520,24 +520,16 @@ void SetupRows(
 	};
 
 	if (GetEnhancedBool("show_phone_number")) {
-		AddRow(
+		const auto phoneButton = AddRow(
 			container,
 			tr::lng_settings_phone_label(),
 			Info::Profile::PhoneValue(self),
 			tr::lng_profile_copy_phone(tr::now),
 			showChangePhone,
 			{ &st::menuIconPhone });
-	}
-
-	const auto phoneButton = AddRow(
-		container,
-		tr::lng_settings_phone_label(),
-		Info::Profile::PhoneValue(self),
-		tr::lng_profile_copy_phone(tr::now),
-		showChangePhone,
-		{ &st::menuIconPhone });
-	if (targets) {
-		targets->phone = phoneButton;
+		if (targets) {
+			targets->phone = phoneButton;
+		}
 	}
 
 	auto username = Info::Profile::UsernameValue(self);
