@@ -10,6 +10,7 @@ jobs:
 
     env:
       BUILD_PATH: D:\TBuild
+      CACHE_KEY: ${{ hashFiles('Telegram/build/prepare/**', 'docs/building-win.md') }}
 
     steps:
       - name: Checkout
@@ -17,6 +18,16 @@ jobs:
         with:
           fetch-depth: 1
           submodules: recursive
+
+      - name: Read SDK version
+        shell: pwsh
+        run: |
+          $content = Get-Content "$env:GITHUB_WORKSPACE\docs\building-win.md" -Raw
+          $match = [regex]::Match($content, '\*\*(.*?)\*\* SDK version')
+          if (-not $match.Success) {
+            throw "SDK version not found in docs/building-win.md"
+          }
+          "SDK=$($match.Groups[1].Value)" >> $env:GITHUB_ENV
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
@@ -32,26 +43,54 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$env:BUILD_PATH\Libraries\win64" | Out-Null
           New-Item -ItemType Junction -Path "$env:BUILD_PATH\tdesktop" -Target "$env:GITHUB_WORKSPACE" | Out-Null
 
-      - name: Cache dependencies
+      - name: Cache third-party
+        uses: actions/cache@v4
+        with:
+          path: D:\TBuild\ThirdParty
+          key: win64-third-party-${{ env.CACHE_KEY }}
+          restore-keys: |
+            win64-third-party-
+
+      - name: Cache libraries
         uses: actions/cache@v4
         with:
           path: |
-            D:\TBuild\ThirdParty
-            D:\TBuild\Libraries
-          key: win64-deps-${{ hashFiles('Telegram/build/prepare/**') }}
+            D:\TBuild\Libraries\win64\*
+            !D:\TBuild\Libraries\win64\cache_keys
+            !D:\TBuild\Libraries\win64\[qQ]t[_-]*
+            D:\TBuild\Libraries\win64\cache_keys\*
+            !D:\TBuild\Libraries\win64\cache_keys\[qQ]t[_-]*
+          key: win64-libs-${{ env.CACHE_KEY }}
           restore-keys: |
-            win64-deps-
+            win64-libs-
+
+      - name: Cache Qt
+        uses: actions/cache@v4
+        with:
+          path: |
+            D:\TBuild\Libraries\win64\[qQ]t[_-]*
+            D:\TBuild\Libraries\win64\cache_keys\[qQ]t[_-]*
+          key: win64-qt-${{ env.CACHE_KEY }}
+          restore-keys: |
+            win64-qt-
 
       - name: Configure MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
+          sdk: ${{ env.SDK }}
+
+      - name: NuGet sources
+        shell: cmd
+        run: |
+          nuget sources Disable -Name "Microsoft Visual Studio Offline Packages"
+          nuget sources Add -Source https://api.nuget.org/v3/index.json & exit 0
 
       - name: Prepare third-party libraries
         shell: cmd
         run: |
           cd /d %BUILD_PATH%
-          tdesktop\Telegram\build\prepare\win.bat
+          tdesktop\Telegram\build\prepare\win.bat silent
 
       - name: Configure project
         shell: cmd
@@ -62,7 +101,12 @@ jobs:
           if "%TDESKTOP_API_ID%"=="" exit /b 1
           if "%TDESKTOP_API_HASH%"=="" exit /b 1
           cd /d %BUILD_PATH%\tdesktop\Telegram
-          configure.bat x64 -D TDESKTOP_API_ID=%TDESKTOP_API_ID% -D TDESKTOP_API_HASH=%TDESKTOP_API_HASH%
+          configure.bat x64 ^
+            -D TDESKTOP_API_ID=%TDESKTOP_API_ID% ^
+            -D TDESKTOP_API_HASH=%TDESKTOP_API_HASH% ^
+            -D CMAKE_CONFIGURATION_TYPES=Release ^
+            -D CMAKE_COMPILE_WARNING_AS_ERROR=OFF ^
+            -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=
 
       - name: Build Telegram (Release)
         shell: cmd
@@ -70,31 +114,10 @@ jobs:
           cd /d %BUILD_PATH%\tdesktop\out
           cmake --build . --config Release --target Telegram --parallel
 
-      - name: Package artifacts
-        shell: pwsh
-        run: |
-          $outDir = "$env:BUILD_PATH\tdesktop\out\Release"
-          $pkgDir = "$env:BUILD_PATH\tdesktop\out\artifacts"
-          New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
-          Copy-Item -Path "$outDir\Telegram.exe" -Destination $pkgDir
-          $updaterPath = "$outDir\Updater.exe"
-          if (-not (Test-Path $updaterPath)) {
-            $foundUpdater = Get-ChildItem -Path $outDir -Recurse -Filter Updater.exe -File -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($foundUpdater) {
-              $updaterPath = $foundUpdater.FullName
-            }
-          }
-          if (Test-Path $updaterPath) {
-            Copy-Item -Path $updaterPath -Destination $pkgDir
-          } else {
-            Write-Host "Updater.exe not found; skipping."
-          }
-          Compress-Archive -Path "$pkgDir\*" -DestinationPath "$env:BUILD_PATH\tdesktop\out\Telegram-x64.zip"
-
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Telegram-x64
-          path: |
-            D:\TBuild\tdesktop\out\artifacts\*
-            D:\TBuild\tdesktop\out\Telegram-x64.zip
+          path: D:\TBuild\tdesktop\out\Release\Telegram.exe
+          if-no-files-found: error
+          compression-level: 0
