@@ -37,6 +37,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "payments/payments_reaction_process.h"
 #include "ui/toast/toast.h"
 #include "ui/widgets/menu/menu_add_action_callback_factory.h"
+#include "ui/widgets/menu/menu_action.h"
+#include "ui/widgets/menu/menu_common.h"
 #include "ui/widgets/menu/menu_multiline_action.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/effects/path_shift_gradient.h"
@@ -3004,9 +3006,22 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			}
 		}
 		if (item && item->hasDirectLink() && isUponSelected != 2 && isUponSelected != -2) {
-			_menu->addAction(item->history()->peer->isMegagroup() ? tr::lng_context_copy_message_link(tr::now) : tr::lng_context_copy_post_link(tr::now), [=] {
-				HistoryView::CopyPostLink(controller, itemId, HistoryView::Context::History);
-			}, &st::menuIconLink);
+			_menu->insertAction(0, base::make_unique_q<Ui::Menu::Action>(
+				_menu->menu(),
+				_menu->st().menu,
+				Ui::Menu::CreateAction(
+					_menu->menu(),
+					item->history()->peer->isMegagroup()
+						? tr::lng_context_copy_message_link(tr::now)
+						: tr::lng_context_copy_post_link(tr::now),
+					[=] {
+						HistoryView::CopyPostLink(
+							controller,
+							itemId,
+							HistoryView::Context::History);
+					}),
+				&st::menuIconLink,
+				&st::menuIconLink));
 		}
 		if (isUponSelected > 1) {
 			if (selectedState.count > 0 && selectedState.canForwardCount == selectedState.count) {
@@ -3375,9 +3390,22 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				},
 				&st::menuIconCopy);
 		} else if (item && item->hasDirectLink() && isUponSelected != 2 && isUponSelected != -2) {
-			_menu->addAction(item->history()->peer->isMegagroup() ? tr::lng_context_copy_message_link(tr::now) : tr::lng_context_copy_post_link(tr::now), [=] {
-				HistoryView::CopyPostLink(controller, itemId, HistoryView::Context::History);
-			}, &st::menuIconLink);
+			_menu->insertAction(0, base::make_unique_q<Ui::Menu::Action>(
+				_menu->menu(),
+				_menu->st().menu,
+				Ui::Menu::CreateAction(
+					_menu->menu(),
+					item->history()->peer->isMegagroup()
+						? tr::lng_context_copy_message_link(tr::now)
+						: tr::lng_context_copy_post_link(tr::now),
+					[=] {
+						HistoryView::CopyPostLink(
+							controller,
+							itemId,
+							HistoryView::Context::History);
+					}),
+				&st::menuIconLink,
+				&st::menuIconLink));
 		}
 		if (sponsored) {
 			const auto hasAbout = ranges::any_of(
@@ -3619,7 +3647,13 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 	}
 
 	if (!_menu->empty() && rateTranscriptionItem) {
-		_menu->insertAction(0, base::make_unique_q<Menu::RateTranscribe>(
+		const auto firstAction = _menu->actions().empty()
+			? QString()
+			: _menu->actions().front()->text();
+		const auto linkFirst
+			= (firstAction == tr::lng_context_copy_message_link(tr::now))
+			|| (firstAction == tr::lng_context_copy_post_link(tr::now));
+		_menu->insertAction(linkFirst ? 1 : 0, base::make_unique_q<Menu::RateTranscribe>(
 			_menu,
 			_menu->st().menu,
 			Menu::RateTranscribeCallbackFactory(rateTranscriptionItem)));
