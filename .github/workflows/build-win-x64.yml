@@ -26,14 +26,14 @@ jobs:
         run: echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 1
           submodules: recursive
           path: ${{ env.TBUILD_REL }}/${{ env.REPO_NAME }}
 
       - name: Set up Python 3.10
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.10"
 
@@ -49,7 +49,7 @@ jobs:
           echo "CACHE_KEY=$(sha256sum CACHE_KEY.txt | awk '{ print $1 }')" >> $GITHUB_ENV
 
       - name: Cache third-party
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.TBUILD }}\ThirdParty
           key: win64-third-party-${{ env.CACHE_KEY }}
@@ -57,7 +57,7 @@ jobs:
             win64-third-party-
 
       - name: Cache libraries
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ${{ env.LibrariesPath }}\*
@@ -70,7 +70,7 @@ jobs:
             win64-libs-
 
       - name: Cache Qt
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ${{ env.LibrariesPath }}\[qQ]t[_-]*
@@ -80,9 +80,14 @@ jobs:
             win64-qt-
 
       - name: Configure MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
+        shell: cmd
+        run: |
+          set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+          if not exist "%VSWHERE%" exit /b 1
+          for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALLPATH=%%i"
+          if not defined VSINSTALLPATH exit /b 1
+          call "%VSINSTALLPATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          for /f "delims=" %%i in ('set') do @echo %%i>>"%GITHUB_ENV%"
 
       - name: NuGet sources
         shell: cmd
@@ -119,7 +124,7 @@ jobs:
           cmake --build . --config Release --target Telegram --parallel
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: Telegram-x64
           path: ${{ env.TBUILD }}\${{ env.REPO_NAME }}\out\Release\Telegram.exe
