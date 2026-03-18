@@ -8,35 +8,51 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 720
 
-    env:
-      BUILD_PATH: D:\TBuild
-
     steps:
+      - name: Prepare directories
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:GITHUB_WORKSPACE 'TBuild'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $root 'ThirdParty') | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $root 'Libraries') | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $root 'Libraries\win64') | Out-Null
+          "TBUILD=$root" >> $env:GITHUB_ENV
+          "TBUILD_REL=TBuild" >> $env:GITHUB_ENV
+          "LibrariesPath=$(Join-Path $root 'Libraries\win64')" >> $env:GITHUB_ENV
+
+      - name: Get repository name
+        shell: bash
+        run: echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
           submodules: recursive
+          path: ${{ env.TBUILD_REL }}/${{ env.REPO_NAME }}
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      - name: Prepare build folders
-        shell: pwsh
+      - name: Compute cache key
+        shell: bash
         run: |
-          New-Item -ItemType Directory -Force -Path "$env:BUILD_PATH" | Out-Null
-          New-Item -ItemType Directory -Force -Path "$env:BUILD_PATH\ThirdParty" | Out-Null
-          New-Item -ItemType Directory -Force -Path "$env:BUILD_PATH\Libraries" | Out-Null
-          New-Item -ItemType Directory -Force -Path "$env:BUILD_PATH\Libraries\win64" | Out-Null
-          New-Item -ItemType Junction -Path "$env:BUILD_PATH\tdesktop" -Target "$env:GITHUB_WORKSPACE" | Out-Null
+          PREPARE_ROOT="$GITHUB_WORKSPACE/$TBUILD_REL/$REPO_NAME/Telegram/build/prepare"
+          DOC_PATH="$GITHUB_WORKSPACE/$TBUILD_REL/$REPO_NAME/docs/building-win.md"
+          {
+            find "$PREPARE_ROOT" -type f -print0 | sort -z | xargs -0 sha256sum
+            sha256sum "$DOC_PATH"
+          } > CACHE_KEY.txt
+          echo "CACHE_KEY=$(sha256sum CACHE_KEY.txt | awk '{ print $1 }')" >> $GITHUB_ENV
 
       - name: Cache third-party
         uses: actions/cache@v4
         with:
-          path: D:\TBuild\ThirdParty
-          key: win64-third-party-${{ hashFiles('Telegram/build/prepare/**', 'docs/building-win.md') }}
+          path: ${{ env.TBUILD }}\ThirdParty
+          key: win64-third-party-${{ env.CACHE_KEY }}
           restore-keys: |
             win64-third-party-
 
@@ -44,12 +60,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            D:\TBuild\Libraries\win64\*
-            !D:\TBuild\Libraries\win64\cache_keys
-            !D:\TBuild\Libraries\win64\[qQ]t[_-]*
-            D:\TBuild\Libraries\win64\cache_keys\*
-            !D:\TBuild\Libraries\win64\cache_keys\[qQ]t[_-]*
-          key: win64-libs-${{ hashFiles('Telegram/build/prepare/**', 'docs/building-win.md') }}
+            ${{ env.LibrariesPath }}\*
+            !${{ env.LibrariesPath }}\cache_keys
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\*
+            !${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: win64-libs-${{ env.CACHE_KEY }}
           restore-keys: |
             win64-libs-
 
@@ -57,9 +73,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            D:\TBuild\Libraries\win64\[qQ]t[_-]*
-            D:\TBuild\Libraries\win64\cache_keys\[qQ]t[_-]*
-          key: win64-qt-${{ hashFiles('Telegram/build/prepare/**', 'docs/building-win.md') }}
+            ${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: win64-qt-${{ env.CACHE_KEY }}
           restore-keys: |
             win64-qt-
 
@@ -77,8 +93,8 @@ jobs:
       - name: Prepare third-party libraries
         shell: cmd
         run: |
-          cd /d %BUILD_PATH%
-          tdesktop\Telegram\build\prepare\win.bat silent
+          cd /d %TBUILD%
+          %REPO_NAME%\Telegram\build\prepare\win.bat silent
 
       - name: Configure project
         shell: cmd
@@ -88,7 +104,7 @@ jobs:
         run: |
           if "%TDESKTOP_API_ID%"=="" exit /b 1
           if "%TDESKTOP_API_HASH%"=="" exit /b 1
-          cd /d %BUILD_PATH%\tdesktop\Telegram
+          cd /d %TBUILD%\%REPO_NAME%\Telegram
           configure.bat x64 ^
             -D TDESKTOP_API_ID=%TDESKTOP_API_ID% ^
             -D TDESKTOP_API_HASH=%TDESKTOP_API_HASH% ^
@@ -99,13 +115,13 @@ jobs:
       - name: Build Telegram (Release)
         shell: cmd
         run: |
-          cd /d %BUILD_PATH%\tdesktop\out
+          cd /d %TBUILD%\%REPO_NAME%\out
           cmake --build . --config Release --target Telegram --parallel
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Telegram-x64
-          path: D:\TBuild\tdesktop\out\Release\Telegram.exe
+          path: ${{ env.TBUILD }}\${{ env.REPO_NAME }}\out\Release\Telegram.exe
           if-no-files-found: error
           compression-level: 0
