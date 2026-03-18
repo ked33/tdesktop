@@ -39,6 +39,10 @@ namespace Payments {
 enum class CheckoutResult;
 } // namespace Payments
 
+namespace MTP {
+class Error;
+} // namespace MTP
+
 namespace Settings {
 struct GiftWearBoxStyleOverride;
 struct CreditsEntryBoxStyleOverrides;
@@ -57,6 +61,7 @@ namespace Ui {
 class RpWidget;
 class PopupMenu;
 class GenericBox;
+class Show;
 class VerticalLayout;
 
 void ChooseStarGiftRecipient(
@@ -75,7 +80,8 @@ void AttachGiftSenderBadge(
 	not_null<GenericBox*> box,
 	std::shared_ptr<ChatHelpers::Show> show,
 	not_null<PeerData*> from,
-	const QDateTime &date);
+	const QDateTime &date,
+	bool crafted);
 
 void ShowUniqueGiftWearBox(
 	std::shared_ptr<ChatHelpers::Show> show,
@@ -144,6 +150,10 @@ void ShowGiftTransferredToast(
 	std::shared_ptr<Main::SessionShow> show,
 	not_null<PeerData*> to,
 	const Data::UniqueGift &gift);
+
+[[nodiscard]] bool ShowGiftErrorToast(
+	std::shared_ptr<Ui::Show> show,
+	const MTP::Error &error);
 
 [[nodiscard]] CreditsAmount StarsFromTon(
 	not_null<Main::Session*> session,

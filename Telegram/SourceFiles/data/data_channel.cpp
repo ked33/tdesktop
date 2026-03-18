@@ -512,6 +512,17 @@ void ChannelData::applyEditAdmin(
 	session().changes().peerUpdated(this, UpdateFlag::Admins);
 }
 
+void ChannelData::applyEditMemberRank(
+		not_null<UserData*> user,
+		const QString &rank) {
+	if (!mgInfo) {
+		return;
+	}
+	const auto userId = peerToUser(user->id);
+	Data::ChannelMemberRankChanges changes(this);
+	changes.feed(userId, rank);
+}
+
 void ChannelData::applyEditBanned(
 		not_null<PeerData*> participant,
 		ChatRestrictionsInfo oldRights,
@@ -622,27 +633,6 @@ bool ChannelData::lastParticipantsRequestNeeded() const {
 			& MegagroupInfo::LastParticipantsOnceReceived)
 		|| (mgInfo->lastParticipantsStatus
 			& MegagroupInfo::LastParticipantsCountOutdated);
-}
-
-// Source from kotatogram
-QString ChannelData::adminTitle(not_null<UserData*> user) const {
-	if (!isGroupAdmin(user)) {
-		return QString();
-	}
-	const auto info = mgInfo.get();
-	const auto i = mgInfo->admins.find(peerToUser(user->id));
-	const auto custom = (i != mgInfo->admins.end())
-		? i->second
-		: (info->creator == user)
-		? info->creatorRank
-		: QString();
-	return !custom.isEmpty()
-		? custom
-		: (info->creator == user)
-		? tr::lng_owner_badge(tr::now)
-		: (i != mgInfo->admins.end())
-		? tr::lng_admin_badge(tr::now)
-		: QString();
 }
 
 auto ChannelData::unavailableReasons() const
