@@ -36,6 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonValue>
+#include <QtCore/QStringList>
 
 #ifndef Q_OS_WIN
 #include <unistd.h>
@@ -1328,6 +1329,47 @@ bool readOldUserSettings(bool remove, ReadSettingsContext &context) {
 
 CustomLangPack *CustomLangPack::instance = nullptr;
 
+namespace {
+
+[[nodiscard]] QString NormalizeBundledLangPackId(const QString &id) {
+	if (id.isEmpty()) {
+		return QString();
+	}
+	const auto lower = id.toLower();
+	if (lower == u"zh"_q
+		|| lower.startsWith(u"zh-"_q)
+		|| lower.startsWith(u"zh_"_q)) {
+		return (lower.contains(u"tw"_q)
+			|| lower.contains(u"hant"_q)
+			|| lower.contains(u"traditional"_q))
+			? u"zh-TW"_q
+			: u"zh-CN"_q;
+	}
+	return id;
+}
+
+[[nodiscard]] QStringList BundledLangPackCandidates(
+		const QString &langPackId,
+		const QString &langPackBaseId) {
+	auto result = QStringList();
+	const auto append = [&](const QString &id) {
+		if (id.isEmpty() || result.contains(id)) {
+			return;
+		}
+		result.push_back(id);
+	};
+	const auto appendWithNormalized = [&](const QString &id) {
+		append(id);
+		append(NormalizeBundledLangPackId(id));
+	};
+	appendWithNormalized(langPackId);
+	appendWithNormalized(langPackBaseId);
+	append(u"en"_q);
+	return result;
+}
+
+} // namespace
+
 CustomLangPack::CustomLangPack() = default;
 
 void CustomLangPack::initInstance() {
@@ -1380,7 +1422,7 @@ void CustomLangPack::fetchFinished() {
 		if (error.error == QJsonParseError::NoError) {
 			parseLangFile(str);
 		} else {
-			LOG(("Incorrect JSON File. Fallback to default language: English..."));
+			LOG(("Incorrect JSON File. Fallback to bundled language pack..."));
 			loadDefaultLangFile();
 		}
 
@@ -1401,23 +1443,35 @@ void CustomLangPack::fetchError(QNetworkReply::NetworkError e) {
 			_chkReply->disconnect();
 			fetchCustomLangPack("", langPackBaseId);
 		} else {
-			LOG(("64Gram Language pack not found! Fallback to default language: English..."));
+			LOG(("64Gram Language pack not found! Fallback to bundled language pack..."));
 			loadDefaultLangFile();
 			_chkReply = nullptr;
 		}
+	} else {
+		LOG(("Failed to fetch 64Gram language pack. Fallback to bundled language pack..."));
+		if (_chkReply) {
+			_chkReply->disconnect();
+		}
+		loadDefaultLangFile();
+		_chkReply = nullptr;
 	}
 }
 
 void CustomLangPack::loadDefaultLangFile() {
-	QFile file(":/localization/en.json");
-	if (file.open(QIODevice::ReadOnly)) {
-		QJsonDocument str = QJsonDocument::fromJson(file.readAll());
-		QJsonObject json = str.object();
-		for (const QString& key : json.keys()) {
-			Lang::GetInstance().applyValue(key.toUtf8(), json.value(key).toString().toUtf8());
+	const auto ids = BundledLangPackCandidates(
+		Lang::GetInstance().id(),
+		Lang::GetInstance().baseId());
+	for (const auto &id : ids) {
+		auto file = QFile(u":/localization/%1.json"_q.arg(id));
+		if (!file.open(QIODevice::ReadOnly)) {
+			continue;
 		}
-		Lang::GetInstance().updatePluralRules();
-		file.close();
+		QJsonParseError error{};
+		const auto document = QJsonDocument::fromJson(file.readAll(), &error);
+		if (error.error == QJsonParseError::NoError) {
+			parseLangFile(document);
+			return;
+		}
 	}
 }
 
