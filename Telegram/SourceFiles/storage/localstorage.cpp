@@ -1337,11 +1337,22 @@ namespace {
 	}
 	const auto lower = id.toLower();
 	if (lower == u"zh"_q
-		|| lower.startsWith(u"zh-"_q)
-		|| lower.startsWith(u"zh_"_q)) {
+		|| lower.startsWith(u"zh"_q)
+		|| lower.contains(u"zh-hans"_q)
+		|| lower.contains(u"zh_hans"_q)
+		|| lower.contains(u"zh-hant"_q)
+		|| lower.contains(u"zh_hant"_q)
+		|| lower.contains(u"zh-cn"_q)
+		|| lower.contains(u"zh_cn"_q)
+		|| lower.contains(u"zh-tw"_q)
+		|| lower.contains(u"zh_tw"_q)
+		|| lower.contains(u"zhcn"_q)
+		|| lower.contains(u"zhtw"_q)
+		|| lower.contains(u"cantonese"_q)) {
 		return (lower.contains(u"tw"_q)
 			|| lower.contains(u"hant"_q)
-			|| lower.contains(u"traditional"_q))
+			|| lower.contains(u"traditional"_q)
+			|| lower.contains(u"cantonese"_q))
 			? u"zh-TW"_q
 			: u"zh-CN"_q;
 	}
@@ -1420,6 +1431,7 @@ void CustomLangPack::fetchFinished() {
 		QJsonParseError error{};
 		QJsonDocument str = QJsonDocument::fromJson(result, &error);
 		if (error.error == QJsonParseError::NoError) {
+			loadDefaultLangFile();
 			parseLangFile(str);
 		} else {
 			LOG(("Incorrect JSON File. Fallback to bundled language pack..."));
