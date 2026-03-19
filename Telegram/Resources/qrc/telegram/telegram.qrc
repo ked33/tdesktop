@@ -65,5 +65,6 @@
   </qresource>
   <qresource prefix="/localization">
     <file alias="en.json">../../langs/localization/en.json</file>
+    <file alias="zh-CN.json">../../langs/localization/zh-CN.json</file>
   </qresource>
 </RCC>
