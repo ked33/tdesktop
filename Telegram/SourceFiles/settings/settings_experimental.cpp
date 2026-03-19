@@ -49,13 +49,179 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Settings {
 namespace {
 
+[[nodiscard]] QString ExperimentalOptionName(
+		const base::options::option<bool> &option) {
+	const auto &id = option.id();
+	if (id == ChatHelpers::kOptionTabbedPanelShowOnClick) {
+		return tr::lng_settings_experimental_tabbed_panel_show_on_click(
+			tr::now);
+	} else if (id == Dialogs::kOptionForumHideChatsList) {
+		return tr::lng_settings_experimental_forum_hide_chats_list(tr::now);
+	} else if (id == Core::kOptionFractionalScalingEnabled) {
+		return tr::lng_settings_experimental_fractional_scaling_enabled(
+			tr::now);
+	} else if (id == Core::kOptionHighDpiDownscale) {
+		return tr::lng_settings_experimental_high_dpi_downscale(tr::now);
+	} else if (id == Window::kOptionViewProfileInChatsListContextMenu) {
+		return tr::lng_settings_experimental_view_profile_in_chats_list_context_menu(
+			tr::now);
+	} else if (id == Dialogs::kOptionCtrlClickChatNewWindow) {
+		return tr::lng_settings_experimental_ctrl_click_chat_new_window(
+			tr::now);
+	} else if (id == Info::Profile::kOptionShowPeerIdBelowAbout) {
+		return tr::lng_settings_experimental_show_peer_id_below_about(
+			tr::now);
+	} else if (id == Info::Profile::kOptionShowChannelJoinedBelowAbout) {
+		return tr::lng_settings_experimental_show_channel_joined_below_about(
+			tr::now);
+	} else if (id == Ui::kOptionUseSmallMsgBubbleRadius) {
+		return tr::lng_settings_experimental_use_small_msg_bubble_radius(
+			tr::now);
+	} else if (id == Ui::kOptionUncoloredQuote) {
+		return tr::lng_settings_experimental_uncolored_quote(tr::now);
+	} else if (id == Media::Player::kOptionDisableAutoplayNext) {
+		return tr::lng_settings_experimental_disable_autoplay_next(tr::now);
+	} else if (id == kOptionSendLargePhotos) {
+		return tr::lng_settings_experimental_send_large_photos(tr::now);
+	} else if (id == Webview::kOptionWebviewDebugEnabled) {
+		return tr::lng_settings_experimental_webview_debug_enabled(tr::now);
+	} else if (id == Webview::kOptionWebviewLegacyEdge) {
+		return tr::lng_settings_experimental_webview_legacy_edge(tr::now);
+	} else if (id == kOptionAutoScrollInactiveChat) {
+		return tr::lng_settings_experimental_auto_scroll_inactive_chat(
+			tr::now);
+	} else if (id == Window::Notifications::kOptionHideReplyButton) {
+		return tr::lng_settings_experimental_hide_reply_button(tr::now);
+	} else if (id == Window::Notifications::kOptionCustomNotification) {
+		return tr::lng_settings_experimental_custom_notification(tr::now);
+	} else if (id == Window::Notifications::kOptionGNotification) {
+		return tr::lng_settings_experimental_gnotification(tr::now);
+	} else if (id == Core::kOptionFreeType) {
+		return tr::lng_settings_experimental_freetype(tr::now);
+	} else if (id == Core::kOptionSkipUrlSchemeRegister) {
+		return tr::lng_settings_experimental_skip_url_scheme_register(
+			tr::now);
+	} else if (id == Core::kOptionDeadlockDetector) {
+		return tr::lng_settings_experimental_deadlock_detector(tr::now);
+	} else if (id == Data::kOptionExternalVideoPlayer) {
+		return tr::lng_settings_experimental_external_video_player(tr::now);
+	} else if (id == Window::kOptionNewWindowsSizeAsFirst) {
+		return tr::lng_settings_experimental_new_windows_size_as_first(
+			tr::now);
+	} else if (id == MTP::details::kOptionPreferIPv6) {
+		return tr::lng_settings_experimental_prefer_ipv6(tr::now);
+	} else if (id == kOptionFastButtonsMode) {
+		return tr::lng_settings_experimental_fast_buttons_mode(tr::now);
+	} else if (id == Window::kOptionDisableTouchbar) {
+		return tr::lng_settings_experimental_disable_touchbar(tr::now);
+	} else if (id == Info::kAlternativeScrollProcessing) {
+		return tr::lng_settings_experimental_alternative_scroll_processing(
+			tr::now);
+	} else if (id == kModerateCommonGroups) {
+		return tr::lng_settings_experimental_moderate_common_groups(
+			tr::now);
+	} else if (id == kForceComposeSearchOneColumn) {
+		return tr::lng_settings_experimental_force_compose_search_one_column(
+			tr::now);
+	} else if (id == ChatHelpers::kOptionUnlimitedRecentStickers) {
+		return tr::lng_settings_experimental_unlimited_recent_stickers(
+			tr::now);
+	}
+	const auto &name = option.name();
+	return name.isEmpty() ? option.id() : name;
+}
+
+[[nodiscard]] QString ExperimentalOptionDescription(
+		const base::options::option<bool> &option) {
+	const auto &id = option.id();
+	if (id == ChatHelpers::kOptionTabbedPanelShowOnClick) {
+		return tr::lng_settings_experimental_tabbed_panel_show_on_click_desc(
+			tr::now);
+	} else if (id == Dialogs::kOptionForumHideChatsList) {
+		return tr::lng_settings_experimental_forum_hide_chats_list_desc(
+			tr::now);
+	} else if (id == Core::kOptionFractionalScalingEnabled) {
+		return tr::lng_settings_experimental_fractional_scaling_enabled_desc(
+			tr::now);
+	} else if (id == Core::kOptionHighDpiDownscale) {
+		return tr::lng_settings_experimental_high_dpi_downscale_desc(
+			tr::now);
+	} else if (id == Window::kOptionViewProfileInChatsListContextMenu) {
+		return tr::lng_settings_experimental_view_profile_in_chats_list_context_menu_desc(
+			tr::now);
+	} else if (id == Dialogs::kOptionCtrlClickChatNewWindow) {
+		return tr::lng_settings_experimental_ctrl_click_chat_new_window_desc(
+			tr::now);
+	} else if (id == Info::Profile::kOptionShowPeerIdBelowAbout) {
+		return tr::lng_settings_experimental_show_peer_id_below_about_desc(
+			tr::now);
+	} else if (id == Info::Profile::kOptionShowChannelJoinedBelowAbout) {
+		return tr::lng_settings_experimental_show_channel_joined_below_about_desc(
+			tr::now);
+	} else if (id == Ui::kOptionUseSmallMsgBubbleRadius) {
+		return tr::lng_settings_experimental_use_small_msg_bubble_radius_desc(
+			tr::now);
+	} else if (id == Ui::kOptionUncoloredQuote) {
+		return tr::lng_settings_experimental_uncolored_quote_desc(tr::now);
+	} else if (id == Media::Player::kOptionDisableAutoplayNext) {
+		return tr::lng_settings_experimental_disable_autoplay_next_desc(
+			tr::now);
+	} else if (id == kOptionSendLargePhotos) {
+		return tr::lng_settings_experimental_send_large_photos_desc(
+			tr::now);
+	} else if (id == Webview::kOptionWebviewDebugEnabled) {
+		return tr::lng_settings_experimental_webview_debug_enabled_desc(
+			tr::now);
+	} else if (id == Webview::kOptionWebviewLegacyEdge) {
+		return tr::lng_settings_experimental_webview_legacy_edge_desc(
+			tr::now);
+	} else if (id == kOptionAutoScrollInactiveChat) {
+		return tr::lng_settings_experimental_auto_scroll_inactive_chat_desc(
+			tr::now);
+	} else if (id == Window::Notifications::kOptionHideReplyButton) {
+		return tr::lng_settings_experimental_hide_reply_button_desc(
+			tr::now);
+	} else if (id == Window::Notifications::kOptionCustomNotification) {
+		return tr::lng_settings_experimental_custom_notification_desc(
+			tr::now);
+	} else if (id == Window::Notifications::kOptionGNotification) {
+		return tr::lng_settings_experimental_gnotification_desc(tr::now);
+	} else if (id == Core::kOptionFreeType) {
+		return tr::lng_settings_experimental_freetype_desc(tr::now);
+	} else if (id == Core::kOptionSkipUrlSchemeRegister) {
+		return tr::lng_settings_experimental_skip_url_scheme_register_desc(
+			tr::now);
+	} else if (id == Core::kOptionDeadlockDetector) {
+		return tr::lng_settings_experimental_deadlock_detector_desc(
+			tr::now);
+	} else if (id == Data::kOptionExternalVideoPlayer) {
+		return tr::lng_settings_experimental_external_video_player_desc(
+			tr::now);
+	} else if (id == Window::kOptionNewWindowsSizeAsFirst) {
+		return tr::lng_settings_experimental_new_windows_size_as_first_desc(
+			tr::now);
+	} else if (id == MTP::details::kOptionPreferIPv6) {
+		return tr::lng_settings_experimental_prefer_ipv6_desc(tr::now);
+	} else if (id == kOptionFastButtonsMode) {
+		return tr::lng_settings_experimental_fast_buttons_mode_desc(
+			tr::now);
+	} else if (id == kForceComposeSearchOneColumn) {
+		return tr::lng_settings_experimental_force_compose_search_one_column_desc(
+			tr::now);
+	} else if (id == ChatHelpers::kOptionUnlimitedRecentStickers) {
+		return tr::lng_settings_experimental_unlimited_recent_stickers_desc(
+			tr::now);
+	}
+	return option.description();
+}
+
 void AddOption(
 		not_null<Window::Controller*> window,
 		not_null<Ui::VerticalLayout*> container,
 		base::options::option<bool> &option,
 		rpl::producer<> resetClicks) {
 	auto &lifetime = container->lifetime();
-	const auto name = option.name().isEmpty() ? option.id() : option.name();
+	const auto name = ExperimentalOptionName(option);
 	const auto toggles = lifetime.make_state<rpl::event_stream<bool>>();
 	std::move(
 		resetClicks
@@ -98,7 +264,7 @@ void AddOption(
 		}
 	}, container->lifetime());
 
-	const auto &description = option.description();
+	const auto description = ExperimentalOptionDescription(option);
 	if (!description.isEmpty()) {
 		Ui::AddSkip(container, st::settingsCheckboxesSkip);
 		Ui::AddDividerText(container, rpl::single(description));

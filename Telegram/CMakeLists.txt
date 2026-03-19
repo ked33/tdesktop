@@ -1887,6 +1887,7 @@ PRIVATE
     langs/lang.strings
     langs/cloud_lang.strings
     langs/localization/en.json
+    langs/localization/zh-CN.json
     numbers.txt
 )
 
