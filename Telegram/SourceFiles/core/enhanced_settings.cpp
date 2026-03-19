@@ -199,8 +199,8 @@ namespace EnhancedSettings {
 				int value = v.toInt();
 				if (value < 0) {
 					SetDownloadBoost(0);
-				} else if (value > 3) {
-					SetDownloadBoost(3);
+				} else if (value > 5) {
+					SetDownloadBoost(5);
 				} else {
 					SetDownloadBoost(value);
 				}
