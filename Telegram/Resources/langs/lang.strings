@@ -7850,12 +7850,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_net_speed_boost_title" = "Network speed boost";
 "lng_net_speed_boost_desc" = "Warning: changing this parameter to high values on slow networks can make it even worse. Use it at your own risk.";
-"lng_net_download_speed_boost_desc" = "Warning: higher values tune media downloads toward faster video startup, quicker recovery after seeking and steadier playback, not toward the highest peak speed. This may help media playback from distant DCs, but can worsen unstable networks. Use it at your own risk.";
+"lng_net_download_speed_boost_desc" = "Warning: higher values tune media downloads toward faster video startup, quicker recovery after seeking and steadier playback. The Extreme level prioritizes peak throughput more aggressively, so it may be less stable. This may help media playback from distant DCs, but can worsen unstable networks. Use it at your own risk.";
 
 "lng_net_speed_boost_default" = "Disabled";
 "lng_net_speed_boost_slight" = "Slight";
 "lng_net_speed_boost_medium" = "Medium";
 "lng_net_speed_boost_big" = "Big";
+"lng_net_speed_boost_aggressive" = "Aggressive";
+"lng_net_speed_boost_extreme" = "Extreme";
 
 "lng_net_boost_restart_desc" = "You'll need to restart app to change network boost.\n\nRestart now?";
 "lng_show_messages_id_desc" = "Warning: the changes will take effect immediately with restart.";

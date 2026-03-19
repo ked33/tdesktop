@@ -90,7 +90,7 @@ void DownloadBoostBox::prepare() {
 	_boostGroup = std::make_shared<Ui::RadiobuttonGroup>(
 		GetEnhancedInt("net_download_speed_boost"));
 
-	for (int i = 0; i <= 3; i++) {
+	for (int i = 0; i <= 5; i++) {
 		const auto button = Ui::CreateChild<Ui::Radiobutton>(
 				this,
 				_boostGroup,
@@ -105,7 +105,22 @@ void DownloadBoostBox::prepare() {
 }
 
 QString DownloadBoostBox::BoostLabel(int boost) {
-	return NetBoostBox::BoostLabel(boost);
+	switch (boost) {
+		case 0:
+			return tr::lng_net_speed_boost_default(tr::now);
+		case 1:
+			return tr::lng_net_speed_boost_slight(tr::now);
+		case 2:
+			return tr::lng_net_speed_boost_medium(tr::now);
+		case 3:
+			return tr::lng_net_speed_boost_big(tr::now);
+		case 4:
+			return tr::lng_net_speed_boost_aggressive(tr::now);
+		case 5:
+			return tr::lng_net_speed_boost_extreme(tr::now);
+		default:
+			Unexpected("Boost in DownloadBoostBox::BoostLabel.");
+	}
 }
 
 void DownloadBoostBox::save() {

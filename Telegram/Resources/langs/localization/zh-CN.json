@@ -98,7 +98,7 @@
 
     "lng_net_speed_boost_title": "网络加速",
     "lng_net_speed_boost_desc": "警告：在较慢网络中将此参数调得过高，可能会让情况更糟。请自行承担风险。",
-    "lng_net_download_speed_boost_desc": "警告：更高档位会把媒体下载策略调向更快的视频打开速度、更快的拖动后恢复速度和更稳定的播放，而不是单纯追求峰值速率。这可能有助于提升来自较远 DC 的媒体播放速度，但也可能让不稳定网络表现更差。请自行承担风险。",
+    "lng_net_download_speed_boost_desc": "警告：更高档位会把媒体下载策略调向更快的视频打开速度、更快的拖动后恢复速度和更稳定的播放。其中“极限”档会更激进地偏向峰值吞吐，因此稳定性可能更差。这可能有助于提升来自较远 DC 的媒体播放速度，但也可能让不稳定网络表现更差。请自行承担风险。",
     "lng_show_emoji_button_as_text_desc": "注意：如果你看不到表情按钮，请开启此选项。",
     "lng_radio_controller_desc": "注意：电台控制器是一个用于控制音乐流播放会话的实验性机器人。",
     "lng_auto_unmute_desc": "注意：加入语音聊天后会自动取消静音。",
@@ -108,6 +108,8 @@
     "lng_net_speed_boost_slight": "轻度",
     "lng_net_speed_boost_medium": "中等",
     "lng_net_speed_boost_big": "高",
+    "lng_net_speed_boost_aggressive": "激进",
+    "lng_net_speed_boost_extreme": "极限",
 
     "lng_net_boost_restart_desc": "你需要重启应用才能更改网络加速。\n\n现在重启吗？",
     "lng_show_messages_id_desc": "警告：更改会在重启后立即生效。",
@@ -187,7 +189,7 @@
     "lng_pinned_message_show": "显示置顶消息",
     "lng_pinned_message_hide": "隐藏置顶消息",
     "lng_pinned_message_view": "查看置顶消息",
-    "lng_go_to_first_message": "跳转到第一条消息",
+    "lng_go_to_first_message": "跳转到首条消息",
     "lng_go_to_random_id_message": "跳转到随机消息",
 
     "lng_proxy_remove_all": "删除所有代理",
