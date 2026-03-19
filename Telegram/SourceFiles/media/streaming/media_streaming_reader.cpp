@@ -30,7 +30,7 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 
 [[nodiscard]] int DownloadBoostLevel() {
 	const auto boost = GetEnhancedInt("net_download_speed_boost");
-	return (boost < 0) ? 0 : (boost > 3) ? 3 : boost;
+	return (boost < 0) ? 0 : (boost > 5) ? 5 : boost;
 }
 
 [[nodiscard]] int PreloadPartsAhead() {
@@ -41,6 +41,10 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 		return 16;
 	case 3:
 		return 24;
+	case 4:
+		return 32;
+	case 5:
+		return 48;
 	default:
 		return 8;
 	}
