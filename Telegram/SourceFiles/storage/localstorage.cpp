@@ -1431,8 +1431,8 @@ void CustomLangPack::fetchFinished() {
 		QJsonParseError error{};
 		QJsonDocument str = QJsonDocument::fromJson(result, &error);
 		if (error.error == QJsonParseError::NoError) {
-			loadDefaultLangFile();
 			parseLangFile(str);
+			loadDefaultLangFile();
 		} else {
 			LOG(("Incorrect JSON File. Fallback to bundled language pack..."));
 			loadDefaultLangFile();
