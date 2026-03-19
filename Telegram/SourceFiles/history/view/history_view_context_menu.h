@@ -92,6 +92,11 @@ void AddWhoReactedAction(
 	not_null<QWidget*> context,
 	not_null<HistoryItem*> item,
 	not_null<Window::SessionController*> controller);
+void AddMessageDetailsAction(
+	not_null<Ui::PopupMenu*> menu,
+	HistoryItem *item,
+	Element *view,
+	not_null<Window::SessionController*> controller);
 void MaybeAddWhenEditedForwardedAction(
 	not_null<Ui::PopupMenu*> menu,
 	not_null<HistoryItem*> item,

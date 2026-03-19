@@ -82,6 +82,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/stickers/data_custom_emoji.h"
 #include "chat_helpers/message_field.h" // FactcheckFieldIniter.
 #include "core/file_utilities.h"
+#include "core/mime_type.h"
 #include "core/click_handler_types.h"
 #include "base/platform/base_platform_info.h"
 #include "base/call_delayed.h"
@@ -97,12 +98,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "iv/iv_instance.h" 
 #include "facades.h"
 #include "apiwrap.h"
+#include "ui/effects/ripple_animation.h"
+#include "ui/text/format_values.h"
 #include "styles/style_chat.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_menu_icons.h"
 
+#include <QtGui/QCursor>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
+#include <QtGui/QtEvents>
 
 #include "data/data_saved_sublist.h"
 
@@ -112,6 +117,569 @@ namespace {
 constexpr auto kRescheduleLimit = 20;
 constexpr auto kTagNameLimit = 12;
 constexpr auto kPublicPostLinkToastDuration = 4 * crl::time(1000);
+
+class TwoTextAction final : public Ui::Menu::ItemBase {
+public:
+	TwoTextAction(
+		not_null<Ui::Menu::Menu*> parent,
+		const style::Menu &st,
+		const QString &text1,
+		const QString &text2,
+		Fn<void()> callback,
+		const style::icon *icon,
+		const style::icon *iconOver)
+	: ItemBase(parent, st)
+	, _dummyAction(Ui::CreateChild<QAction>(parent))
+	, _st(st)
+	, _icon(icon)
+	, _iconOver(iconOver)
+	, _text2(text2)
+	, _height(st::ttlItemPadding.top()
+		+ _st.itemStyle.font->height
+		+ st::ttlItemTimerFont->height
+		+ st::ttlItemPadding.bottom()) {
+		fitToMenuWidth();
+		setActionTriggered(std::move(callback));
+
+		paintRequest(
+		) | rpl::on_next([=] {
+			Painter p(this);
+			paint(p);
+		}, lifetime());
+
+		enableMouseSelecting();
+		prepare(text1);
+	}
+
+	[[nodiscard]] bool isEnabled() const override {
+		return true;
+	}
+
+	[[nodiscard]] not_null<QAction*> action() const override {
+		return _dummyAction;
+	}
+
+	void handleKeyPress(not_null<QKeyEvent*> e) override {
+		if (!isSelected()) {
+			return;
+		}
+		const auto key = e->key();
+		if (key == Qt::Key_Enter || key == Qt::Key_Return) {
+			setClicked(Ui::Menu::TriggeredSource::Keyboard);
+		}
+	}
+
+private:
+	[[nodiscard]] QPoint prepareRippleStartPosition() const override {
+		return mapFromGlobal(QCursor::pos());
+	}
+
+	[[nodiscard]] QImage prepareRippleMask() const override {
+		return Ui::RippleAnimation::RectMask(size());
+	}
+
+	[[nodiscard]] int contentHeight() const override {
+		return _height;
+	}
+
+	void paint(Painter &p) {
+		const auto selected = isSelected();
+		if (selected && _st.itemBgOver->c.alpha() < 255) {
+			p.fillRect(0, 0, width(), _height, _st.itemBg);
+		}
+		p.fillRect(
+			0,
+			0,
+			width(),
+			_height,
+			selected ? _st.itemBgOver : _st.itemBg);
+		if (isEnabled()) {
+			paintRipple(p, 0, 0);
+		}
+
+		const auto normalHeight = _st.itemPadding.top()
+			+ _st.itemStyle.font->height
+			+ _st.itemPadding.bottom();
+		const auto deltaHeight = _height - normalHeight;
+		if (const auto icon = selected ? _iconOver : _icon) {
+			icon->paint(
+				p,
+				_st.itemIconPosition + QPoint(0, deltaHeight / 2),
+				width());
+		}
+
+		p.setPen(selected ? _st.itemFgOver : _st.itemFg);
+		_text1.drawLeftElided(
+			p,
+			_st.itemPadding.left(),
+			st::ttlItemPadding.top(),
+			_textWidth1,
+			width());
+
+		p.setFont(st::ttlItemTimerFont);
+		p.setPen(selected ? _st.itemFgShortcutOver : _st.itemFgShortcut);
+		p.drawTextLeft(
+			_st.itemPadding.left(),
+			st::ttlItemPadding.top() + _st.itemStyle.font->height,
+			width(),
+			_text2);
+	}
+
+	void prepare(const QString &text1) {
+		_text1.setMarkedText(_st.itemStyle, { text1 }, kMenuTextOptions);
+		const auto textWidth1 = _text1.maxWidth();
+		const auto textWidth2 = st::ttlItemTimerFont->width(_text2);
+		const auto &padding = _st.itemPadding;
+		const auto goodWidth = padding.left()
+			+ std::max(textWidth1, textWidth2)
+			+ padding.right();
+		const auto w = std::clamp(
+			goodWidth,
+			_st.widthMin,
+			_st.widthMax);
+		_textWidth1 = w - (goodWidth - textWidth1);
+		setMinWidth(w);
+		update();
+	}
+
+	const not_null<QAction*> _dummyAction;
+	const style::Menu &_st;
+	const style::icon *_icon;
+	const style::icon *_iconOver;
+	Ui::Text::String _text1;
+	QString _text2;
+	int _textWidth1 = 0;
+	const int _height;
+};
+
+const TextParseOptions kMenuTextOptions = {
+	TextParseLinks,
+	0,
+	0,
+	Qt::LayoutDirectionAuto,
+};
+
+[[nodiscard]] base::unique_qptr<Ui::Menu::ItemBase> CreateTwoTextAction(
+		not_null<Ui::Menu::Menu*> menu,
+		const style::icon *icon,
+		const QString &text1,
+		const QString &text2,
+		Fn<void()> callback = nullptr) {
+	if (!callback) {
+		const auto copy = text2;
+		callback = [=] {
+			QGuiApplication::clipboard()->setText(copy);
+		};
+	}
+	return base::make_unique_q<TwoTextAction>(
+		menu,
+		menu->st(),
+		text1,
+		text2,
+		std::move(callback),
+		icon,
+		icon);
+}
+
+[[nodiscard]] bool IsDetailsActionText(const QString &text) {
+	return text == tr::lng_context_details(tr::now);
+}
+
+[[nodiscard]] bool IsPostLinkActionText(const QString &text) {
+	return (text == tr::lng_context_copy_message_link(tr::now))
+		|| (text == tr::lng_context_copy_post_link(tr::now));
+}
+
+[[nodiscard]] int RateTranscribeInsertIndex(not_null<Ui::PopupMenu*> menu) {
+	const auto &actions = menu->actions();
+	if (actions.empty()) {
+		return 0;
+	}
+	if (IsPostLinkActionText(actions.front()->text())) {
+		return (actions.size() > 1 && IsDetailsActionText(actions[1]->text()))
+			? 2
+			: 1;
+	}
+	return IsDetailsActionText(actions.front()->text()) ? 1 : 0;
+}
+
+[[nodiscard]] QString FormatDetailsDateTime(const QDateTime &date) {
+	return date.isValid() ? Ui::FormatDateTime(date) : QString();
+}
+
+[[nodiscard]] QString DatacenterName(int dc) {
+	const auto name = [=] {
+		switch (dc) {
+		case 1:
+		case 3: return u"Miami FL, USA"_q;
+		case 2:
+		case 4: return u"Amsterdam, NL"_q;
+		case 5: return u"Singapore, SG"_q;
+		default: return u"UNKNOWN"_q;
+		}
+	}();
+	return (dc < 1)
+		? u"DC_UNKNOWN"_q
+		: QString(u"DC%1, %2"_q).arg(dc).arg(name);
+}
+
+[[nodiscard]] int64 MediaSizeBytes(not_null<HistoryItem*> item) {
+	const auto media = item->media();
+	if (!media) {
+		return -1;
+	}
+	const auto document = media->document();
+	const auto photo = media->photo();
+	if (document) {
+		return document->size;
+	} else if (photo && photo->hasVideo()) {
+		auto size = int64(photo->videoByteSize(Data::PhotoSize::Large));
+		if (size == 0) {
+			size = photo->videoByteSize(Data::PhotoSize::Small);
+		}
+		if (size == 0) {
+			size = photo->videoByteSize(Data::PhotoSize::Thumbnail);
+		}
+		return size;
+	} else if (photo) {
+		auto size = int64(photo->imageByteSize(Data::PhotoSize::Large));
+		if (size == 0) {
+			size = photo->imageByteSize(Data::PhotoSize::Small);
+		}
+		if (size == 0) {
+			size = photo->imageByteSize(Data::PhotoSize::Thumbnail);
+		}
+		return size;
+	}
+	return -1;
+}
+
+[[nodiscard]] QString MediaSizeText(HistoryItem *item) {
+	if (!item) {
+		return {};
+	}
+	const auto size = MediaSizeBytes(not_null(item));
+	return (size >= 0) ? Ui::FormatSizeText(size) : QString();
+}
+
+[[nodiscard]] QString MediaMime(HistoryItem *item) {
+	if (!item) {
+		return {};
+	}
+	const auto media = item->media();
+	if (!media) {
+		return {};
+	}
+	if (const auto document = media->document()) {
+		return document->mimeString();
+	} else if (const auto photo = media->photo()) {
+		return photo->hasVideo() ? u"video/mp4"_q : u"image/jpeg"_q;
+	}
+	return {};
+}
+
+[[nodiscard]] QString MediaName(HistoryItem *item) {
+	if (!item) {
+		return {};
+	}
+	const auto media = item->media();
+	const auto document = media ? media->document() : nullptr;
+	return document ? document->filename() : QString();
+}
+
+[[nodiscard]] QString FormatResolution(QSize size) {
+	return (size.isValid() && !size.isEmpty())
+		? QString(u"%1x%2"_q).arg(size.width()).arg(size.height())
+		: QString();
+}
+
+[[nodiscard]] QString MediaResolution(HistoryItem *item) {
+	if (!item) {
+		return {};
+	}
+	const auto media = item->media();
+	if (!media) {
+		return {};
+	}
+	if (const auto document = media->document()) {
+		return FormatResolution(document->dimensions);
+	} else if (const auto photo = media->photo()) {
+		auto size = photo->size(Data::PhotoSize::Large);
+		if (!size) {
+			size = photo->size(Data::PhotoSize::Small);
+		}
+		if (!size) {
+			size = photo->size(Data::PhotoSize::Thumbnail);
+		}
+		return size ? FormatResolution(*size) : QString();
+	}
+	return {};
+}
+
+[[nodiscard]] QString MediaDC(HistoryItem *item) {
+	if (!item) {
+		return {};
+	}
+	const auto media = item->media();
+	if (!media) {
+		return {};
+	}
+	if (const auto document = media->document()) {
+		return DatacenterName(document->getDC());
+	} else if (const auto photo = media->photo()) {
+		return DatacenterName(photo->getDC());
+	}
+	return {};
+}
+
+[[nodiscard]] QString VideoCodec(HistoryItem *item) {
+	if (!item) {
+		return {};
+	}
+	const auto media = item->media();
+	const auto document = media ? media->document() : nullptr;
+	const auto video = document ? document->video() : nullptr;
+	return (document && document->isVideoFile() && video)
+		? video->codec
+		: QString();
+}
+
+[[nodiscard]] QString HighestVideoQuality(HistoryItem *item) {
+	if (!item) {
+		return {};
+	}
+	const auto media = item->media();
+	const auto document = media ? media->document() : nullptr;
+	if (!document || !document->isVideoFile()) {
+		return {};
+	}
+	auto best = document->resolveVideoQuality();
+	for (const auto &quality : document->resolveQualities(item)) {
+		best = std::max(best, quality->resolveVideoQuality());
+	}
+	return best ? QString::number(best) + u'p' : QString();
+}
+
+[[nodiscard]] uint64 UserIdFromPackId(uint64 id) {
+	auto ownerId = id >> 32;
+	if ((id >> 16) & 0xFF) {
+		if (((id >> 16) & 0xFF) == 0x3F) {
+			ownerId |= 0x80000000;
+		}
+	}
+	if ((id >> 24) & 0xFF) {
+		ownerId += 0x100000000;
+	}
+	return ownerId;
+}
+
+void AddPackOwnerRow(
+		not_null<Ui::PopupMenu*> menu,
+		uint64 packId,
+		not_null<Window::SessionController*> controller) {
+	if (!packId) {
+		return;
+	}
+	const auto ownerId = UserIdFromPackId(packId);
+	const auto peer = controller->session().data().peerLoaded(PeerId(ownerId));
+	const auto value = peer
+		? peer->name()
+		: QString::number(ownerId);
+	menu->addAction(CreateTwoTextAction(
+		menu->menu(),
+		&st::menuIconStickers,
+		tr::lng_context_details_pack_owner(tr::now),
+		value,
+		[=] {
+			if (peer) {
+				controller->showPeerInfo(peer);
+			} else {
+				QGuiApplication::clipboard()->setText(QString::number(ownerId));
+				Ui::Toast::Show(tr::lng_code_copied(tr::now));
+			}
+		}));
+}
+
+void FillDetailsSubmenu(
+		not_null<Ui::PopupMenu*> menu,
+		HistoryItem *item,
+		Element *view,
+		not_null<Window::SessionController*> controller) {
+	if (!item) {
+		return;
+	}
+	const auto media = item->media();
+	const auto document = media ? media->document() : nullptr;
+	const auto views = item->Get<HistoryMessageViews>();
+	const auto forwarded = item->Get<HistoryMessageForwarded>();
+	const auto edited = item->Get<HistoryMessageEdited>();
+	const auto emojiPacks = CollectEmojiPacks(not_null(item), EmojiPacksSource::Message);
+	const auto singleEmojiPackId = (emojiPacks.size() == 1)
+		? emojiPacks.front().id
+		: uint64(0);
+	const auto messageId = QString::number(item->id.bare);
+	const auto messageDate = base::unixtime::parse(item->date());
+	const auto messageEditTime = view
+		? view->displayedEditDate()
+		: (edited ? edited->date : TimeId(0));
+	const auto messageForwardTime = forwarded ? forwarded->originalDate : TimeId(0);
+	const auto messageEditDate = messageEditTime
+		? FormatDetailsDateTime(base::unixtime::parse(messageEditTime))
+		: QString();
+	const auto messageForwardDate = messageForwardTime
+		? FormatDetailsDateTime(base::unixtime::parse(messageForwardTime))
+		: QString();
+	const auto messageViews = (item->hasViews() && item->viewsCount() > 0)
+		? QString::number(item->viewsCount())
+		: QString();
+	const auto messageShares = (views && views->forwardsCount > 0)
+		? QString::number(views->forwardsCount)
+		: QString();
+	const auto mediaSize = MediaSizeText(item);
+	const auto mediaMime = MediaMime(item);
+	const auto mediaMimeName = [&] {
+		if (mediaMime.isEmpty()) {
+			return QString();
+		}
+		const auto mime = Core::MimeTypeForName(mediaMime);
+		return mime.name().isEmpty() ? mediaMime : mime.name();
+	}();
+	const auto mediaName = MediaName(item);
+	const auto mediaResolution = MediaResolution(item);
+	const auto mediaDC = MediaDC(item);
+	const auto videoCodec = VideoCodec(item);
+	const auto videoQuality = HighestVideoQuality(item);
+	const auto hasAnyPostField = !messageViews.isEmpty() || !messageShares.isEmpty();
+	const auto hasAnyMediaField = !mediaSize.isEmpty()
+		|| !mediaMimeName.isEmpty()
+		|| !mediaName.isEmpty()
+		|| !mediaResolution.isEmpty()
+		|| !mediaDC.isEmpty()
+		|| !videoCodec.isEmpty()
+		|| !videoQuality.isEmpty();
+	if (hasAnyPostField) {
+		if (!messageViews.isEmpty()) {
+			menu->addAction(CreateTwoTextAction(
+				menu->menu(),
+				&st::menuIconShowInChat,
+				tr::lng_context_details_views(tr::now),
+				messageViews));
+		}
+		if (!messageShares.isEmpty()) {
+			menu->addAction(CreateTwoTextAction(
+				menu->menu(),
+				&st::menuIconViewReplies,
+				tr::lng_context_details_shares(tr::now),
+				messageShares));
+		}
+		menu->addSeparator(&st::expandedMenuSeparator);
+	}
+	menu->addAction(CreateTwoTextAction(
+		menu->menu(),
+		&st::menuIconInfo,
+		tr::lng_context_details_id(tr::now),
+		messageId));
+	menu->addAction(CreateTwoTextAction(
+		menu->menu(),
+		&st::menuIconSchedule,
+		tr::lng_context_details_date(tr::now),
+		FormatDetailsDateTime(messageDate)));
+	if (!messageEditDate.isEmpty()) {
+		menu->addAction(CreateTwoTextAction(
+			menu->menu(),
+			&st::menuIconEdit,
+			tr::lng_context_details_edit_date(tr::now),
+			messageEditDate));
+	}
+	if (!messageForwardDate.isEmpty()) {
+		menu->addAction(CreateTwoTextAction(
+			menu->menu(),
+			&st::menuIconTTL,
+			tr::lng_context_details_forward_date(tr::now),
+			messageForwardDate));
+	}
+	if (media && hasAnyMediaField) {
+		menu->addSeparator(&st::expandedMenuSeparator);
+		if (!mediaSize.isEmpty()) {
+			menu->addAction(CreateTwoTextAction(
+				menu->menu(),
+				&st::menuIconDownload,
+				tr::lng_context_details_file_size(tr::now),
+				mediaSize));
+		}
+		if (!mediaMimeName.isEmpty()) {
+			menu->addAction(CreateTwoTextAction(
+				menu->menu(),
+				&st::menuIconShowAll,
+				tr::lng_context_details_mime_type(tr::now),
+				mediaMimeName));
+		}
+		if (!mediaName.isEmpty()) {
+			const auto shortName = (mediaName.size() > 20)
+				? (u"…"_q + mediaName.mid(mediaName.size() - 20))
+				: mediaName;
+			menu->addAction(CreateTwoTextAction(
+				menu->menu(),
+				&st::menuIconEdit,
+				tr::lng_context_details_file_name(tr::now),
+				shortName,
+				[=] {
+					QGuiApplication::clipboard()->setText(mediaName);
+				}));
+		}
+		if (!mediaResolution.isEmpty()) {
+			menu->addAction(CreateTwoTextAction(
+				menu->menu(),
+				&st::menuIconStats,
+				tr::lng_context_details_resolution(tr::now),
+				mediaResolution));
+		}
+		if (!videoCodec.isEmpty()) {
+			menu->addAction(CreateTwoTextAction(
+				menu->menu(),
+				&st::menuIconShowAll,
+				tr::lng_context_details_video_codec(tr::now),
+				videoCodec));
+		}
+		if (!videoQuality.isEmpty()) {
+			menu->addAction(CreateTwoTextAction(
+				menu->menu(),
+				&st::menuIconStats,
+				tr::lng_context_details_quality(tr::now),
+				videoQuality));
+		}
+		if (!mediaDC.isEmpty()) {
+			menu->addAction(CreateTwoTextAction(
+				menu->menu(),
+				&st::menuIconBoosts,
+				tr::lng_context_details_datacenter(tr::now),
+				mediaDC));
+		}
+		if (document && document->sticker() && document->sticker()->set.id) {
+			AddPackOwnerRow(menu, document->sticker()->set.id, controller);
+		}
+	}
+	if (singleEmojiPackId
+		&& (!document
+			|| !document->sticker()
+			|| document->sticker()->set.id != singleEmojiPackId)) {
+		AddPackOwnerRow(menu, singleEmojiPackId, controller);
+	}
+}
+
+void AddRateTranscribeAction(
+		not_null<Ui::PopupMenu*> menu,
+		HistoryItem *item) {
+	if (!item || !Menu::HasRateTranscribeItem(item) || menu->empty()) {
+		return;
+	}
+	menu->insertAction(
+		RateTranscribeInsertIndex(menu),
+		base::make_unique_q<Menu::RateTranscribe>(
+			menu,
+			menu->st().menu,
+			Menu::RateTranscribeCallbackFactory(item)));
+}
 
 bool HasEditMessageAction(
 		const ContextMenuRequest &request,
@@ -317,16 +885,6 @@ void AddDocumentActions(
 	if (item && !list->hasCopyMediaRestriction(item)) {
 		const auto controller = list->controller();
 		AddSaveSoundForNotifications(menu, item, document, controller);
-	}
-	if ((document->isVoiceMessage()
-			|| document->isVideoMessage())
-		&& Menu::HasRateTranscribeItem(item)) {
-		if (!menu->empty()) {
-			menu->insertAction(0, base::make_unique_q<Menu::RateTranscribe>(
-				menu,
-				menu->st().menu,
-				Menu::RateTranscribeCallbackFactory(item)));
-		}
 	}
 	AddSaveDocumentAction(menu, item, document, list);
 	AddCopyFilename(
@@ -1592,6 +2150,8 @@ base::unique_qptr<Ui::PopupMenu> FillContextMenu(
 		list,
 		st::popupMenuWithIcons);
 
+	AddMessageDetailsAction(result, item, view, list->controller());
+
 	if (hasWhoReactedItem) {
 		AddWhoReactedAction(result, list, item, list->controller());
 	}
@@ -1685,6 +2245,7 @@ base::unique_qptr<Ui::PopupMenu> FillContextMenu(
 
 	AddCopyLinkAction(result, link);
 	AddMessageActions(result, request, list);
+	AddRateTranscribeAction(result, item);
 
 	const auto wasAmount = result->actions().size();
 	if (const auto textItem = view ? view->textItem() : item) {
@@ -1703,6 +2264,24 @@ base::unique_qptr<Ui::PopupMenu> FillContextMenu(
 	//}
 
 	return result;
+}
+
+void AddMessageDetailsAction(
+		not_null<Ui::PopupMenu*> menu,
+		HistoryItem *item,
+		Element *view,
+		not_null<Window::SessionController*> controller) {
+	if (!item) {
+		return;
+	}
+	Ui::Menu::CreateAddActionCallback(menu)(Window::PeerMenuCallback::Args{
+		.text = tr::lng_context_details(tr::now),
+		.handler = nullptr,
+		.icon = &st::menuIconInfo,
+		.fillSubmenu = [=](not_null<Ui::PopupMenu*> submenu) {
+			FillDetailsSubmenu(submenu, item, view, controller);
+		},
+	});
 }
 
 void CopyPostLink(
