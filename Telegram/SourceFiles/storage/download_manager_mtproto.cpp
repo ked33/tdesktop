@@ -34,7 +34,7 @@ constexpr auto kBadRequestDurationThreshold = 8 * crl::time(1000);
 
 [[nodiscard]] int DownloadBoostLevel() {
 	const auto boost = GetEnhancedInt("net_download_speed_boost");
-	return std::clamp(boost, 0, 3);
+	return std::clamp(boost, 0, 5);
 }
 
 [[nodiscard]] int StartWaitedInSession() {
@@ -45,6 +45,10 @@ constexpr auto kBadRequestDurationThreshold = 8 * crl::time(1000);
 		return 8 * kDownloadPartSize;
 	case 3:
 		return 10 * kDownloadPartSize;
+	case 4:
+		return 12 * kDownloadPartSize;
+	case 5:
+		return 16 * kDownloadPartSize;
 	default:
 		return 4 * kDownloadPartSize;
 	}
@@ -58,6 +62,10 @@ constexpr auto kBadRequestDurationThreshold = 8 * crl::time(1000);
 		return 32 * kDownloadPartSize;
 	case 3:
 		return 40 * kDownloadPartSize;
+	case 4:
+		return 48 * kDownloadPartSize;
+	case 5:
+		return 64 * kDownloadPartSize;
 	default:
 		return 16 * kDownloadPartSize;
 	}
@@ -71,6 +79,10 @@ constexpr auto kBadRequestDurationThreshold = 8 * crl::time(1000);
 		return 2;
 	case 3:
 		return 3;
+	case 4:
+		return 4;
+	case 5:
+		return 5;
 	default:
 		return 1;
 	}
@@ -84,6 +96,10 @@ constexpr auto kBadRequestDurationThreshold = 8 * crl::time(1000);
 		return 10;
 	case 3:
 		return 12;
+	case 4:
+		return 14;
+	case 5:
+		return 16;
 	default:
 		return 8;
 	}

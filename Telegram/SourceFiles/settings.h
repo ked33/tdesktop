@@ -194,8 +194,8 @@ inline void SetNetworkBoost(int boost) {
 inline void SetDownloadBoost(int boost) {
 	if (boost < 0) {
 		gEnhancedOptions.insert("net_download_speed_boost", 0);
-	} else if (boost > 3) {
-		gEnhancedOptions.insert("net_download_speed_boost", 3);
+	} else if (boost > 5) {
+		gEnhancedOptions.insert("net_download_speed_boost", 5);
 	} else {
 		gEnhancedOptions.insert("net_download_speed_boost", boost);
 	}
