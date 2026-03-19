@@ -36,6 +36,23 @@ private:
 
 };
 
+class DownloadBoostBox : public Ui::BoxContent {
+public:
+	DownloadBoostBox(QWidget *parent);
+
+	static QString BoostLabel(int boost);
+
+protected:
+	void prepare() override;
+
+private:
+	void save();
+
+	object_ptr<Ui::FlatLabel> _description = {nullptr};
+	std::shared_ptr<Ui::RadiobuttonGroup> _boostGroup;
+
+};
+
 class AlwaysDeleteBox : public Ui::BoxContent {
 public:
 	AlwaysDeleteBox(QWidget *parent);

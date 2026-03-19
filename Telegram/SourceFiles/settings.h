@@ -191,6 +191,16 @@ inline void SetNetworkBoost(int boost) {
 	cSetNetUploadRequestInterval(500 - (100 * GetEnhancedInt("net_speed_boost")));
 }
 
+inline void SetDownloadBoost(int boost) {
+	if (boost < 0) {
+		gEnhancedOptions.insert("net_download_speed_boost", 0);
+	} else if (boost > 3) {
+		gEnhancedOptions.insert("net_download_speed_boost", 3);
+	} else {
+		gEnhancedOptions.insert("net_download_speed_boost", boost);
+	}
+}
+
 inline bool blockExist(int64 id) {
 	if (cBlockList().contains(id)) {
 		return true;
