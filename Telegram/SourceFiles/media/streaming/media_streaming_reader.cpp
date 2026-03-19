@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "media/streaming/media_streaming_common.h"
 #include "media/streaming/media_streaming_loader.h"
+#include "settings.h"
 #include "storage/cache/storage_cache_database.h"
 
 namespace Media {
@@ -23,11 +24,27 @@ constexpr auto kMaxOnlyInHeader = 80 * kPartSize;
 constexpr auto kPartsOutsideFirstSliceGood = 8;
 constexpr auto kSlicesInMemory = 2;
 
-// 1 MB of parts are requested from cloud ahead of reading demand.
-constexpr auto kPreloadPartsAhead = 8;
 constexpr auto kDownloaderRequestsLimit = 8;
 
 using PartsMap = base::flat_map<uint32, QByteArray>;
+
+[[nodiscard]] int DownloadBoostLevel() {
+	const auto boost = GetEnhancedInt("net_download_speed_boost");
+	return (boost < 0) ? 0 : (boost > 3) ? 3 : boost;
+}
+
+[[nodiscard]] int PreloadPartsAhead() {
+	switch (DownloadBoostLevel()) {
+	case 1:
+		return 12;
+	case 2:
+		return 16;
+	case 3:
+		return 24;
+	default:
+		return 8;
+	}
+}
 
 struct ParsedCacheEntry {
 	PartsMap parts;
@@ -276,7 +293,7 @@ auto Reader::Slice::prepareFill(
 	result.ready = false;
 	const auto fromOffset = (from / kPartSize) * kPartSize;
 	const auto tillPart = (till + kPartSize - 1) / kPartSize;
-	const auto preloadTillOffset = (tillPart + kPreloadPartsAhead)
+	const auto preloadTillOffset = (tillPart + PreloadPartsAhead())
 		* kPartSize;
 
 	const auto after = ranges::upper_bound(

@@ -69,6 +69,61 @@ QString NetBoostBox::BoostLabel(int boost) {
 	}
 }
 
+DownloadBoostBox::DownloadBoostBox(QWidget *parent) {
+}
+
+void DownloadBoostBox::prepare() {
+	setTitle(tr::lng_settings_net_download_speed_boost());
+
+	addButton(tr::lng_settings_save(), [=] { save(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+
+	auto y = st::boxOptionListPadding.top();
+	_description.create(
+			this,
+			tr::lng_net_download_speed_boost_desc(tr::now),
+			st::boxLabel);
+	_description->moveToLeft(st::boxPadding.left(), y);
+
+	y += _description->height() + st::boxMediumSkip;
+
+	_boostGroup = std::make_shared<Ui::RadiobuttonGroup>(
+		GetEnhancedInt("net_download_speed_boost"));
+
+	for (int i = 0; i <= 3; i++) {
+		const auto button = Ui::CreateChild<Ui::Radiobutton>(
+				this,
+				_boostGroup,
+				i,
+				BoostLabel(i),
+				st::autolockButton);
+		button->moveToLeft(st::boxPadding.left(), y);
+		y += button->heightNoMargins() + st::boxOptionListSkip;
+	}
+	showChildren();
+	setDimensions(st::boxWidth, y);
+}
+
+QString DownloadBoostBox::BoostLabel(int boost) {
+	return NetBoostBox::BoostLabel(boost);
+}
+
+void DownloadBoostBox::save() {
+	const auto changeBoost = [=](Fn<void()> &&close) {
+		SetDownloadBoost(_boostGroup->current());
+		EnhancedSettings::Write();
+		Core::Restart();
+	};
+
+	getDelegate()->show(
+		Ui::MakeConfirmBox({
+				.text = tr::lng_net_boost_restart_desc(tr::now),
+				.confirmed = changeBoost,
+				.confirmText = tr::lng_settings_restart_now(tr::now),
+				.cancelText = tr::lng_cancel(tr::now),
+		}));
+}
+
 void NetBoostBox::save() {
 	const auto changeBoost = [=](Fn<void()> &&close) {
 		SetNetworkBoost(_boostGroup->current());
