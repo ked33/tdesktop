@@ -2475,8 +2475,6 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		return item;
 	};
 	const auto leaderOrSelf = groupLeaderOrSelf(_dragStateItem);
-	const auto hasWhoReactedItem = leaderOrSelf
-		&& Api::WhoReactedExists(leaderOrSelf, Api::WhoReactedList::All);
 	using namespace HistoryView::Reactions;
 	const auto clickedReaction = ReactionIdOfLink(link);
 	const auto linkPhoneNumber = link
@@ -2562,16 +2560,24 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		return;
 	}
 	const auto controller = _controller;
-
-	if (hasWhoReactedItem) {
-		HistoryView::AddWhoReactedAction(
-			_menu,
-			this,
-			leaderOrSelf,
-			_controller);
-	} else if (leaderOrSelf) {
-		HistoryView::MaybeAddWhenEditedForwardedAction(_menu, leaderOrSelf, _controller);
-	}
+	const auto addTopInfoActions = [&](HistoryItem *item) {
+		const auto leaderOrSelf = groupLeaderOrSelf(item);
+		if (!leaderOrSelf) {
+			return;
+		}
+		if (Api::WhoReactedExists(leaderOrSelf, Api::WhoReactedList::All)) {
+			HistoryView::AddWhoReactedAction(
+				_menu,
+				this,
+				leaderOrSelf,
+				_controller);
+		} else {
+			HistoryView::MaybeAddWhenEditedForwardedAction(
+				_menu,
+				leaderOrSelf,
+				_controller);
+		}
+	};
 
 	const auto addItemActions = [&](
 			HistoryItem *item,
@@ -2972,6 +2978,13 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 	if (lnkPhoto || lnkDocument) {
 		const auto item = _dragStateItem;
 		const auto itemId = item ? item->fullId() : FullMsgId();
+		const auto detailsView = item ? viewByItem(item) : nullptr;
+		HistoryView::AddMessageDetailsAction(
+			_menu,
+			item,
+			detailsView,
+			_controller);
+		addTopInfoActions(item);
 		addReplyAction(item);
 
 		if (isUponSelected > 0) {
@@ -3240,6 +3253,8 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		const auto canReport = item && item->suggestReport();
 		const auto canBlockSender = item && item->history()->peer->isRepliesChat();
 		const auto view = viewByItem(item);
+		const auto detailsItem = partItemOrLeader;
+		const auto detailsView = detailsItem ? viewByItem(detailsItem) : nullptr;
 		const auto actionText = link
 			? link->copyToClipboardContextItemText()
 			: QString();
@@ -3249,6 +3264,12 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			: (Element::Moused() && Element::Moused()->data()->isSponsored())
 			? Element::Moused()->data().get()
 			: nullptr;
+		HistoryView::AddMessageDetailsAction(
+			_menu,
+			detailsItem,
+			detailsView,
+			_controller);
+		addTopInfoActions(detailsItem);
 		if (sponsored) {
 			Menu::FillSponsored(
 				Ui::Menu::CreateAddActionCallback(_menu),
@@ -3647,13 +3668,26 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 	}
 
 	if (!_menu->empty() && rateTranscriptionItem) {
-		const auto firstAction = _menu->actions().empty()
-			? QString()
-			: _menu->actions().front()->text();
-		const auto linkFirst
-			= (firstAction == tr::lng_context_copy_message_link(tr::now))
-			|| (firstAction == tr::lng_context_copy_post_link(tr::now));
-		_menu->insertAction(linkFirst ? 1 : 0, base::make_unique_q<Menu::RateTranscribe>(
+		const auto isDetailsActionText = [](const QString &text) {
+			return text == tr::lng_context_details(tr::now);
+		};
+		const auto isPostLinkActionText = [](const QString &text) {
+			return (text == tr::lng_context_copy_message_link(tr::now))
+				|| (text == tr::lng_context_copy_post_link(tr::now));
+		};
+		const auto &actions = _menu->actions();
+		auto insertIndex = 0;
+		if (!actions.empty()) {
+			if (isPostLinkActionText(actions.front()->text())) {
+				insertIndex = (actions.size() > 1
+					&& isDetailsActionText(actions[1]->text()))
+					? 2
+					: 1;
+			} else if (isDetailsActionText(actions.front()->text())) {
+				insertIndex = 1;
+			}
+		}
+		_menu->insertAction(insertIndex, base::make_unique_q<Menu::RateTranscribe>(
 			_menu,
 			_menu->st().menu,
 			Menu::RateTranscribeCallbackFactory(rateTranscriptionItem)));

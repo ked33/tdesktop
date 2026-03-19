@@ -199,5 +199,21 @@
     "lng_group_requests_ban": "封禁",
     "lng_sure_delete_own_messages": "你确定要删除你在此聊天中发送的所有消息吗？\n\n此操作无法撤销。",
 
-    "lng_blocked_user_hint": "[被拉黑用户的消息]\n"
+    "lng_blocked_user_hint": "[被拉黑用户的消息]\n",
+
+    "lng_context_details": "详情",
+    "lng_context_details_views": "浏览量",
+    "lng_context_details_shares": "转发数",
+    "lng_context_details_id": "消息 ID",
+    "lng_context_details_date": "发送时间",
+    "lng_context_details_edit_date": "编辑时间",
+    "lng_context_details_forward_date": "转发时间",
+    "lng_context_details_file_size": "文件大小",
+    "lng_context_details_mime_type": "MIME 类型",
+    "lng_context_details_file_name": "文件名",
+    "lng_context_details_resolution": "分辨率",
+    "lng_context_details_datacenter": "数据中心",
+    "lng_context_details_video_codec": "视频编码",
+    "lng_context_details_quality": "清晰度",
+    "lng_context_details_pack_owner": "包作者"
 }
