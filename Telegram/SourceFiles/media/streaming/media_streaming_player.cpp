@@ -14,13 +14,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/audio/media_audio.h" // for SupportsSpeedControl()
 #include "media/media_common.h"
 #include "data/data_document.h" // for DocumentData::duration()
+#include "settings.h"
 
 namespace Media {
 namespace Streaming {
 namespace {
 
 constexpr auto kBufferFor = 3 * crl::time(1000);
-constexpr auto kLoadInAdvanceForRemote = 32 * crl::time(1000);
 constexpr auto kLoadInAdvanceForLocal = 5 * crl::time(1000);
 constexpr auto kMsFrequency = 1000; // 1000 ms per second.
 
@@ -31,6 +31,24 @@ constexpr auto kMsFrequency = 1000; // 1000 ms per second.
 [[nodiscard]] bool FullTrackReceived(const TrackState &state) {
 	return (state.duration != kTimeUnknown)
 		&& (state.receivedTill == state.duration);
+}
+
+[[nodiscard]] int DownloadBoostLevel() {
+	const auto boost = GetEnhancedInt("net_download_speed_boost");
+	return (boost < 0) ? 0 : (boost > 3) ? 3 : boost;
+}
+
+[[nodiscard]] crl::time LoadInAdvanceForRemote() {
+	switch (DownloadBoostLevel()) {
+	case 1:
+		return 40 * crl::time(1000);
+	case 2:
+		return 48 * crl::time(1000);
+	case 3:
+		return 56 * crl::time(1000);
+	default:
+		return 32 * crl::time(1000);
+	}
 }
 
 void SaveValidStateInformation(TrackState &to, TrackState &&from) {
@@ -568,7 +586,7 @@ void Player::savePreviousReceivedTill(
 }
 
 crl::time Player::loadInAdvanceFor() const {
-	return _remoteLoader ? kLoadInAdvanceForRemote : kLoadInAdvanceForLocal;
+	return _remoteLoader ? LoadInAdvanceForRemote() : kLoadInAdvanceForLocal;
 }
 
 crl::time Player::computeTotalDuration() const {
