@@ -331,6 +331,80 @@ namespace Settings {
 			QTimer::singleShot(1 * 1000, []{ Core::Restart(); });
 		}, container->lifetime());
 
+		const auto addMessageContextToggle = [&](const QString &text, const char *key) {
+			AddButtonWithIcon(
+				inner,
+				rpl::single(text),
+				st::settingsButtonNoIcon
+			)->toggleOn(
+				rpl::single(GetEnhancedBool(key))
+			)->toggledChanges(
+			) | rpl::filter([=](bool toggled) {
+				return (toggled != GetEnhancedBool(key));
+			}) | rpl::on_next([=](bool toggled) {
+				SetEnhancedValue(key, toggled);
+				EnhancedSettings::Write();
+			}, container->lifetime());
+		};
+
+		addMessageContextToggle(
+			tr::lng_settings_message_read_reactions_info(tr::now),
+			"show_message_context_read_info");
+		addMessageContextToggle(
+			tr::lng_context_details(tr::now),
+			"show_message_context_details");
+		addMessageContextToggle(
+			tr::lng_context_reply_msg(tr::now),
+			"show_message_context_reply");
+		addMessageContextToggle(
+			tr::lng_todo_add_title(tr::now),
+			"show_message_context_add_task");
+		addMessageContextToggle(
+			tr::lng_context_copy_message_link(tr::now),
+			"show_message_context_copy_link");
+		addMessageContextToggle(
+			tr::lng_context_show_messages_from(tr::now),
+			"show_message_context_show_messages_from");
+		addMessageContextToggle(
+			tr::lng_context_forward(tr::now),
+			"show_message_context_forward");
+		addMessageContextToggle(
+			tr::lng_context_repeater(tr::now),
+			"show_message_context_repeater");
+		addMessageContextToggle(
+			tr::lng_context_send_now_msg(tr::now),
+			"show_message_context_send_now");
+		addMessageContextToggle(
+			tr::lng_context_to_msg(tr::now),
+			"show_message_context_go_to_message");
+		addMessageContextToggle(
+			tr::lng_replies_view_thread(tr::now),
+			"show_message_context_view_replies");
+		addMessageContextToggle(
+			tr::lng_context_edit_msg(tr::now),
+			"show_message_context_edit");
+		addMessageContextToggle(
+			tr::lng_context_add_factcheck(tr::now),
+			"show_message_context_factcheck");
+		addMessageContextToggle(
+			tr::lng_context_pin_msg(tr::now),
+			"show_message_context_pin");
+		addMessageContextToggle(
+			tr::lng_context_delete_msg(tr::now),
+			"show_message_context_delete");
+		addMessageContextToggle(
+			tr::lng_context_save_file(tr::now),
+			"show_message_context_save_as");
+		addMessageContextToggle(
+			tr::lng_context_report_msg(tr::now),
+			"show_message_context_report");
+		addMessageContextToggle(
+			tr::lng_context_select_msg(tr::now),
+			"show_message_context_select");
+		addMessageContextToggle(
+			tr::lng_context_reschedule(tr::now),
+			"show_message_context_reschedule");
+
 		auto jsonBtn = AddButtonWithIcon(
 			inner,
 			tr::lng_settings_show_view_as_json(),
