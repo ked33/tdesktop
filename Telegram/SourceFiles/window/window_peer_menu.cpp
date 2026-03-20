@@ -463,6 +463,7 @@ private:
 	void addTTLSubmenu(bool addSeparator);
 	void addSendGift();
 	void addPinnedMessages();
+	void addRandomIdMessage();
 	void addFirstMessage();
 	void addViewChannel();
 	void addCreateTopic();
@@ -1744,7 +1745,7 @@ void Filler::addPinnedMessages() {
 	}
 }
 
-void Filler::addFirstMessage() {
+void Filler::addRandomIdMessage() {
 	const auto peer = _peer->isMegagroup()
 		? _peer->asMegagroup()
 		: _peer->asChannel();
@@ -1753,9 +1754,6 @@ void Filler::addFirstMessage() {
 	}
 	const auto controller = _controller;
 	const auto history = _request.key.history();
-	_addAction(tr::lng_go_to_first_message(tr::now), [=] {
-		controller->showPeerHistory(peer, Window::SectionShow::Way::Forward, 1);
-	}, &st::menuIconShowInChat);
 	_addAction(tr::lng_go_to_random_id_message(tr::now), [=] {
 		const auto weak = base::make_weak(controller);
 		const auto jump = [=](MsgId maxId) {
@@ -1807,6 +1805,19 @@ void Filler::addFirstMessage() {
 			});
 			jump(maxId);
 		}).send();
+	}, &st::menuIconShowInChat);
+}
+
+void Filler::addFirstMessage() {
+	const auto peer = _peer->isMegagroup()
+		? _peer->asMegagroup()
+		: _peer->asChannel();
+	if (!peer) {
+		return;
+	}
+	const auto controller = _controller;
+	_addAction(tr::lng_go_to_first_message(tr::now), [=] {
+		controller->showPeerHistory(peer, Window::SectionShow::Way::Forward, 1);
 	}, &st::menuIconShowInChat);
 }
 
@@ -2024,9 +2035,10 @@ void Filler::fillContextMenuActions() {
 }
 
 void Filler::fillHistoryBackgroundActions() {
+	addRandomIdMessage();
+	addFirstMessage();
 	addToggleFolder();
 	addClearHistory();
-	addFirstMessage();
 }
 
 void Filler::fillHistoryActions() {
@@ -2041,6 +2053,7 @@ void Filler::fillHistoryActions() {
 	addBoostChat();
 	addViewChannel();
 	addFirstMessage();
+	addRandomIdMessage();
 	addPinnedMessages();
 	addCreatePoll();
 	addCreateTodoList();
