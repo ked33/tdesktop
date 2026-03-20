@@ -29,6 +29,7 @@
     "lng_settings_disable_global_search": "禁用全局搜索",
     "lng_settings_show_group_sender_avatar": "在群组中显示发送者头像",
     "lng_settings_show_seconds": "时间显示秒数",
+    "lng_settings_message_read_reactions_info": "已读 / 反应信息",
     "lng_settings_show_view_as_json": "显示“查看为 JSON”",
     "lng_settings_hide_counter": "隐藏在线用户计数",
     "lng_settings_hide_stories": "隐藏动态",
