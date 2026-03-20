@@ -896,11 +896,14 @@ void AddDocumentActions(
 }
 
 void AddPostLinkAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request) {
-	const auto item = request.item;
-	if (!item
-		|| !item->hasDirectLink()
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request) {
+		if (!GetEnhancedBool("show_message_context_copy_link")) {
+			return;
+		}
+		const auto item = request.item;
+		if (!item
+			|| !item->hasDirectLink()
 		|| request.pointState == PointState::Outside) {
 		return;
 	} else if (request.link
@@ -934,12 +937,15 @@ MessageIdsList ExtractIdsList(const SelectedItems &items) {
 }
 
 bool AddForwardSelectedAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
-	if (!request.overSelection || request.selectedItems.empty()) {
-		return false;
-	}
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_forward")) {
+			return false;
+		}
+		if (!request.overSelection || request.selectedItems.empty()) {
+			return false;
+		}
 	if (!ranges::all_of(request.selectedItems, &SelectedItem::canForward)) {
 		return false;
 	}
@@ -996,12 +1002,15 @@ bool AddForwardSelectedAction(
 }
 
 bool AddForwardMessageAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
-	const auto item = request.item;
-	if (!request.selectedItems.empty()) {
-		return false;
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_forward")) {
+			return false;
+		}
+		const auto item = request.item;
+		if (!request.selectedItems.empty()) {
+			return false;
 	} else if (!item || !item->allowsForward()) {
 		return false;
 	}
@@ -1085,12 +1094,15 @@ bool AddForwardMessageAction(
 }
 
 void AddMsgsFromUserAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest& request,
-		not_null<ListWidget*> list) {
-	const auto item = request.item;
-	if (!request.selectedItems.empty() || !item) {
-		return;
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest& request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_show_messages_from")) {
+			return;
+		}
+		const auto item = request.item;
+		if (!request.selectedItems.empty() || !item) {
+			return;
 	}
 	const auto peer = item->history()->peer;
 	if (peer->isChat() || peer->isMegagroup()) {
@@ -1118,12 +1130,15 @@ Api::SendAction prepareSendAction(
 }
 
 void AddRepeaterAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest& request,
-		not_null<ListWidget*> list) {
-	const auto item = request.item;
-	if (!request.selectedItems.empty() || !item) {
-		return;
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest& request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_repeater")) {
+			return;
+		}
+		const auto item = request.item;
+		if (!request.selectedItems.empty() || !item) {
+			return;
 	}
 	const auto itemId = item->fullId();
 	const auto _history = item->history();
@@ -1252,12 +1267,15 @@ void AddForwardAction(
 }
 
 bool AddSendNowSelectedAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
-	if (!request.overSelection || request.selectedItems.empty()) {
-		return false;
-	}
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_send_now")) {
+			return false;
+		}
+		if (!request.overSelection || request.selectedItems.empty()) {
+			return false;
+		}
 	if (!ranges::all_of(request.selectedItems, &SelectedItem::canSendNow)) {
 		return false;
 	}
@@ -1292,12 +1310,15 @@ bool AddSendNowSelectedAction(
 }
 
 bool AddSendNowMessageAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
-	const auto item = request.item;
-	if (!request.selectedItems.empty()) {
-		return false;
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_send_now")) {
+			return false;
+		}
+		const auto item = request.item;
+		if (!request.selectedItems.empty()) {
+			return false;
 	} else if (!item || !item->allowsSendNow()) {
 		return false;
 	}
@@ -1325,10 +1346,13 @@ bool AddSendNowMessageAction(
 }
 
 bool AddRescheduleAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
-	const auto owner = &request.navigation->session().data();
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_reschedule")) {
+			return false;
+		}
+		const auto owner = &request.navigation->session().data();
 
 	const auto goodSingle = HasEditMessageAction(request, list)
 		&& request.item->allowsReschedule();
@@ -1423,18 +1447,16 @@ bool AddRescheduleAction(
 }
 
 void AddViewJSONAction(
-	not_null<Ui::PopupMenu*> menu,
-	const ContextMenuRequest& request,
-	not_null<ListWidget*> list) {
-	if (!GetEnhancedBool("show_json"))
-	{
-		return;
-	}
-	const auto item = request.item;
-	if (item == nullptr)
-	{
-		return;
-	}
+		not_null<Ui::PopupMenu*> menu,
+		const ContextMenuRequest& request,
+		not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_json")) {
+			return;
+		}
+		const auto item = request.item;
+		if (item == nullptr) {
+			return;
+		}
 	if (!request.selectedItems.empty()) {
 		return;
 	}
@@ -1446,12 +1468,15 @@ void AddViewJSONAction(
 }
 
 bool AddReplyToMessageAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
-	const auto context = list->elementContext();
-	const auto item = request.quote.item
-		? request.quote.item
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_reply")) {
+			return false;
+		}
+		const auto context = list->elementContext();
+		const auto item = request.quote.item
+			? request.quote.item
 		: request.item;
 	const auto topic = item ? item->topic() : nullptr;
 	const auto peer = item ? item->history()->peer.get() : nullptr;
@@ -1493,9 +1518,9 @@ bool AddReplyToMessageAction(
 }
 
 bool AddTodoListAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
 	const auto context = list->elementContext();
 	const auto item = request.item;
 	if (!item
@@ -1505,28 +1530,38 @@ bool AddTodoListAction(
 			&& context != Context::Monoforum
 			&& context != Context::Pinned)) {
 		return false;
+		}
+		const auto itemId = item->fullId();
+		const auto controller = list->controller();
+		auto added = false;
+		if (GetEnhancedBool("show_message_context_edit")) {
+			menu->addAction(tr::lng_context_edit_msg(tr::now), [=] {
+				if (const auto item = controller->session().data().message(itemId)) {
+					Window::PeerMenuEditTodoList(controller, item);
+				}
+			}, &st::menuIconEdit);
+			added = true;
+		}
+		if (GetEnhancedBool("show_message_context_add_task")) {
+			menu->addAction(tr::lng_todo_add_title(tr::now), [=] {
+				if (const auto item = controller->session().data().message(itemId)) {
+					Window::PeerMenuAddTodoListTasks(controller, item);
+				}
+			}, &st::menuIconAdd);
+			added = true;
+		}
+		return added;
 	}
-	const auto itemId = item->fullId();
-	const auto controller = list->controller();
-	menu->addAction(tr::lng_context_edit_msg(tr::now), [=] {
-		if (const auto item = controller->session().data().message(itemId)) {
-			Window::PeerMenuEditTodoList(controller, item);
-		}
-	}, &st::menuIconEdit);
-	menu->addAction(tr::lng_todo_add_title(tr::now), [=] {
-		if (const auto item = controller->session().data().message(itemId)) {
-			Window::PeerMenuAddTodoListTasks(controller, item);
-		}
-	}, &st::menuIconAdd);
-	return true;
-}
 
 bool AddViewRepliesAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
-	const auto context = list->elementContext();
-	const auto item = request.item;
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_view_replies")) {
+			return false;
+		}
+		const auto context = list->elementContext();
+		const auto item = request.item;
 	if (!item
 		|| !item->isRegular()
 		|| (context != Context::History && context != Context::Pinned)) {
@@ -1568,12 +1603,15 @@ bool AddViewRepliesAction(
 }
 
 bool AddEditMessageAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
-	if (!HasEditMessageAction(request, list)) {
-		return false;
-	}
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_edit")) {
+			return false;
+		}
+		if (!HasEditMessageAction(request, list)) {
+			return false;
+		}
 	const auto item = request.item;
 	if (!item->allowsEdit(base::unixtime::now())) {
 		return false;
@@ -1591,12 +1629,15 @@ bool AddEditMessageAction(
 }
 
 void AddFactcheckAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
-	const auto item = request.item;
-	if (!item || !item->history()->session().factchecks().canEdit(item)) {
-		return;
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_factcheck")) {
+			return;
+		}
+		const auto item = request.item;
+		if (!item || !item->history()->session().factchecks().canEdit(item)) {
+			return;
 	}
 	const auto itemId = item->fullId();
 	const auto text = item->factcheckText();
@@ -1616,11 +1657,14 @@ void AddFactcheckAction(
 }
 
 bool AddPinMessageAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
-	const auto context = list->elementContext();
-	const auto item = request.item;
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_pin")) {
+			return false;
+		}
+		const auto context = list->elementContext();
+		const auto item = request.item;
 	if (!item || !item->isRegular()) {
 		return false;
 	}
@@ -1651,11 +1695,14 @@ bool AddPinMessageAction(
 }
 
 bool AddGoToMessageAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
-	const auto context = list->elementContext();
-	const auto view = request.view;
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_go_to_message")) {
+			return false;
+		}
+		const auto context = list->elementContext();
+		const auto view = request.view;
 	if (!view
 		|| !view->data()->isRegular()
 		|| context != Context::Pinned
@@ -1681,12 +1728,15 @@ void AddSendNowAction(
 }
 
 bool AddDeleteSelectedAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
-	if (!request.overSelection || request.selectedItems.empty()) {
-		return false;
-	}
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_delete")) {
+			return false;
+		}
+		if (!request.overSelection || request.selectedItems.empty()) {
+			return false;
+		}
 	if (!ranges::all_of(request.selectedItems, &SelectedItem::canDelete)) {
 		return false;
 	}
@@ -1705,12 +1755,15 @@ bool AddDeleteSelectedAction(
 }
 
 bool AddDeleteMessageAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
-	const auto item = request.item;
-	if (!request.selectedItems.empty()) {
-		return false;
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_delete")) {
+			return false;
+		}
+		const auto item = request.item;
+		if (!request.selectedItems.empty()) {
+			return false;
 	} else if (!item || !item->canDelete()) {
 		return false;
 	}
@@ -1778,12 +1831,15 @@ void AddDeleteAction(
 }
 
 void AddDownloadFilesAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
-	if (!request.overSelection
-		|| request.selectedItems.empty()
-		|| list->hasCopyRestrictionForSelected()) {
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_save_as")) {
+			return;
+		}
+		if (!request.overSelection
+			|| request.selectedItems.empty()
+			|| list->hasCopyRestrictionForSelected()) {
 		return;
 	}
 	Menu::AddDownloadFilesAction(
@@ -1794,12 +1850,15 @@ void AddDownloadFilesAction(
 }
 
 void AddReportAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
-	const auto item = request.item;
-	if (!request.selectedItems.empty()) {
-		return;
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_report")) {
+			return;
+		}
+		const auto item = request.item;
+		if (!request.selectedItems.empty()) {
+			return;
 	} else if (!item || !item->suggestReport()) {
 		return;
 	}
@@ -1827,12 +1886,15 @@ void AddReportAction(
 }
 
 bool AddClearSelectionAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
-	if (!request.overSelection || request.selectedItems.empty()) {
-		return false;
-	}
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_select")) {
+			return false;
+		}
+		if (!request.overSelection || request.selectedItems.empty()) {
+			return false;
+		}
 	menu->addAction(tr::lng_context_clear_selection(tr::now), [=] {
 		list->cancelSelection();
 	}, &st::menuIconSelect);
@@ -1840,12 +1902,15 @@ bool AddClearSelectionAction(
 }
 
 bool AddSelectMessageAction(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
-	const auto item = request.item;
-	if (request.overSelection && !request.selectedItems.empty()) {
-		return false;
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
+		if (!GetEnhancedBool("show_message_context_select")) {
+			return false;
+		}
+		const auto item = request.item;
+		if (request.overSelection && !request.selectedItems.empty()) {
+			return false;
 	} else if (!item
 		|| item->isLocal()
 		|| item->isService()
@@ -2269,13 +2334,16 @@ base::unique_qptr<Ui::PopupMenu> FillContextMenu(
 }
 
 void AddMessageDetailsAction(
-		not_null<Ui::PopupMenu*> menu,
-		HistoryItem *item,
-		Element *view,
-		not_null<Window::SessionController*> controller) {
-	if (!item) {
-		return;
-	}
+			not_null<Ui::PopupMenu*> menu,
+			HistoryItem *item,
+			Element *view,
+			not_null<Window::SessionController*> controller) {
+		if (!GetEnhancedBool("show_message_context_details")) {
+			return;
+		}
+		if (!item) {
+			return;
+		}
 	Ui::Menu::CreateAddActionCallback(menu)(Window::PeerMenuCallback::Args{
 		.text = tr::lng_context_details(tr::now),
 		.handler = nullptr,
@@ -2509,11 +2577,14 @@ void AddWhenEditedForwardedAuthorActionHelper(
 }
 
 void AddWhoReactedAction(
-		not_null<Ui::PopupMenu*> menu,
-		not_null<QWidget*> context,
-		not_null<HistoryItem*> item,
-		not_null<Window::SessionController*> controller) {
-	const auto whoReadIds = std::make_shared<Api::WhoReadList>();
+			not_null<Ui::PopupMenu*> menu,
+			not_null<QWidget*> context,
+			not_null<HistoryItem*> item,
+			not_null<Window::SessionController*> controller) {
+		if (!GetEnhancedBool("show_message_context_read_info")) {
+			return;
+		}
+		const auto whoReadIds = std::make_shared<Api::WhoReadList>();
 	const auto weak = base::make_weak(menu.get());
 	const auto user = item->history()->peer;
 	const auto showOrPremium = [=] {
@@ -2578,11 +2649,14 @@ void AddWhoReactedAction(
 }
 
 void MaybeAddWhenEditedForwardedAction(
-		not_null<Ui::PopupMenu*> menu,
-		not_null<HistoryItem*> item,
-		not_null<Window::SessionController*> controller) {
-	AddWhenEditedForwardedAuthorActionHelper(menu, item, controller, true);
-}
+			not_null<Ui::PopupMenu*> menu,
+			not_null<HistoryItem*> item,
+			not_null<Window::SessionController*> controller) {
+		if (!GetEnhancedBool("show_message_context_read_info")) {
+			return;
+		}
+		AddWhenEditedForwardedAuthorActionHelper(menu, item, controller, true);
+	}
 
 void AddEditTagAction(
 		not_null<Ui::PopupMenu*> menu,

@@ -25,6 +25,34 @@ namespace EnhancedSettings {
 
 		constexpr auto kWriteJsonTimeout = crl::time(5000);
 
+		void FillMissingDefaults() {
+			const auto ensureBool = [](const QString &key, bool value) {
+				if (!gEnhancedOptions.contains(key)) {
+					gEnhancedOptions.insert(key, value);
+				}
+			};
+
+			ensureBool(qsl("show_message_context_read_info"), true);
+			ensureBool(qsl("show_message_context_details"), true);
+			ensureBool(qsl("show_message_context_reply"), true);
+			ensureBool(qsl("show_message_context_add_task"), true);
+			ensureBool(qsl("show_message_context_copy_link"), true);
+			ensureBool(qsl("show_message_context_show_messages_from"), true);
+			ensureBool(qsl("show_message_context_forward"), true);
+			ensureBool(qsl("show_message_context_repeater"), true);
+			ensureBool(qsl("show_message_context_send_now"), true);
+			ensureBool(qsl("show_message_context_go_to_message"), true);
+			ensureBool(qsl("show_message_context_view_replies"), true);
+			ensureBool(qsl("show_message_context_edit"), true);
+			ensureBool(qsl("show_message_context_factcheck"), true);
+			ensureBool(qsl("show_message_context_pin"), true);
+			ensureBool(qsl("show_message_context_delete"), true);
+			ensureBool(qsl("show_message_context_save_as"), true);
+			ensureBool(qsl("show_message_context_report"), true);
+			ensureBool(qsl("show_message_context_select"), true);
+			ensureBool(qsl("show_message_context_reschedule"), true);
+		}
+
 		QString DefaultFilePath() {
 			return cWorkingDir() + qsl("tdata/enhanced-settings-default.json");
 		}
@@ -134,14 +162,15 @@ namespace EnhancedSettings {
 		connect(&_jsonWriteTimer, SIGNAL(timeout()), this, SLOT(writeTimeout()));
 	}
 
-	void Manager::fill() {
-		if (!DefaultFileIsValid()) {
-			writeDefaultFile();
+		void Manager::fill() {
+			if (!DefaultFileIsValid()) {
+				writeDefaultFile();
+			}
+			if (!readCustomFile()) {
+				WriteDefaultCustomFile();
+			}
+			FillMissingDefaults();
 		}
-		if (!readCustomFile()) {
-			WriteDefaultCustomFile();
-		}
-	}
 
 	void Manager::write(bool force) {
 		if (force && _jsonWriteTimer.isActive()) {
@@ -326,6 +355,25 @@ namespace EnhancedSettings {
 		settings.insert(qsl("disable_global_search"), false);
 		settings.insert(qsl("show_group_sender_avatar"), false);
 		settings.insert(qsl("show_seconds"), false);
+		settings.insert(qsl("show_message_context_read_info"), true);
+		settings.insert(qsl("show_message_context_details"), true);
+		settings.insert(qsl("show_message_context_reply"), true);
+		settings.insert(qsl("show_message_context_add_task"), true);
+		settings.insert(qsl("show_message_context_copy_link"), true);
+		settings.insert(qsl("show_message_context_show_messages_from"), true);
+		settings.insert(qsl("show_message_context_forward"), true);
+		settings.insert(qsl("show_message_context_repeater"), true);
+		settings.insert(qsl("show_message_context_send_now"), true);
+		settings.insert(qsl("show_message_context_go_to_message"), true);
+		settings.insert(qsl("show_message_context_view_replies"), true);
+		settings.insert(qsl("show_message_context_edit"), true);
+		settings.insert(qsl("show_message_context_factcheck"), true);
+		settings.insert(qsl("show_message_context_pin"), true);
+		settings.insert(qsl("show_message_context_delete"), true);
+		settings.insert(qsl("show_message_context_save_as"), true);
+		settings.insert(qsl("show_message_context_report"), true);
+		settings.insert(qsl("show_message_context_select"), true);
+		settings.insert(qsl("show_message_context_reschedule"), true);
 		settings.insert(qsl("show_json"), false);
 		settings.insert(qsl("hide_counter"), false);
 		settings.insert(qsl("translate_to_tc"), false);
@@ -381,6 +429,25 @@ namespace EnhancedSettings {
 		settings.insert(qsl("disable_global_search"), GetEnhancedBool("disable_global_search"));
 		settings.insert(qsl("show_group_sender_avatar"), GetEnhancedBool("show_group_sender_avatar"));
 		settings.insert(qsl("show_seconds"), GetEnhancedBool("show_seconds"));
+		settings.insert(qsl("show_message_context_read_info"), GetEnhancedBool("show_message_context_read_info"));
+		settings.insert(qsl("show_message_context_details"), GetEnhancedBool("show_message_context_details"));
+		settings.insert(qsl("show_message_context_reply"), GetEnhancedBool("show_message_context_reply"));
+		settings.insert(qsl("show_message_context_add_task"), GetEnhancedBool("show_message_context_add_task"));
+		settings.insert(qsl("show_message_context_copy_link"), GetEnhancedBool("show_message_context_copy_link"));
+		settings.insert(qsl("show_message_context_show_messages_from"), GetEnhancedBool("show_message_context_show_messages_from"));
+		settings.insert(qsl("show_message_context_forward"), GetEnhancedBool("show_message_context_forward"));
+		settings.insert(qsl("show_message_context_repeater"), GetEnhancedBool("show_message_context_repeater"));
+		settings.insert(qsl("show_message_context_send_now"), GetEnhancedBool("show_message_context_send_now"));
+		settings.insert(qsl("show_message_context_go_to_message"), GetEnhancedBool("show_message_context_go_to_message"));
+		settings.insert(qsl("show_message_context_view_replies"), GetEnhancedBool("show_message_context_view_replies"));
+		settings.insert(qsl("show_message_context_edit"), GetEnhancedBool("show_message_context_edit"));
+		settings.insert(qsl("show_message_context_factcheck"), GetEnhancedBool("show_message_context_factcheck"));
+		settings.insert(qsl("show_message_context_pin"), GetEnhancedBool("show_message_context_pin"));
+		settings.insert(qsl("show_message_context_delete"), GetEnhancedBool("show_message_context_delete"));
+		settings.insert(qsl("show_message_context_save_as"), GetEnhancedBool("show_message_context_save_as"));
+		settings.insert(qsl("show_message_context_report"), GetEnhancedBool("show_message_context_report"));
+		settings.insert(qsl("show_message_context_select"), GetEnhancedBool("show_message_context_select"));
+		settings.insert(qsl("show_message_context_reschedule"), GetEnhancedBool("show_message_context_reschedule"));
 		settings.insert(qsl("show_json"), GetEnhancedBool("show_json"));
 		settings.insert(qsl("hide_counter"), GetEnhancedBool("hide_counter"));
 		settings.insert(qsl("translate_to_tc"), GetEnhancedBool("translate_to_tc"));
