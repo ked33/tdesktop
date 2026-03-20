@@ -3697,6 +3697,23 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 						blockSenderAsGroup(itemId);
 					}, &st::menuIconBlock);
 				}
+			} else if (!item
+				&& !selectedState.count
+				&& getSelectedText().empty()) {
+				Window::FillHistoryBackgroundMenu(
+					_controller,
+					Dialogs::EntryState{
+						.key = _history,
+						.section = Dialogs::EntryState::Section::History,
+					},
+					Ui::Menu::CreateAddActionCallback(_menu.get()));
+				if (GetEnhancedBool("show_message_context_select")
+					&& Element::Moused()) {
+					if (!_menu->empty()) {
+						_menu->addSeparator(&st::expandedMenuSeparator);
+					}
+					addSelectMessageAction(Element::Moused()->data());
+				}
 			} else if (Element::Moused()) {
 				if (GetEnhancedBool("show_message_context_select")) {
 					addSelectMessageAction(Element::Moused()->data());

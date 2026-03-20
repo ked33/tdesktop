@@ -73,6 +73,10 @@ void FillDialogsEntryMenu(
 	not_null<SessionController*> controller,
 	Dialogs::EntryState request,
 	const PeerMenuCallback &addAction);
+void FillHistoryBackgroundMenu(
+	not_null<SessionController*> controller,
+	Dialogs::EntryState request,
+	const PeerMenuCallback &addAction);
 bool FillVideoChatMenu(
 	not_null<SessionController*> controller,
 	Dialogs::EntryState request,
