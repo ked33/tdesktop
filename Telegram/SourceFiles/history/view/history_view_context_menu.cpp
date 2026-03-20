@@ -446,22 +446,6 @@ private:
 		: QString();
 }
 
-[[nodiscard]] QString HighestVideoQuality(HistoryItem *item) {
-	if (!item) {
-		return {};
-	}
-	const auto media = item->media();
-	const auto document = media ? media->document() : nullptr;
-	if (!document || !document->isVideoFile()) {
-		return {};
-	}
-	auto best = document->resolveVideoQuality();
-	for (const auto &quality : document->resolveQualities(item)) {
-		best = std::max(best, quality->resolveVideoQuality());
-	}
-	return best ? QString::number(best) + u'p' : QString();
-}
-
 [[nodiscard]] uint64 UserIdFromPackId(uint64 id) {
 	auto ownerId = id >> 32;
 	if ((id >> 16) & 0xFF) {
@@ -550,15 +534,13 @@ void FillDetailsSubmenu(
 	const auto mediaResolution = MediaResolution(item);
 	const auto mediaDC = MediaDC(item);
 	const auto videoCodec = VideoCodec(item);
-	const auto videoQuality = HighestVideoQuality(item);
 	const auto hasAnyPostField = !messageViews.isEmpty() || !messageShares.isEmpty();
 	const auto hasAnyMediaField = !mediaSize.isEmpty()
 		|| !mediaMimeName.isEmpty()
 		|| !mediaName.isEmpty()
 		|| !mediaResolution.isEmpty()
 		|| !mediaDC.isEmpty()
-		|| !videoCodec.isEmpty()
-		|| !videoQuality.isEmpty();
+		|| !videoCodec.isEmpty();
 	if (hasAnyPostField) {
 		if (!messageViews.isEmpty()) {
 			menu->addAction(CreateTwoTextAction(
@@ -642,13 +624,6 @@ void FillDetailsSubmenu(
 				&st::menuIconShowAll,
 				tr::lng_context_details_video_codec(tr::now),
 				videoCodec));
-		}
-		if (!videoQuality.isEmpty()) {
-			menu->addAction(CreateTwoTextAction(
-				menu->menu(),
-				&st::menuIconStats,
-				tr::lng_context_details_quality(tr::now),
-				videoQuality));
 		}
 		if (!mediaDC.isEmpty()) {
 			menu->addAction(CreateTwoTextAction(
