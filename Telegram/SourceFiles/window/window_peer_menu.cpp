@@ -410,6 +410,7 @@ public:
 		Dialogs::EntryState request,
 		const PeerMenuCallback &addAction);
 	void fill();
+	void fillHistoryBackgroundActions();
 
 private:
 	using Section = Dialogs::EntryState::Section;
@@ -2020,6 +2021,12 @@ void Filler::fillContextMenuActions() {
 	addDeleteChat();
 	addLeaveChat();
 	addDeleteTopic();
+}
+
+void Filler::fillHistoryBackgroundActions() {
+	addToggleFolder();
+	addClearHistory();
+	addFirstMessage();
 }
 
 void Filler::fillHistoryActions() {
@@ -4254,6 +4261,13 @@ void FillDialogsEntryMenu(
 		Dialogs::EntryState request,
 		const PeerMenuCallback &callback) {
 	Filler(controller, request, callback).fill();
+}
+
+void FillHistoryBackgroundMenu(
+		not_null<SessionController*> controller,
+		Dialogs::EntryState request,
+		const PeerMenuCallback &callback) {
+	Filler(controller, request, callback).fillHistoryBackgroundActions();
 }
 
 bool FillVideoChatMenu(
