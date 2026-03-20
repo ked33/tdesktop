@@ -37,10 +37,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "main/session/send_as_peers.h"
 #include "ui/widgets/popup_menu.h"
+#include "ui/widgets/menu/menu_add_action_callback_factory.h"
 #include "ui/widgets/menu/menu_action.h"
 #include "ui/widgets/menu/menu_common.h"
 #include "ui/widgets/menu/menu_multiline_action.h"
 #include "ui/image/image.h"
+#include "ui/painter.h"
 #include "ui/toast/toast.h"
 #include "ui/text/format_song_document_name.h"
 #include "ui/text/text_utilities.h"
@@ -117,6 +119,13 @@ namespace {
 constexpr auto kRescheduleLimit = 20;
 constexpr auto kTagNameLimit = 12;
 constexpr auto kPublicPostLinkToastDuration = 4 * crl::time(1000);
+
+const TextParseOptions kMenuTextOptions = {
+	TextParseLinks,
+	0,
+	0,
+	Qt::LayoutDirectionAuto,
+};
 
 class TwoTextAction final : public Ui::Menu::ItemBase {
 public:
@@ -250,13 +259,6 @@ private:
 	QString _text2;
 	int _textWidth1 = 0;
 	const int _height;
-};
-
-const TextParseOptions kMenuTextOptions = {
-	TextParseLinks,
-	0,
-	0,
-	Qt::LayoutDirectionAuto,
 };
 
 [[nodiscard]] base::unique_qptr<Ui::Menu::ItemBase> CreateTwoTextAction(
