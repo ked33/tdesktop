@@ -415,7 +415,7 @@ private:
 		const auto headers = ReadHeaders(socket);
 		const auto request = ParseRequest(headers);
 		if (!request.valid) {
-			SendResponse(socket, "400 Bad Request", {
+			(void)SendResponse(socket, "400 Bad Request", {
 				{ "Connection", "close" },
 				{ "Content-Length", "0" },
 			});
@@ -423,7 +423,7 @@ private:
 		}
 		const auto entry = lookupRetained(request.token);
 		if (!entry) {
-			SendResponse(socket, "404 Not Found", {
+			(void)SendResponse(socket, "404 Not Found", {
 				{ "Connection", "close" },
 				{ "Content-Length", "0" },
 			});
@@ -432,13 +432,13 @@ private:
 		const auto releaseGuard = gsl::finally([&] { release(entry); });
 		const auto range = ParseRange(request.rangeHeader, entry->size);
 		if (!range.valid) {
-			SendResponse(socket, "400 Bad Request", {
+			(void)SendResponse(socket, "400 Bad Request", {
 				{ "Connection", "close" },
 				{ "Content-Length", "0" },
 			});
 			return;
 		} else if (!range.satisfiable) {
-			SendResponse(socket, "416 Range Not Satisfiable", {
+			(void)SendResponse(socket, "416 Range Not Satisfiable", {
 				{ "Accept-Ranges", "bytes" },
 				{ "Connection", "close" },
 				{ "Content-Length", "0" },
@@ -481,7 +481,12 @@ private:
 		while (left > 0) {
 			const auto size = int(std::min(left, int64(kReadChunkSize)));
 			auto buffer = QByteArray(size, Qt::Uninitialized);
-			if (!FillBuffer(entry->reader.get(), offset, bytes::make_span(buffer))) {
+			if (!FillBuffer(
+					entry->reader.get(),
+					offset,
+					bytes::span(
+						reinterpret_cast<bytes::type*>(buffer.data()),
+						size))) {
 				return;
 			} else if (!WriteAll(socket, buffer.constData(), buffer.size())) {
 				return;
@@ -501,7 +506,10 @@ private:
 } // namespace
 
 bool CanOpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
-	if (!Platform::IsWindows() || !item || !document) {
+#ifndef Q_OS_WIN
+	return false;
+#else
+	if (!item || !document) {
 		return false;
 	}
 	const auto media = item->media();
@@ -512,6 +520,7 @@ bool CanOpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
 		&& document->supportsStreaming()
 		&& document->useStreamingLoader()
 		&& (document->isVideoFile() || document->isVideoMessage());
+#endif
 }
 
 OpenResult OpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {

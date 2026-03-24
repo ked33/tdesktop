@@ -2350,13 +2350,16 @@ void AddMessageDetailsAction(
 		if (!GetEnhancedBool("show_message_context_stream_in_mpv")) {
 			return;
 		}
-		if (!Media::Streaming::Mpv::CanOpenVideoMessageInMpv(item, document)) {
+		if (!::Media::Streaming::Mpv::CanOpenVideoMessageInMpv(item, document)) {
 			return;
 		}
 		const auto itemId = item->fullId();
 		const auto fallbackDocument = document;
+		const auto insertIndex = std::min<int>(
+			afterCopyLink ? 1 : 0,
+			int(menu->actions().size()));
 		menu->insertAction(
-			std::min(afterCopyLink ? 1 : 0, menu->actions().size()),
+			insertIndex,
 			base::make_unique_q<Ui::Menu::Action>(
 				menu->menu(),
 				menu->st().menu,
@@ -2368,13 +2371,13 @@ void AddMessageDetailsAction(
 						const auto resolvedDocument = (resolvedItem && resolvedItem->media())
 							? resolvedItem->media()->document()
 							: fallbackDocument;
-						const auto result = Media::Streaming::Mpv::OpenVideoMessageInMpv(
+						const auto result = ::Media::Streaming::Mpv::OpenVideoMessageInMpv(
 							resolvedItem,
 							resolvedDocument);
-						if (result == Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
+						if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
 							controller->showToast(
 								tr::lng_context_stream_in_mpv_not_found(tr::now));
-						} else if (result == Media::Streaming::Mpv::OpenResult::Failed) {
+						} else if (result == ::Media::Streaming::Mpv::OpenResult::Failed) {
 							controller->showToast(
 								tr::lng_context_stream_in_mpv_failed(tr::now));
 						}
