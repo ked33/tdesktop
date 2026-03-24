@@ -22,6 +22,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtCore/QFileInfo>
 #include <QtCore/QProcess>
+#include <QtCore/QProcessEnvironment>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QUuid>
 #include <QtCore/QUrl>
@@ -31,6 +32,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <algorithm>
 #include <atomic>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <thread>
@@ -91,6 +93,24 @@ struct Entry {
 	if (result.isEmpty()) {
 		result = QStandardPaths::findExecutable(QStringLiteral("mpv.exe"));
 	}
+	return result;
+}
+
+[[nodiscard]] QProcessEnvironment LaunchEnvironment() {
+	auto result = QProcessEnvironment::systemEnvironment();
+	for (const auto &name : {
+		QStringLiteral("HTTP_PROXY"),
+		QStringLiteral("http_proxy"),
+		QStringLiteral("HTTPS_PROXY"),
+		QStringLiteral("https_proxy"),
+		QStringLiteral("ALL_PROXY"),
+		QStringLiteral("all_proxy"),
+	}) {
+		result.remove(name);
+	}
+	const auto noProxy = QStringLiteral("127.0.0.1,localhost");
+	result.insert(QStringLiteral("NO_PROXY"), noProxy);
+	result.insert(QStringLiteral("no_proxy"), noProxy);
 	return result;
 }
 
@@ -283,6 +303,25 @@ struct Entry {
 	}
 }
 
+class DescriptorServer final : public QTcpServer {
+public:
+	explicit DescriptorServer(std::function<void(qintptr)> accepted)
+	: _accepted(std::move(accepted)) {
+	}
+
+protected:
+	void incomingConnection(qintptr descriptor) override {
+		if (_accepted) {
+			_accepted(descriptor);
+		} else {
+			QTcpServer::incomingConnection(descriptor);
+		}
+	}
+
+private:
+	std::function<void(qintptr)> _accepted;
+};
+
 class Server final {
 public:
 	struct Launch {
@@ -291,11 +330,8 @@ public:
 	};
 
 	Server()
-	: _cleanupTimer([=] { cleanup(); }) {
-		QObject::connect(
-			&_server,
-			&QTcpServer::newConnection,
-			[this] { handleNewConnections(); });
+	: _server([this](qintptr descriptor) { handleDescriptor(descriptor); })
+	, _cleanupTimer([=] { cleanup(); }) {
 	}
 
 	[[nodiscard]] Launch add(
@@ -397,22 +433,20 @@ private:
 		}
 	}
 
-	void handleNewConnections() {
-		while (const auto socket = _server.nextPendingConnection()) {
-			const auto descriptor = socket->socketDescriptor();
-			socket->deleteLater();
-			if (descriptor < 0) {
-				continue;
-			}
-			std::thread([this, descriptor] {
-				handleConnection(descriptor);
-			}).detach();
+	void handleDescriptor(qintptr descriptor) {
+		if (descriptor < 0) {
+			return;
 		}
+		std::thread([this, descriptor] {
+			handleConnection(descriptor);
+		}).detach();
 	}
 
 	void handleConnection(qintptr descriptor) {
 		auto socket = QTcpSocket();
 		if (!socket.setSocketDescriptor(descriptor)) {
+			LOG(("MPV Streaming: Failed to adopt socket descriptor %1.")
+				.arg(qulonglong(descriptor)));
 			return;
 		}
 		const auto headers = ReadHeaders(socket);
@@ -521,8 +555,8 @@ private:
 	}
 
 	std::mutex _entriesMutex;
-		std::map<QString, std::shared_ptr<Entry>> _entries;
-	QTcpServer _server;
+	std::map<QString, std::shared_ptr<Entry>> _entries;
+	DescriptorServer _server;
 	base::Timer _cleanupTimer;
 };
 
@@ -577,7 +611,12 @@ OpenResult OpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
 	LOG(("MPV Streaming: Launching '%1' with URL %2.")
 		.arg(program)
 		.arg(launch.url));
-	if (!QProcess::startDetached(program, { launch.url })) {
+	auto process = QProcess();
+	process.setProgram(program);
+	process.setArguments({ launch.url });
+	process.setWorkingDirectory(QFileInfo(program).absolutePath());
+	process.setProcessEnvironment(LaunchEnvironment());
+	if (!process.startDetached()) {
 		LOG(("MPV Streaming: Failed to start player '%1'.").arg(program));
 		Server::instance().remove(launch.token);
 		return OpenResult::Failed;
