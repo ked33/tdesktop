@@ -36,6 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_widget.h"
 #include "main/main_session.h"
 #include "main/session/send_as_peers.h"
+#include "media/streaming/media_streaming_mpv.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/menu/menu_add_action_callback_factory.h"
 #include "ui/widgets/menu/menu_action.h"
@@ -1927,22 +1928,33 @@ void AddTopMessageActions(
 	AddPinMessageAction(menu, request, list);
 }
 
-void AddMessageActions(
-		not_null<Ui::PopupMenu*> menu,
-		const ContextMenuRequest &request,
-		not_null<ListWidget*> list) {
-	AddPostLinkAction(menu, request);
-	AddMsgsFromUserAction(menu, request, list);
-	AddForwardAction(menu, request, list);
-	AddRepeaterAction(menu, request, list);
-	AddSendNowAction(menu, request, list);
-	AddDeleteAction(menu, request, list);
-	AddDownloadFilesAction(menu, request, list);
-	AddReportAction(menu, request, list);
-	AddSelectionAction(menu, request, list);
-	AddRescheduleAction(menu, request, list);
-	AddViewJSONAction(menu, request, list);
-}
+	void AddMessageActions(
+			not_null<Ui::PopupMenu*> menu,
+			const ContextMenuRequest &request,
+			not_null<ListWidget*> list) {
+		const auto before = menu->actions().size();
+		AddPostLinkAction(menu, request);
+		const auto item = request.item;
+		const auto document = (item && item->media())
+			? item->media()->document()
+			: nullptr;
+		AddStreamInMpvAction(
+			menu,
+			item,
+			document,
+			list->controller(),
+			(menu->actions().size() > before));
+		AddMsgsFromUserAction(menu, request, list);
+		AddForwardAction(menu, request, list);
+		AddRepeaterAction(menu, request, list);
+		AddSendNowAction(menu, request, list);
+		AddDeleteAction(menu, request, list);
+		AddDownloadFilesAction(menu, request, list);
+		AddReportAction(menu, request, list);
+		AddSelectionAction(menu, request, list);
+		AddRescheduleAction(menu, request, list);
+		AddViewJSONAction(menu, request, list);
+	}
 
 void AddCopyLinkAction(
 		not_null<Ui::PopupMenu*> menu,
@@ -2326,11 +2338,53 @@ void AddMessageDetailsAction(
 		.fillSubmenu = [=](not_null<Ui::PopupMenu*> submenu) {
 			FillDetailsSubmenu(submenu, item, view, controller);
 		},
-	});
-}
+		});
+	}
 
-void CopyPostLink(
-		not_null<Window::SessionController*> controller,
+	void AddStreamInMpvAction(
+			not_null<Ui::PopupMenu*> menu,
+			HistoryItem *item,
+			DocumentData *document,
+			not_null<Window::SessionController*> controller,
+			bool afterCopyLink) {
+		if (!GetEnhancedBool("show_message_context_stream_in_mpv")) {
+			return;
+		}
+		if (!Media::Streaming::Mpv::CanOpenVideoMessageInMpv(item, document)) {
+			return;
+		}
+		const auto itemId = item->fullId();
+		const auto fallbackDocument = document;
+		menu->insertAction(
+			std::min(afterCopyLink ? 1 : 0, menu->actions().size()),
+			base::make_unique_q<Ui::Menu::Action>(
+				menu->menu(),
+				menu->st().menu,
+				Ui::Menu::CreateAction(
+					menu->menu(),
+					tr::lng_context_stream_in_mpv(tr::now),
+					[=] {
+						const auto resolvedItem = controller->session().data().message(itemId);
+						const auto resolvedDocument = (resolvedItem && resolvedItem->media())
+							? resolvedItem->media()->document()
+							: fallbackDocument;
+						const auto result = Media::Streaming::Mpv::OpenVideoMessageInMpv(
+							resolvedItem,
+							resolvedDocument);
+						if (result == Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
+							controller->showToast(
+								tr::lng_context_stream_in_mpv_not_found(tr::now));
+						} else if (result == Media::Streaming::Mpv::OpenResult::Failed) {
+							controller->showToast(
+								tr::lng_context_stream_in_mpv_failed(tr::now));
+						}
+					}),
+				&st::menuIconLink,
+				&st::menuIconLink));
+	}
+
+	void CopyPostLink(
+			not_null<Window::SessionController*> controller,
 		FullMsgId itemId,
 		Context context,
 		std::optional<TimeId> videoTimestamp) {

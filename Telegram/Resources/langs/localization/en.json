@@ -200,5 +200,13 @@
     "lng_group_requests_ban": "Ban",
     "lng_sure_delete_own_messages": "Are you sure you want to delete all messages you sent in this chat?\n\nThis action cannot be undone.",
 
-    "lng_blocked_user_hint": "[Blocked User Message]\n"
-}
+    "lng_blocked_user_hint": "[Blocked User Message]\n",
+
+    "lng_context_stream_in_mpv": "Stream in mpv",
+    "lng_context_stream_in_mpv_not_found": "mpv was not found in PATH.",
+    "lng_context_stream_in_mpv_failed": "Failed to start mpv streaming.",
+    "lng_settings_mpv_path": "mpv Path",
+    "lng_settings_mpv_path_desc": "Leave empty to use mpv from PATH.",
+    "lng_settings_mpv_path_placeholder": "Path to mpv.exe",
+    "lng_settings_mpv_path_from_path": "Use PATH"
+	}

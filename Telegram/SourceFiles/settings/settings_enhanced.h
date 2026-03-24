@@ -34,10 +34,11 @@ namespace Settings {
 		void reqBlocked(int offset);
 		void writeBlocklistFile();
 
-		rpl::event_stream<QString> _AlwaysDeleteChanged;
-		rpl::event_stream<QString> _BitrateChanged;
+			rpl::event_stream<QString> _AlwaysDeleteChanged;
+			rpl::event_stream<QString> _BitrateChanged;
+			rpl::event_stream<QString> _MpvPathChanged;
 
-		mtpRequestId _requestId = 0;
+			mtpRequestId _requestId = 0;
 		QList<int64> blockList;
 		int32 blockCount = 0;
 	};
