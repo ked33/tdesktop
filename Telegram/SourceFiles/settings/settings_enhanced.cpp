@@ -362,7 +362,7 @@ namespace Settings {
 			addMessageContextToggle(
 				tr::lng_context_copy_message_link(tr::now),
 				"show_message_context_copy_link");
-			if (Platform::IsWindows()) {
+#ifdef Q_OS_WIN
 				addMessageContextToggle(
 					tr::lng_context_stream_in_mpv(tr::now),
 					"show_message_context_stream_in_mpv");
@@ -397,7 +397,7 @@ namespace Settings {
 				});
 
 				AddDividerText(inner, tr::lng_settings_mpv_path_desc());
-			}
+#endif
 			addMessageContextToggle(
 				tr::lng_context_show_messages_from(tr::now),
 				"show_message_context_show_messages_from");
