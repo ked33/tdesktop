@@ -70,6 +70,18 @@ struct RangeResult {
 };
 
 struct Entry {
+	Entry(
+		not_null<DocumentData*> document,
+		Data::FileOrigin origin,
+		std::shared_ptr<Reader> reader)
+	: document(document)
+	, origin(origin)
+	, reader(std::move(reader))
+	, size(this->reader ? this->reader->size() : 0) {
+	}
+
+	not_null<DocumentData*> document;
+	Data::FileOrigin origin;
 	std::shared_ptr<Reader> reader;
 	QString mime;
 	int64 size = 0;
@@ -77,6 +89,72 @@ struct Entry {
 	std::atomic<crl::time> lastActivity = 0;
 	std::mutex fillMutex;
 };
+
+[[nodiscard]] QString StreamingErrorDebugString(std::optional<Error> error) {
+	if (!error) {
+		return QStringLiteral("none");
+	}
+	switch (*error) {
+	case Error::OpenFailed: return QStringLiteral("OpenFailed");
+	case Error::LoadFailed: return QStringLiteral("LoadFailed");
+	case Error::InvalidData: return QStringLiteral("InvalidData");
+	case Error::NotStreamable: return QStringLiteral("NotStreamable");
+	}
+	return QStringLiteral("Unknown(%1)").arg(int(*error));
+}
+
+[[nodiscard]] std::shared_ptr<Reader> CreateDedicatedReader(
+		not_null<DocumentData*> document,
+		Data::FileOrigin origin) {
+	auto loader = document->createStreamingLoader(origin, true);
+	if (!loader) {
+		return nullptr;
+	}
+	auto reader = std::make_shared<Reader>(
+		std::move(loader),
+		&document->owner().cacheBigFile());
+	reader->setLoaderPriority(kMpvLoaderPriority);
+	reader->startStreaming();
+	return reader;
+}
+
+[[nodiscard]] std::shared_ptr<Reader> CreateDedicatedReaderFromWorker(
+		not_null<DocumentData*> document,
+		Data::FileOrigin origin) {
+	auto result = std::shared_ptr<Reader>();
+	auto semaphore = crl::semaphore();
+	crl::on_main(&document->session(), [=, &result, &semaphore] {
+		result = CreateDedicatedReader(document, origin);
+		semaphore.release();
+	});
+	semaphore.acquire();
+	return result;
+}
+
+[[nodiscard]] bool RecoverEntryReader(
+		const std::shared_ptr<Entry> &entry,
+		const QString &token,
+		int64 offset) {
+	const auto fresh = CreateDedicatedReaderFromWorker(
+		entry->document,
+		entry->origin);
+	if (!fresh) {
+		LOG(("MPV Streaming: Failed to recreate reader for token %1 at offset %2.")
+			.arg(token)
+			.arg(offset));
+		return false;
+	}
+	const auto previous = std::move(entry->reader);
+	entry->reader = fresh;
+	if (previous) {
+		previous->stopStreamingAsync();
+		previous->tryRemoveLoaderAsync();
+	}
+	LOG(("MPV Streaming: Recreated reader for token %1 after LoadFailed at offset %2.")
+		.arg(token)
+		.arg(offset));
+	return true;
+}
 
 [[nodiscard]] QString ResolveProgram() {
 	auto configured = GetEnhancedString("mpv_path").trimmed();
@@ -337,16 +415,18 @@ public:
 
 	[[nodiscard]] Launch add(
 			not_null<DocumentData*> document,
+			Data::FileOrigin origin,
 			std::shared_ptr<Reader> reader) {
 		if (!ensureListening()) {
 			return {};
 		}
-		auto entry = std::make_shared<Entry>();
-		entry->reader = std::move(reader);
+		auto entry = std::make_shared<Entry>(
+			document,
+			origin,
+			std::move(reader));
 		entry->mime = document->mimeString().isEmpty()
 			? QStringLiteral("application/octet-stream")
 			: document->mimeString();
-		entry->size = entry->reader->size();
 		entry->lastActivity = crl::now();
 
 		auto token = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -529,6 +609,7 @@ private:
 		const auto lock = std::unique_lock(entry->fillMutex);
 		auto offset = range.range.from;
 		auto left = range.range.length;
+		auto retriedLoadFailure = false;
 		while (left > 0) {
 			const auto size = int(std::min(left, int64(kReadChunkSize)));
 			auto buffer = QByteArray(size, Qt::Uninitialized);
@@ -538,10 +619,18 @@ private:
 					bytes::span(
 						reinterpret_cast<bytes::type*>(buffer.data()),
 						size))) {
+				const auto error = entry->reader->streamingError();
+				if (!retriedLoadFailure
+					&& error
+					&& (*error == Error::LoadFailed)
+					&& RecoverEntryReader(entry, request.token, offset)) {
+					retriedLoadFailure = true;
+					continue;
+				}
 				LOG(("MPV Streaming: FillBuffer failed at offset %1, size %2, error=%3.")
 					.arg(offset)
 					.arg(size)
-					.arg(entry->reader->streamingError().has_value()));
+					.arg(StreamingErrorDebugString(error)));
 				return;
 			} else if (!WriteAll(socket, buffer.constData(), buffer.size())) {
 				LOG(("MPV Streaming: WriteAll failed at offset %1, size %2.")
@@ -549,6 +638,7 @@ private:
 					.arg(size));
 				return;
 			}
+			retriedLoadFailure = false;
 			offset += size;
 			left -= size;
 			entry->lastActivity = crl::now();
@@ -591,18 +681,13 @@ OpenResult OpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
 		return OpenResult::PlayerNotFound;
 	}
 	const auto origin = Data::FileOrigin(item->fullId());
-	const auto reader = document->owner().streaming().sharedReader(
-		document,
-		origin,
-		true);
+	const auto reader = CreateDedicatedReader(document, origin);
 	if (!reader) {
-		LOG(("MPV Streaming: Failed to create shared reader for document %1.")
+		LOG(("MPV Streaming: Failed to create dedicated reader for document %1.")
 			.arg(qulonglong(document->id)));
 		return OpenResult::Failed;
 	}
-	reader->setLoaderPriority(kMpvLoaderPriority);
-	reader->startStreaming();
-	const auto launch = Server::instance().add(document, reader);
+	const auto launch = Server::instance().add(document, origin, reader);
 	if (launch.url.isEmpty()) {
 		LOG(("MPV Streaming: Failed to create launch URL for document %1.")
 			.arg(qulonglong(document->id)));
