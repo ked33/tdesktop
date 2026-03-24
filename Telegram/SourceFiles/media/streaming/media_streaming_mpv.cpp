@@ -42,6 +42,7 @@ namespace Media::Streaming::Mpv {
 namespace {
 
 constexpr auto kPathPrefix = "/mpv/";
+constexpr auto kPathPrefixLength = 5;
 constexpr auto kHeadersLimit = 64 * 1024;
 constexpr auto kReadChunkSize = 256 * 1024;
 constexpr auto kCleanupInterval = 60 * crl::time(1000);
@@ -151,7 +152,7 @@ struct Entry {
 	}
 	auto result = ParsedRequest{
 		.method = method,
-		.token = path.mid(int(sizeof(kPathPrefix) - 1)),
+		.token = path.mid(kPathPrefixLength),
 		.valid = true,
 	};
 	for (auto i = 1; i != lines.size(); ++i) {
