@@ -13,9 +13,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_document.h"
 #include "data/data_file_origin.h"
 #include "data/data_session.h"
+#include "data/data_streaming.h"
 #include "history/history_item.h"
 #include "history/history_item_components.h"
 #include "media/streaming/media_streaming_reader.h"
+#include "logs.h"
 #include "settings.h"
 
 #include <QtCore/QFileInfo>
@@ -42,6 +44,7 @@ constexpr auto kHeadersLimit = 64 * 1024;
 constexpr auto kReadChunkSize = 256 * 1024;
 constexpr auto kCleanupInterval = 60 * crl::time(1000);
 constexpr auto kTokenLifetime = 5 * 60 * crl::time(1000);
+constexpr auto kMpvLoaderPriority = 2;
 
 struct ParsedRequest {
 	QByteArray method;
@@ -306,7 +309,7 @@ public:
 		entry->mime = document->mimeString().isEmpty()
 			? QStringLiteral("application/octet-stream")
 			: document->mimeString();
-		entry->size = document->size;
+		entry->size = entry->reader->size();
 		entry->lastActivity = crl::now();
 
 		auto token = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -415,14 +418,21 @@ private:
 		const auto headers = ReadHeaders(socket);
 		const auto request = ParseRequest(headers);
 		if (!request.valid) {
+			LOG(("MPV Streaming: Invalid request, headers size %1.")
+				.arg(headers.size()));
 			(void)SendResponse(socket, "400 Bad Request", {
 				{ "Connection", "close" },
 				{ "Content-Length", "0" },
 			});
 			return;
 		}
+		LOG(("MPV Streaming: Request %1 token=%2 range='%3'.")
+			.arg(QString::fromLatin1(request.method))
+			.arg(request.token)
+			.arg(QString::fromLatin1(request.rangeHeader)));
 		const auto entry = lookupRetained(request.token);
 		if (!entry) {
+			LOG(("MPV Streaming: Token not found: %1.").arg(request.token));
 			(void)SendResponse(socket, "404 Not Found", {
 				{ "Connection", "close" },
 				{ "Content-Length", "0" },
@@ -432,12 +442,18 @@ private:
 		const auto releaseGuard = gsl::finally([&] { release(entry); });
 		const auto range = ParseRange(request.rangeHeader, entry->size);
 		if (!range.valid) {
+			LOG(("MPV Streaming: Invalid range '%1' for size %2.")
+				.arg(QString::fromLatin1(request.rangeHeader))
+				.arg(entry->size));
 			(void)SendResponse(socket, "400 Bad Request", {
 				{ "Connection", "close" },
 				{ "Content-Length", "0" },
 			});
 			return;
 		} else if (!range.satisfiable) {
+			LOG(("MPV Streaming: Unsatisfiable range '%1' for size %2.")
+				.arg(QString::fromLatin1(request.rangeHeader))
+				.arg(entry->size));
 			(void)SendResponse(socket, "416 Range Not Satisfiable", {
 				{ "Accept-Ranges", "bytes" },
 				{ "Connection", "close" },
@@ -487,8 +503,15 @@ private:
 					bytes::span(
 						reinterpret_cast<bytes::type*>(buffer.data()),
 						size))) {
+				LOG(("MPV Streaming: FillBuffer failed at offset %1, size %2, error=%3.")
+					.arg(offset)
+					.arg(size)
+					.arg(entry->reader->streamingError().has_value()));
 				return;
 			} else if (!WriteAll(socket, buffer.constData(), buffer.size())) {
+				LOG(("MPV Streaming: WriteAll failed at offset %1, size %2.")
+					.arg(offset)
+					.arg(size));
 				return;
 			}
 			offset += size;
@@ -529,24 +552,33 @@ OpenResult OpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
 	}
 	const auto program = ResolveProgram();
 	if (program.isEmpty()) {
+		LOG(("MPV Streaming: Player not found."));
 		return OpenResult::PlayerNotFound;
 	}
-	auto loader = document->createStreamingLoader(
-		Data::FileOrigin(item->fullId()),
-		false);
-	if (!loader) {
+	const auto origin = Data::FileOrigin(item->fullId());
+	const auto reader = document->owner().streaming().sharedReader(
+		document,
+		origin,
+		true);
+	if (!reader) {
+		LOG(("MPV Streaming: Failed to create shared reader for document %1.")
+			.arg(qulonglong(document->id)));
 		return OpenResult::Failed;
 	}
-	auto reader = std::make_shared<Reader>(
-		std::move(loader),
-		&document->owner().cacheBigFile());
+	reader->setLoaderPriority(kMpvLoaderPriority);
 	reader->startStreaming();
 	const auto launch = Server::instance().add(document, reader);
 	if (launch.url.isEmpty()) {
+		LOG(("MPV Streaming: Failed to create launch URL for document %1.")
+			.arg(qulonglong(document->id)));
 		reader->stopStreaming(false);
 		return OpenResult::Failed;
 	}
+	LOG(("MPV Streaming: Launching '%1' with URL %2.")
+		.arg(program)
+		.arg(launch.url));
 	if (!QProcess::startDetached(program, { launch.url })) {
+		LOG(("MPV Streaming: Failed to start player '%1'.").arg(program));
 		Server::instance().remove(launch.token);
 		return OpenResult::Failed;
 	}
