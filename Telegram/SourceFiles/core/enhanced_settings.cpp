@@ -31,12 +31,18 @@ namespace EnhancedSettings {
 					gEnhancedOptions.insert(key, value);
 				}
 			};
+			const auto ensureString = [](const QString &key, const QString &value) {
+				if (!gEnhancedOptions.contains(key)) {
+					gEnhancedOptions.insert(key, value);
+				}
+			};
 
 			ensureBool(qsl("show_message_context_read_info"), true);
 			ensureBool(qsl("show_message_context_details"), true);
 			ensureBool(qsl("show_message_context_reply"), true);
 			ensureBool(qsl("show_message_context_add_task"), true);
 			ensureBool(qsl("show_message_context_copy_link"), true);
+			ensureBool(qsl("show_message_context_stream_in_mpv"), true);
 			ensureBool(qsl("show_message_context_show_messages_from"), true);
 			ensureBool(qsl("show_message_context_forward"), true);
 			ensureBool(qsl("show_message_context_repeater"), true);
@@ -51,6 +57,7 @@ namespace EnhancedSettings {
 			ensureBool(qsl("show_message_context_report"), true);
 			ensureBool(qsl("show_message_context_select"), true);
 			ensureBool(qsl("show_message_context_reschedule"), true);
+			ensureString(qsl("mpv_path"), QString());
 		}
 
 		QString DefaultFilePath() {
@@ -360,6 +367,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("show_message_context_reply"), true);
 		settings.insert(qsl("show_message_context_add_task"), true);
 		settings.insert(qsl("show_message_context_copy_link"), true);
+		settings.insert(qsl("show_message_context_stream_in_mpv"), true);
 		settings.insert(qsl("show_message_context_show_messages_from"), true);
 		settings.insert(qsl("show_message_context_forward"), true);
 		settings.insert(qsl("show_message_context_repeater"), true);
@@ -379,6 +387,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("translate_to_tc"), false);
 		settings.insert(qsl("hide_stories"), false);
 		settings.insert(qsl("screenshot_mode"), false);
+		settings.insert(qsl("mpv_path"), "");
 		settings.insert(qsl("update_url"), "");
 
 		auto document = QJsonDocument();
@@ -434,6 +443,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("show_message_context_reply"), GetEnhancedBool("show_message_context_reply"));
 		settings.insert(qsl("show_message_context_add_task"), GetEnhancedBool("show_message_context_add_task"));
 		settings.insert(qsl("show_message_context_copy_link"), GetEnhancedBool("show_message_context_copy_link"));
+		settings.insert(qsl("show_message_context_stream_in_mpv"), GetEnhancedBool("show_message_context_stream_in_mpv"));
 		settings.insert(qsl("show_message_context_show_messages_from"), GetEnhancedBool("show_message_context_show_messages_from"));
 		settings.insert(qsl("show_message_context_forward"), GetEnhancedBool("show_message_context_forward"));
 		settings.insert(qsl("show_message_context_repeater"), GetEnhancedBool("show_message_context_repeater"));
@@ -453,6 +463,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("translate_to_tc"), GetEnhancedBool("translate_to_tc"));
 		settings.insert(qsl("hide_stories"), GetEnhancedBool("hide_stories"));
 		settings.insert(qsl("screenshot_mode"), GetEnhancedBool("screenshot_mode"));
+		settings.insert(qsl("mpv_path"), GetEnhancedString("mpv_path"));
 		settings.insert(qsl("update_url"), GetEnhancedString("update_url"));
 
 		auto document = QJsonDocument();

@@ -2988,49 +2988,54 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		? reinterpret_cast<DocumentData*>(
 			link->property(kDocumentLinkMediaProperty).toULongLong())
 		: nullptr;
-	if (lnkPhoto || lnkDocument) {
-		const auto item = _dragStateItem;
-		const auto itemId = item ? item->fullId() : FullMsgId();
-		const auto detailsView = item ? viewByItem(item) : nullptr;
-		HistoryView::AddMessageDetailsAction(
-			_menu,
-			item,
-			detailsView,
-			_controller);
-		addTopInfoActions(item);
-		addReplyAction(item);
+		if (lnkPhoto || lnkDocument) {
+			const auto item = _dragStateItem;
+			const auto itemId = item ? item->fullId() : FullMsgId();
+			const auto detailsView = item ? viewByItem(item) : nullptr;
+			const auto streamDocument = lnkDocument
+				? lnkDocument
+				: (item && item->media())
+				? item->media()->document()
+				: nullptr;
+			HistoryView::AddMessageDetailsAction(
+				_menu,
+				item,
+				detailsView,
+				_controller);
+			addTopInfoActions(item);
+			addReplyAction(item);
 
-		if (isUponSelected > 0) {
-			const auto selectedText = getSelectedText();
-			if (!hasCopyRestrictionForSelected()
-				&& !selectedText.empty()) {
-				_menu->addAction(
-					(isUponSelected > 1
-						? tr::lng_context_copy_selected_items(tr::now)
-						: tr::lng_context_copy_selected(tr::now)),
-					[=] { copySelectedText(); },
-					&st::menuIconCopy);
+			if (isUponSelected > 0) {
+				const auto selectedText = getSelectedText();
+				if (!hasCopyRestrictionForSelected()
+					&& !selectedText.empty()) {
+					_menu->addAction(
+						(isUponSelected > 1
+							? tr::lng_context_copy_selected_items(tr::now)
+							: tr::lng_context_copy_selected(tr::now)),
+						[=] { copySelectedText(); },
+						&st::menuIconCopy);
+				}
+				if (item && !Ui::SkipTranslate(selectedText.rich)) {
+					const auto peer = item->history()->peer;
+					_menu->addAction(tr::lng_context_translate_selected({}), [=] {
+						_controller->show(Box(
+							Ui::TranslateBox,
+							peer,
+							MsgId(),
+							getSelectedText().rich,
+							hasCopyRestrictionForSelected()));
+					}, &st::menuIconTranslate);
+				}
 			}
-			if (item && !Ui::SkipTranslate(selectedText.rich)) {
-				const auto peer = item->history()->peer;
-				_menu->addAction(tr::lng_context_translate_selected({}), [=] {
-					_controller->show(Box(
-						Ui::TranslateBox,
-						peer,
-						MsgId(),
-						getSelectedText().rich,
-						hasCopyRestrictionForSelected()));
-				}, &st::menuIconTranslate);
+			addItemActions(item, item);
+			if (!selectedState.count) {
+				if (lnkPhoto) {
+					addPhotoActions(lnkPhoto, item);
+				} else {
+					addDocumentActions(lnkDocument, item);
+				}
 			}
-		}
-		addItemActions(item, item);
-		if (!selectedState.count) {
-			if (lnkPhoto) {
-				addPhotoActions(lnkPhoto, item);
-			} else {
-				addDocumentActions(lnkDocument, item);
-			}
-		}
 			if (GetEnhancedBool("show_message_context_copy_link")
 				&& item
 				&& item->hasDirectLink()
@@ -3053,6 +3058,16 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 					&st::menuIconLink,
 					&st::menuIconLink));
 			}
+			HistoryView::AddStreamInMpvAction(
+				_menu,
+				item,
+				streamDocument,
+				_controller,
+				(GetEnhancedBool("show_message_context_copy_link")
+					&& item
+					&& item->hasDirectLink()
+					&& isUponSelected != 2
+					&& isUponSelected != -2));
 			if (isUponSelected > 1) {
 				if (GetEnhancedBool("show_message_context_forward")
 					&& selectedState.count > 0
@@ -3284,37 +3299,41 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		const auto partItemOrLeader = (asGroup || !albumPartItem)
 			? item
 			: albumPartItem;
-		const auto itemId = item ? item->fullId() : FullMsgId();
-		const auto canDelete = item
-			&& item->canDelete()
-			&& (item->isRegular() || !item->isService());
-		const auto canForward = item && item->allowsForward();
-		const auto canReport = item && item->suggestReport();
-		const auto canBlockSender = item && item->history()->peer->isRepliesChat();
-		const auto view = viewByItem(item);
-		const auto detailsItem = partItemOrLeader;
-		const auto detailsView = detailsItem ? viewByItem(detailsItem) : nullptr;
-		const auto actionText = link
-			? link->copyToClipboardContextItemText()
-			: QString();
+			const auto itemId = item ? item->fullId() : FullMsgId();
+			const auto canDelete = item
+				&& item->canDelete()
+				&& (item->isRegular() || !item->isService());
+			const auto canForward = item && item->allowsForward();
+			const auto canReport = item && item->suggestReport();
+			const auto canBlockSender = item && item->history()->peer->isRepliesChat();
+			const auto view = viewByItem(item);
+			const auto detailsItem = partItemOrLeader;
+			const auto detailsView = detailsItem ? viewByItem(detailsItem) : nullptr;
+			const auto mpvItem = partItemOrLeader;
+			const auto mpvDocument = (mpvItem && mpvItem->media())
+				? mpvItem->media()->document()
+				: nullptr;
+			const auto actionText = link
+				? link->copyToClipboardContextItemText()
+				: QString();
 
-		const auto sponsored = (item && item->isSponsored())
-			? item
-			: (Element::Moused() && Element::Moused()->data()->isSponsored())
-			? Element::Moused()->data().get()
-			: nullptr;
-		HistoryView::AddMessageDetailsAction(
-			_menu,
-			detailsItem,
-			detailsView,
-			_controller);
-		addTopInfoActions(detailsItem);
-		if (sponsored) {
-			Menu::FillSponsored(
-				Ui::Menu::CreateAddActionCallback(_menu),
-				controller->uiShow(),
-				sponsored->fullId());
-		}
+			const auto sponsored = (item && item->isSponsored())
+				? item
+				: (Element::Moused() && Element::Moused()->data()->isSponsored())
+				? Element::Moused()->data().get()
+				: nullptr;
+			HistoryView::AddMessageDetailsAction(
+				_menu,
+				detailsItem,
+				detailsView,
+				_controller);
+			addTopInfoActions(detailsItem);
+			if (sponsored) {
+				Menu::FillSponsored(
+					Ui::Menu::CreateAddActionCallback(_menu),
+					controller->uiShow(),
+					sponsored->fullId());
+			}
 		if (isUponSelected > 0) {
 			addReplyAction(item);
 			const auto selectedText = getSelectedText();
@@ -3442,56 +3461,65 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				}
 			}
 		}
-		if (!actionText.isEmpty()) {
-			_menu->addAction(
-				actionText,
-				[text = link->copyToClipboardText()] {
-					QGuiApplication::clipboard()->setText(text);
-				},
-				&st::menuIconCopy);
-		} else if (item && item->hasDirectLink() && isUponSelected != 2 && isUponSelected != -2) {
-			_menu->insertAction(0, base::make_unique_q<Ui::Menu::Action>(
-				_menu->menu(),
-				_menu->st().menu,
-				Ui::Menu::CreateAction(
+			if (!actionText.isEmpty()) {
+				_menu->addAction(
+					actionText,
+					[text = link->copyToClipboardText()] {
+						QGuiApplication::clipboard()->setText(text);
+					},
+					&st::menuIconCopy);
+			} else if (item && item->hasDirectLink() && isUponSelected != 2 && isUponSelected != -2) {
+				_menu->insertAction(0, base::make_unique_q<Ui::Menu::Action>(
 					_menu->menu(),
-					item->history()->peer->isMegagroup()
-						? tr::lng_context_copy_message_link(tr::now)
-						: tr::lng_context_copy_post_link(tr::now),
-					[=] {
-						HistoryView::CopyPostLink(
-							controller,
-							itemId,
-							HistoryView::Context::History);
-					}),
-				&st::menuIconLink,
-				&st::menuIconLink));
-		}
-		if (sponsored) {
-			const auto hasAbout = ranges::any_of(
-				_menu->actions(),
-				[about = tr::lng_sponsored_menu_revenued_about(tr::now)](
-						const QAction *action) {
-					return action->text() == about;
-				});
-			if (!hasAbout) {
-				if (!_menu->empty()) {
-					_menu->addSeparator(&st::expandedMenuSeparator);
-				}
-				auto item = base::make_unique_q<Ui::Menu::MultilineAction>(
-					_menu->menu(),
-					st::menuWithIcons,
-					st::historyHasCustomEmoji,
-					st::historySponsoredAboutMenuLabelPosition,
-					TextWithEntities{ tr::lng_sponsored_title(tr::now) },
-					&st::menuIconInfo);
-				item->clicks(
-				) | rpl::on_next([=] {
-					controller->show(Box(Ui::AboutSponsoredBox));
-				}, item->lifetime());
-				_menu->addAction(std::move(item));
+					_menu->st().menu,
+					Ui::Menu::CreateAction(
+						_menu->menu(),
+						item->history()->peer->isMegagroup()
+							? tr::lng_context_copy_message_link(tr::now)
+							: tr::lng_context_copy_post_link(tr::now),
+						[=] {
+							HistoryView::CopyPostLink(
+								controller,
+								itemId,
+								HistoryView::Context::History);
+						}),
+					&st::menuIconLink,
+					&st::menuIconLink));
 			}
-		}
+			HistoryView::AddStreamInMpvAction(
+				_menu,
+				mpvItem,
+				mpvDocument,
+				_controller,
+				(item
+					&& item->hasDirectLink()
+					&& isUponSelected != 2
+					&& isUponSelected != -2));
+			if (sponsored) {
+				const auto hasAbout = ranges::any_of(
+					_menu->actions(),
+					[about = tr::lng_sponsored_menu_revenued_about(tr::now)](
+							const QAction *action) {
+						return action->text() == about;
+					});
+				if (!hasAbout) {
+					if (!_menu->empty()) {
+						_menu->addSeparator(&st::expandedMenuSeparator);
+					}
+					auto item = base::make_unique_q<Ui::Menu::MultilineAction>(
+						_menu->menu(),
+						st::menuWithIcons,
+						st::historyHasCustomEmoji,
+						st::historySponsoredAboutMenuLabelPosition,
+						TextWithEntities{ tr::lng_sponsored_title(tr::now) },
+						&st::menuIconInfo);
+					item->clicks(
+					) | rpl::on_next([=] {
+						controller->show(Box(Ui::AboutSponsoredBox));
+					}, item->lifetime());
+					_menu->addAction(std::move(item));
+				}
+			}
 			if (isUponSelected > 1) {
 				if (GetEnhancedBool("show_message_context_forward")
 					&& selectedState.count > 0

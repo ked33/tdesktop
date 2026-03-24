@@ -347,63 +347,99 @@ namespace Settings {
 			}, container->lifetime());
 		};
 
-		addMessageContextToggle(
-			tr::lng_settings_message_read_reactions_info(tr::now),
-			"show_message_context_read_info");
-		addMessageContextToggle(
-			tr::lng_context_details(tr::now),
-			"show_message_context_details");
-		addMessageContextToggle(
-			tr::lng_context_reply_msg(tr::now),
-			"show_message_context_reply");
-		addMessageContextToggle(
-			tr::lng_todo_add_title(tr::now),
-			"show_message_context_add_task");
-		addMessageContextToggle(
-			tr::lng_context_copy_message_link(tr::now),
-			"show_message_context_copy_link");
-		addMessageContextToggle(
-			tr::lng_context_show_messages_from(tr::now),
-			"show_message_context_show_messages_from");
-		addMessageContextToggle(
-			tr::lng_context_forward(tr::now),
-			"show_message_context_forward");
-		addMessageContextToggle(
-			tr::lng_context_repeater(tr::now),
-			"show_message_context_repeater");
-		addMessageContextToggle(
-			tr::lng_context_send_now_msg(tr::now),
-			"show_message_context_send_now");
-		addMessageContextToggle(
-			tr::lng_context_to_msg(tr::now),
-			"show_message_context_go_to_message");
-		addMessageContextToggle(
-			tr::lng_replies_view_thread(tr::now),
-			"show_message_context_view_replies");
-		addMessageContextToggle(
-			tr::lng_context_edit_msg(tr::now),
-			"show_message_context_edit");
-		addMessageContextToggle(
-			tr::lng_context_add_factcheck(tr::now),
-			"show_message_context_factcheck");
-		addMessageContextToggle(
-			tr::lng_context_pin_msg(tr::now),
-			"show_message_context_pin");
-		addMessageContextToggle(
-			tr::lng_context_delete_msg(tr::now),
-			"show_message_context_delete");
-		addMessageContextToggle(
-			tr::lng_context_save_file(tr::now),
-			"show_message_context_save_as");
-		addMessageContextToggle(
-			tr::lng_context_report_msg(tr::now),
-			"show_message_context_report");
-		addMessageContextToggle(
-			tr::lng_context_select_msg(tr::now),
-			"show_message_context_select");
-		addMessageContextToggle(
-			tr::lng_context_reschedule(tr::now),
-			"show_message_context_reschedule");
+			addMessageContextToggle(
+				tr::lng_settings_message_read_reactions_info(tr::now),
+				"show_message_context_read_info");
+			addMessageContextToggle(
+				tr::lng_context_details(tr::now),
+				"show_message_context_details");
+			addMessageContextToggle(
+				tr::lng_context_reply_msg(tr::now),
+				"show_message_context_reply");
+			addMessageContextToggle(
+				tr::lng_todo_add_title(tr::now),
+				"show_message_context_add_task");
+			addMessageContextToggle(
+				tr::lng_context_copy_message_link(tr::now),
+				"show_message_context_copy_link");
+			if (Platform::IsWindows()) {
+				addMessageContextToggle(
+					tr::lng_context_stream_in_mpv(tr::now),
+					"show_message_context_stream_in_mpv");
+
+				const auto currentMpvPathLabel = [=] {
+					const auto path = GetEnhancedString("mpv_path").trimmed();
+					return path.isEmpty()
+						? tr::lng_settings_mpv_path_from_path(tr::now)
+						: path;
+				};
+				auto mpvPathValue = rpl::single(
+					currentMpvPathLabel()
+				) | rpl::then(
+					_MpvPathChanged.events()
+				) | rpl::map([=] {
+					return currentMpvPathLabel();
+				});
+				auto mpvPathButton = AddButtonWithLabel(
+					inner,
+					tr::lng_settings_mpv_path(),
+					std::move(mpvPathValue),
+					st::settingsButtonNoIcon
+				);
+				mpvPathButton->events(
+				) | rpl::on_next([=](not_null<QEvent*> e) {
+					if (e->type() == QEvent::UpdateLater) {
+						_MpvPathChanged.fire({});
+					}
+				}, container->lifetime());
+				mpvPathButton->addClickHandler([=] {
+					Ui::show(Box<MpvPathBox>());
+				});
+
+				AddDividerText(inner, tr::lng_settings_mpv_path_desc());
+			}
+			addMessageContextToggle(
+				tr::lng_context_show_messages_from(tr::now),
+				"show_message_context_show_messages_from");
+			addMessageContextToggle(
+				tr::lng_context_forward(tr::now),
+				"show_message_context_forward");
+			addMessageContextToggle(
+				tr::lng_context_repeater(tr::now),
+				"show_message_context_repeater");
+			addMessageContextToggle(
+				tr::lng_context_send_now_msg(tr::now),
+				"show_message_context_send_now");
+			addMessageContextToggle(
+				tr::lng_context_to_msg(tr::now),
+				"show_message_context_go_to_message");
+			addMessageContextToggle(
+				tr::lng_replies_view_thread(tr::now),
+				"show_message_context_view_replies");
+			addMessageContextToggle(
+				tr::lng_context_edit_msg(tr::now),
+				"show_message_context_edit");
+			addMessageContextToggle(
+				tr::lng_context_add_factcheck(tr::now),
+				"show_message_context_factcheck");
+			addMessageContextToggle(
+				tr::lng_context_pin_msg(tr::now),
+				"show_message_context_pin");
+			addMessageContextToggle(
+				tr::lng_context_delete_msg(tr::now),
+				"show_message_context_delete");
+			addMessageContextToggle(
+				tr::lng_context_save_file(tr::now),
+				"show_message_context_save_as");
+			addMessageContextToggle(
+				tr::lng_context_report_msg(tr::now),
+				"show_message_context_report");
+			addMessageContextToggle(
+				tr::lng_context_select_msg(tr::now),
+				"show_message_context_select");
+			addMessageContextToggle(
+				tr::lng_context_reschedule(tr::now),
+				"show_message_context_reschedule");
 
 		auto jsonBtn = AddButtonWithIcon(
 			inner,

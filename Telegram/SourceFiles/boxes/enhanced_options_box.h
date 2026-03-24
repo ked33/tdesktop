@@ -88,6 +88,24 @@ private:
 
 };
 
+class MpvPathBox : public Ui::BoxContent {
+public:
+	MpvPathBox(QWidget *parent);
+
+protected:
+	void prepare() override;
+
+	void setInnerFocus() override;
+
+	void resizeEvent(QResizeEvent *e) override;
+
+private:
+	void save();
+
+	object_ptr<Ui::InputField> _path = { nullptr };
+
+};
+
 class BitrateController : public Ui::BoxContent {
 public:
 	BitrateController(QWidget *parent);
