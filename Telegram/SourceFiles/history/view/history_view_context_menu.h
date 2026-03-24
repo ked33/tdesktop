@@ -97,6 +97,12 @@ void AddMessageDetailsAction(
 	HistoryItem *item,
 	Element *view,
 	not_null<Window::SessionController*> controller);
+void AddStreamInMpvAction(
+	not_null<Ui::PopupMenu*> menu,
+	HistoryItem *item,
+	DocumentData *document,
+	not_null<Window::SessionController*> controller,
+	bool afterCopyLink = false);
 void MaybeAddWhenEditedForwardedAction(
 	not_null<Ui::PopupMenu*> menu,
 	not_null<HistoryItem*> item,

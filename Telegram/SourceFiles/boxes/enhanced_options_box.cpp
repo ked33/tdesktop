@@ -238,6 +238,41 @@ void RadioController::save() {
 	closeBox();
 }
 
+MpvPathBox::MpvPathBox(QWidget *parent)
+	: _path(this, st::defaultInputField, tr::lng_settings_mpv_path_placeholder()) {
+}
+
+void MpvPathBox::prepare() {
+	setTitle(tr::lng_settings_mpv_path());
+
+	addButton(tr::lng_settings_save(), [=] { save(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+
+	_path->setText(GetEnhancedString("mpv_path"));
+
+	setDimensions(st::boxWidth, _path->height());
+}
+
+void MpvPathBox::setInnerFocus() {
+	_path->setFocusFast();
+}
+
+void MpvPathBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+
+	const auto width = st::boxWidth
+		- st::boxPadding.left()
+		- st::boxPadding.right();
+	_path->resize(width, _path->height());
+	_path->moveToLeft(st::boxPadding.left(), 0);
+}
+
+void MpvPathBox::save() {
+	SetEnhancedValue("mpv_path", _path->getLastText().trimmed());
+	EnhancedSettings::Write();
+	closeBox();
+}
+
 BitrateController::BitrateController(QWidget *parent) {
 }
 
