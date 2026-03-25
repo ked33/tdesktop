@@ -152,12 +152,12 @@ struct Entry {
 		const auto fresh = CreateDedicatedReaderFromWorker(
 			entry->document,
 			entry->origin);
-		if (!fresh) {
-			MPV_STREAMING_LOG(("MPV Streaming: Failed to recreate reader for token %1 at offset %2.")
-				.arg(token)
-				.arg(offset)));
-			return false;
-		}
+			if (!fresh) {
+				MPV_STREAMING_LOG(("MPV Streaming: Failed to recreate reader for token %1 at offset %2.")
+					.arg(token)
+					.arg(offset));
+				return false;
+			}
 		const auto previous = std::move(entry->reader);
 		entry->reader = fresh;
 		entry->headerFinalized = false;
@@ -167,7 +167,7 @@ struct Entry {
 		}
 		MPV_STREAMING_LOG(("MPV Streaming: Recreated reader for token %1 after LoadFailed at offset %2.")
 			.arg(token)
-			.arg(offset)));
+			.arg(offset));
 		return true;
 	}
 
@@ -540,29 +540,29 @@ private:
 
 		void handleConnection(qintptr descriptor) {
 			auto socket = QTcpSocket();
-			if (!socket.setSocketDescriptor(descriptor)) {
-				MPV_STREAMING_LOG(("MPV Streaming: Failed to adopt socket descriptor %1.")
-					.arg(qulonglong(descriptor))));
-				return;
-			}
+				if (!socket.setSocketDescriptor(descriptor)) {
+					MPV_STREAMING_LOG(("MPV Streaming: Failed to adopt socket descriptor %1.")
+						.arg(qulonglong(descriptor)));
+					return;
+				}
 			const auto headers = ReadHeaders(socket);
 			const auto request = ParseRequest(headers);
-			if (!request.valid) {
-				MPV_STREAMING_LOG(("MPV Streaming: Invalid request, headers size %1.")
-					.arg(headers.size())));
+				if (!request.valid) {
+					MPV_STREAMING_LOG(("MPV Streaming: Invalid request, headers size %1.")
+						.arg(headers.size()));
 				(void)SendResponse(socket, "400 Bad Request", {
 					{ "Connection", "close" },
 					{ "Content-Length", "0" },
 				});
 				return;
 			}
-			MPV_STREAMING_LOG(("MPV Streaming: Request %1 token=%2 range='%3'.")
-				.arg(QString::fromLatin1(request.method))
-				.arg(request.token)
-				.arg(QString::fromLatin1(request.rangeHeader))));
+				MPV_STREAMING_LOG(("MPV Streaming: Request %1 token=%2 range='%3'.")
+					.arg(QString::fromLatin1(request.method))
+					.arg(request.token)
+					.arg(QString::fromLatin1(request.rangeHeader)));
 			const auto entry = lookupRetained(request.token);
-			if (!entry) {
-				MPV_STREAMING_LOG(("MPV Streaming: Token not found: %1.").arg(request.token)));
+				if (!entry) {
+					MPV_STREAMING_LOG(("MPV Streaming: Token not found: %1.").arg(request.token));
 				(void)SendResponse(socket, "404 Not Found", {
 					{ "Connection", "close" },
 					{ "Content-Length", "0" },
@@ -571,19 +571,19 @@ private:
 			}
 			const auto releaseGuard = gsl::finally([&] { release(entry); });
 			const auto range = ParseRange(request.rangeHeader, entry->size);
-			if (!range.valid) {
-				MPV_STREAMING_LOG(("MPV Streaming: Invalid range '%1' for size %2.")
-					.arg(QString::fromLatin1(request.rangeHeader))
-					.arg(entry->size)));
+				if (!range.valid) {
+					MPV_STREAMING_LOG(("MPV Streaming: Invalid range '%1' for size %2.")
+						.arg(QString::fromLatin1(request.rangeHeader))
+						.arg(entry->size));
 				(void)SendResponse(socket, "400 Bad Request", {
 					{ "Connection", "close" },
 					{ "Content-Length", "0" },
 				});
 				return;
-			} else if (!range.satisfiable) {
-				MPV_STREAMING_LOG(("MPV Streaming: Unsatisfiable range '%1' for size %2.")
-					.arg(QString::fromLatin1(request.rangeHeader))
-					.arg(entry->size)));
+				} else if (!range.satisfiable) {
+					MPV_STREAMING_LOG(("MPV Streaming: Unsatisfiable range '%1' for size %2.")
+						.arg(QString::fromLatin1(request.rangeHeader))
+						.arg(entry->size));
 				(void)SendResponse(socket, "416 Range Not Satisfiable", {
 					{ "Accept-Ranges", "bytes" },
 					{ "Connection", "close" },
@@ -646,15 +646,15 @@ private:
 						retriedLoadFailure = true;
 						continue;
 					}
-					MPV_STREAMING_LOG(("MPV Streaming: FillBuffer failed at offset %1, size %2, error=%3.")
-						.arg(offset)
-						.arg(size)
-						.arg(StreamingErrorDebugString(error))));
+						MPV_STREAMING_LOG(("MPV Streaming: FillBuffer failed at offset %1, size %2, error=%3.")
+							.arg(offset)
+							.arg(size)
+							.arg(StreamingErrorDebugString(error)));
 					return;
-				} else if (!WriteAll(socket, buffer.constData(), buffer.size())) {
-					MPV_STREAMING_LOG(("MPV Streaming: WriteAll failed at offset %1, size %2.")
-						.arg(offset)
-						.arg(size)));
+					} else if (!WriteAll(socket, buffer.constData(), buffer.size())) {
+						MPV_STREAMING_LOG(("MPV Streaming: WriteAll failed at offset %1, size %2.")
+							.arg(offset)
+							.arg(size));
 					return;
 				}
 				if (startedFromZero
@@ -704,21 +704,21 @@ private:
 		}
 		const auto origin = Data::FileOrigin(item->fullId());
 		const auto reader = CreateDedicatedReader(document, origin);
-		if (!reader) {
-			MPV_STREAMING_LOG(("MPV Streaming: Failed to create dedicated reader for document %1.")
-				.arg(qulonglong(document->id))));
+			if (!reader) {
+				MPV_STREAMING_LOG(("MPV Streaming: Failed to create dedicated reader for document %1.")
+					.arg(qulonglong(document->id)));
 			return OpenResult::Failed;
 		}
 		const auto launch = Server::instance().add(document, origin, reader);
-		if (launch.url.isEmpty()) {
-			MPV_STREAMING_LOG(("MPV Streaming: Failed to create launch URL for document %1.")
-				.arg(qulonglong(document->id))));
+			if (launch.url.isEmpty()) {
+				MPV_STREAMING_LOG(("MPV Streaming: Failed to create launch URL for document %1.")
+					.arg(qulonglong(document->id)));
 			reader->stopStreaming(false);
 			return OpenResult::Failed;
 		}
-		MPV_STREAMING_LOG(("MPV Streaming: Launching '%1' with URL %2.")
-			.arg(program)
-			.arg(launch.url)));
+			MPV_STREAMING_LOG(("MPV Streaming: Launching '%1' with URL %2.")
+				.arg(program)
+				.arg(launch.url));
 		auto process = QProcess();
 		process.setProgram(program);
 		process.setArguments({ launch.url });
