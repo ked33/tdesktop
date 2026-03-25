@@ -46,6 +46,7 @@ constexpr auto kPathPrefix = "/mpv/";
 constexpr auto kPathPrefixLength = 5;
 constexpr auto kHeadersLimit = 64 * 1024;
 constexpr auto kReadChunkSize = 256 * 1024;
+constexpr auto kInitialReadChunkSize = 64 * 1024;
 constexpr auto kCleanupInterval = 60 * crl::time(1000);
 constexpr auto kTokenLifetime = 5 * 60 * crl::time(1000);
 constexpr auto kMpvLoaderPriority = 2;
@@ -612,12 +613,15 @@ private:
 		const auto lock = std::unique_lock(entry->fillMutex);
 		auto offset = range.range.from;
 		auto left = range.range.length;
-		const auto startedFromZero = (offset == 0);
-		auto retriedLoadFailure = false;
-		while (left > 0) {
-			const auto size = int(std::min(left, int64(kReadChunkSize)));
-			auto buffer = QByteArray(size, Qt::Uninitialized);
-			if (!FillBuffer(
+			const auto startedFromZero = (offset == 0);
+			auto retriedLoadFailure = false;
+			while (left > 0) {
+				const auto chunkSize = (offset == range.range.from)
+					? kInitialReadChunkSize
+					: kReadChunkSize;
+				const auto size = int(std::min(left, int64(chunkSize)));
+				auto buffer = QByteArray(size, Qt::Uninitialized);
+				if (!FillBuffer(
 					entry->reader.get(),
 					offset,
 					bytes::span(
