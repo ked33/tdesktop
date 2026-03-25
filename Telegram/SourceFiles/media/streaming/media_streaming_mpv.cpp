@@ -114,7 +114,7 @@ struct Entry {
 	}
 	auto reader = std::make_shared<Reader>(
 		std::move(loader),
-		&document->owner().cacheBigFile());
+		nullptr);
 	reader->setLoaderPriority(kMpvLoaderPriority);
 	reader->startStreaming();
 	return reader;
