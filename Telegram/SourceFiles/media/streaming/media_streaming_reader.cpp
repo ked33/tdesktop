@@ -24,13 +24,28 @@ constexpr auto kMaxOnlyInHeader = 80 * kPartSize;
 constexpr auto kPartsOutsideFirstSliceGood = 8;
 constexpr auto kSlicesInMemory = 2;
 
-constexpr auto kDownloaderRequestsLimit = 8;
-
 using PartsMap = base::flat_map<uint32, QByteArray>;
 
 [[nodiscard]] int DownloadBoostLevel() {
 	const auto boost = GetEnhancedInt("net_download_speed_boost");
 	return (boost < 0) ? 0 : (boost > 5) ? 5 : boost;
+}
+
+[[nodiscard]] int StreamingRequestsLimit() {
+	switch (DownloadBoostLevel()) {
+	case 1:
+		return 12;
+	case 2:
+		return 16;
+	case 3:
+		return 20;
+	case 4:
+		return 24;
+	case 5:
+		return 32;
+	default:
+		return 8;
+	}
 }
 
 [[nodiscard]] int PreloadPartsAhead() {
@@ -340,6 +355,8 @@ auto Reader::Slice::prepareFill(
 auto Reader::Slice::offsetsFromLoader(uint32 from, uint32 till) const
 -> StackIntVector<Reader::kLoadFromRemoteMax> {
 	auto result = StackIntVector<kLoadFromRemoteMax>();
+	const auto limit = StreamingRequestsLimit();
+	auto added = 0;
 
 	const auto after = ranges::upper_bound(
 		parts,
@@ -349,15 +366,16 @@ auto Reader::Slice::offsetsFromLoader(uint32 from, uint32 till) const
 	auto check = (after == begin(parts)) ? after : (after - 1);
 	const auto end = parts.end();
 	for (auto offset = from; offset != till; offset += kPartSize) {
-		while (check != end && check->first < offset) {
-			++check;
+			while (check != end && check->first < offset) {
+				++check;
+			}
+			if (check != end && check->first == offset) {
+				continue;
+			} else if (added >= limit || !result.add(offset)) {
+				break;
+			}
+			++added;
 		}
-		if (check != end && check->first == offset) {
-			continue;
-		} else if (!result.add(offset)) {
-			break;
-		}
-	}
 	return result;
 }
 
@@ -1088,7 +1106,7 @@ void Reader::pruneDoneDownloaderRequests() {
 void Reader::sendDownloaderRequests() {
 	auto &&offsets = ranges::views::all(
 		_offsetsForDownloader
-	) | ranges::views::take(kDownloaderRequestsLimit);
+	) | ranges::views::take(StreamingRequestsLimit());
 	for (const auto offset : offsets) {
 		if ((!_cacheHelper || !downloaderWaitForCachedSlice(offset))
 			&& _downloaderOffsetsRequested.emplace(offset).second) {
