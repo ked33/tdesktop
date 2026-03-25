@@ -51,6 +51,17 @@ constexpr auto kCleanupInterval = 60 * crl::time(1000);
 constexpr auto kTokenLifetime = 5 * 60 * crl::time(1000);
 constexpr auto kMpvLoaderPriority = 2;
 
+[[nodiscard]] bool MpvDebugLogsEnabled() {
+	return GetEnhancedBool("mpv_streaming_debug_logs");
+}
+
+#define MPV_STREAMING_LOG(expr) \
+	do { \
+		if (MpvDebugLogsEnabled()) { \
+			LOG(expr); \
+		} \
+	} while (false)
+
 struct ParsedRequest {
 	QByteArray method;
 	QString token;
@@ -134,31 +145,31 @@ struct Entry {
 	return result;
 }
 
-[[nodiscard]] bool RecoverEntryReader(
-		const std::shared_ptr<Entry> &entry,
-		const QString &token,
-		int64 offset) {
-	const auto fresh = CreateDedicatedReaderFromWorker(
-		entry->document,
-		entry->origin);
-	if (!fresh) {
-		LOG(("MPV Streaming: Failed to recreate reader for token %1 at offset %2.")
+	[[nodiscard]] bool RecoverEntryReader(
+			const std::shared_ptr<Entry> &entry,
+			const QString &token,
+			int64 offset) {
+		const auto fresh = CreateDedicatedReaderFromWorker(
+			entry->document,
+			entry->origin);
+		if (!fresh) {
+			MPV_STREAMING_LOG(("MPV Streaming: Failed to recreate reader for token %1 at offset %2.")
+				.arg(token)
+				.arg(offset)));
+			return false;
+		}
+		const auto previous = std::move(entry->reader);
+		entry->reader = fresh;
+		entry->headerFinalized = false;
+		if (previous) {
+			previous->stopStreamingAsync();
+			previous->tryRemoveLoaderAsync();
+		}
+		MPV_STREAMING_LOG(("MPV Streaming: Recreated reader for token %1 after LoadFailed at offset %2.")
 			.arg(token)
-			.arg(offset));
-		return false;
+			.arg(offset)));
+		return true;
 	}
-	const auto previous = std::move(entry->reader);
-	entry->reader = fresh;
-	entry->headerFinalized = false;
-	if (previous) {
-		previous->stopStreamingAsync();
-		previous->tryRemoveLoaderAsync();
-	}
-	LOG(("MPV Streaming: Recreated reader for token %1 after LoadFailed at offset %2.")
-		.arg(token)
-		.arg(offset));
-	return true;
-}
 
 [[nodiscard]] QString ResolveProgram() {
 	auto configured = GetEnhancedString("mpv_path").trimmed();
@@ -527,92 +538,92 @@ private:
 		}).detach();
 	}
 
-	void handleConnection(qintptr descriptor) {
-		auto socket = QTcpSocket();
-		if (!socket.setSocketDescriptor(descriptor)) {
-			LOG(("MPV Streaming: Failed to adopt socket descriptor %1.")
-				.arg(qulonglong(descriptor)));
-			return;
-		}
-		const auto headers = ReadHeaders(socket);
-		const auto request = ParseRequest(headers);
-		if (!request.valid) {
-			LOG(("MPV Streaming: Invalid request, headers size %1.")
-				.arg(headers.size()));
-			(void)SendResponse(socket, "400 Bad Request", {
-				{ "Connection", "close" },
-				{ "Content-Length", "0" },
-			});
-			return;
-		}
-		LOG(("MPV Streaming: Request %1 token=%2 range='%3'.")
-			.arg(QString::fromLatin1(request.method))
-			.arg(request.token)
-			.arg(QString::fromLatin1(request.rangeHeader)));
-		const auto entry = lookupRetained(request.token);
-		if (!entry) {
-			LOG(("MPV Streaming: Token not found: %1.").arg(request.token));
-			(void)SendResponse(socket, "404 Not Found", {
-				{ "Connection", "close" },
-				{ "Content-Length", "0" },
-			});
-			return;
-		}
-		const auto releaseGuard = gsl::finally([&] { release(entry); });
-		const auto range = ParseRange(request.rangeHeader, entry->size);
-		if (!range.valid) {
-			LOG(("MPV Streaming: Invalid range '%1' for size %2.")
-				.arg(QString::fromLatin1(request.rangeHeader))
-				.arg(entry->size));
-			(void)SendResponse(socket, "400 Bad Request", {
-				{ "Connection", "close" },
-				{ "Content-Length", "0" },
-			});
-			return;
-		} else if (!range.satisfiable) {
-			LOG(("MPV Streaming: Unsatisfiable range '%1' for size %2.")
-				.arg(QString::fromLatin1(request.rangeHeader))
-				.arg(entry->size));
-			(void)SendResponse(socket, "416 Range Not Satisfiable", {
-				{ "Accept-Ranges", "bytes" },
-				{ "Connection", "close" },
-				{ "Content-Length", "0" },
-				{ "Content-Range", QByteArray("bytes */") + QByteArray::number(entry->size) },
-			});
-			return;
-		}
-		const auto status = range.range.partial ? "206 Partial Content" : "200 OK";
-		const auto contentLength = QByteArray::number(range.range.length);
-		if (range.range.partial) {
-			const auto contentRange = QByteArray("bytes ")
-				+ QByteArray::number(range.range.from)
-				+ '-'
-				+ QByteArray::number(range.range.till)
-				+ '/'
-				+ QByteArray::number(entry->size);
-			if (!SendResponse(socket, status, {
+		void handleConnection(qintptr descriptor) {
+			auto socket = QTcpSocket();
+			if (!socket.setSocketDescriptor(descriptor)) {
+				MPV_STREAMING_LOG(("MPV Streaming: Failed to adopt socket descriptor %1.")
+					.arg(qulonglong(descriptor))));
+				return;
+			}
+			const auto headers = ReadHeaders(socket);
+			const auto request = ParseRequest(headers);
+			if (!request.valid) {
+				MPV_STREAMING_LOG(("MPV Streaming: Invalid request, headers size %1.")
+					.arg(headers.size())));
+				(void)SendResponse(socket, "400 Bad Request", {
+					{ "Connection", "close" },
+					{ "Content-Length", "0" },
+				});
+				return;
+			}
+			MPV_STREAMING_LOG(("MPV Streaming: Request %1 token=%2 range='%3'.")
+				.arg(QString::fromLatin1(request.method))
+				.arg(request.token)
+				.arg(QString::fromLatin1(request.rangeHeader))));
+			const auto entry = lookupRetained(request.token);
+			if (!entry) {
+				MPV_STREAMING_LOG(("MPV Streaming: Token not found: %1.").arg(request.token)));
+				(void)SendResponse(socket, "404 Not Found", {
+					{ "Connection", "close" },
+					{ "Content-Length", "0" },
+				});
+				return;
+			}
+			const auto releaseGuard = gsl::finally([&] { release(entry); });
+			const auto range = ParseRange(request.rangeHeader, entry->size);
+			if (!range.valid) {
+				MPV_STREAMING_LOG(("MPV Streaming: Invalid range '%1' for size %2.")
+					.arg(QString::fromLatin1(request.rangeHeader))
+					.arg(entry->size)));
+				(void)SendResponse(socket, "400 Bad Request", {
+					{ "Connection", "close" },
+					{ "Content-Length", "0" },
+				});
+				return;
+			} else if (!range.satisfiable) {
+				MPV_STREAMING_LOG(("MPV Streaming: Unsatisfiable range '%1' for size %2.")
+					.arg(QString::fromLatin1(request.rangeHeader))
+					.arg(entry->size)));
+				(void)SendResponse(socket, "416 Range Not Satisfiable", {
+					{ "Accept-Ranges", "bytes" },
+					{ "Connection", "close" },
+					{ "Content-Length", "0" },
+					{ "Content-Range", QByteArray("bytes */") + QByteArray::number(entry->size) },
+				});
+				return;
+			}
+			const auto status = range.range.partial ? "206 Partial Content" : "200 OK";
+			const auto contentLength = QByteArray::number(range.range.length);
+			if (range.range.partial) {
+				const auto contentRange = QByteArray("bytes ")
+					+ QByteArray::number(range.range.from)
+					+ '-'
+					+ QByteArray::number(range.range.till)
+					+ '/'
+					+ QByteArray::number(entry->size);
+				if (!SendResponse(socket, status, {
+					{ "Accept-Ranges", "bytes" },
+					{ "Connection", "close" },
+					{ "Content-Length", contentLength },
+					{ "Content-Type", entry->mime.toUtf8() },
+					{ "Content-Range", contentRange },
+				})) {
+					return;
+				}
+			} else if (!SendResponse(socket, status, {
 				{ "Accept-Ranges", "bytes" },
 				{ "Connection", "close" },
 				{ "Content-Length", contentLength },
 				{ "Content-Type", entry->mime.toUtf8() },
-				{ "Content-Range", contentRange },
 			})) {
 				return;
 			}
-		} else if (!SendResponse(socket, status, {
-			{ "Accept-Ranges", "bytes" },
-			{ "Connection", "close" },
-			{ "Content-Length", contentLength },
-			{ "Content-Type", entry->mime.toUtf8() },
-		})) {
-			return;
-		}
-		if (request.method == "HEAD") {
-			return;
-		}
-		const auto lock = std::unique_lock(entry->fillMutex);
-		auto offset = range.range.from;
-		auto left = range.range.length;
+			if (request.method == "HEAD") {
+				return;
+			}
+			const auto lock = std::unique_lock(entry->fillMutex);
+			auto offset = range.range.from;
+			auto left = range.range.length;
 			const auto startedFromZero = (offset == 0);
 			auto retriedLoadFailure = false;
 			while (left > 0) {
@@ -622,40 +633,40 @@ private:
 				const auto size = int(std::min(left, int64(chunkSize)));
 				auto buffer = QByteArray(size, Qt::Uninitialized);
 				if (!FillBuffer(
-					entry->reader.get(),
-					offset,
-					bytes::span(
-						reinterpret_cast<bytes::type*>(buffer.data()),
-						size))) {
-				const auto error = entry->reader->streamingError();
-				if (!retriedLoadFailure
-					&& error
-					&& (*error == Error::LoadFailed)
-					&& RecoverEntryReader(entry, request.token, offset)) {
-					retriedLoadFailure = true;
-					continue;
+						entry->reader.get(),
+						offset,
+						bytes::span(
+							reinterpret_cast<bytes::type*>(buffer.data()),
+							size))) {
+					const auto error = entry->reader->streamingError();
+					if (!retriedLoadFailure
+						&& error
+						&& (*error == Error::LoadFailed)
+						&& RecoverEntryReader(entry, request.token, offset)) {
+						retriedLoadFailure = true;
+						continue;
+					}
+					MPV_STREAMING_LOG(("MPV Streaming: FillBuffer failed at offset %1, size %2, error=%3.")
+						.arg(offset)
+						.arg(size)
+						.arg(StreamingErrorDebugString(error))));
+					return;
+				} else if (!WriteAll(socket, buffer.constData(), buffer.size())) {
+					MPV_STREAMING_LOG(("MPV Streaming: WriteAll failed at offset %1, size %2.")
+						.arg(offset)
+						.arg(size)));
+					return;
 				}
-				LOG(("MPV Streaming: FillBuffer failed at offset %1, size %2, error=%3.")
-					.arg(offset)
-					.arg(size)
-					.arg(StreamingErrorDebugString(error)));
-				return;
-			} else if (!WriteAll(socket, buffer.constData(), buffer.size())) {
-				LOG(("MPV Streaming: WriteAll failed at offset %1, size %2.")
-					.arg(offset)
-					.arg(size));
-				return;
+				if (startedFromZero
+					&& !entry->headerFinalized.exchange(true)) {
+					entry->reader->headerDone();
+				}
+				retriedLoadFailure = false;
+				offset += size;
+				left -= size;
+				entry->lastActivity = crl::now();
 			}
-			if (startedFromZero
-				&& !entry->headerFinalized.exchange(true)) {
-				entry->reader->headerDone();
-			}
-			retriedLoadFailure = false;
-			offset += size;
-			left -= size;
-			entry->lastActivity = crl::now();
 		}
-	}
 
 	std::mutex _entriesMutex;
 	std::map<QString, std::shared_ptr<Entry>> _entries;
@@ -665,61 +676,62 @@ private:
 
 } // namespace
 
-bool CanOpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
-#ifndef Q_OS_WIN
-	return false;
-#else
-	if (!item || !document) {
+	bool CanOpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
+	#ifndef Q_OS_WIN
 		return false;
+	#else
+		if (!item || !document) {
+			return false;
+		}
+		const auto media = item->media();
+		return media
+			&& (media->ttlSeconds() <= 0)
+			&& document->size > 0
+			&& document->supportsStreaming()
+			&& document->useStreamingLoader()
+			&& (document->isVideoFile() || document->isVideoMessage());
+	#endif
 	}
-	const auto media = item->media();
-	return item->allowsForward()
-		&& media
-		&& (media->ttlSeconds() <= 0)
-		&& document->size > 0
-		&& document->supportsStreaming()
-		&& document->useStreamingLoader()
-		&& (document->isVideoFile() || document->isVideoMessage());
-#endif
-}
 
-OpenResult OpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
-	if (!CanOpenVideoMessageInMpv(item, document)) {
-		return OpenResult::Unsupported;
+	OpenResult OpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
+		if (!CanOpenVideoMessageInMpv(item, document)) {
+			return OpenResult::Unsupported;
+		}
+		const auto program = ResolveProgram();
+		if (program.isEmpty()) {
+			MPV_STREAMING_LOG(("MPV Streaming: Player not found."));
+			return OpenResult::PlayerNotFound;
+		}
+		const auto origin = Data::FileOrigin(item->fullId());
+		const auto reader = CreateDedicatedReader(document, origin);
+		if (!reader) {
+			MPV_STREAMING_LOG(("MPV Streaming: Failed to create dedicated reader for document %1.")
+				.arg(qulonglong(document->id))));
+			return OpenResult::Failed;
+		}
+		const auto launch = Server::instance().add(document, origin, reader);
+		if (launch.url.isEmpty()) {
+			MPV_STREAMING_LOG(("MPV Streaming: Failed to create launch URL for document %1.")
+				.arg(qulonglong(document->id))));
+			reader->stopStreaming(false);
+			return OpenResult::Failed;
+		}
+		MPV_STREAMING_LOG(("MPV Streaming: Launching '%1' with URL %2.")
+			.arg(program)
+			.arg(launch.url)));
+		auto process = QProcess();
+		process.setProgram(program);
+		process.setArguments({ launch.url });
+		process.setWorkingDirectory(QFileInfo(program).absolutePath());
+		process.setProcessEnvironment(LaunchEnvironment());
+		if (!process.startDetached()) {
+			MPV_STREAMING_LOG(("MPV Streaming: Failed to start player '%1'.").arg(program));
+			Server::instance().remove(launch.token);
+			return OpenResult::Failed;
+		}
+		return OpenResult::Success;
 	}
-	const auto program = ResolveProgram();
-	if (program.isEmpty()) {
-		LOG(("MPV Streaming: Player not found."));
-		return OpenResult::PlayerNotFound;
-	}
-	const auto origin = Data::FileOrigin(item->fullId());
-	const auto reader = CreateDedicatedReader(document, origin);
-	if (!reader) {
-		LOG(("MPV Streaming: Failed to create dedicated reader for document %1.")
-			.arg(qulonglong(document->id)));
-		return OpenResult::Failed;
-	}
-	const auto launch = Server::instance().add(document, origin, reader);
-	if (launch.url.isEmpty()) {
-		LOG(("MPV Streaming: Failed to create launch URL for document %1.")
-			.arg(qulonglong(document->id)));
-		reader->stopStreaming(false);
-		return OpenResult::Failed;
-	}
-	LOG(("MPV Streaming: Launching '%1' with URL %2.")
-		.arg(program)
-		.arg(launch.url));
-	auto process = QProcess();
-	process.setProgram(program);
-	process.setArguments({ launch.url });
-	process.setWorkingDirectory(QFileInfo(program).absolutePath());
-	process.setProcessEnvironment(LaunchEnvironment());
-	if (!process.startDetached()) {
-		LOG(("MPV Streaming: Failed to start player '%1'.").arg(program));
-		Server::instance().remove(launch.token);
-		return OpenResult::Failed;
-	}
-	return OpenResult::Success;
-}
+
+	#undef MPV_STREAMING_LOG
 
 } // namespace Media::Streaming::Mpv
