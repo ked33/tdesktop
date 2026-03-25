@@ -362,42 +362,45 @@ namespace Settings {
 			addMessageContextToggle(
 				tr::lng_context_copy_message_link(tr::now),
 				"show_message_context_copy_link");
-#ifdef Q_OS_WIN
-				addMessageContextToggle(
-					tr::lng_context_stream_in_mpv(tr::now),
-					"show_message_context_stream_in_mpv");
+	#ifdef Q_OS_WIN
+			addMessageContextToggle(
+				tr::lng_context_stream_in_mpv(tr::now),
+				"show_message_context_stream_in_mpv");
+			addMessageContextToggle(
+				tr::lng_settings_mpv_debug_logs(tr::now),
+				"mpv_streaming_debug_logs");
 
-				const auto currentMpvPathLabel = [=] {
-					const auto path = GetEnhancedString("mpv_path").trimmed();
-					return path.isEmpty()
-						? tr::lng_settings_mpv_path_from_path(tr::now)
-						: path;
-				};
-				auto mpvPathValue = rpl::single(
-					currentMpvPathLabel()
-				) | rpl::then(
-					_MpvPathChanged.events()
-				) | rpl::map([=] {
-					return currentMpvPathLabel();
-				});
-				auto mpvPathButton = AddButtonWithLabel(
-					inner,
-					tr::lng_settings_mpv_path(),
-					std::move(mpvPathValue),
-					st::settingsButtonNoIcon
-				);
-				mpvPathButton->events(
-				) | rpl::on_next([=](not_null<QEvent*> e) {
-					if (e->type() == QEvent::UpdateLater) {
-						_MpvPathChanged.fire({});
-					}
-				}, container->lifetime());
-				mpvPathButton->addClickHandler([=] {
-					Ui::show(Box<MpvPathBox>());
-				});
+			const auto currentMpvPathLabel = [=] {
+				const auto path = GetEnhancedString("mpv_path").trimmed();
+				return path.isEmpty()
+					? tr::lng_settings_mpv_path_from_path(tr::now)
+					: path;
+			};
+			auto mpvPathValue = rpl::single(
+				currentMpvPathLabel()
+			) | rpl::then(
+				_MpvPathChanged.events()
+			) | rpl::map([=] {
+				return currentMpvPathLabel();
+			});
+			auto mpvPathButton = AddButtonWithLabel(
+				inner,
+				tr::lng_settings_mpv_path(),
+				std::move(mpvPathValue),
+				st::settingsButtonNoIcon
+			);
+			mpvPathButton->events(
+			) | rpl::on_next([=](not_null<QEvent*> e) {
+				if (e->type() == QEvent::UpdateLater) {
+					_MpvPathChanged.fire({});
+				}
+			}, container->lifetime());
+			mpvPathButton->addClickHandler([=] {
+				Ui::show(Box<MpvPathBox>());
+			});
 
-				AddDividerText(inner, tr::lng_settings_mpv_path_desc());
-#endif
+			AddDividerText(inner, tr::lng_settings_mpv_path_desc());
+	#endif
 			addMessageContextToggle(
 				tr::lng_context_show_messages_from(tr::now),
 				"show_message_context_show_messages_from");
