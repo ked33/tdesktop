@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_streaming.h"
 #include "history/history_item.h"
 #include "history/history_item_components.h"
+#include "main/main_session.h"
 #include "media/streaming/media_streaming_reader.h"
 #include "logs.h"
 #include "settings.h"
