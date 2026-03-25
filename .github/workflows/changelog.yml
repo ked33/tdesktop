@@ -1,9 +1,6 @@
 name: Changelog
 
 on:
-  push:
-    branches: [dev]
-    paths: [changelog.txt]
   release:
     types: [published]
   workflow_dispatch:
