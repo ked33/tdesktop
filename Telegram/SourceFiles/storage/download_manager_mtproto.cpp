@@ -40,13 +40,13 @@ constexpr auto kBadRequestDurationThreshold = 8 * crl::time(1000);
 [[nodiscard]] int StartWaitedInSession() {
 	switch (DownloadBoostLevel()) {
 	case 1:
-		return 6 * kDownloadPartSize;
-	case 2:
 		return 8 * kDownloadPartSize;
-	case 3:
+	case 2:
 		return 10 * kDownloadPartSize;
-	case 4:
+	case 3:
 		return 12 * kDownloadPartSize;
+	case 4:
+		return 14 * kDownloadPartSize;
 	case 5:
 		return 16 * kDownloadPartSize;
 	default:
