@@ -88,6 +88,7 @@ struct Entry {
 	int64 size = 0;
 	std::atomic<int> activeRequests = 0;
 	std::atomic<crl::time> lastActivity = 0;
+	std::atomic<bool> headerFinalized = false;
 	std::mutex fillMutex;
 };
 
@@ -116,7 +117,6 @@ struct Entry {
 		&document->owner().cacheBigFile());
 	reader->setLoaderPriority(kMpvLoaderPriority);
 	reader->startStreaming();
-	reader->headerDone();
 	return reader;
 }
 
@@ -148,6 +148,7 @@ struct Entry {
 	}
 	const auto previous = std::move(entry->reader);
 	entry->reader = fresh;
+	entry->headerFinalized = false;
 	if (previous) {
 		previous->stopStreamingAsync();
 		previous->tryRemoveLoaderAsync();
@@ -611,6 +612,7 @@ private:
 		const auto lock = std::unique_lock(entry->fillMutex);
 		auto offset = range.range.from;
 		auto left = range.range.length;
+		const auto startedFromZero = (offset == 0);
 		auto retriedLoadFailure = false;
 		while (left > 0) {
 			const auto size = int(std::min(left, int64(kReadChunkSize)));
@@ -639,6 +641,10 @@ private:
 					.arg(offset)
 					.arg(size));
 				return;
+			}
+			if (startedFromZero
+				&& !entry->headerFinalized.exchange(true)) {
+				entry->reader->headerDone();
 			}
 			retriedLoadFailure = false;
 			offset += size;
