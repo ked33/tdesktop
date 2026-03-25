@@ -84,7 +84,7 @@ public:
 	~Reader();
 
 private:
-	static constexpr auto kLoadFromRemoteMax = 8;
+	static constexpr auto kLoadFromRemoteMax = 32;
 
 	struct CacheHelper;
 
@@ -136,7 +136,7 @@ private:
 		void addPart(uint32 offset, QByteArray bytes);
 		PrepareFillResult prepareFill(uint32 from, uint32 till);
 
-		// Get up to kLoadFromRemoteMax not loaded parts in from-till range.
+		// Get up to the runtime remote-load limit in from-till range.
 		StackIntVector<kLoadFromRemoteMax> offsetsFromLoader(
 			uint32 from,
 			uint32 till) const;
