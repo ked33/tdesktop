@@ -116,6 +116,7 @@ struct Entry {
 		&document->owner().cacheBigFile());
 	reader->setLoaderPriority(kMpvLoaderPriority);
 	reader->startStreaming();
+	reader->headerDone();
 	return reader;
 }
 
