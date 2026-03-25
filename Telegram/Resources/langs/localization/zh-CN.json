@@ -218,7 +218,7 @@
     "lng_context_details_quality": "清晰度",
     "lng_context_details_pack_owner": "包作者",
 
-    "lng_context_stream_in_mpv": "在 mpv 中在线播放",
+    "lng_context_stream_in_mpv": "mpv 播放",
     "lng_context_stream_in_mpv_not_found": "未在 PATH 中找到 mpv。",
     "lng_context_stream_in_mpv_failed": "启动 mpv 在线播放失败。",
     "lng_settings_mpv_debug_logs": "将 MPV 调试日志写入 log.txt",
