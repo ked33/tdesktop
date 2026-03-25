@@ -120,7 +120,7 @@ struct Entry {
 [[nodiscard]] std::shared_ptr<Reader> CreateDedicatedReader(
 		not_null<DocumentData*> document,
 		Data::FileOrigin origin) {
-	auto loader = document->createStreamingLoader(origin, true);
+	auto loader = document->createStreamingLoader(origin, false);
 	if (!loader) {
 		return nullptr;
 	}
