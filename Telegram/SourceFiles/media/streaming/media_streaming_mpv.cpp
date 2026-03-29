@@ -687,7 +687,6 @@ private:
 		return media
 			&& (media->ttlSeconds() <= 0)
 			&& document->size > 0
-			&& document->supportsStreaming()
 			&& document->useStreamingLoader()
 			&& (document->isVideoFile() || document->isVideoMessage());
 	#endif
