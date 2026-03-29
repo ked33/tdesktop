@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_reader.h"
 
 #include "media/streaming/media_streaming_common.h"
+#include "media/streaming/media_streaming_debug.h"
 #include "media/streaming/media_streaming_loader.h"
 #include "settings.h"
 #include "storage/cache/storage_cache_database.h"
@@ -1318,6 +1319,10 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 
 	auto result = _slices.fill(offset, buffer);
 	if (result.state != FillState::Success && _slices.headerWontBeFilled()) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader header limit hit at offset=%1 size=%2 headerBytes=%3.")
+			.arg(qulonglong(offset))
+			.arg(qlonglong(size()))
+			.arg(_slices.headerSize()));
 		_streamingError = Error::NotStreamable;
 		return FillState::Failed;
 	}
