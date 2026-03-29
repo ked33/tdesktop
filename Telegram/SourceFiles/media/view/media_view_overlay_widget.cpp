@@ -56,6 +56,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/view/media_view_video_stream.h"
 #include "media/stories/media_stories_share.h"
 #include "media/stories/media_stories_view.h"
+#include "media/streaming/media_streaming_debug.h"
 #include "media/streaming/media_streaming_document.h"
 #include "media/streaming/media_streaming_player.h"
 #include "media/player/media_player_instance.h"
@@ -3920,17 +3921,29 @@ void OverlayWidget::displayDocument(
 					{ .options = Images::Option::Blur }
 				).toImage());
 			}
-		} else {
-			initSponsoredButton();
-			if (_documentMedia->canBePlayed(_message)
-				&& initStreaming(startStreaming)) {
-			} else if (_document->isVideoFile()) {
-				auto peerId = _from ? _from->id : PeerId(0);
-				auto user = _history->session().data().peerLoaded(_from ? _from->id : PeerId(0));
-				if (!blockExist(peerId.value) || (!GetEnhancedBool("blocked_user_spoiler_mode") && user && !user->isBlocked())) {
-					_documentMedia->automaticLoad(fileOrigin(), _message);
-				}
-				initStreamingThumbnail();
+			} else {
+				initSponsoredButton();
+				const auto canBePlayed = _documentMedia->canBePlayed(_message);
+				if (canBePlayed && initStreaming(startStreaming)) {
+				} else if (_document->isVideoFile()) {
+					const auto video = _chosenQuality ? _chosenQuality : _document;
+					VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Overlay fallback to download doc=%1 chosen=%2 canBePlayed=%3 supports=%4 canBeStreamed=%5 useLoader=%6 remote=%7 inappFailed=%8 size=%9 mime=%10.")
+						.arg(qulonglong(_document->id))
+						.arg(qulonglong(video->id))
+						.arg(canBePlayed)
+						.arg(video->supportsStreaming())
+						.arg(video->canBeStreamed(_message))
+						.arg(video->useStreamingLoader())
+						.arg(video->hasRemoteLocation())
+						.arg(video->inappPlaybackFailed())
+						.arg(qlonglong(video->size))
+						.arg(video->mimeString()));
+					auto peerId = _from ? _from->id : PeerId(0);
+					auto user = _history->session().data().peerLoaded(_from ? _from->id : PeerId(0));
+					if (!blockExist(peerId.value) || (!GetEnhancedBool("blocked_user_spoiler_mode") && user && !user->isBlocked())) {
+						_documentMedia->automaticLoad(fileOrigin(), _message);
+					}
+					initStreamingThumbnail();
 			} else if (_document->isTheme()) {
 				_documentMedia->automaticLoad(fileOrigin(), _message);
 				initThemePreview();
@@ -4149,6 +4162,20 @@ bool OverlayWidget::initStreaming(const StartStreaming &startStreaming) {
 	if (_streamed) {
 		return true;
 	}
+	if (_document) {
+		const auto video = _chosenQuality ? _chosenQuality : _document;
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Overlay init doc=%1 chosen=%2 canBePlayed=%3 supports=%4 canBeStreamed=%5 useLoader=%6 remote=%7 inappFailed=%8 size=%9 mime=%10.")
+			.arg(qulonglong(_document->id))
+			.arg(qulonglong(video->id))
+			.arg(_documentMedia->canBePlayed(_message))
+			.arg(video->supportsStreaming())
+			.arg(video->canBeStreamed(_message))
+			.arg(video->useStreamingLoader())
+			.arg(video->hasRemoteLocation())
+			.arg(video->inappPlaybackFailed())
+			.arg(qlonglong(video->size))
+			.arg(video->mimeString()));
+	}
 	initStreamingThumbnail();
 	if (!createStreamingObjects()) {
 		if (_document) {
@@ -4346,6 +4373,18 @@ bool OverlayWidget::createStreamingObjects() {
 		_streamed = std::make_unique<Streamed>(_photo, origin, callback);
 	}
 	if (!_streamed->instance.valid()) {
+		if (video) {
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Overlay failed to create valid stream instance doc=%1 chosen=%2 supports=%3 canBeStreamed=%4 useLoader=%5 remote=%6 inappFailed=%7 size=%8 mime=%9.")
+				.arg(qulonglong(_document ? _document->id : video->id))
+				.arg(qulonglong(video->id))
+				.arg(video->supportsStreaming())
+				.arg(video->canBeStreamed(_message))
+				.arg(video->useStreamingLoader())
+				.arg(video->hasRemoteLocation())
+				.arg(video->inappPlaybackFailed())
+				.arg(qlonglong(video->size))
+				.arg(video->mimeString()));
+		}
 		_streamed = nullptr;
 		return false;
 	}
