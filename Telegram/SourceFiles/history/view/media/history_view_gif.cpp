@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/audio/media_audio.h"
 #include "media/clip/media_clip_reader.h"
 #include "media/player/media_player_instance.h"
+#include "media/streaming/media_streaming_debug.h"
 #include "media/streaming/media_streaming_instance.h"
 #include "media/streaming/media_streaming_player.h"
 #include "media/streaming/media_streaming_utility.h"
@@ -2062,12 +2063,34 @@ void Gif::createStreamedPlayer() {
 	if (_streamed && _streamed->chosen == chosen) {
 		return;
 	}
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Inline stream init doc=%1 chosen=%2 requestedQuality=%3 resolvedQuality=%4 supports=%5 canBeStreamed=%6 useLoader=%7 remote=%8 inappFailed=%9 size=%10 mime=%11.")
+		.arg(qulonglong(_data->id))
+		.arg(qulonglong(chosen->id))
+		.arg(int(quality.height))
+		.arg(chosen->resolveVideoQuality())
+		.arg(chosen->supportsStreaming())
+		.arg(chosen->canBeStreamed(_realParent))
+		.arg(chosen->useStreamingLoader())
+		.arg(chosen->hasRemoteLocation())
+		.arg(chosen->inappPlaybackFailed())
+		.arg(qlonglong(chosen->size))
+		.arg(chosen->mimeString()));
 	auto shared = _data->owner().streaming().sharedDocument(
 		chosen,
 		_data,
 		_realParent,
 		_realParent->fullId());
 	if (!shared) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Inline sharedDocument creation failed doc=%1 chosen=%2 supports=%3 canBeStreamed=%4 useLoader=%5 remote=%6 inappFailed=%7 size=%8 mime=%9.")
+			.arg(qulonglong(_data->id))
+			.arg(qulonglong(chosen->id))
+			.arg(chosen->supportsStreaming())
+			.arg(chosen->canBeStreamed(_realParent))
+			.arg(chosen->useStreamingLoader())
+			.arg(chosen->hasRemoteLocation())
+			.arg(chosen->inappPlaybackFailed())
+			.arg(qlonglong(chosen->size))
+			.arg(chosen->mimeString()));
 		return;
 	}
 	setStreamed(std::make_unique<Streamed>(
