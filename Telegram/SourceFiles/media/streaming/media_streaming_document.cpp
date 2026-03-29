@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_document.h"
 
 #include "media/streaming/media_streaming_instance.h"
+#include "media/streaming/media_streaming_debug.h"
 #include "media/streaming/media_streaming_loader.h"
 #include "media/streaming/media_streaming_reader.h"
 #include "data/data_session.h"
@@ -94,6 +95,16 @@ const Information &Document::info() const {
 }
 
 void Document::play(const PlaybackOptions &options) {
+	if (_document && (_document->isVideoFile() || _document->isVideoMessage())) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Start document stream doc=%1 size=%2 mime=%3 mode=%4 position=%5 durationOverride=%6 speed=%7.")
+			.arg(qulonglong(_document->id))
+			.arg(qlonglong(_document->size))
+			.arg(_document->mimeString())
+			.arg(int(options.mode))
+			.arg(qlonglong(options.position))
+			.arg(qlonglong(options.durationOverride))
+			.arg(options.speed, 0, 'f', 2));
+	}
 	_player.play(options);
 	_info.audio.state.position
 		= _info.video.state.position
@@ -245,6 +256,17 @@ bool Document::checkSwitchToLowerQuality() {
 }
 
 void Document::handleError(Error &&error) {
+	if (_document && (_document->isVideoFile() || _document->isVideoMessage())) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Document stream error doc=%1 size=%2 mime=%3 error=%4 supports=%5 useLoader=%6 remote=%7 inappFailed=%8.")
+			.arg(qulonglong(_document->id))
+			.arg(qlonglong(_document->size))
+			.arg(_document->mimeString())
+			.arg(PlaybackErrorDebugString(error))
+			.arg(_document->supportsStreaming())
+			.arg(_document->useStreamingLoader())
+			.arg(_document->hasRemoteLocation())
+			.arg(_document->inappPlaybackFailed()));
+	}
 	if (_document) {
 		if (error == Error::NotStreamable) {
 			_document->setNotSupportsStreaming();
@@ -261,6 +283,18 @@ void Document::handleError(Error &&error) {
 
 void Document::ready(Information &&info) {
 	_info = std::move(info);
+	if (_document && (_document->isVideoFile() || _document->isVideoMessage())) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Document stream ready doc=%1 size=%2 mime=%3 video=%4x%5 videoDuration=%6 audioDuration=%7 cover=%8 alpha=%9.")
+			.arg(qulonglong(_document->id))
+			.arg(qlonglong(_document->size))
+			.arg(_document->mimeString())
+			.arg(_info.video.size.width())
+			.arg(_info.video.size.height())
+			.arg(qlonglong(_info.video.state.duration))
+			.arg(qlonglong(_info.audio.state.duration))
+			.arg(!_info.video.cover.isNull())
+			.arg(_info.video.alpha));
+	}
 	validateGoodThumbnail();
 	waitingChange(false);
 }
