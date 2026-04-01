@@ -275,6 +275,12 @@ private:
 		PrepareSelect,
 		Selecting,
 	};
+	enum class ModifierClickAction {
+		None,
+		Cancelled,
+		CopyLink,
+		StreamInMpv,
+	};
 	enum class SelectAction {
 		Select,
 		Deselect,
@@ -462,6 +468,17 @@ private:
 
 	void setupSharingDisallowed();
 	void setupSwipeReplyAndBack();
+	[[nodiscard]] ModifierClickAction resolveModifierClickAction(
+		Qt::KeyboardModifiers modifiers) const;
+	[[nodiscard]] bool startModifierClick(
+		const QPoint &screenPos,
+		Qt::KeyboardModifiers modifiers);
+	[[nodiscard]] bool finishModifierClick(
+		const QPoint &screenPos,
+		Qt::MouseButton button,
+		Qt::KeyboardModifiers modifiers);
+	void cancelModifierClick();
+	void clearModifierClick();
 	[[nodiscard]] bool hasCopyRestriction(HistoryItem *item = nullptr) const;
 	[[nodiscard]] bool hasCopyMediaRestriction(
 		not_null<HistoryItem*> item) const;
@@ -534,11 +551,15 @@ private:
 	HistoryItem *_pinnedItem = nullptr;
 
 	MouseAction _mouseAction = MouseAction::None;
+	ModifierClickAction _modifierClickAction = ModifierClickAction::None;
 	TextSelectType _mouseSelectType = TextSelectType::Letters;
 	QPoint _dragStartPosition;
 	QPoint _mousePosition;
+	QPoint _modifierClickStartPosition;
+	FullMsgId _modifierClickItemId;
 	HistoryItem *_mouseActionItem = nullptr;
 	HistoryItem *_dragStateItem = nullptr;
+	DocumentData *_modifierClickDocument = nullptr;
 	CursorState _mouseCursorState = CursorState();
 	uint16 _mouseTextSymbol = 0;
 	bool _mouseActive = false;

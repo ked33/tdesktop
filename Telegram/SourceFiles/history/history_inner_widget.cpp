@@ -34,6 +34,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_top_peers_selector.h"
 #include "history/history_item_components.h"
 #include "history/history_item_text.h"
+#include "media/streaming/media_streaming_mpv.h"
 #include "payments/payments_reaction_process.h"
 #include "ui/toast/toast.h"
 #include "ui/widgets/menu/menu_add_action_callback_factory.h"
@@ -700,6 +701,134 @@ void HistoryInner::setupSwipeReplyAndBack() {
 		.init = std::move(init),
 		.dontStart = _touchMaybeSelecting.value(),
 	});
+}
+
+auto HistoryInner::resolveModifierClickAction(
+		Qt::KeyboardModifiers modifiers) const -> ModifierClickAction {
+	if (modifiers == Qt::AltModifier) {
+		return ModifierClickAction::CopyLink;
+	} else if (modifiers == Qt::ControlModifier) {
+		return ModifierClickAction::StreamInMpv;
+	}
+	return ModifierClickAction::None;
+}
+
+bool HistoryInner::startModifierClick(
+		const QPoint &screenPos,
+		Qt::KeyboardModifiers modifiers) {
+	const auto action = resolveModifierClickAction(modifiers);
+	if (action == ModifierClickAction::None) {
+		return false;
+	}
+
+	mouseActionUpdate(screenPos);
+
+	const auto view = Element::Moused();
+	const auto item = _dragStateItem
+		? _dragStateItem
+		: view
+		? view->data().get()
+		: nullptr;
+	if (!item) {
+		return false;
+	}
+
+	DocumentData *document = nullptr;
+	if (action == ModifierClickAction::CopyLink) {
+		if (!item->hasDirectLink()) {
+			return false;
+		}
+	} else if (_dragStateItem && _dragStateItem->media()) {
+		document = _dragStateItem->media()->document();
+	} else if (view && view->media()) {
+		document = view->media()->getDocument();
+	} else if (item->media()) {
+		document = item->media()->document();
+	}
+	if ((action == ModifierClickAction::StreamInMpv)
+		&& !::Media::Streaming::Mpv::CanOpenVideoMessageInMpv(
+			item,
+			document)) {
+		return false;
+	}
+
+	_modifierClickAction = action;
+	_modifierClickStartPosition = screenPos;
+	_modifierClickItemId = item->fullId();
+	_modifierClickDocument = document;
+	return true;
+}
+
+bool HistoryInner::finishModifierClick(
+		const QPoint &screenPos,
+		Qt::MouseButton button,
+		Qt::KeyboardModifiers modifiers) {
+	const auto action = _modifierClickAction;
+	if (action == ModifierClickAction::None) {
+		return false;
+	}
+
+	mouseActionUpdate(screenPos);
+
+	const auto startPosition = _modifierClickStartPosition;
+	const auto itemId = _modifierClickItemId;
+	const auto fallbackDocument = _modifierClickDocument;
+	clearModifierClick();
+
+	if ((button != Qt::LeftButton)
+		|| (action == ModifierClickAction::Cancelled)
+		|| (action != resolveModifierClickAction(modifiers))
+		|| ((screenPos - startPosition).manhattanLength()
+			>= QApplication::startDragDistance())) {
+		return true;
+	}
+
+	const auto view = Element::Moused();
+	const auto item = _dragStateItem
+		? _dragStateItem
+		: view
+		? view->data().get()
+		: nullptr;
+	if (!item || (item->fullId() != itemId)) {
+		return true;
+	}
+
+	if (action == ModifierClickAction::CopyLink) {
+		HistoryView::CopyPostLink(
+			_controller,
+			itemId,
+			HistoryView::Context::History);
+		return true;
+	}
+
+	const auto resolvedItem = _controller->session().data().message(itemId);
+	const auto resolvedDocument = (resolvedItem && resolvedItem->media())
+		? resolvedItem->media()->document()
+		: fallbackDocument;
+	const auto result = ::Media::Streaming::Mpv::OpenVideoMessageInMpv(
+		resolvedItem,
+		resolvedDocument);
+	if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
+		_controller->showToast(
+			tr::lng_context_stream_in_mpv_not_found(tr::now));
+	} else if (result == ::Media::Streaming::Mpv::OpenResult::Failed) {
+		_controller->showToast(
+			tr::lng_context_stream_in_mpv_failed(tr::now));
+	}
+	return true;
+}
+
+void HistoryInner::cancelModifierClick() {
+	if (_modifierClickAction != ModifierClickAction::None) {
+		_modifierClickAction = ModifierClickAction::Cancelled;
+	}
+}
+
+void HistoryInner::clearModifierClick() {
+	_modifierClickAction = ModifierClickAction::None;
+	_modifierClickStartPosition = QPoint();
+	_modifierClickItemId = FullMsgId();
+	_modifierClickDocument = nullptr;
 }
 
 bool HistoryInner::hasSelectRestriction() const {
@@ -1799,8 +1928,12 @@ void HistoryInner::mouseMoveEvent(QMouseEvent *e) {
 		return;
 	}
 	auto buttonsPressed = (e->buttons() & (Qt::LeftButton | Qt::MiddleButton));
-	if (!buttonsPressed && _mouseAction != MouseAction::None) {
-		mouseReleaseEvent(e);
+	if (!buttonsPressed) {
+		if ((_modifierClickAction != ModifierClickAction::None)
+			|| (_mouseAction != MouseAction::None)) {
+			mouseReleaseEvent(e);
+			return;
+		}
 	}
 	if (reallyMoved) {
 		_mouseActive = true;
@@ -1810,6 +1943,25 @@ void HistoryInner::mouseMoveEvent(QMouseEvent *e) {
 		}
 	}
 	mouseActionUpdate(e->globalPos());
+	if (_modifierClickAction == ModifierClickAction::None) {
+		return;
+	} else if (_modifierClickAction == ModifierClickAction::Cancelled) {
+		return;
+	}
+
+	const auto view = Element::Moused();
+	const auto item = _dragStateItem
+		? _dragStateItem
+		: view
+		? view->data().get()
+		: nullptr;
+	if (((e->globalPos() - _modifierClickStartPosition).manhattanLength()
+			>= QApplication::startDragDistance())
+		|| !item
+		|| (item->fullId() != _modifierClickItemId)
+		|| (resolveModifierClickAction(e->modifiers()) != _modifierClickAction)) {
+		cancelModifierClick();
+	}
 }
 
 void HistoryInner::mouseActionUpdate(const QPoint &screenPos) {
@@ -1863,6 +2015,11 @@ void HistoryInner::mousePressEvent(QMouseEvent *e) {
 		return;
 	}
 	_mouseActive = true;
+	if ((e->button() == Qt::LeftButton)
+		&& startModifierClick(e->globalPos(), e->modifiers())) {
+		e->accept();
+		return;
+	}
 	mouseActionStart(e->globalPos(), e->button());
 }
 
@@ -2284,6 +2441,13 @@ void HistoryInner::mouseActionFinish(
 
 void HistoryInner::mouseReleaseEvent(QMouseEvent *e) {
 	if (_middleClickAutoscroll.active()) {
+		e->accept();
+		return;
+	}
+	if (finishModifierClick(e->globalPos(), e->button(), e->modifiers())) {
+		if (!rect().contains(e->pos())) {
+			leaveEvent(e);
+		}
 		e->accept();
 		return;
 	}
