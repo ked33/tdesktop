@@ -49,6 +49,10 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 	}
 }
 
+[[nodiscard]] bool StreamingSeekCancelEnabled() {
+	return (DownloadBoostLevel() > 0);
+}
+
 [[nodiscard]] int PreloadPartsAhead() {
 	switch (DownloadBoostLevel()) {
 	case 1:
@@ -958,6 +962,9 @@ void Reader::stopStreaming(bool stillActive) {
 		QMutexLocker lock(&_cacheHelper->mutex);
 		_cacheHelper->waiting.store(nullptr, std::memory_order_release);
 	}
+	if (stillActive && StreamingSeekCancelEnabled()) {
+		cancelStreamingLoads();
+	}
 	if (!stillActive) {
 		_streamingActive = false;
 		refreshLoaderPriority();
@@ -1355,6 +1362,16 @@ void Reader::cancelLoadInRange(uint32 from, uint32 till) {
 	Expects(from < till);
 
 	for (const auto offset : _loadingOffsets.takeInRange(from, till)) {
+		if (!_downloaderOffsetsRequested.contains(offset)) {
+			_loader->cancel(offset);
+		}
+	}
+}
+
+void Reader::cancelStreamingLoads() {
+	for (const auto offset : _loadingOffsets.takeInRange(
+		0,
+		std::numeric_limits<int64>::max())) {
 		if (!_downloaderOffsetsRequested.contains(offset)) {
 			_loader->cancel(offset);
 		}
