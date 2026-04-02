@@ -48,7 +48,7 @@ constexpr auto kPathPrefixLength = 5;
 constexpr auto kHeadersLimit = 64 * 1024;
 constexpr auto kReadChunkSize = 256 * 1024;
 constexpr auto kInitialReadChunkSize = 64 * 1024;
-constexpr auto kBoostedReadChunkSize = 128 * 1024;
+constexpr auto kBoostedReadChunkSize = 64 * 1024;
 constexpr auto kCleanupInterval = 60 * crl::time(1000);
 constexpr auto kTokenLifetime = 5 * 60 * crl::time(1000);
 constexpr auto kMpvLoaderPriority = 2;
@@ -67,15 +67,35 @@ constexpr auto kBoostedMpvLoaderPriority = 8;
 	return (DownloadBoostLevel() > 0);
 }
 
-[[nodiscard]] QStringList LaunchArguments(const QString &url) {
+[[nodiscard]] QString MpvLogFilePath(const QString &token) {
+	auto base = QStandardPaths::writableLocation(
+		QStandardPaths::TempLocation);
+	if (base.isEmpty()) {
+		return QStringLiteral("tdesktop-mpv-%1.log").arg(token);
+	}
+	if (!base.endsWith('/') && !base.endsWith('\\')) {
+		base += '/';
+	}
+	return QStringLiteral("%1tdesktop-mpv-%2.log").arg(base, token);
+}
+
+[[nodiscard]] QStringList LaunchArguments(
+		const QString &url,
+		const QString &token) {
 	auto result = QStringList{
 		QStringLiteral("--force-window=immediate"),
 	};
+	if (MpvDebugLogsEnabled()) {
+		result.push_back(QStringLiteral("--log-file=%1").arg(
+			MpvLogFilePath(token)));
+	}
 	if (MpvStreamingBoostEnabled()) {
 		result.push_back(QStringLiteral("--cache=yes"));
 		result.push_back(QStringLiteral("--demuxer-seekable-cache=yes"));
 		result.push_back(QStringLiteral("--demuxer-max-bytes=536870912"));
 		result.push_back(QStringLiteral("--demuxer-max-back-bytes=134217728"));
+		result.push_back(QStringLiteral("--demuxer-lavf-probe-info=nostreams"));
+		result.push_back(QStringLiteral("--demuxer-lavf-o=ignore_editlist=1,interleaved_read=0"));
 	}
 	result.push_back(url);
 	return result;
@@ -766,7 +786,11 @@ private:
 		MPV_STREAMING_LOG(("MPV Streaming: Launching '%1' with URL %2.")
 			.arg(program)
 			.arg(launch.url));
-		const auto arguments = LaunchArguments(launch.url);
+		if (MpvDebugLogsEnabled()) {
+			MPV_STREAMING_LOG(("MPV Streaming: MPV log file: %1.")
+				.arg(MpvLogFilePath(launch.token)));
+		}
+		const auto arguments = LaunchArguments(launch.url, launch.token);
 		MPV_STREAMING_LOG(("MPV Streaming: Launch arguments: %1.")
 			.arg(arguments.join(QStringLiteral(" "))));
 		auto process = QProcess();

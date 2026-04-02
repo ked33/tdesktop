@@ -801,20 +801,22 @@ bool HistoryInner::finishModifierClick(
 		return true;
 	}
 
-	const auto resolvedItem = _controller->session().data().message(itemId);
-	const auto resolvedDocument = (resolvedItem && resolvedItem->media())
-		? resolvedItem->media()->document()
-		: fallbackDocument;
-	const auto result = ::Media::Streaming::Mpv::OpenVideoMessageInMpv(
-		resolvedItem,
-		resolvedDocument);
-	if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
-		_controller->showToast(
-			tr::lng_context_stream_in_mpv_not_found(tr::now));
-	} else if (result == ::Media::Streaming::Mpv::OpenResult::Failed) {
-		_controller->showToast(
-			tr::lng_context_stream_in_mpv_failed(tr::now));
-	}
+	InvokeQueued(this, [=] {
+		const auto resolvedItem = _controller->session().data().message(itemId);
+		const auto resolvedDocument = (resolvedItem && resolvedItem->media())
+			? resolvedItem->media()->document()
+			: fallbackDocument;
+		const auto result = ::Media::Streaming::Mpv::OpenVideoMessageInMpv(
+			resolvedItem,
+			resolvedDocument);
+		if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
+			_controller->showToast(
+				tr::lng_context_stream_in_mpv_not_found(tr::now));
+		} else if (result == ::Media::Streaming::Mpv::OpenResult::Failed) {
+			_controller->showToast(
+				tr::lng_context_stream_in_mpv_failed(tr::now));
+		}
+	});
 	return true;
 }
 
