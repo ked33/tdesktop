@@ -48,9 +48,11 @@ constexpr auto kPathPrefixLength = 5;
 constexpr auto kHeadersLimit = 64 * 1024;
 constexpr auto kReadChunkSize = 256 * 1024;
 constexpr auto kInitialReadChunkSize = 64 * 1024;
+constexpr auto kBoostedReadChunkSize = 128 * 1024;
 constexpr auto kCleanupInterval = 60 * crl::time(1000);
 constexpr auto kTokenLifetime = 5 * 60 * crl::time(1000);
 constexpr auto kMpvLoaderPriority = 2;
+constexpr auto kBoostedMpvLoaderPriority = 8;
 
 [[nodiscard]] bool MpvDebugLogsEnabled() {
 	return GetEnhancedBool("mpv_streaming_debug_logs");
@@ -77,6 +79,21 @@ constexpr auto kMpvLoaderPriority = 2;
 	}
 	result.push_back(url);
 	return result;
+}
+
+[[nodiscard]] int LoaderPriorityForMpv() {
+	return MpvStreamingBoostEnabled()
+		? kBoostedMpvLoaderPriority
+		: kMpvLoaderPriority;
+}
+
+[[nodiscard]] int ChunkSizeForMpvRequest(bool initial) {
+	if (initial) {
+		return kInitialReadChunkSize;
+	}
+	return MpvStreamingBoostEnabled()
+		? kBoostedReadChunkSize
+		: kReadChunkSize;
 }
 
 #define MPV_STREAMING_LOG(expr) \
@@ -151,7 +168,7 @@ struct Entry {
 	auto reader = std::make_shared<Reader>(
 		std::move(loader),
 		nullptr);
-	reader->setLoaderPriority(kMpvLoaderPriority);
+	reader->setLoaderPriority(LoaderPriorityForMpv());
 	reader->startStreaming();
 	return reader;
 }
@@ -645,52 +662,54 @@ private:
 			if (request.method == "HEAD") {
 				return;
 			}
-			const auto lock = std::unique_lock(entry->fillMutex);
 			auto offset = range.range.from;
 			auto left = range.range.length;
 			const auto startedFromZero = (offset == 0);
 			auto retriedLoadFailure = false;
 			while (left > 0) {
-				const auto chunkSize = (offset == range.range.from)
-					? kInitialReadChunkSize
-					: kReadChunkSize;
+				const auto chunkSize = ChunkSizeForMpvRequest(
+					offset == range.range.from);
 				const auto size = int(std::min(left, int64(chunkSize)));
 				auto buffer = QByteArray(size, Qt::Uninitialized);
-				if (!FillBuffer(
-						entry->reader.get(),
-						offset,
-						bytes::span(
-							reinterpret_cast<bytes::type*>(buffer.data()),
-							size))) {
-					const auto error = entry->reader->streamingError();
-					if (!retriedLoadFailure
-						&& error
-						&& (*error == Error::LoadFailed)
-						&& RecoverEntryReader(entry, request.token, offset)) {
-						retriedLoadFailure = true;
-						continue;
-					}
+				{
+					const auto lock = std::unique_lock(entry->fillMutex);
+					if (!FillBuffer(
+							entry->reader.get(),
+							offset,
+							bytes::span(
+								reinterpret_cast<bytes::type*>(buffer.data()),
+								size))) {
+						const auto error = entry->reader->streamingError();
+						if (!retriedLoadFailure
+							&& error
+							&& (*error == Error::LoadFailed)
+							&& RecoverEntryReader(entry, request.token, offset)) {
+							retriedLoadFailure = true;
+							continue;
+						}
 						MPV_STREAMING_LOG(("MPV Streaming: FillBuffer failed at offset %1, size %2, error=%3.")
 							.arg(offset)
 							.arg(size)
 							.arg(StreamingErrorDebugString(error)));
-					return;
-					} else if (!WriteAll(socket, buffer.constData(), buffer.size())) {
-						const auto error = socket.error();
-						if (error != QAbstractSocket::RemoteHostClosedError) {
-							MPV_STREAMING_LOG(("MPV Streaming: WriteAll failed at offset %1, size %2, error=%3, detail='%4'.")
-								.arg(offset)
-								.arg(size)
-								.arg(int(error))
-								.arg(socket.errorString()));
-						}
 						return;
 					}
-				if (startedFromZero
-					&& !entry->headerFinalized.exchange(true)) {
-					entry->reader->headerDone();
+					if (startedFromZero
+						&& !entry->headerFinalized.exchange(true)) {
+						entry->reader->headerDone();
+					}
+					retriedLoadFailure = false;
 				}
-				retriedLoadFailure = false;
+				if (!WriteAll(socket, buffer.constData(), buffer.size())) {
+					const auto error = socket.error();
+					if (error != QAbstractSocket::RemoteHostClosedError) {
+						MPV_STREAMING_LOG(("MPV Streaming: WriteAll failed at offset %1, size %2, error=%3, detail='%4'.")
+							.arg(offset)
+							.arg(size)
+							.arg(int(error))
+							.arg(socket.errorString()));
+					}
+					return;
+				}
 				offset += size;
 				left -= size;
 				entry->lastActivity = crl::now();
