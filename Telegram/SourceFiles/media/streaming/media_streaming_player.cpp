@@ -55,6 +55,27 @@ constexpr auto kMsFrequency = 1000; // 1000 ms per second.
 	}
 }
 
+[[nodiscard]] crl::time WaitingForDataBufferForRemote() {
+	switch (DownloadBoostLevel()) {
+	case 1:
+		return 2600;
+	case 2:
+		return 2300;
+	case 3:
+		return 2100;
+	case 4:
+		return 1900;
+	case 5:
+		return 1700;
+	default:
+		return kBufferFor;
+	}
+}
+
+[[nodiscard]] crl::time WaitingForDataBuffer(bool remoteLoader) {
+	return remoteLoader ? WaitingForDataBufferForRemote() : kBufferFor;
+}
+
 void SaveValidStateInformation(TrackState &to, TrackState &&from) {
 	Expects(from.position != kTimeUnknown);
 	Expects(from.receivedTill != kTimeUnknown);
@@ -724,7 +745,8 @@ bool Player::receivedTillEnd() const {
 }
 
 void Player::checkResumeFromWaitingForData() {
-	if (_pausedByWaitingForData && bothReceivedEnough(kBufferFor)) {
+	if (_pausedByWaitingForData
+		&& bothReceivedEnough(WaitingForDataBuffer(_remoteLoader))) {
 		_pausedByWaitingForData = false;
 		updatePausedState();
 		_updates.fire({ WaitingForData{ false } });
@@ -745,7 +767,7 @@ void Player::start() {
 		_audio ? _audio->waitingForData() : nullptr,
 		_video ? _video->waitingForData() : nullptr
 	) | rpl::filter([=] {
-		return !bothReceivedEnough(kBufferFor);
+		return !bothReceivedEnough(WaitingForDataBuffer(_remoteLoader));
 	}) | rpl::on_next([=] {
 		_pausedByWaitingForData = true;
 		updatePausedState();
