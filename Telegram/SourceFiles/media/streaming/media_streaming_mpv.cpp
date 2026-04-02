@@ -24,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QFileInfo>
 #include <QtCore/QProcess>
 #include <QtCore/QProcessEnvironment>
+#include <QtCore/QStringList>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QUuid>
 #include <QtCore/QUrl>
@@ -53,6 +54,29 @@ constexpr auto kMpvLoaderPriority = 2;
 
 [[nodiscard]] bool MpvDebugLogsEnabled() {
 	return GetEnhancedBool("mpv_streaming_debug_logs");
+}
+
+[[nodiscard]] int DownloadBoostLevel() {
+	const auto boost = GetEnhancedInt("net_download_speed_boost");
+	return std::clamp(boost, 0, 5);
+}
+
+[[nodiscard]] bool MpvStreamingBoostEnabled() {
+	return (DownloadBoostLevel() > 0);
+}
+
+[[nodiscard]] QStringList LaunchArguments(const QString &url) {
+	auto result = QStringList{
+		QStringLiteral("--force-window=immediate"),
+	};
+	if (MpvStreamingBoostEnabled()) {
+		result.push_back(QStringLiteral("--cache=yes"));
+		result.push_back(QStringLiteral("--demuxer-seekable-cache=yes"));
+		result.push_back(QStringLiteral("--demuxer-max-bytes=536870912"));
+		result.push_back(QStringLiteral("--demuxer-max-back-bytes=134217728"));
+	}
+	result.push_back(url);
+	return result;
 }
 
 #define MPV_STREAMING_LOG(expr) \
@@ -652,11 +676,16 @@ private:
 							.arg(StreamingErrorDebugString(error)));
 					return;
 					} else if (!WriteAll(socket, buffer.constData(), buffer.size())) {
-						MPV_STREAMING_LOG(("MPV Streaming: WriteAll failed at offset %1, size %2.")
-							.arg(offset)
-							.arg(size));
-					return;
-				}
+						const auto error = socket.error();
+						if (error != QAbstractSocket::RemoteHostClosedError) {
+							MPV_STREAMING_LOG(("MPV Streaming: WriteAll failed at offset %1, size %2, error=%3, detail='%4'.")
+								.arg(offset)
+								.arg(size)
+								.arg(int(error))
+								.arg(socket.errorString()));
+						}
+						return;
+					}
 				if (startedFromZero
 					&& !entry->headerFinalized.exchange(true)) {
 					entry->reader->headerDone();
@@ -715,12 +744,15 @@ private:
 			reader->stopStreaming(false);
 			return OpenResult::Failed;
 		}
-			MPV_STREAMING_LOG(("MPV Streaming: Launching '%1' with URL %2.")
-				.arg(program)
-				.arg(launch.url));
+		MPV_STREAMING_LOG(("MPV Streaming: Launching '%1' with URL %2.")
+			.arg(program)
+			.arg(launch.url));
+		const auto arguments = LaunchArguments(launch.url);
+		MPV_STREAMING_LOG(("MPV Streaming: Launch arguments: %1.")
+			.arg(arguments.join(QStringLiteral(" "))));
 		auto process = QProcess();
 		process.setProgram(program);
-		process.setArguments({ launch.url });
+		process.setArguments(arguments);
 		process.setWorkingDirectory(QFileInfo(program).absolutePath());
 		process.setProcessEnvironment(LaunchEnvironment());
 		if (!process.startDetached()) {
