@@ -91,6 +91,7 @@ constexpr auto kBoostedMpvLoaderPriority = 8;
 	}
 	if (MpvStreamingBoostEnabled()) {
 		result.push_back(QStringLiteral("--cache=yes"));
+		result.push_back(QStringLiteral("--demuxer=lavf"));
 		result.push_back(QStringLiteral("--demuxer-seekable-cache=yes"));
 		result.push_back(QStringLiteral("--demuxer-max-bytes=536870912"));
 		result.push_back(QStringLiteral("--demuxer-max-back-bytes=134217728"));
