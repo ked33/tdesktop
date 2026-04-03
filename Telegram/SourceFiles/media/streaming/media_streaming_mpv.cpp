@@ -650,11 +650,13 @@ private:
 			auto left = range.range.length;
 			const auto startedFromZero = (offset == 0);
 			auto retriedLoadFailure = false;
+			auto clientDisconnected = false;
 			while (left > 0) {
 				// Check if client disconnected before acquiring the lock.
 				socket.waitForReadyRead(0);
 				if (socket.state() != QAbstractSocket::ConnectedState) {
-					return;
+					clientDisconnected = true;
+					break;
 				}
 				const auto chunkSize = (offset == range.range.from)
 					? kInitialReadChunkSize
@@ -666,7 +668,8 @@ private:
 					// Re-check after acquiring the lock.
 					socket.waitForReadyRead(0);
 					if (socket.state() != QAbstractSocket::ConnectedState) {
-						return;
+						clientDisconnected = true;
+						break;
 					}
 					if (!FillBuffer(
 							entry->reader.get(),
@@ -702,12 +705,59 @@ private:
 							.arg(int(error))
 							.arg(socket.errorString()));
 					}
-					return;
+					clientDisconnected = true;
+					break;
 				}
 				retriedLoadFailure = false;
 				offset += size;
 				left -= size;
 				entry->lastActivity = crl::now();
+			}
+			// Pre-fill cache sequentially after client disconnect.
+			// When a fragmented MP4 is opened, the demuxer scans
+			// hundreds of fragment headers via HTTP range requests.
+			// By continuing to fill the cache sequentially here,
+			// those seek connections find data already cached and
+			// complete almost instantly instead of each downloading
+			// from Telegram independently (~150ms per seek).
+			if (clientDisconnected && startedFromZero && left > 0) {
+				while (left > 0 && entry->activeRequests.load() > 1) {
+					const auto size = int(std::min(left, int64(kReadChunkSize)));
+					auto buffer = QByteArray(size, Qt::Uninitialized);
+					{
+						const auto lock = std::unique_lock(entry->fillMutex);
+						if (entry->activeRequests.load() <= 1) {
+							break;
+						}
+						const auto fillStart = crl::now();
+						if (!FillBuffer(
+								entry->reader.get(),
+								offset,
+								bytes::span(
+									reinterpret_cast<bytes::type*>(buffer.data()),
+									size))) {
+							break;
+						}
+						// Stop if FillBuffer was slow (cache miss).
+						// A slow fill means the Reader had to download
+						// from Telegram at this offset, indicating our
+						// sequential position diverged from the loader.
+						// Continuing would thrash the Reader's position
+						// between our offset and seek connections' offsets.
+						if (crl::now() - fillStart > 50) {
+							break;
+						}
+						if (!entry->headerFinalized.exchange(true)) {
+							entry->reader->headerDone();
+						}
+					}
+					offset += size;
+					left -= size;
+					entry->lastActivity = crl::now();
+					// Yield to let seek connections acquire the lock.
+					std::this_thread::sleep_for(
+						std::chrono::milliseconds(1));
+				}
 			}
 		}
 
