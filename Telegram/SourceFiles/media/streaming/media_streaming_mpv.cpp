@@ -68,6 +68,7 @@ constexpr auto kMpvLoaderPriority = 2;
 [[nodiscard]] QStringList LaunchArguments(const QString &url) {
 	auto result = QStringList{
 		QStringLiteral("--force-window=immediate"),
+		QStringLiteral("--demuxer-lavf-o=ignore_editlist=1"),
 	};
 	if (MpvStreamingBoostEnabled()) {
 		result.push_back(QStringLiteral("--cache=yes"));
@@ -645,50 +646,63 @@ private:
 			if (request.method == "HEAD") {
 				return;
 			}
-			const auto lock = std::unique_lock(entry->fillMutex);
 			auto offset = range.range.from;
 			auto left = range.range.length;
 			const auto startedFromZero = (offset == 0);
 			auto retriedLoadFailure = false;
 			while (left > 0) {
+				// Check if client disconnected before acquiring the lock.
+				socket.waitForReadyRead(0);
+				if (socket.state() != QAbstractSocket::ConnectedState) {
+					return;
+				}
 				const auto chunkSize = (offset == range.range.from)
 					? kInitialReadChunkSize
 					: kReadChunkSize;
 				const auto size = int(std::min(left, int64(chunkSize)));
 				auto buffer = QByteArray(size, Qt::Uninitialized);
-				if (!FillBuffer(
-						entry->reader.get(),
-						offset,
-						bytes::span(
-							reinterpret_cast<bytes::type*>(buffer.data()),
-							size))) {
-					const auto error = entry->reader->streamingError();
-					if (!retriedLoadFailure
-						&& error
-						&& (*error == Error::LoadFailed)
-						&& RecoverEntryReader(entry, request.token, offset)) {
-						retriedLoadFailure = true;
-						continue;
+				{
+					const auto lock = std::unique_lock(entry->fillMutex);
+					// Re-check after acquiring the lock.
+					socket.waitForReadyRead(0);
+					if (socket.state() != QAbstractSocket::ConnectedState) {
+						return;
 					}
+					if (!FillBuffer(
+							entry->reader.get(),
+							offset,
+							bytes::span(
+								reinterpret_cast<bytes::type*>(buffer.data()),
+								size))) {
+						const auto error = entry->reader->streamingError();
+						if (!retriedLoadFailure
+							&& error
+							&& (*error == Error::LoadFailed)
+							&& RecoverEntryReader(entry, request.token, offset)) {
+							retriedLoadFailure = true;
+							continue;
+						}
 						MPV_STREAMING_LOG(("MPV Streaming: FillBuffer failed at offset %1, size %2, error=%3.")
 							.arg(offset)
 							.arg(size)
 							.arg(StreamingErrorDebugString(error)));
-					return;
-					} else if (!WriteAll(socket, buffer.constData(), buffer.size())) {
-						const auto error = socket.error();
-						if (error != QAbstractSocket::RemoteHostClosedError) {
-							MPV_STREAMING_LOG(("MPV Streaming: WriteAll failed at offset %1, size %2, error=%3, detail='%4'.")
-								.arg(offset)
-								.arg(size)
-								.arg(int(error))
-								.arg(socket.errorString()));
-						}
 						return;
 					}
-				if (startedFromZero
-					&& !entry->headerFinalized.exchange(true)) {
-					entry->reader->headerDone();
+					if (startedFromZero
+						&& !entry->headerFinalized.exchange(true)) {
+						entry->reader->headerDone();
+					}
+				} // fillMutex released here
+				if (!WriteAll(socket, buffer.constData(), buffer.size())) {
+					const auto error = socket.error();
+					if (error != QAbstractSocket::RemoteHostClosedError) {
+						MPV_STREAMING_LOG(("MPV Streaming: WriteAll failed at offset %1, size %2, error=%3, detail='%4'.")
+							.arg(offset)
+							.arg(size)
+							.arg(int(error))
+							.arg(socket.errorString()));
+					}
+					return;
 				}
 				retriedLoadFailure = false;
 				offset += size;
