@@ -126,6 +126,7 @@ struct Entry {
 	std::atomic<int> activeRequests = 0;
 	std::atomic<crl::time> lastActivity = 0;
 	std::atomic<bool> headerFinalized = false;
+	std::atomic<int> moovPosition = 0; // 0=unknown, 1=beginning, 2=end/other
 	std::mutex fillMutex;
 };
 
@@ -422,6 +423,35 @@ struct Entry {
 	}
 }
 
+// Detect whether the moov atom is near the beginning of the MP4 file.
+// Returns 1 if moov is at the beginning (before any mdat),
+// 2 if mdat comes first (moov is at the end), 0 if undetermined.
+// For fragmented MP4 the structure is [ftyp][moov][moof][mdat]...
+// and we return 1 so the server can omit Accept-Ranges, preventing
+// FFmpeg's mov demuxer from scanning hundreds of fragment headers.
+[[nodiscard]] int DetectMoovPosition(const QByteArray &data) {
+	if (data.size() < 16) {
+		return 0;
+	}
+	auto offset = 0;
+	while (offset + 8 <= data.size()) {
+		const auto sizeRaw = qFromBigEndian<quint32>(
+			reinterpret_cast<const uchar*>(data.constData() + offset));
+		const auto type = QByteArray::fromRawData(
+			data.constData() + offset + 4, 4);
+		if (sizeRaw < 8) {
+			break;
+		}
+		if (type == QByteArray("moov", 4)) {
+			return 1;
+		} else if (type == QByteArray("mdat", 4)) {
+			return 2;
+		}
+		offset += int(sizeRaw);
+	}
+	return 0;
+}
+
 class DescriptorServer final : public QTcpServer {
 public:
 	explicit DescriptorServer(std::function<void(qintptr)> accepted)
@@ -617,28 +647,71 @@ private:
 				});
 				return;
 			}
-			const auto status = range.range.partial ? "206 Partial Content" : "200 OK";
-			const auto contentLength = QByteArray::number(range.range.length);
-			if (range.range.partial) {
+			// Probe moov position on first access to decide seekability.
+			// Fragmented MP4 files have [ftyp][moov][moof][mdat]...
+			// and FFmpeg scans ALL fragments via seeks on seekable
+			// streams, causing hundreds of slow HTTP range requests.
+			// By omitting Accept-Ranges when moov is at the beginning,
+			// FFmpeg treats the stream as non-seekable and reads
+			// fragments sequentially — eliminating the seek storm.
+			if (entry->moovPosition.load() == 0
+				&& range.range.from == 0
+				&& range.satisfiable) {
+				constexpr auto kProbeSize = 4096;
+				const auto probeActual = int(std::min(
+					int64(kProbeSize), entry->size));
+				auto probe = QByteArray(probeActual, Qt::Uninitialized);
+				{
+					const auto lock = std::unique_lock(entry->fillMutex);
+					if (FillBuffer(
+							entry->reader.get(),
+							0,
+							bytes::span(
+								reinterpret_cast<bytes::type*>(probe.data()),
+								probeActual))) {
+						const auto detected = DetectMoovPosition(probe);
+						entry->moovPosition.store(detected ? detected : 2);
+						MPV_STREAMING_LOG(("MPV Streaming: Detected moov position: %1 for token %2.")
+							.arg(detected)
+							.arg(request.token));
+					} else {
+						entry->moovPosition.store(2);
+					}
+				}
+			}
+			const auto moovAtBeginning =
+				(entry->moovPosition.load() == 1);
+			if (moovAtBeginning) {
+				// Force non-seekable: 200 OK without Accept-Ranges.
+				// FFmpeg will read fragments sequentially instead of
+				// seeking to each moof atom individually.
+				if (!SendResponse(socket, "200 OK", {
+					{ "Connection", "close" },
+					{ "Content-Length", QByteArray::number(entry->size) },
+					{ "Content-Type", entry->mime.toUtf8() },
+				})) {
+					return;
+				}
+			} else if (range.range.partial) {
 				const auto contentRange = QByteArray("bytes ")
 					+ QByteArray::number(range.range.from)
 					+ '-'
 					+ QByteArray::number(range.range.till)
 					+ '/'
 					+ QByteArray::number(entry->size);
-				if (!SendResponse(socket, status, {
+				if (!SendResponse(socket, "206 Partial Content", {
 					{ "Accept-Ranges", "bytes" },
 					{ "Connection", "close" },
-					{ "Content-Length", contentLength },
+					{ "Content-Length", QByteArray::number(range.range.length) },
 					{ "Content-Type", entry->mime.toUtf8() },
 					{ "Content-Range", contentRange },
 				})) {
 					return;
 				}
-			} else if (!SendResponse(socket, status, {
+			} else if (!SendResponse(socket, "200 OK", {
 				{ "Accept-Ranges", "bytes" },
 				{ "Connection", "close" },
-				{ "Content-Length", contentLength },
+				{ "Content-Length", QByteArray::number(range.range.length) },
 				{ "Content-Type", entry->mime.toUtf8() },
 			})) {
 				return;
@@ -646,8 +719,8 @@ private:
 			if (request.method == "HEAD") {
 				return;
 			}
-			auto offset = range.range.from;
-			auto left = range.range.length;
+			auto offset = moovAtBeginning ? int64(0) : range.range.from;
+			auto left = moovAtBeginning ? entry->size : range.range.length;
 			const auto startedFromZero = (offset == 0);
 			auto retriedLoadFailure = false;
 			auto clientDisconnected = false;
