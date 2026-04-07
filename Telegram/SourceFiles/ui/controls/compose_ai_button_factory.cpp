@@ -26,6 +26,7 @@ base::options::toggle HideAiButtonOption({
 	.id = kOptionHideAiButton,
 	.name = "Hide AI button",
 	.description = "Hide the AI Tools button in message compose fields.",
+	.defaultValue = true,
 });
 
 bool HasEnoughLinesForAi(
