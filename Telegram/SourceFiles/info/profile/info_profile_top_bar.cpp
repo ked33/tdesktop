@@ -104,6 +104,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_menu_icons.h"
 #include "styles/style_settings.h"
 
+#include <QGraphicsOpacityEffect>
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
 
