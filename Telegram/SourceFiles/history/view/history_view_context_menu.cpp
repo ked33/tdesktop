@@ -1935,7 +1935,17 @@ void AddTopMessageActions(
 		const auto before = menu->actions().size();
 		AddPostLinkAction(menu, request);
 		const auto item = request.item;
-		const auto document = (item && item->media())
+		const auto viewMedia = request.view ? request.view->media() : nullptr;
+		const auto viewDocument = viewMedia ? viewMedia->getDocument() : nullptr;
+		const auto linkDocument = request.link
+			? reinterpret_cast<DocumentData*>(
+				request.link->property(kDocumentLinkMediaProperty).toULongLong())
+			: nullptr;
+		const auto document = linkDocument
+			? linkDocument
+			: viewDocument
+			? viewDocument
+			: (item && item->media())
 			? item->media()->document()
 			: nullptr;
 		AddStreamInMpvAction(
@@ -2368,9 +2378,11 @@ void AddMessageDetailsAction(
 					tr::lng_context_stream_in_mpv(tr::now),
 					[=] {
 						const auto resolvedItem = controller->session().data().message(itemId);
-						const auto resolvedDocument = (resolvedItem && resolvedItem->media())
+						const auto resolvedDocument = fallbackDocument
+							? fallbackDocument
+							: (resolvedItem && resolvedItem->media())
 							? resolvedItem->media()->document()
-							: fallbackDocument;
+							: nullptr;
 						const auto result = ::Media::Streaming::Mpv::OpenVideoMessageInMpv(
 							resolvedItem,
 							resolvedDocument);
