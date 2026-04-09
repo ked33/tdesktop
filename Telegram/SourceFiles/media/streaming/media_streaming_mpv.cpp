@@ -735,14 +735,19 @@ private:
 						.arg(probeActual));
 				}
 			}
-			const auto sequentialOpen =
+			const auto sequentialLayout =
 				(entry->mp4Layout.load() == int(Mp4Layout::Fragmented))
 				|| (entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov));
-			if (sequentialOpen) {
-				// Force non-seekable: 200 OK without Accept-Ranges.
-				// FFmpeg will read sequentially instead of opening with
-				// a seek storm across fragmented headers or a huge moov.
+			const auto initialSequentialOpen =
+				sequentialLayout
+				&& (range.range.from == 0);
+			if (initialSequentialOpen) {
+				// Keep the first bytes=0- request on a sequential path
+				// to avoid the open-time seek storm, but continue to
+				// advertise ranges so later explicit seeks can use the
+				// normal partial-response path.
 				if (!SendResponse(socket, "200 OK", {
+					{ "Accept-Ranges", "bytes" },
 					{ "Connection", "close" },
 					{ "Content-Length", QByteArray::number(entry->size) },
 					{ "Content-Type", entry->mime.toUtf8() },
@@ -776,8 +781,8 @@ private:
 			if (request.method == "HEAD") {
 				return;
 			}
-			auto offset = sequentialOpen ? int64(0) : range.range.from;
-			auto left = sequentialOpen ? entry->size : range.range.length;
+			auto offset = initialSequentialOpen ? int64(0) : range.range.from;
+			auto left = initialSequentialOpen ? entry->size : range.range.length;
 			const auto startedFromZero = (offset == 0);
 			auto retriedLoadFailure = false;
 			auto clientDisconnected = false;
