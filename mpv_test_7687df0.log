@@ -1,0 +1,1146 @@
+[   0.000][v][cplayer] Command line options: '--player-operation-mode=pseudo-gui' '--force-window=immediate' '--demuxer-lavf-o=ignore_editlist=1' '--cache=yes' '--demuxer-seekable-cache=yes' '--demuxer-max-bytes=536870912' '--demuxer-max-back-bytes=134217728' 'http://127.0.0.1:50764/mpv/da6a8530-8e66-4666-90cb-9b048029e843'
+[   0.000][v][cplayer] mpv v0.38.0-730-g7c672e33 Copyright © 2000-2024 mpv/MPlayer/mplayer2 projects
+[   0.000][v][cplayer]  built on Aug 30 2024 17:05:55
+[   0.000][v][cplayer] libplacebo version: v7.349.0 (v7.349.0-9-gefb8934-dirty)
+[   0.000][v][cplayer] FFmpeg version: N-116796-gb730defd5
+[   0.000][v][cplayer] FFmpeg library versions:
+[   0.000][v][cplayer]    libavcodec      61.11.100
+[   0.000][v][cplayer]    libavdevice     61.2.100
+[   0.000][v][cplayer]    libavfilter     10.2.102
+[   0.000][v][cplayer]    libavformat     61.5.101
+[   0.000][v][cplayer]    libavutil       59.35.100
+[   0.000][v][cplayer]    libswresample   5.2.100
+[   0.000][v][cplayer]    libswscale      8.2.100
+[   0.000][v][cplayer] Configuration: -Ddebug=true -Db_ndebug=true -Doptimization=3 -Db_lto=true -Db_lto_mode=thin -Dlibmpv=true -Dpdf-build=enabled -Dlua=enabled -Djavascript=enabled -Dsdl2=enabled -Dlibarchive=enabled -Dlibbluray=enabled -Ddvdnav=enabled -Duchardet=enabled -Drubberband=enabled -Dlcms2=enabled -Dopenal=enabled -Dspirv-cross=enabled -Dvulkan=enabled -Dvapoursynth=enabled -Degl-angle=enabled -Dc_args=-Wno-error=int-conversion -Dprefix=/__w/mpv-winbuild/mpv-winbuild/mpv-winbuild-cmake/build64/install/x86_64-w64-mingw32 -Dlibdir=/__w/mpv-winbuild/mpv-winbuild/mpv-winbuild-cmake/build64/install/x86_64-w64-mingw32/lib -Ddefault_library=shared -Dprefer_static=True --cross-file=/__w/mpv-winbuild/mpv-winbuild/mpv-winbuild-cmake/build64/meson_cross.txt
+[   0.000][v][cplayer] List of enabled features: build-date cplugins cuda-hwaccel cuda-interop d3d-hwaccel d3d11 d3d9-hwaccel debug direct3d dos-paths dvdnav dxgi-debug dxgi-debug-d3d11 egl-angle egl-angle-win32 ffmpeg ffnvcodec gl gl-dxinterop gl-dxinterop-d3d9 gl-win32 glob glob-win32 gpl iconv javascript jpeg lcms2 libarchive libass libavdevice libbluray libplacebo luajit openal pathcch rubberband rubberband-3 sdl2 sdl2-audio sdl2-gamepad sdl2-video shaderc spirv-cross uchardet vaapi vaapi-win32 vapoursynth vector vulkan vulkan-interop wasapi win32 win32-desktop win32-executable win32-smtc win32-threads zimg zimg-st428 zlib
+[   0.000][v][cplayer] Built with NDEBUG.
+[   0.000][d][global] home path: '' -> 'D:/D-Software/mpv-hero/portable_config'
+[   0.000][d][global] user path: '~~home/' -> 'D:/D-Software/mpv-hero/portable_config'
+[   0.000][d][global] user path: '~~old_home/' -> ''
+[   0.000][d][global] config path: 'encoding-profiles.conf' -/-> 'D:/D-Software/mpv-hero/portable_config/encoding-profiles.conf'
+[   0.000][d][global] config path: 'mpv.conf' -> 'D:/D-Software/mpv-hero/portable_config/mpv.conf'
+[   0.000][d][global] config path: 'config' -/-> 'D:/D-Software/mpv-hero/portable_config/config'
+[   0.000][v][cplayer] Reading config file D:/D-Software/mpv-hero/portable_config/mpv.conf
+[   0.000][v][ifo_dvdnav] Opening D:/D-Software/mpv-hero/portable_config/mpv.conf
+[   0.000][v][bdmv/bluray] Opening D:/D-Software/mpv-hero/portable_config/mpv.conf
+[   0.000][v][file] Opening D:/D-Software/mpv-hero/portable_config/mpv.conf
+[   0.000][d][file] resize stream to 131072 bytes, drop 0 bytes
+[   0.000][d][file] Stream opened successfully.
+[   0.000][v][cplayer] Applying profile 'default'...
+[   0.000][v][cplayer] Setting option 'log-file' = 'D:\D-Software\mpv-hero\mpv.log' (flags = 4)
+[   0.000][v][cplayer] Setting option 'autofit' = '70%x70%' (flags = 4)
+[   0.000][v][cplayer] Setting option 'screen' = '0' (flags = 4)
+[   0.000][v][cplayer] Setting option 'snap-window' = 'yes' (flags = 4)
+[   0.000][v][cplayer] Setting option 'title' = '${filename}' (flags = 4)
+[   0.000][v][cplayer] Setting option 'title-bar' = 'no' (flags = 4)
+[   0.000][v][cplayer] Setting option 'force-window' = 'yes' (flags = 4)
+[   0.000][v][cplayer] Setting option 'volume' = '100' (flags = 4)
+[   0.000][v][cplayer] Setting option 'alang' = 'en,eng,de,deu,ger' (flags = 4)
+[   0.000][v][cplayer] Setting option 'sub-auto' = 'fuzzy' (flags = 4)
+[   0.000][v][cplayer] Setting option 'sid' = 'no' (flags = 4)
+[   0.000][v][cplayer] Setting option 'slang' = 'en,eng,de,deu,ger' (flags = 4)
+[   0.000][v][cplayer] Setting option 'profile' = 'fast ' (flags = 4)
+[   0.000][v][cplayer] Applying profile 'fast '...
+[   0.000][w][cplayer] Unknown profile 'fast '.
+[   0.000][e][cplayer] Error parsing option profile (option parameter could not be parsed)
+[   0.000][v][cplayer] Setting option 'vo' = 'gpu-next' (flags = 4)
+[   0.000][v][cplayer] Setting option 'hwdec' = 'auto-safe' (flags = 4)
+[   0.000][v][cplayer] Setting option 'keep-open' = 'always' (flags = 4)
+[   0.000][v][cplayer] Setting option 'keep-open-pause' = 'yes' (flags = 4)
+[   0.000][v][cplayer] Setting option 'osc' = 'no' (flags = 4)
+[   0.000][v][cplayer] Setting option 'osd-duration' = '2000' (flags = 4)
+[   0.000][v][cplayer] Setting option 'osd-playing-msg' = '${filename}' (flags = 4)
+[   0.000][v][cplayer] Setting option 'idle' = 'yes' (flags = 4)
+[   0.000][v][cplayer] Setting option 'reset-on-next-file' = 'video-zoom,video-pan-y,pause' (flags = 4)
+[   0.000][v][cplayer] Setting option 'watch-later-options' = 'pause' (flags = 4)
+[   0.000][v][cplayer] Setting option 'autocreate-playlist' = 'filter' (flags = 4)
+[   0.000][v][cplayer] Setting option 'directory-filter-types' = 'video' (flags = 4)
+[   0.000][v][cplayer] Setting option 'screenshot-dir' = '~~desktop/' (flags = 4)
+[   0.000][v][cplayer] Setting option 'screenshot-template' = 'mpv screenshot %p %f' (flags = 4)
+[   0.000][v][cplayer] Setting option 'input-ar-delay' = '500' (flags = 4)
+[   0.000][v][cplayer] Setting option 'input-ar-rate' = '20' (flags = 4)
+[   0.000][v][cplayer] Setting option 'hr-seek' = 'yes' (flags = 4)
+[   0.000][v][cplayer] Setting option 'player-operation-mode' = 'pseudo-gui' (flags = 8)
+[   0.000][v][cplayer] Setting option 'force-window' = 'immediate' (flags = 8)
+[   0.000][v][cplayer] Setting option 'demuxer-lavf-o' = 'ignore_editlist=1' (flags = 8)
+[   0.000][v][cplayer] Setting option 'cache' = 'yes' (flags = 8)
+[   0.000][v][cplayer] Setting option 'demuxer-seekable-cache' = 'yes' (flags = 8)
+[   0.000][v][cplayer] Setting option 'demuxer-max-bytes' = '536870912' (flags = 8)
+[   0.000][v][cplayer] Setting option 'demuxer-max-back-bytes' = '134217728' (flags = 8)
+[   0.000][v][cplayer] Applying profile 'builtin-pseudo-gui'...
+[   0.000][v][cplayer] Setting option 'terminal' = 'no' (flags = 260)
+[   0.000][v][cplayer] Applying profile 'pseudo-gui'...
+[   0.000][v][cplayer] Setting option 'player-operation-mode' = 'pseudo-gui' (flags = 4)
+[   0.000][d][global] config path: 'input.conf' -> 'D:/D-Software/mpv-hero/portable_config/input.conf'
+[   0.000][d][global] user path: 'D:/D-Software/mpv-hero/portable_config/input.conf' -> 'D:/D-Software/mpv-hero/portable_config/input.conf'
+[   0.000][v][ifo_dvdnav] Opening D:/D-Software/mpv-hero/portable_config/input.conf
+[   0.000][v][bdmv/bluray] Opening D:/D-Software/mpv-hero/portable_config/input.conf
+[   0.000][v][file] Opening D:/D-Software/mpv-hero/portable_config/input.conf
+[   0.000][d][file] resize stream to 131072 bytes, drop 0 bytes
+[   0.000][d][file] Stream opened successfully.
+[   0.000][v][input] Parsing input config file D:/D-Software/mpv-hero/portable_config/input.conf
+[   0.000][v][input] Input config file D:/D-Software/mpv-hero/portable_config/input.conf parsed: 218 binds
+[   0.000][d][global] user path: 'D:\D-Software\mpv-hero\mpv.log' -> 'D:\D-Software\mpv-hero\mpv.log'
+[   0.008][v][cplayer] mpv v0.38.0-730-g7c672e33 Copyright © 2000-2024 mpv/MPlayer/mplayer2 projects
+[   0.008][v][cplayer]  built on Aug 30 2024 17:05:55
+[   0.008][v][cplayer] libplacebo version: v7.349.0 (v7.349.0-9-gefb8934-dirty)
+[   0.008][v][cplayer] FFmpeg version: N-116796-gb730defd5
+[   0.008][v][cplayer] FFmpeg library versions:
+[   0.008][v][cplayer]    libavcodec      61.11.100
+[   0.008][v][cplayer]    libavdevice     61.2.100
+[   0.008][v][cplayer]    libavfilter     10.2.102
+[   0.008][v][cplayer]    libavformat     61.5.101
+[   0.008][v][cplayer]    libavutil       59.35.100
+[   0.008][v][cplayer]    libswresample   5.2.100
+[   0.008][v][cplayer]    libswscale      8.2.100
+[   0.008][v][cplayer] Configuration: -Ddebug=true -Db_ndebug=true -Doptimization=3 -Db_lto=true -Db_lto_mode=thin -Dlibmpv=true -Dpdf-build=enabled -Dlua=enabled -Djavascript=enabled -Dsdl2=enabled -Dlibarchive=enabled -Dlibbluray=enabled -Ddvdnav=enabled -Duchardet=enabled -Drubberband=enabled -Dlcms2=enabled -Dopenal=enabled -Dspirv-cross=enabled -Dvulkan=enabled -Dvapoursynth=enabled -Degl-angle=enabled -Dc_args=-Wno-error=int-conversion -Dprefix=/__w/mpv-winbuild/mpv-winbuild/mpv-winbuild-cmake/build64/install/x86_64-w64-mingw32 -Dlibdir=/__w/mpv-winbuild/mpv-winbuild/mpv-winbuild-cmake/build64/install/x86_64-w64-mingw32/lib -Ddefault_library=shared -Dprefer_static=True --cross-file=/__w/mpv-winbuild/mpv-winbuild/mpv-winbuild-cmake/build64/meson_cross.txt
+[   0.008][v][cplayer] List of enabled features: build-date cplugins cuda-hwaccel cuda-interop d3d-hwaccel d3d11 d3d9-hwaccel debug direct3d dos-paths dvdnav dxgi-debug dxgi-debug-d3d11 egl-angle egl-angle-win32 ffmpeg ffnvcodec gl gl-dxinterop gl-dxinterop-d3d9 gl-win32 glob glob-win32 gpl iconv javascript jpeg lcms2 libarchive libass libavdevice libbluray libplacebo luajit openal pathcch rubberband rubberband-3 sdl2 sdl2-audio sdl2-gamepad sdl2-video shaderc spirv-cross uchardet vaapi vaapi-win32 vapoursynth vector vulkan vulkan-interop wasapi win32 win32-desktop win32-executable win32-smtc win32-threads zimg zimg-st428 zlib
+[   0.008][v][cplayer] Built with NDEBUG.
+[   0.008][d][ytdl_hook] Loading lua script @ytdl_hook.lua...
+[   0.008][d][stats] Loading lua script @stats.lua...
+[   0.008][d][console] Loading lua script @console.lua...
+[   0.008][d][auto_profiles] Loading lua script @auto_profiles.lua...
+[   0.008][d][select] Loading lua script @select.lua...
+[   0.008][d][global] config path: 'scripts' -> 'D:/D-Software/mpv-hero/portable_config/scripts'
+[   0.011][d][auto_profiles] loading mp.defaults
+[   0.011][d][ytdl_hook] loading mp.defaults
+[   0.011][d][console] loading mp.defaults
+[   0.011][d][ytdl_hook] loading @ytdl_hook.lua
+[   0.011][d][auto_profiles] loading @auto_profiles.lua
+[   0.011][d][console] loading @console.lua
+[   0.011][d][select] loading mp.defaults
+[   0.011][d][ytdl_hook] reading options for ytdl_hook
+[   0.011][d][select] loading @select.lua
+[   0.011][d][global] config path: 'script-opts/ytdl_hook.conf' -/-> 'D:/D-Software/mpv-hero/portable_config/script-opts/ytdl_hook.conf'
+[   0.011][d][ytdl_hook] script-opts/ytdl_hook.conf not found.
+[   0.011][d][global] config path: 'lua-settings/ytdl_hook.conf' -/-> 'D:/D-Software/mpv-hero/portable_config/lua-settings/ytdl_hook.conf'
+[   0.011][d][ytdl_hook] lua-settings/ytdl_hook.conf not found.
+[   0.012][d][stats] loading mp.defaults
+[   0.012][d][inputevent] Loading lua script D:/D-Software/mpv-hero/portable_config/scripts/inputevent.lua...
+[   0.012][d][eof_restart_click] Loading lua script D:/D-Software/mpv-hero/portable_config/scripts/eof_restart_click.lua...
+[   0.012][d][wheel_region_control] Loading lua script D:/D-Software/mpv-hero/portable_config/scripts/wheel_region_control.lua...
+[   0.012][d][command_palette] Loading lua script D:/D-Software/mpv-hero/portable_config/scripts/command_palette.lua...
+[   0.012][d][delete_current_file] Loading lua script D:/D-Software/mpv-hero/portable_config/scripts/delete_current_file.lua...
+[   0.012][d][inputevent] loading mp.defaults
+[   0.012][d][stats] loading @stats.lua
+[   0.012][d][menu] Loading cplugin script D:/D-Software/mpv-hero/portable_config/scripts/menu.dll...
+[   0.012][d][uosc] Loading lua script D:/D-Software/mpv-hero/portable_config/scripts/uosc/main.lua...
+[   0.013][d][clipshot] Loading lua script D:/D-Software/mpv-hero/portable_config/scripts/clipshot.lua...
+[   0.013][d][thumbfast] Loading lua script D:/D-Software/mpv-hero/portable_config/scripts/thumbfast.lua...
+[   0.013][d][inputevent] loading file D:/D-Software/mpv-hero/portable_config/scripts/inputevent.lua
+[   0.013][d][dyn_menu] Loading lua script D:/D-Software/mpv-hero/portable_config/scripts/dyn_menu.lua...
+[   0.013][d][middle_drag_pan] Loading lua script D:/D-Software/mpv-hero/portable_config/scripts/middle_drag_pan.lua...
+[   0.013][d][persistent_ui_state] Loading lua script D:/D-Software/mpv-hero/portable_config/scripts/persistent_ui_state.lua...
+[   0.013][d][recentmenu] Loading lua script D:/D-Software/mpv-hero/portable_config/scripts/recentmenu.lua...
+[   0.013][d][blacklist_extensions] Loading lua script D:/D-Software/mpv-hero/portable_config/scripts/blacklist-extensions.lua...
+[   0.013][d][eof_restart_click] loading mp.defaults
+[   0.014][d][average_frames] Loading lua script D:/D-Software/mpv-hero/portable_config/scripts/average_frames.lua...
+[   0.014][d][dialog] Loading lua script D:/D-Software/mpv-hero/portable_config/scripts/dialog.lua...
+[   0.014][e][cplayer] Can't load unknown script: D:/D-Software/mpv-hero/portable_config/scripts/脚本说明.txt
+[   0.014][d][wheel_region_control] loading mp.defaults
+[   0.014][d][eof_restart_click] loading file D:/D-Software/mpv-hero/portable_config/scripts/eof_restart_click.lua
+[   0.015][d][stats] reading options for stats
+[   0.015][d][global] config path: 'script-opts/stats.conf' -/-> 'D:/D-Software/mpv-hero/portable_config/script-opts/stats.conf'
+[   0.015][d][stats] script-opts/stats.conf not found.
+[   0.015][d][global] config path: 'lua-settings/stats.conf' -/-> 'D:/D-Software/mpv-hero/portable_config/lua-settings/stats.conf'
+[   0.015][d][stats] lua-settings/stats.conf not found.
+[   0.015][d][inputevent] reading options for inputevent
+[   0.015][d][global] config path: 'script-opts/inputevent.conf' -/-> 'D:/D-Software/mpv-hero/portable_config/script-opts/inputevent.conf'
+[   0.015][d][inputevent] script-opts/inputevent.conf not found.
+[   0.015][d][global] config path: 'lua-settings/inputevent.conf' -/-> 'D:/D-Software/mpv-hero/portable_config/lua-settings/inputevent.conf'
+[   0.015][d][inputevent] lua-settings/inputevent.conf not found.
+[   0.015][d][command_palette] loading mp.defaults
+[   0.015][d][delete_current_file] loading mp.defaults
+[   0.015][d][uosc] loading mp.defaults
+[   0.016][d][wheel_region_control] loading file D:/D-Software/mpv-hero/portable_config/scripts/wheel_region_control.lua
+[   0.016][d][delete_current_file] loading file D:/D-Software/mpv-hero/portable_config/scripts/delete_current_file.lua
+[   0.016][d][command_palette] loading file D:/D-Software/mpv-hero/portable_config/scripts/command_palette.lua
+[   0.016][d][uosc] loading file D:/D-Software/mpv-hero/portable_config/scripts/uosc/main.lua
+[   0.017][d][clipshot] loading mp.defaults
+[   0.017][d][thumbfast] loading mp.defaults
+[   0.017][d][clipshot] loading file D:/D-Software/mpv-hero/portable_config/scripts/clipshot.lua
+[   0.018][d][wheel_region_control] reading options for wheel_region_control
+[   0.018][d][global] config path: 'script-opts/wheel_region_control.conf' -> 'D:/D-Software/mpv-hero/portable_config/script-opts/wheel_region_control.conf'
+[   0.018][d][command_palette] reading options for command_palette
+[   0.018][d][global] config path: 'script-opts/command_palette.conf' -> 'D:/D-Software/mpv-hero/portable_config/script-opts/command_palette.conf'
+[   0.018][v][wheel_region_control] Opened config file script-opts/wheel_region_control.conf.
+[   0.018][v][command_palette] Opened config file script-opts/command_palette.conf.
+[   0.018][d][clipshot] reading options for clipshot
+[   0.018][d][global] config path: 'script-opts/clipshot.conf' -/-> 'D:/D-Software/mpv-hero/portable_config/script-opts/clipshot.conf'
+[   0.018][d][clipshot] script-opts/clipshot.conf not found.
+[   0.018][d][thumbfast] loading file D:/D-Software/mpv-hero/portable_config/scripts/thumbfast.lua
+[   0.018][d][global] config path: 'lua-settings/clipshot.conf' -/-> 'D:/D-Software/mpv-hero/portable_config/lua-settings/clipshot.conf'
+[   0.018][d][clipshot] lua-settings/clipshot.conf not found.
+[   0.018][d][dyn_menu] loading mp.defaults
+[   0.019][d][middle_drag_pan] loading mp.defaults
+[   0.019][d][persistent_ui_state] loading mp.defaults
+[   0.019][d][dyn_menu] loading file D:/D-Software/mpv-hero/portable_config/scripts/dyn_menu.lua
+[   0.019][d][middle_drag_pan] loading file D:/D-Software/mpv-hero/portable_config/scripts/middle_drag_pan.lua
+[   0.019][d][persistent_ui_state] loading file D:/D-Software/mpv-hero/portable_config/scripts/persistent_ui_state.lua
+[   0.020][d][thumbfast] reading options for thumbfast
+[   0.020][d][global] config path: 'script-opts/thumbfast.conf' -> 'D:/D-Software/mpv-hero/portable_config/script-opts/thumbfast.conf'
+[   0.020][v][thumbfast] Opened config file script-opts/thumbfast.conf.
+[   0.020][d][blacklist_extensions] loading mp.defaults
+[   0.020][d][recentmenu] loading mp.defaults
+[   0.020][d][average_frames] loading mp.defaults
+[   0.021][d][dyn_menu] reading options for dyn_menu
+[   0.021][d][global] config path: 'script-opts/dyn_menu.conf' -> 'D:/D-Software/mpv-hero/portable_config/script-opts/dyn_menu.conf'
+[   0.021][v][dyn_menu] Opened config file script-opts/dyn_menu.conf.
+[   0.021][d][blacklist_extensions] loading file D:/D-Software/mpv-hero/portable_config/scripts/blacklist-extensions.lua
+[   0.021][d][average_frames] loading file D:/D-Software/mpv-hero/portable_config/scripts/average_frames.lua
+[   0.021][d][recentmenu] loading file D:/D-Software/mpv-hero/portable_config/scripts/recentmenu.lua
+[   0.022][d][dialog] loading mp.defaults
+[   0.022][v][vo/gpu-next] Probing for best GPU context.
+[   0.022][v][vo/gpu-next/auto] Initializing GPU context 'auto'
+[   0.022][v][vo/gpu-next/d3d11] Initializing GPU context 'd3d11'
+[   0.022][d][recentmenu] reading options for recentmenu
+[   0.022][d][global] config path: 'script-opts/recentmenu.conf' -> 'D:/D-Software/mpv-hero/portable_config/script-opts/recentmenu.conf'
+[   0.023][d][dialog] loading file D:/D-Software/mpv-hero/portable_config/scripts/dialog.lua
+[   0.023][v][recentmenu] Opened config file script-opts/recentmenu.conf.
+[   0.023][d][dialog] reading options for dialog
+[   0.024][d][global] config path: 'script-opts/dialog.conf' -/-> 'D:/D-Software/mpv-hero/portable_config/script-opts/dialog.conf'
+[   0.024][d][dialog] script-opts/dialog.conf not found.
+[   0.024][d][global] config path: 'lua-settings/dialog.conf' -/-> 'D:/D-Software/mpv-hero/portable_config/lua-settings/dialog.conf'
+[   0.024][d][dialog] lua-settings/dialog.conf not found.
+[   0.171][v][vo/gpu-next/d3d11] Using Direct3D 11 feature level 12_1
+[   0.171][v][vo/gpu-next/d3d11] Device Name: Intel(R) HD Graphics 620
+[   0.171][v][vo/gpu-next/d3d11] Device ID: 8086:5916 (rev 02)
+[   0.171][v][vo/gpu-next/d3d11] Subsystem ID: 1d72:1604
+[   0.171][v][vo/gpu-next/d3d11] LUID: 00000000000120cc
+[   0.171][v][vo/gpu-next/d3d11] Initializing SPIR-V compiler 'shaderc'
+[   0.171][v][vo/gpu-next/d3d11] Using Direct3D 11.1 runtime
+[   0.171][v][vo/gpu-next/d3d11] Maximum Texture2D size: 16384x16384
+[   0.173][v][vo/gpu-next/d3d11] D3DCompiler version: 10.0.19041.3636
+[   0.193][v][vo/gpu-next/win32] DPI detected from the new API: 96
+[   0.193][v][vo/gpu-next/win32] display-fps: 74.972503
+[   0.199][v][vo/gpu-next/win32] color-profile: C:\WINDOWS\system32\spool\drivers\color\sRGB Color Space Profile.icm
+[   0.199][v][vo/gpu-next/win32] resize window: 140:100
+[   0.222][v][vo/gpu-next/d3d11] Using DXGI 1.2+
+[   0.222][v][vo/gpu-next/d3d11] Queried output: \\.\DISPLAY1, 1920x1080 @ 8 bits, colorspace: RGB_FULL_G22_NONE_P709 (0)
+[   0.222][v][vo/gpu-next/d3d11] Selected swapchain format R8G8B8A8_UNORM (28), attempting to utilize it.
+[   0.223][v][vo/gpu-next/d3d11] Selected swapchain color space RGB_FULL_G22_NONE_P709 (0), attempting to utilize it.
+[   0.223][v][vo/gpu-next/d3d11] Swapchain capabilities for color space RGB_FULL_G22_NONE_P709 (0): normal: yes, overlay: yes
+[   0.223][v][vo/gpu-next/d3d11] Swapchain successfully configured to color space RGB_FULL_G22_NONE_P709 (0)!
+[   0.223][v][vo/gpu-next/d3d11] Using flip-model presentation
+[   0.223][v][vo/gpu-next/libplacebo] Initialized libplacebo v7.349.0 (v7.349.0-9-gefb8934-dirty) (API v349)
+[   0.223][v][vo/gpu-next/libplacebo] Using DXGI 1.2+
+[   0.223][v][vo/gpu-next/libplacebo] Using Direct3D 11 feature level 12_1
+[   0.223][v][vo/gpu-next/libplacebo] Direct3D 11 device properties:
+[   0.223][v][vo/gpu-next/libplacebo]     Device Name: Intel(R) HD Graphics 620
+[   0.223][v][vo/gpu-next/libplacebo]     Device ID: 8086:5916 (rev 02)
+[   0.223][v][vo/gpu-next/libplacebo]     Subsystem ID: 1d72:1604
+[   0.223][v][vo/gpu-next/libplacebo]     LUID: 00000000000120cc
+[   0.224][v][vo/gpu-next/libplacebo]     Driver version: 31.0.101.2111
+[   0.224][v][vo/gpu-next/libplacebo] shaderc SPIR-V version 1.6 rev 1
+[   0.224][v][vo/gpu-next/libplacebo] Initialized SPIR-V compiler 'shaderc'
+[   0.224][v][vo/gpu-next/libplacebo] Using Direct3D 11.4 runtime
+[   0.224][v][vo/gpu-next/libplacebo] D3DCompiler version: 10.0.19041.3636
+[   0.224][v][vo/gpu-next/libplacebo] GPU information:
+[   0.224][v][vo/gpu-next/libplacebo]     GLSL version: 450 (vulkan)
+[   0.224][v][vo/gpu-next/libplacebo]       max_shmem_size:            32768
+[   0.224][v][vo/gpu-next/libplacebo]       max_group_threads:         1024
+[   0.224][v][vo/gpu-next/libplacebo]       max_group_size[0]:         1024
+[   0.224][v][vo/gpu-next/libplacebo]       max_group_size[1]:         1024
+[   0.224][v][vo/gpu-next/libplacebo]       max_group_size[2]:         64
+[   0.224][v][vo/gpu-next/libplacebo]       subgroup_size:             0
+[   0.224][v][vo/gpu-next/libplacebo]       min_gather_offset:         -32
+[   0.224][v][vo/gpu-next/libplacebo]       max_gather_offset:         31
+[   0.224][v][vo/gpu-next/libplacebo]     Limits:
+[   0.224][v][vo/gpu-next/libplacebo]       thread_safe:               0
+[   0.224][v][vo/gpu-next/libplacebo]       callbacks:                 0
+[   0.224][v][vo/gpu-next/libplacebo]       max_buf_size:              134217728
+[   0.224][v][vo/gpu-next/libplacebo]       max_ubo_size:              65536
+[   0.224][v][vo/gpu-next/libplacebo]       max_ssbo_size:             134217728
+[   0.224][v][vo/gpu-next/libplacebo]       max_vbo_size:              134217728
+[   0.224][v][vo/gpu-next/libplacebo]       max_mapped_size:           0
+[   0.224][v][vo/gpu-next/libplacebo]       max_buffer_texels:         134217728
+[   0.224][v][vo/gpu-next/libplacebo]       align_host_ptr:            0
+[   0.224][v][vo/gpu-next/libplacebo]       host_cached:               0
+[   0.224][v][vo/gpu-next/libplacebo]       max_tex_1d_dim:            16384
+[   0.224][v][vo/gpu-next/libplacebo]       max_tex_2d_dim:            16384
+[   0.224][v][vo/gpu-next/libplacebo]       max_tex_3d_dim:            2048
+[   0.224][v][vo/gpu-next/libplacebo]       blittable_1d_3d:           1
+[   0.224][v][vo/gpu-next/libplacebo]       buf_transfer:              0
+[   0.224][v][vo/gpu-next/libplacebo]       align_tex_xfer_pitch:      1
+[   0.224][v][vo/gpu-next/libplacebo]       align_tex_xfer_offset:     32
+[   0.224][v][vo/gpu-next/libplacebo]       max_variable_comps:        0
+[   0.224][v][vo/gpu-next/libplacebo]       max_constants:             0
+[   0.224][v][vo/gpu-next/libplacebo]       max_pushc_size:            0
+[   0.224][v][vo/gpu-next/libplacebo]       align_vertex_stride:       1
+[   0.224][v][vo/gpu-next/libplacebo]       max_dispatch[0]:           65535
+[   0.224][v][vo/gpu-next/libplacebo]       max_dispatch[1]:           65535
+[   0.224][v][vo/gpu-next/libplacebo]       max_dispatch[2]:           65535
+[   0.225][v][vo/gpu-next/libplacebo]       fragment_queues:           1
+[   0.225][v][vo/gpu-next/libplacebo]       compute_queues:            1
+[   0.225][d][vo/gpu-next/libplacebo] GPU texture formats:
+[   0.225][d][vo/gpu-next/libplacebo]     NAME                 TYPE   SIZE COMP CAPS         EMU DEPTH         HOST_BITS     GLSL_TYPE  GLSL_FMT   FOURCC
+[   0.225][d][vo/gpu-next/libplacebo]     r8                   UNORM  1    R    SsLRbBVutHWG n   {8  0  0  0 } {8  0  0  0 } float      r8         R8    
+[   0.225][d][vo/gpu-next/libplacebo]     r8s                  SNORM  1    R    SsLRbBVutH-G n   {8  0  0  0 } {8  0  0  0 } float      r8_snorm         
+[   0.225][d][vo/gpu-next/libplacebo]     rg8                  UNORM  2    RG   SsLRbBVutH-G n   {8  8  0  0 } {8  8  0  0 } vec2       rg8        GR88  
+[   0.225][d][vo/gpu-next/libplacebo]     rg8s                 SNORM  2    RG   SsLRbBVutH-G n   {8  8  0  0 } {8  8  0  0 } vec2       rg8_snorm        
+[   0.225][d][vo/gpu-next/libplacebo]     rgba8                UNORM  4    RGBA SsLRbBVutHWG n   {8  8  8  8 } {8  8  8  8 } vec4       rgba8      AB24  
+[   0.225][d][vo/gpu-next/libplacebo]     rgba8s               SNORM  4    RGBA SsLRbBVutH-G n   {8  8  8  8 } {8  8  8  8 } vec4       rgba8_snorm       
+[   0.225][d][vo/gpu-next/libplacebo]     bgra8                UNORM  4    BGRA SsLRbBVutHWG n   {8  8  8  8 } {8  8  8  8 } vec4       rgba8      AR24  
+[   0.225][d][vo/gpu-next/libplacebo]     rgb10a2              UNORM  4    RGBA SsLRbBVutH-G n   {10 10 10 2 } {10 10 10 2 } vec4       rgb10_a2   AB30  
+[   0.225][d][vo/gpu-next/libplacebo]     rg11b10f             FLOAT  4    RGB  SsLRbBVutH-G n   {11 11 10 0 } {11 11 10 0 } vec3       r11f_g11f_b10f       
+[   0.225][d][vo/gpu-next/libplacebo]     r16                  UNORM  2    R    SsLRbBVutH-G n   {16 0  0  0 } {16 0  0  0 } float      r16        R16   
+[   0.225][d][vo/gpu-next/libplacebo]     r16hf                FLOAT  2    R    SsLRbBVutHWG n   {16 0  0  0 } {16 0  0  0 } float      r16f             
+[   0.225][d][vo/gpu-next/libplacebo]     r16s                 SNORM  2    R    SsLRbBVutH-G n   {16 0  0  0 } {16 0  0  0 } float      r16_snorm        
+[   0.225][d][vo/gpu-next/libplacebo]     rg16                 UNORM  4    RG   SsLRbBVutH-G n   {16 16 0  0 } {16 16 0  0 } vec2       rg16       GR32  
+[   0.225][d][vo/gpu-next/libplacebo]     rg16hf               FLOAT  4    RG   SsLRbBVutH-G n   {16 16 0  0 } {16 16 0  0 } vec2       rg16f            
+[   0.225][d][vo/gpu-next/libplacebo]     rg16s                SNORM  4    RG   SsLRbBVutH-G n   {16 16 0  0 } {16 16 0  0 } vec2       rg16_snorm       
+[   0.225][d][vo/gpu-next/libplacebo]     rgba16               UNORM  8    RGBA SsLRbBVutH-G n   {16 16 16 16} {16 16 16 16} vec4       rgba16     AB48  
+[   0.225][d][vo/gpu-next/libplacebo]     rgba16hf             FLOAT  8    RGBA SsLRbBVutHWG n   {16 16 16 16} {16 16 16 16} vec4       rgba16f    AB4H  
+[   0.225][d][vo/gpu-next/libplacebo]     rgba16s              SNORM  8    RGBA SsLRbBVutH-G n   {16 16 16 16} {16 16 16 16} vec4       rgba16_snorm       
+[   0.225][d][vo/gpu-next/libplacebo]     r32f                 FLOAT  4    R    SsLRbBVutHWG n   {32 0  0  0 } {32 0  0  0 } float      r32f             
+[   0.225][d][vo/gpu-next/libplacebo]     rg32f                FLOAT  8    RG   SsLRbBVutHWG n   {32 32 0  0 } {32 32 0  0 } vec2       rg32f            
+[   0.225][d][vo/gpu-next/libplacebo]     rgba32f              FLOAT  16   RGBA SsLRbBVutHWG n   {32 32 32 32} {32 32 32 32} vec4       rgba32f          
+[   0.225][d][vo/gpu-next/libplacebo]     bgra4                UNORM  2    BGRA S-LRb----H-G n   {4  4  4  4 } {4  4  4  4 }                       AR12  
+[   0.225][d][vo/gpu-next/libplacebo]     bgr5a1               UNORM  2    BGRA S-LRb----H-G n   {5  5  5  1 } {5  5  5  1 }                       AR15  
+[   0.225][d][vo/gpu-next/libplacebo]     bgr565               UNORM  2    BGR  S-LRb----H-G n   {5  6  5  0 } {5  6  5  0 }                       RG16  
+[   0.225][d][vo/gpu-next/libplacebo]     bgrx8                UNORM  4    BGR  S-LRb-Vu-H-G n   {8  8  8  0 } {8  8  8  0 } vec3                        
+[   0.225][d][vo/gpu-next/libplacebo]     r8i                  SINT   1    R    Ss-R-BVutHW- n   {8  0  0  0 } {8  0  0  0 } int        r8i              
+[   0.225][d][vo/gpu-next/libplacebo]     r8u                  UINT   1    R    Ss-R-BVutHW- n   {8  0  0  0 } {8  0  0  0 } uint       r8ui             
+[   0.225][d][vo/gpu-next/libplacebo]     rg8i                 SINT   2    RG   Ss-R-BVutHW- n   {8  8  0  0 } {8  8  0  0 } ivec2      rg8i             
+[   0.225][d][vo/gpu-next/libplacebo]     rg8u                 UINT   2    RG   Ss-R-BVutHW- n   {8  8  0  0 } {8  8  0  0 } uvec2      rg8ui            
+[   0.225][d][vo/gpu-next/libplacebo]     rgba8i               SINT   4    RGBA Ss-R-BVutHW- n   {8  8  8  8 } {8  8  8  8 } ivec4      rgba8i           
+[   0.225][d][vo/gpu-next/libplacebo]     rgba8u               UINT   4    RGBA Ss-R-BVutHW- n   {8  8  8  8 } {8  8  8  8 } uvec4      rgba8ui          
+[   0.225][d][vo/gpu-next/libplacebo]     rgb10a2u             UINT   4    RGBA Ss-R-BVutH-- n   {10 10 10 2 } {10 10 10 2 } uvec4      rgb10_a2ui       
+[   0.225][d][vo/gpu-next/libplacebo]     r16i                 SINT   2    R    Ss-R-BVutHW- n   {16 0  0  0 } {16 0  0  0 } int        r16i             
+[   0.225][d][vo/gpu-next/libplacebo]     r16u                 UINT   2    R    Ss-R-BVutHW- n   {16 0  0  0 } {16 0  0  0 } uint       r16ui            
+[   0.225][d][vo/gpu-next/libplacebo]     rg16i                SINT   4    RG   Ss-R-BVutHW- n   {16 16 0  0 } {16 16 0  0 } ivec2      rg16i            
+[   0.225][d][vo/gpu-next/libplacebo]     rg16u                UINT   4    RG   Ss-R-BVutHW- n   {16 16 0  0 } {16 16 0  0 } uvec2      rg16ui           
+[   0.225][d][vo/gpu-next/libplacebo]     rgba16i              SINT   8    RGBA Ss-R-BVutHW- n   {16 16 16 16} {16 16 16 16} ivec4      rgba16i          
+[   0.225][d][vo/gpu-next/libplacebo]     rgba16u              UINT   8    RGBA Ss-R-BVutHW- n   {16 16 16 16} {16 16 16 16} uvec4      rgba16ui         
+[   0.225][d][vo/gpu-next/libplacebo]     r32i                 SINT   4    R    Ss-R-BVutHW- n   {32 0  0  0 } {32 0  0  0 } int        r32i             
+[   0.225][d][vo/gpu-next/libplacebo]     r32u                 UINT   4    R    Ss-R-BVutHW- n   {32 0  0  0 } {32 0  0  0 } uint       r32ui            
+[   0.225][d][vo/gpu-next/libplacebo]     rg32i                SINT   8    RG   Ss-R-BVutHW- n   {32 32 0  0 } {32 32 0  0 } ivec2      rg32i            
+[   0.225][d][vo/gpu-next/libplacebo]     rg32u                UINT   8    RG   Ss-R-BVutHW- n   {32 32 0  0 } {32 32 0  0 } uvec2      rg32ui           
+[   0.225][d][vo/gpu-next/libplacebo]     rgba32i              SINT   16   RGBA Ss-R-BVutHW- n   {32 32 32 32} {32 32 32 32} ivec4      rgba32i          
+[   0.225][d][vo/gpu-next/libplacebo]     rgba32u              UINT   16   RGBA Ss-R-BVutHW- n   {32 32 32 32} {32 32 32 32} uvec4      rgba32ui         
+[   0.225][d][vo/gpu-next/libplacebo]     rgb32f               FLOAT  12   RGB  S-L---Vu-H-- n   {32 32 32 0 } {32 32 32 0 } vec3                        
+[   0.225][d][vo/gpu-next/libplacebo]     rgb32i               SINT   12   RGB  S-----Vu-H-- n   {32 32 32 0 } {32 32 32 0 } ivec3                       
+[   0.225][d][vo/gpu-next/libplacebo]     rgb32u               UINT   12   RGB  S-----Vu-H-- n   {32 32 32 0 } {32 32 32 0 } uvec3                       
+[   0.225][d][vo/gpu-next/libplacebo]     rgb8                 UNORM  3    RGB  SsLRbBVutHWG y   {8  8  8  0 } {8  8  8  0 } vec3                  BG24  
+[   0.225][d][vo/gpu-next/libplacebo]     rgb16                UNORM  6    RGB  SsLRbBVutH-G y   {16 16 16 0 } {16 16 16 0 } vec3                        
+[   0.225][d][vo/gpu-next/libplacebo]     rgb16hf              FLOAT  6    RGB  SsLRbBVutHWG y   {16 16 16 0 } {16 16 16 0 } vec3                        
+[   0.225][d][vo/gpu-next/libplacebo]     r16f                 FLOAT  4    R    SsLRbBVutHWG y   {16 0  0  0 } {32 0  0  0 } float      r16f             
+[   0.225][d][vo/gpu-next/libplacebo]     rg16f                FLOAT  8    RG   SsLRbBVutH-G y   {16 16 0  0 } {32 32 0  0 } vec2       rg16f            
+[   0.225][d][vo/gpu-next/libplacebo]     rgb16f               FLOAT  12   RGB  SsLRbBVutHWG y   {16 16 16 0 } {32 32 32 0 } vec3                        
+[   0.225][d][vo/gpu-next/libplacebo]     rgba16f              FLOAT  16   RGBA SsLRbBVutHWG y   {16 16 16 16} {32 32 32 32} vec4       rgba16f          
+[   0.225][v][vo/gpu-next/libplacebo] Using flip-model presentation
+[   0.225][v][vo/gpu-next/libplacebo] Initial swap chain configuration: format: R10G10B10A2_UNORM, color space: RGB_FULL_G22_NONE_P709.
+[   0.225][d][global] cache path: '' -> 'D:/D-Software/mpv-hero/portable_config/cache'
+[   0.225][d][global] cache path: '' -> 'D:/D-Software/mpv-hero/portable_config/cache'
+[   0.227][v][vo/gpu-next/libplacebo] Attempting to reconfigure swap chain format: R8G8B8A8_UNORM -> R10G10B10A2_UNORM
+[   0.228][v][vo/gpu-next] Assuming 74.972503 FPS for display sync.
+[   0.228][v][vo/gpu-next] reconfig to 960x540 yuv444p auto/auto/auto/auto/auto CL=unknown
+[   0.228][d][vo/gpu-next] max content size: 1920x1080
+[   0.228][d][vo/gpu-next] monitor size: 1920x1080
+[   0.228][v][vo/gpu-next/win32] reset window bounds: 288:162:1344:756
+[   0.228][v][vo/gpu-next/win32] resize window: 1344:756
+[   0.533][v][vo/gpu-next/win32] resize window: 1344:756
+[   0.535][v][vo/gpu-next] Window size: 1344x756 (Borders: l=0 t=0 r=0 b=0)
+[   0.535][v][vo/gpu-next] Video source: 960x540 (1:1)
+[   0.535][v][vo/gpu-next] Video display: (0, 0) 960x540 -> (0, 0) 1344x756
+[   0.535][v][vo/gpu-next] Video scale: 1.400000/1.400000
+[   0.535][v][vo/gpu-next] OSD borders: l=0 t=0 r=0 b=0
+[   0.535][v][vo/gpu-next] Video borders: l=0 t=0 r=0 b=0
+[   0.540][v][vo/gpu-next] Window size: 1344x756 (Borders: l=0 t=0 r=0 b=0)
+[   0.540][v][vo/gpu-next] Video source: 960x540 (1:1)
+[   0.540][v][vo/gpu-next] Video display: (0, 0) 960x540 -> (0, 0) 1344x756
+[   0.540][v][vo/gpu-next] Video scale: 1.400000/1.400000
+[   0.540][v][vo/gpu-next] OSD borders: l=0 t=0 r=0 b=0
+[   0.540][v][vo/gpu-next] Video borders: l=0 t=0 r=0 b=0
+[   0.541][v][cplayer] Waiting for scripts...
+[   0.546][d][cplayer] Run command: script-message, flags=64, args=[args="uosc-version", args="5.2.0"]
+[   0.546][v][cplayer] Set property: user-data/middle_drag_pan/held=false -> 1
+[   0.546][v][cplayer] Set property: user-data/middle_drag_pan/wheel_used_during_hold=false -> 1
+[   0.546][d][cplayer] Run command: define-section, flags=64, args=[name="input_middle_drag_pan", contents="", flags="default"]
+[   0.546][d][cplayer] Run command: enable-section, flags=64, args=[name="input_middle_drag_pan", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.546][d][cplayer] Run command: define-section, flags=64, args=[name="input_forced_middle_drag_pan", contents="MBTN_MID script-binding middle_drag_pan/middle-drag-pan\n", flags="force"]
+[   0.546][d][cplayer] Run command: enable-section, flags=64, args=[name="input_forced_middle_drag_pan", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.546][d][global] config path: 'script-opts/uosc-button-state.json' -> 'D:/D-Software/mpv-hero/portable_config/script-opts/uosc-button-state.json'
+[   0.546][d][global] user path: '~~/script-opts/uosc-button-state.json' -> 'D:/D-Software/mpv-hero/portable_config/script-opts/uosc-button-state.json'
+[   0.546][d][uosc] reading options for uosc
+[   0.546][d][global] config path: 'script-opts/uosc.conf' -> 'D:/D-Software/mpv-hero/portable_config/script-opts/uosc.conf'
+[   0.553][v][uosc] Opened config file script-opts/uosc.conf.
+[   0.553][d][cplayer] Run command: script-message, flags=64, args=[args="menu-init", args="menu"]
+[   0.553][d][cplayer] Run command: define-section, flags=64, args=[name="input_stats", contents="", flags="default"]
+[   0.553][d][cplayer] Run command: enable-section, flags=64, args=[name="input_stats", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.553][d][cplayer] Run command: define-section, flags=64, args=[name="input_forced_stats", contents="", flags="force"]
+[   0.553][d][cplayer] Run command: enable-section, flags=64, args=[name="input_forced_stats", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.553][d][global] config path: 'input.conf' -> 'D:/D-Software/mpv-hero/portable_config/input.conf'
+[   0.553][d][global] user path: '~~/input.conf' -> 'D:/D-Software/mpv-hero/portable_config/input.conf'
+[   0.553][d][global] config path: 'input.conf' -> 'D:/D-Software/mpv-hero/portable_config/input.conf'
+[   0.553][d][global] user path: '~~/input.conf' -> 'D:/D-Software/mpv-hero/portable_config/input.conf'
+[   0.554][d][console] reading options for console
+[   0.554][d][global] config path: 'script-opts/console.conf' -/-> 'D:/D-Software/mpv-hero/portable_config/script-opts/console.conf'
+[   0.554][d][console] script-opts/console.conf not found.
+[   0.554][d][global] config path: 'lua-settings/console.conf' -/-> 'D:/D-Software/mpv-hero/portable_config/lua-settings/console.conf'
+[   0.554][d][console] lua-settings/console.conf not found.
+[   0.554][d][cplayer] Run command: define-section, flags=64, args=[name="input_console", contents="", flags="default"]
+[   0.554][d][cplayer] Run command: enable-section, flags=64, args=[name="input_console", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.554][d][cplayer] Run command: define-section, flags=64, args=[name="input_forced_console", contents="", flags="force"]
+[   0.554][d][cplayer] Run command: enable-section, flags=64, args=[name="input_forced_console", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.554][d][cplayer] Run command: define-section, flags=64, args=[name="input_average_frames", contents="", flags="default"]
+[   0.554][d][cplayer] Run command: enable-section, flags=64, args=[name="input_average_frames", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.554][d][cplayer] Run command: define-section, flags=64, args=[name="input_forced_average_frames", contents="", flags="force"]
+[   0.554][d][cplayer] Run command: enable-section, flags=64, args=[name="input_forced_average_frames", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.554][d][cplayer] Run command: define-section, flags=64, args=[name="input_select", contents="", flags="default"]
+[   0.554][d][cplayer] Run command: enable-section, flags=64, args=[name="input_select", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.554][d][cplayer] Run command: define-section, flags=64, args=[name="input_forced_select", contents="", flags="force"]
+[   0.554][d][cplayer] Run command: enable-section, flags=64, args=[name="input_forced_select", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.554][d][cplayer] Run command: script-message, flags=64, args=[args="menu-ready", args="dyn_menu"]
+[   0.554][d][cplayer] Run command: define-section, flags=64, args=[name="input_dyn_menu", contents="MBTN_RIGHT script-binding dyn_menu/__keybinding1\n", flags="default"]
+[   0.554][d][cplayer] Run command: enable-section, flags=64, args=[name="input_dyn_menu", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.554][d][cplayer] Run command: define-section, flags=64, args=[name="input_forced_dyn_menu", contents="", flags="force"]
+[   0.554][d][cplayer] Run command: enable-section, flags=64, args=[name="input_forced_dyn_menu", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.554][d][dyn_menu] commit menu items: menu-data
+[   0.554][v][cplayer] Set property: loop-playlist="no" -> 1
+[   0.554][v][cplayer] Set property: loop-file="no" -> 1
+[   0.554][v][cplayer] Set property: fullscreen=true -> 1
+[   0.554][d][global] config path: 'recent.json' -> 'D:/D-Software/mpv-hero/portable_config/recent.json'
+[   0.554][d][global] user path: '~~/recent.json' -> 'D:/D-Software/mpv-hero/portable_config/recent.json'
+[   0.554][d][cplayer] Run command: script-message, flags=64, args=[args="command-palette-version", args="1"]
+[   0.555][v][cplayer] Set property: user-data/command-palette/version=1 -> 1
+[   0.555][d][global] config path: 'script-modules/?.lua;' -/-> 'D:/D-Software/mpv-hero/portable_config/script-modules/?.lua;'
+[   0.555][d][global] user path: '~~/script-modules/?.lua;' -> 'D:/D-Software/mpv-hero/portable_config/script-modules/?.lua;'
+[   0.555][d][cplayer] Run command: script-message-to, flags=64, args=[target="uosc", args="get-locale", args="recentmenu"]
+[   0.556][v][vo/gpu-next/win32] save window bounds: 288:162:1344:756
+[   0.556][v][vo/gpu-next/win32] reset window bounds: 0:0:1920:1080
+[   0.559][v][vo/gpu-next/win32] resize window: 1920:1080
+[   0.562][v][vo/gpu-next/d3d11] Disabling full-screen exclusive mode while entering fullscreen
+[   0.571][v][vo/gpu-next] Window size: 1920x1080 (Borders: l=0 t=0 r=0 b=0)
+[   0.571][v][vo/gpu-next] Video source: 960x540 (1:1)
+[   0.571][v][vo/gpu-next] Video display: (0, 0) 960x540 -> (0, 0) 1920x1080
+[   0.571][v][vo/gpu-next] Video scale: 2.000000/2.000000
+[   0.571][v][vo/gpu-next] OSD borders: l=0 t=0 r=0 b=0
+[   0.571][v][vo/gpu-next] Video borders: l=0 t=0 r=0 b=0
+[   0.571][v][vo/gpu-next] Window size: 1920x1080 (Borders: l=0 t=0 r=0 b=0)
+[   0.571][v][vo/gpu-next] Video source: 960x540 (1:1)
+[   0.571][v][vo/gpu-next] Video display: (0, 0) 960x540 -> (0, 0) 1920x1080
+[   0.571][v][vo/gpu-next] Video scale: 2.000000/2.000000
+[   0.571][v][vo/gpu-next] OSD borders: l=0 t=0 r=0 b=0
+[   0.571][v][vo/gpu-next] Video borders: l=0 t=0 r=0 b=0
+[   0.572][v][cplayer] Set property: menu-data=[] -> 1
+[   0.574][d][cplayer] Run command: script-message-to, flags=64, args=[target="dyn_menu", args="update", args="recent", args="{\"script_name\":\"dyn_menu\",\"submenu\":[{\"cmd\":\"loadfile \\\"http://127.0.0.1:50764/mpv/7a231222-f496-45c0-a9bc-5240c96896a4\\\"\",\"title\":\"7a231222-f496-45c0-a9bc-5240c96896a4\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:50764/mpv/9099ccca-a266-4156-8c85-5df333c04b3f\\\"\",\"title\":\"9099ccca-a266-4156-8c85-5df333c04b3f\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:49983/mpv/62c68a95-8a67-4ab2-afaf-1de22a148921\\\"\",\"title\":\"62c68a95-8a67-4ab2-afaf-1de22a148921\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:49983/mpv/16a6d5c1-c357-4a81-a9e2-502b5f467555\\\"\",\"title\":\"16a6d5c1-c357-4a81-a9e2-502b5f467555\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:49983/mpv/2f188090-f052-4bf2-afee-46ce399104a9\\\"\",\"title\":\"2f188090-f052-4bf2-afee-46ce399104a9\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:65436/mpv/4d019acd-eb73-4467-b398-0b5f5cbadc38\\\"\",\"title\":\"4d019acd-eb73-4467-b398-0b5f5cbadc38\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:65436/mpv/dfeacc40-0def-4956-bd81-6d989a976add\\\"\",\"title\":\"dfeacc40-0def-4956-bd81-6d989a976add\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:65105/mpv/9233322e-476c-4a3a-af64-abe926e5c613\\\"\",\"title\":\"9233322e-476c-4a3a-af64-abe926e5c613\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:65105/mpv/cd80beb7-e9e0-4887-af60-359d5a8cad27\\\"\",\"title\":\"cd80beb7-e9e0-4887-af60-359d5a8cad27\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:64837/mpv/35de1a35-3d85-489b-8150-e73a1a499a4f\\\"\",\"title\":\"35de1a35-3d85-489b-8150-e73a1a499a4f\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:63519/mpv/5af45319-a6c2-4f2c-9edd-b57c9386254b\\\"\",\"title\":\"5af45319-a6c2-4f2c-9edd-b57c9386254b\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:63089/mpv/0524a8ac-09ed-4687-b75e-98c951ccb162\\\"\",\"title\":\"0524a8ac-09ed-4687-b75e-98c951ccb162\\tHTTP\"},{\"cmd\":\"loadfile \\\"D:\\\\\\\\D-Download\\\\\\\\どうやったらこのスタイルになんの.mp4\\\"\",\"title\":\"どうやったらこのスタイルになんの\\tMP4\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:61407/mpv/f09ed12e-cca7-4f83-aecb-7166b7d6c3f2\\\"\",\"title\":\"f09ed12e-cca7-4f83-aecb-7166b7d6c3f2\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:61407/mpv/35d065b3-37ad-43ad-85c5-da66b60aaa9c\\\"\",\"title\":\"35d065b3-37ad-43ad-85c5-da66b60aaa9c\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:61152/mpv/a8e4e93f-705d-4a28-a2ce-72ab98982565\\\"\",\"title\":\"a8e4e93f-705d-4a28-a2ce-72ab98982565\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:61152/mpv/417102f9-030f-4b7c-8591-116119376e99\\\"\",\"title\":\"417102f9-030f-4b7c-8591-116119376e99\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:50478/mpv/ec4e6698-97b9-436a-a3c9-7e6933a8b53d\\\"\",\"title\":\"ec4e6698-97b9-436a-a3c9-7e6933a8b53d\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:50478/mpv/32ce9308-78d1-4433-937a-b7fb95ddd39c\\\"\",\"title\":\"32ce9308-78d1-4433-937a-b7fb95ddd39c\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:50478/mpv/08d34b50-f456-483e-a066-07b47b55d884\\\"\",\"title\":\"08d34b50-f456-483e-a066-07b47b55d884\\tHTTP\"}],\"type\":\"submenu\",\"ready\":true}"]
+[   0.574][d][cplayer] Run command: define-section, flags=64, args=[name="input_recentmenu", contents="", flags="default"]
+[   0.574][d][cplayer] Run command: enable-section, flags=64, args=[name="input_recentmenu", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.574][d][cplayer] Run command: define-section, flags=64, args=[name="input_forced_recentmenu", contents="", flags="force"]
+[   0.574][d][cplayer] Run command: enable-section, flags=64, args=[name="input_forced_recentmenu", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.574][d][global] user path: 'D:/D-Software/mpv-hero/portable_config/scripts/uosc/intl/zh-hans.json' -> 'D:/D-Software/mpv-hero/portable_config/scripts/uosc/intl/zh-hans.json'
+[   0.574][d][cplayer] Run command: define-section, flags=64, args=[name="input_clipshot", contents="Ctrl+c script-binding clipshot/clipshot-video\n", flags="default"]
+[   0.574][d][cplayer] Run command: enable-section, flags=64, args=[name="input_clipshot", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.574][d][cplayer] Run command: define-section, flags=64, args=[name="input_forced_clipshot", contents="", flags="force"]
+[   0.574][d][cplayer] Run command: enable-section, flags=64, args=[name="input_forced_clipshot", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.575][d][dyn_menu] update: ignored message with invalid keyword: recent
+[   0.576][d][cplayer] Run command: define-section, flags=64, args=[name="input_inputevent", contents="", flags="default"]
+[   0.577][d][cplayer] Run command: enable-section, flags=64, args=[name="input_inputevent", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.577][d][cplayer] Run command: define-section, flags=64, args=[name="input_forced_inputevent", contents="MBTN_LEFT script-binding inputevent/MBTN_LEFT\nUP script-binding inputevent/UP\nRIGHT script-binding inputevent/RIGHT\nLEFT script-binding inputevent/LEFT\nDOWN script-binding inputevent/DOWN\n", flags="force"]
+[   0.577][d][cplayer] Run command: enable-section, flags=64, args=[name="input_forced_inputevent", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.580][d][dyn_menu] commit menu items: menu-data
+[   0.580][d][global] user path: 'D:/D-Software/mpv-hero/portable_config/scripts/uosc/char-conv/zh-hans.json' -> 'D:/D-Software/mpv-hero/portable_config/scripts/uosc/char-conv/zh-hans.json'
+[   0.582][d][global] config path: 'fonts' -> 'D:/D-Software/mpv-hero/portable_config/fonts'
+[   0.582][d][osd/libass] ASS library version: 0x1703000 (runtime 0x1703000)
+[   0.582][v][osd/libass] libass API version: 0x1703000
+[   0.582][v][osd/libass] libass source: meson, commit: 0.17.3-16-g3bc0f669a9164f682fb99bbfb68407172e7d445b
+[   0.582][v][osd/libass] Shaper: FriBidi 1.0.15 (SIMPLE) HarfBuzz-ng 9.0.0 (COMPLEX)
+[   0.582][d][global] config path: 'subfont.ttf' -/-> 'D:/D-Software/mpv-hero/portable_config/subfont.ttf'
+[   0.582][d][global] config path: 'fonts.conf' -/-> 'D:/D-Software/mpv-hero/portable_config/fonts.conf'
+[   0.582][v][osd/libass] Setting up fonts...
+[   0.583][v][osd/libass] Loading font file 'D:/D-Software/mpv-hero/portable_config/fonts\uosc_icons.otf'
+[   0.585][v][osd/libass] Loading font file 'D:/D-Software/mpv-hero/portable_config/fonts\uosc_textures.ttf'
+[   0.589][v][osd/libass] Using font provider directwrite (with GDI)
+[   0.589][v][osd/libass] Done.
+[   0.590][v][cplayer] Set property: menu-data=[] -> 1
+[   0.590][d][cplayer] Run command: script-message, flags=64, args=[args="thumbfast-info", args="{\"height\":113,\"socket\":\"thumbfast7152\",\"available\":true,\"disabled\":false,\"overlay_id\":42,\"width\":200,\"thumbnail\":\"C:\\\\Users\\\\Yz\\\\AppData\\\\Local\\\\Temp\\\\thumbfast.out7152\",\"scale_factor\":1}"]
+[   0.596][d][cplayer] Run command: define-section, flags=64, args=[name="mbtn_left", contents="mbtn_left script-binding uosc/__keybinding1\n", flags="force"]
+[   0.596][d][cplayer] Run command: define-section, flags=64, args=[name="mbtn_left_dbl", contents="mbtn_left_dbl ignore\n", flags="force"]
+[   0.596][d][cplayer] Run command: define-section, flags=64, args=[name="mbtn_right", contents="mbtn_right script-binding uosc/__keybinding2\n", flags="force"]
+[   0.596][d][cplayer] Run command: define-section, flags=64, args=[name="wheel", contents="wheel_up script-binding uosc/__keybinding3\nwheel_down script-binding uosc/__keybinding4\n", flags="force"]
+[   0.611][v][cplayer] Set property: user-data/uosc/shuffle=false -> 1
+[   0.623][v][cplayer] Done loading scripts.
+[   0.623][d][global] state path: 'watch_later' -> 'D:/D-Software/mpv-hero/portable_config/watch_later'
+[   0.624][v][cplayer] Running hook: auto_profiles/on_before_start_file
+[   0.624][d][global] state path: 'watch_later' -> 'D:/D-Software/mpv-hero/portable_config/watch_later'
+[   0.624][v][cplayer] Running hook: ytdl_hook/on_load
+[   0.628][d][cplayer] Run command: define-section, flags=64, args=[name="input_uosc", contents="", flags="default"]
+[   0.628][d][cplayer] Run command: enable-section, flags=64, args=[name="input_uosc", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.628][d][cplayer] Run command: define-section, flags=64, args=[name="input_forced_uosc", contents="", flags="force"]
+[   0.628][d][cplayer] Run command: enable-section, flags=64, args=[name="input_forced_uosc", flags="allow-hide-cursor+allow-vo-dragging"]
+[   0.628][v][cplayer] Running hook: ytdl_hook/on_load
+[   0.628][v][ytdl_hook] playlist hook
+[   0.628][v][cplayer] Running hook: auto_profiles/on_load
+[   0.631][v][stream_callback] Opening http://127.0.0.1:50764/mpv/da6a8530-8e66-4666-90cb-9b048029e843
+[   0.631][v][ffmpeg] Opening http://127.0.0.1:50764/mpv/da6a8530-8e66-4666-90cb-9b048029e843
+[   0.632][d][global] config path: 'fonts' -> 'D:/D-Software/mpv-hero/portable_config/fonts'
+[   0.632][d][osd/libass] ASS library version: 0x1703000 (runtime 0x1703000)
+[   0.632][v][osd/libass] libass API version: 0x1703000
+[   0.632][v][osd/libass] libass source: meson, commit: 0.17.3-16-g3bc0f669a9164f682fb99bbfb68407172e7d445b
+[   0.632][v][osd/libass] Shaper: FriBidi 1.0.15 (SIMPLE) HarfBuzz-ng 9.0.0 (COMPLEX)
+[   0.632][d][global] config path: 'subfont.ttf' -/-> 'D:/D-Software/mpv-hero/portable_config/subfont.ttf'
+[   0.633][d][global] config path: 'fonts.conf' -/-> 'D:/D-Software/mpv-hero/portable_config/fonts.conf'
+[   0.633][v][osd/libass] Setting up fonts...
+[   0.633][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   0.633][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   0.634][v][osd/libass] Loading font file 'D:/D-Software/mpv-hero/portable_config/fonts\uosc_icons.otf'
+[   0.635][v][osd/libass] Loading font file 'D:/D-Software/mpv-hero/portable_config/fonts\uosc_textures.ttf'
+[   0.635][v][osd/libass] Using font provider directwrite (with GDI)
+[   0.635][v][osd/libass] Done.
+[   0.643][d][cplayer] Run command: script-message, flags=64, args=[args="thumbfast-info", args="{\"height\":113,\"socket\":\"thumbfast7152\",\"available\":true,\"disabled\":false,\"overlay_id\":42,\"width\":200,\"thumbnail\":\"C:\\\\Users\\\\Yz\\\\AppData\\\\Local\\\\Temp\\\\thumbfast.out7152\",\"scale_factor\":1}"]
+[   0.644][v][ffmpeg] Could not set AVOption tls_verify='0'
+[   0.644][d][ffmpeg] resize stream to 131072 bytes, drop 0 bytes
+[   0.644][v][ffmpeg] Mime-type: 'video/mp4'
+[   0.644][d][ffmpeg] Stream opened successfully.
+[   0.644][v][demux] Trying demuxers for level=normal.
+[   0.644][d][demux] Trying demuxer: directory (force-level: normal)
+[   1.937][d][demux] Trying demuxer: disc (force-level: normal)
+[   1.937][d][demux] Trying demuxer: edl (force-level: normal)
+[   1.937][d][demux] Trying demuxer: cue (force-level: normal)
+[   1.937][d][demux] Trying demuxer: rawaudio (force-level: normal)
+[   1.937][d][demux] Trying demuxer: rawvideo (force-level: normal)
+[   1.937][d][demux] Trying demuxer: mkv (force-level: normal)
+[   1.937][d][demux] Trying demuxer: libarchive (force-level: normal)
+[   1.937][d][demux] Trying demuxer: lavf (force-level: normal)
+[   1.942][v][lavf] Found 'mov,mp4,m4a,3gp,3g2,mj2' at score=100 size=2048.
+[   3.160][v][ffmpeg] stream level seek from 3276800 to 3641647
+[   3.160][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   3.161][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   3.179][v][ffmpeg] stream level seek from 3707183 to 3988821
+[   3.179][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   3.197][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   3.447][v][ffmpeg] stream level seek from 4054357 to 4315996
+[   3.448][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   3.448][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   3.492][v][vo/gpu-next/win32] resize window: 1536:864
+[   3.493][v][vo/gpu-next] Window size: 1536x864 (Borders: l=0 t=0 r=0 b=0)
+[   3.493][v][vo/gpu-next] Video source: 960x540 (1:1)
+[   3.493][v][vo/gpu-next] Video display: (0, 0) 960x540 -> (0, 0) 1536x864
+[   3.493][v][vo/gpu-next] Video scale: 1.600000/1.600000
+[   3.493][v][vo/gpu-next] OSD borders: l=0 t=0 r=0 b=0
+[   3.493][v][vo/gpu-next] Video borders: l=0 t=0 r=0 b=0
+[   3.548][v][ffmpeg] stream level seek from 4381532 to 4602280
+[   3.548][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   3.549][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   3.597][v][vo/gpu-next/win32] resize window: 1228:691
+[   3.599][v][vo/gpu-next] Window size: 1228x691 (Borders: l=0 t=0 r=0 b=0)
+[   3.599][v][vo/gpu-next] Video source: 960x540 (1:1)
+[   3.599][v][vo/gpu-next] Video display: (0, 0) 960x540 -> (0, 0) 1228x690
+[   3.599][v][vo/gpu-next] Video scale: 1.279167/1.277778
+[   3.599][v][vo/gpu-next] OSD borders: l=0 t=0 r=0 b=1
+[   3.599][v][vo/gpu-next] Video borders: l=0 t=0 r=0 b=1
+[   3.745][v][ffmpeg] stream level seek from 4667816 to 5135097
+[   3.745][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   3.746][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   5.864][v][ffmpeg] stream level seek from 5266169 to 5545456
+[   5.865][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   5.865][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   5.867][v][ffmpeg] stream level seek from 5619009 to 6108224
+[   5.867][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   5.868][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   6.112][v][ffmpeg] stream level seek from 6206528 to 6373958
+[   6.112][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   6.112][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   6.114][v][ffmpeg] stream level seek from 6406726 to 7527382
+[   6.114][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   6.147][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   6.288][v][cplayer] Set property: user-data/middle_drag_pan/held=false -> 1
+[   6.288][v][cplayer] Set property: user-data/middle_drag_pan/wheel_used_during_hold=false -> 1
+[   6.928][v][ffmpeg] stream level seek from 7658454 to 8155045
+[   6.929][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   6.953][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   7.165][v][ffmpeg] stream level seek from 8220581 to 8477548
+[   7.165][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   7.167][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   7.396][v][ffmpeg] stream level seek from 8543084 to 8783636
+[   7.396][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   7.398][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   7.400][v][ffmpeg] stream level seek from 8857189 to 9695253
+[   7.400][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   7.401][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   7.403][v][ffmpeg] stream level seek from 9826325 to 10337759
+[   7.404][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   7.405][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   8.984][v][cplayer] Set property: user-data/middle_drag_pan/held=false -> 1
+[   8.984][v][cplayer] Set property: user-data/middle_drag_pan/wheel_used_during_hold=false -> 1
+[   9.926][v][ffmpeg] stream level seek from 10403295 to 11219795
+[   9.926][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   9.926][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   9.928][v][ffmpeg] stream level seek from 11318099 to 11818831
+[   9.928][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   9.929][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   9.931][v][ffmpeg] stream level seek from 11884367 to 12313653
+[   9.931][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   9.932][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   9.933][v][ffmpeg] stream level seek from 12379189 to 12818378
+[   9.934][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   9.935][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[   9.937][v][ffmpeg] stream level seek from 12883914 to 13460880
+[   9.937][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[   9.937][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  10.961][v][ffmpeg] stream level seek from 13559184 to 14317371
+[  10.961][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  10.962][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  11.196][v][ffmpeg] stream level seek from 14415675 to 14980271
+[  11.196][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  11.197][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  11.309][v][ffmpeg] stream level seek from 15045807 to 15771912
+[  11.309][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  11.310][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  11.319][v][ffmpeg] stream level seek from 15870216 to 16477936
+[  11.319][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  11.320][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  11.326][v][ffmpeg] stream level seek from 16543472 to 17171822
+[  11.326][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  11.327][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  11.906][v][ffmpeg] stream level seek from 17270126 to 18086329
+[  11.906][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  11.907][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  13.484][v][ffmpeg] stream level seek from 18184633 to 18427069
+[  13.484][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  13.484][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  14.296][v][ffmpeg] stream level seek from 18459837 to 19001510
+[  14.297][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  14.297][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  14.301][v][ffmpeg] stream level seek from 19099814 to 19939416
+[  14.301][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  14.340][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  14.541][v][ffmpeg] stream level seek from 20037720 to 20376612
+[  14.541][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  14.541][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  14.673][v][ffmpeg] stream level seek from 20442148 to 21030563
+[  14.673][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  14.673][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  14.700][v][ffmpeg] stream level seek from 21128867 to 22536458
+[  14.701][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  14.701][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  14.714][v][ffmpeg] stream level seek from 22667530 to 22970661
+[  14.714][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  14.715][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  14.751][v][ffmpeg] stream level seek from 23036197 to 23471899
+[  14.752][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  14.752][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  14.911][v][ffmpeg] stream level seek from 23537435 to 24202104
+[  14.912][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  14.912][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  15.037][v][ffmpeg] stream level seek from 24267640 to 24948871
+[  15.037][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  15.038][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  15.459][v][ffmpeg] stream level seek from 25047175 to 25576716
+[  15.459][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  15.460][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  15.527][v][ffmpeg] stream level seek from 25642252 to 26402617
+[  15.527][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  15.527][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  15.552][v][ffmpeg] stream level seek from 26500921 to 27449941
+[  15.552][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  15.553][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  15.898][v][ffmpeg] stream level seek from 27548245 to 27945165
+[  15.898][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  15.899][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  15.926][v][ffmpeg] stream level seek from 28010701 to 28298184
+[  15.926][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  15.926][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  15.943][v][ffmpeg] stream level seek from 28363720 to 29318303
+[  15.943][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  15.943][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  16.224][v][ffmpeg] stream level seek from 29416607 to 30218740
+[  16.224][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  16.225][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  16.307][v][ffmpeg] stream level seek from 30317044 to 30784603
+[  16.307][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  16.307][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  16.362][v][ffmpeg] stream level seek from 30850139 to 31556074
+[  16.363][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  16.364][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  16.635][v][ffmpeg] stream level seek from 31654378 to 32225124
+[  16.635][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  16.636][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  16.641][v][ffmpeg] stream level seek from 32290660 to 32983338
+[  16.641][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  16.664][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  16.805][v][ffmpeg] stream level seek from 33081642 to 33516880
+[  16.806][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  16.806][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  17.173][v][ffmpeg] stream level seek from 33582416 to 34855405
+[  17.173][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  17.174][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  17.210][v][ffmpeg] stream level seek from 34986477 to 35301065
+[  17.210][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  17.211][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  17.219][v][ffmpeg] stream level seek from 35333833 to 36085017
+[  17.219][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  17.220][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  17.615][v][ffmpeg] stream level seek from 36379929 to 37622740
+[  17.615][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  17.616][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  17.986][v][ffmpeg] stream level seek from 37753812 to 38357082
+[  17.987][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  17.987][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  18.012][v][ffmpeg] stream level seek from 38422618 to 38935503
+[  18.012][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  18.013][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  18.022][v][ffmpeg] stream level seek from 39001039 to 39623184
+[  18.022][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  18.050][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  18.234][v][ffmpeg] stream level seek from 39688720 to 40330725
+[  18.234][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  18.234][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  18.398][v][ffmpeg] stream level seek from 40429029 to 40615365
+[  18.398][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  18.399][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  18.502][v][ffmpeg] stream level seek from 40680901 to 41346553
+[  18.502][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  18.502][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  18.624][v][ffmpeg] stream level seek from 41412089 to 42160459
+[  18.624][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  18.624][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  19.059][v][ffmpeg] stream level seek from 42225995 to 42880972
+[  19.060][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  19.060][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  19.088][v][ffmpeg] stream level seek from 42946508 to 44160342
+[  19.089][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  19.089][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  19.436][v][ffmpeg] stream level seek from 44291414 to 44698441
+[  19.436][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  19.437][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  19.454][v][ffmpeg] stream level seek from 44763977 to 45093278
+[  19.454][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  19.454][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  19.496][v][ffmpeg] stream level seek from 45158814 to 45487437
+[  19.496][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  19.496][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  19.539][v][ffmpeg] stream level seek from 45552973 to 45894078
+[  19.540][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  19.540][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  19.545][v][ffmpeg] stream level seek from 45959614 to 46770767
+[  19.545][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  19.546][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  20.122][v][ffmpeg] stream level seek from 46901839 to 47576273
+[  20.122][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  20.136][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  20.145][v][ffmpeg] stream level seek from 47641809 to 48553370
+[  20.145][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  20.146][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  20.171][v][ffmpeg] stream level seek from 48618906 to 49243911
+[  20.171][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  20.172][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  20.591][v][ffmpeg] stream level seek from 49309447 to 49617279
+[  20.591][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  20.591][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  20.637][v][ffmpeg] stream level seek from 49879423 to 50329516
+[  20.638][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  20.638][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  21.047][v][ffmpeg] stream level seek from 50395052 to 51034404
+[  21.047][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  21.048][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  21.090][v][ffmpeg] stream level seek from 51132708 to 51750178
+[  21.090][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  21.092][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  21.504][v][ffmpeg] stream level seek from 51848482 to 52345920
+[  21.504][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  21.504][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  21.526][v][ffmpeg] stream level seek from 52411456 to 53246932
+[  21.526][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  21.526][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  21.538][v][ffmpeg] stream level seek from 53345236 to 53546718
+[  21.538][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  21.539][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  21.771][v][ffmpeg] stream level seek from 53612254 to 53872790
+[  21.772][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  21.772][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  21.947][v][ffmpeg] stream level seek from 53938326 to 54745510
+[  21.947][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  21.948][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  21.976][v][ffmpeg] stream level seek from 54876582 to 55144096
+[  21.976][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  21.976][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  22.015][v][ffmpeg] stream level seek from 55209632 to 55485484
+[  22.015][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  22.015][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  22.020][v][ffmpeg] stream level seek from 55551020 to 56015195
+[  22.020][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  22.020][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  22.295][v][ffmpeg] stream level seek from 56113499 to 56571560
+[  22.295][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  22.296][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  22.383][v][ffmpeg] stream level seek from 56637096 to 57169541
+[  22.383][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  22.383][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  22.398][v][ffmpeg] stream level seek from 57235077 to 58055773
+[  22.398][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  22.398][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  22.449][v][ffmpeg] stream level seek from 58154077 to 58386574
+[  22.449][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  22.449][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  22.468][v][ffmpeg] stream level seek from 58452110 to 58695140
+[  22.468][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  22.469][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  22.836][v][ffmpeg] stream level seek from 58760676 to 60681394
+[  22.836][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  22.837][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  23.241][v][ffmpeg] stream level seek from 60779698 to 62071860
+[  23.241][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  23.241][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  23.280][v][ffmpeg] stream level seek from 62137396 to 63538857
+[  23.280][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  23.280][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  23.694][v][ffmpeg] stream level seek from 63604393 to 64378391
+[  23.695][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  23.695][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  23.709][v][ffmpeg] stream level seek from 64443927 to 64782565
+[  23.709][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  23.710][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  23.740][v][ffmpeg] stream level seek from 64815333 to 65236410
+[  23.740][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  23.741][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  23.747][v][ffmpeg] stream level seek from 65301946 to 65714780
+[  23.747][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  23.748][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  24.062][v][ffmpeg] stream level seek from 65780316 to 66588146
+[  24.062][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  24.063][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  24.123][v][ffmpeg] stream level seek from 66719218 to 66994907
+[  24.123][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  24.124][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  24.480][v][ffmpeg] stream level seek from 67060443 to 67260023
+[  24.481][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  24.481][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  24.496][v][ffmpeg] stream level seek from 67325559 to 67774915
+[  24.496][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  24.496][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  24.775][v][osd/libass] fontselect: (sans-serif, 400, 0) -> ArialMT, 0, ArialMT
+[  24.775][v][osd/libass] fontselect: (MaterialIconsRound-Regular, 400, 0) -> MaterialIconsRound-Regular, 0, MaterialIconsRound-Regular
+[  24.776][d][vo/gpu-next/libplacebo] (Re)creating 256x112x0 texture with format r8: unknown
+[  24.777][d][vo/gpu-next/libplacebo] vertex shader source:
+[  24.777][d][vo/gpu-next/libplacebo] [  1] #version 450
+[  24.777][d][vo/gpu-next/libplacebo] [  2] #extension GL_ARB_uniform_buffer_object : enable
+[  24.777][d][vo/gpu-next/libplacebo] [  3] #extension GL_ARB_texture_gather : enable
+[  24.777][d][vo/gpu-next/libplacebo] [  4] layout(binding=0) uniform  sampler2D _2;
+[  24.777][d][vo/gpu-next/libplacebo] [  5] layout(std140, binding=1) uniform _d {
+[  24.777][d][vo/gpu-next/libplacebo] [  6]     layout(offset=0) mat3 _5;
+[  24.777][d][vo/gpu-next/libplacebo] [  7]     layout(offset=48) mat3 _6;
+[  24.777][d][vo/gpu-next/libplacebo] [  8] };
+[  24.777][d][vo/gpu-next/libplacebo] [  9] layout(location=0) in vec2 _e;
+[  24.777][d][vo/gpu-next/libplacebo] [ 10] layout(location=1) in vec2 _f;
+[  24.777][d][vo/gpu-next/libplacebo] [ 11] layout(location=1) out vec2 _b;
+[  24.777][d][vo/gpu-next/libplacebo] [ 12] layout(location=2) in vec4 _10;
+[  24.777][d][vo/gpu-next/libplacebo] [ 13] layout(location=2) out vec4 _c;
+[  24.777][d][vo/gpu-next/libplacebo] [ 14] void main() {
+[  24.777][d][vo/gpu-next/libplacebo] [ 15] vec2 va_pos = _e; 
+[  24.777][d][vo/gpu-next/libplacebo] [ 16] gl_Position = vec4(va_pos, 0.0, 1.0); 
+[  24.777][d][vo/gpu-next/libplacebo] [ 17] _b = _f;
+[  24.777][d][vo/gpu-next/libplacebo] [ 18] _c = _10;
+[  24.777][d][vo/gpu-next/libplacebo] [ 19] }
+[  24.777][d][vo/gpu-next/libplacebo] fragment shader source:
+[  24.777][d][vo/gpu-next/libplacebo] [  1] #version 450
+[  24.777][d][vo/gpu-next/libplacebo] [  2] #extension GL_ARB_uniform_buffer_object : enable
+[  24.777][d][vo/gpu-next/libplacebo] [  3] #extension GL_ARB_texture_gather : enable
+[  24.777][d][vo/gpu-next/libplacebo] [  4] layout(binding=0) uniform  sampler2D _2;
+[  24.777][d][vo/gpu-next/libplacebo] [  5] layout(std140, binding=1) uniform _d {
+[  24.777][d][vo/gpu-next/libplacebo] [  6]     layout(offset=0) mat3 _5;
+[  24.777][d][vo/gpu-next/libplacebo] [  7]     layout(offset=48) mat3 _6;
+[  24.777][d][vo/gpu-next/libplacebo] [  8] };
+[  24.777][d][vo/gpu-next/libplacebo] [  9] layout(location=1) in vec2 _b;
+[  24.777][d][vo/gpu-next/libplacebo] [ 10] layout(location=2) in vec4 _c;
+[  24.777][d][vo/gpu-next/libplacebo] [ 11] layout(location=0) out vec4 out_color;
+[  24.777][d][vo/gpu-next/libplacebo] [ 12] #define pos _a
+[  24.777][d][vo/gpu-next/libplacebo] [ 13] #define coord _b
+[  24.777][d][vo/gpu-next/libplacebo] [ 14] #define osd_color _c
+[  24.777][d][vo/gpu-next/libplacebo] [ 15] 
+[  24.777][d][vo/gpu-next/libplacebo] [ 16] const float _3 = float(0.9990000128746033); 
+[  24.777][d][vo/gpu-next/libplacebo] [ 17] const float _4 = float(0.0009999999310821295); 
+[  24.777][d][vo/gpu-next/libplacebo] [ 18] const float _7 = float(1.149015188217163); 
+[  24.777][d][vo/gpu-next/libplacebo] [ 19] const float _8 = float(0.0595848374068737); 
+[  24.777][d][vo/gpu-next/libplacebo] [ 20] vec4 _1() {
+[  24.777][d][vo/gpu-next/libplacebo] [ 21] // overlay 
+[  24.777][d][vo/gpu-next/libplacebo] [ 22] vec4 color = osd_color; 
+[  24.777][d][vo/gpu-next/libplacebo] [ 23] // pl_shader_decode_color 
+[  24.777][d][vo/gpu-next/libplacebo] [ 24] { 
+[  24.777][d][vo/gpu-next/libplacebo] [ 25] }
+[  24.777][d][vo/gpu-next/libplacebo] [ 26] // pl_shader_color_map 
+[  24.777][d][vo/gpu-next/libplacebo] [ 27] {                      
+[  24.777][d][vo/gpu-next/libplacebo] [ 28] // pl_shader_linearize           
+[  24.777][d][vo/gpu-next/libplacebo] [ 29] color.rgb = max(color.rgb, 0.0); 
+[  24.777][d][vo/gpu-next/libplacebo] [ 30] color.rgb = mix(color.rgb * vec3(1.0/12.92),               
+[  24.777][d][vo/gpu-next/libplacebo] [ 31]                 pow((color.rgb + vec3(0.055))/vec3(1.055), 
+[  24.777][d][vo/gpu-next/libplacebo] [ 32]                     vec3(2.4)),                            
+[  24.777][d][vo/gpu-next/libplacebo] [ 33]                 lessThan(vec3(0.04045), color.rgb));       
+[  24.777][d][vo/gpu-next/libplacebo] [ 34] color.rgb = _3 * color.rgb + vec3(_4); 
+[  24.777][d][vo/gpu-next/libplacebo] [ 35] // pl_shader_delinearize 
+[  24.777][d][vo/gpu-next/libplacebo] [ 36] color.rgb = max(color.rgb, 0.0); 
+[  24.777][d][vo/gpu-next/libplacebo] [ 37] color.rgb = pow(_7 * color.rgb, vec3(1.0/2.4)) - vec3(_8); 
+[  24.777][d][vo/gpu-next/libplacebo] [ 38] }
+[  24.777][d][vo/gpu-next/libplacebo] [ 39] // pl_shader_encode_color 
+[  24.777][d][vo/gpu-next/libplacebo] [ 40] { 
+[  24.777][d][vo/gpu-next/libplacebo] [ 41] color.rgb *= vec3(color.a); 
+[  24.777][d][vo/gpu-next/libplacebo] [ 42] }
+[  24.777][d][vo/gpu-next/libplacebo] [ 43] color.rgba *= textureLod(_2, coord, 0.0).r; 
+[  24.777][d][vo/gpu-next/libplacebo] [ 44] vec4 _9 = color;                 
+[  24.777][d][vo/gpu-next/libplacebo] [ 45] color = vec4(0.0, 0.0, 0.0, 1.0); 
+[  24.777][d][vo/gpu-next/libplacebo] [ 46] color[0] = _9[0]; 
+[  24.777][d][vo/gpu-next/libplacebo] [ 47] color[1] = _9[1]; 
+[  24.777][d][vo/gpu-next/libplacebo] [ 48] color[2] = _9[2]; 
+[  24.777][d][vo/gpu-next/libplacebo] [ 49] color[3] = _9[3]; 
+[  24.777][d][vo/gpu-next/libplacebo] [ 50] color.a = _9.a; 
+[  24.777][d][vo/gpu-next/libplacebo] [ 51] return color;
+[  24.777][d][vo/gpu-next/libplacebo] [ 52] }
+[  24.777][d][vo/gpu-next/libplacebo] [ 53] 
+[  24.777][d][vo/gpu-next/libplacebo] [ 54] void main() {
+[  24.777][d][vo/gpu-next/libplacebo] [ 55] out_color = _1();
+[  24.777][d][vo/gpu-next/libplacebo] [ 56] }
+[  24.779][d][vo/gpu-next] cache_load_obj: key(3360a96233bf23f6), size(2077), load time(1.825 ms)
+[  24.779][d][vo/gpu-next/libplacebo] Using cached DXBC shaders
+[  24.780][d][vo/gpu-next] cache_save_obj: key(3360a96233bf23f6), size(2077)
+[  28.753][v][cplayer] Set property: user-data/middle_drag_pan/held=false -> 1
+[  28.753][v][cplayer] Set property: user-data/middle_drag_pan/wheel_used_during_hold=false -> 1
+[  28.882][d][global] config path: 'fonts' -> 'D:/D-Software/mpv-hero/portable_config/fonts'
+[  28.882][d][osd/libass] ASS library version: 0x1703000 (runtime 0x1703000)
+[  28.882][v][osd/libass] libass API version: 0x1703000
+[  28.882][v][osd/libass] libass source: meson, commit: 0.17.3-16-g3bc0f669a9164f682fb99bbfb68407172e7d445b
+[  28.883][v][osd/libass] Shaper: FriBidi 1.0.15 (SIMPLE) HarfBuzz-ng 9.0.0 (COMPLEX)
+[  28.883][d][global] config path: 'subfont.ttf' -/-> 'D:/D-Software/mpv-hero/portable_config/subfont.ttf'
+[  28.883][d][global] config path: 'fonts.conf' -/-> 'D:/D-Software/mpv-hero/portable_config/fonts.conf'
+[  28.883][v][osd/libass] Setting up fonts...
+[  28.885][v][osd/libass] Loading font file 'D:/D-Software/mpv-hero/portable_config/fonts\uosc_icons.otf'
+[  28.886][v][osd/libass] Loading font file 'D:/D-Software/mpv-hero/portable_config/fonts\uosc_textures.ttf'
+[  28.887][v][osd/libass] Using font provider directwrite (with GDI)
+[  28.887][v][osd/libass] Done.
+[  28.899][v][osd/libass] fontselect: (sans-serif, 400, 0) -> ArialMT, 0, ArialMT
+[  28.904][d][cplayer] Run command: enable-section, flags=64, args=[name="mbtn_left", flags=""]
+[  28.904][d][cplayer] Run command: enable-section, flags=64, args=[name="mbtn_left_dbl", flags=""]
+[  28.906][d][vo/gpu-next/libplacebo] (Re)creating 256x144x0 texture with format r8: unknown
+[  28.906][d][cplayer] Run command: disable-section, flags=64, args=[name="mbtn_left"]
+[  28.906][d][cplayer] Run command: disable-section, flags=64, args=[name="mbtn_left_dbl"]
+[  32.826][v][ffmpeg] stream level seek from 67873219 to 68173966
+[  32.826][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  32.827][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  33.131][d][vo/gpu-next/libplacebo] (Re)creating 504x144x0 texture with format r8: unknown
+[  33.565][v][ffmpeg] stream level seek from 68239502 to 68515931
+[  33.565][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  33.582][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  33.872][v][ffmpeg] stream level seek from 68581467 to 68992366
+[  33.872][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  33.872][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  33.982][d][cplayer] Run command: script-binding, flags=73, args=[name="inputevent/MBTN_LEFT"]
+[  34.034][d][cplayer] Run command: script-binding, flags=73, args=[name="inputevent/MBTN_LEFT"]
+[  34.126][v][ffmpeg] stream level seek from 69057902 to 69621419
+[  34.126][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  34.127][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  34.133][v][ffmpeg] stream level seek from 69719723 to 69950883
+[  34.133][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  34.134][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  34.137][v][ffmpeg] stream level seek from 70016419 to 70565655
+[  34.137][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  34.137][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  34.298][d][cplayer] Run command: enable-section, flags=64, args=[name="mbtn_left", flags=""]
+[  34.298][d][cplayer] Run command: enable-section, flags=64, args=[name="mbtn_left_dbl", flags=""]
+[  34.327][d][cplayer] Run command: disable-section, flags=64, args=[name="mbtn_left"]
+[  34.327][d][cplayer] Run command: disable-section, flags=64, args=[name="mbtn_left_dbl"]
+[  34.487][v][ffmpeg] stream level seek from 70696727 to 71073244
+[  34.487][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  34.488][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  34.516][v][ffmpeg] stream level seek from 71138780 to 71534979
+[  34.516][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  34.517][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  34.540][v][ffmpeg] stream level seek from 71600515 to 71933358
+[  34.540][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  34.541][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  34.559][v][ffmpeg] stream level seek from 71998894 to 72426735
+[  34.559][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  34.559][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  34.575][v][ffmpeg] stream level seek from 72492271 to 72979702
+[  34.575][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  34.576][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  34.590][v][ffmpeg] stream level seek from 73078006 to 73400380
+[  34.590][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  34.591][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  34.642][v][ffmpeg] stream level seek from 73465916 to 74060452
+[  34.642][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  34.642][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  34.950][v][ffmpeg] stream level seek from 74191524 to 74474043
+[  34.950][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  34.971][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  34.974][v][ffmpeg] stream level seek from 74572347 to 74734500
+[  34.974][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  34.975][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  35.146][v][ffmpeg] stream level seek from 74800036 to 75144721
+[  35.146][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  35.147][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  35.506][v][ffmpeg] stream level seek from 75210257 to 75777048
+[  35.507][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  35.507][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  35.591][v][ffmpeg] stream level seek from 75875352 to 76222495
+[  35.592][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  35.592][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  35.716][v][ffmpeg] stream level seek from 76288031 to 76507829
+[  35.716][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  35.717][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  35.871][v][ffmpeg] stream level seek from 76573365 to 76798288
+[  35.871][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  35.872][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  35.911][v][ffmpeg] stream level seek from 76863824 to 77051823
+[  35.911][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  35.912][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  35.937][v][ffmpeg] stream level seek from 77117359 to 77714072
+[  35.938][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  35.938][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  35.981][v][ffmpeg] stream level seek from 77845144 to 78166883
+[  35.981][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  35.982][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  35.985][v][ffmpeg] stream level seek from 78232419 to 78455502
+[  35.986][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  35.986][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  36.010][v][ffmpeg] stream level seek from 78521038 to 78885688
+[  36.010][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  36.011][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  36.102][v][ffmpeg] stream level seek from 79016760 to 79336542
+[  36.102][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  36.103][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  36.159][v][ffmpeg] stream level seek from 79402078 to 79740874
+[  36.160][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  36.160][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  36.221][v][ffmpeg] stream level seek from 79806410 to 80388392
+[  36.221][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  36.221][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  36.326][v][ffmpeg] stream level seek from 80453928 to 80963730
+[  36.326][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  36.327][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  36.381][v][ffmpeg] stream level seek from 81029266 to 81984690
+[  36.381][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  36.381][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  36.621][v][ffmpeg] stream level seek from 82082994 to 82470977
+[  36.621][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  36.621][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  36.670][v][ffmpeg] stream level seek from 82536513 to 82868228
+[  36.670][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  36.671][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  36.762][v][ffmpeg] stream level seek from 82933764 to 83789242
+[  36.762][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  36.763][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  37.242][v][ffmpeg] stream level seek from 83887546 to 84407346
+[  37.242][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  37.243][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  37.294][v][ffmpeg] stream level seek from 84472882 to 84776326
+[  37.294][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  37.294][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  37.447][v][ffmpeg] stream level seek from 84841862 to 85052625
+[  37.447][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  37.448][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  37.450][v][ffmpeg] stream level seek from 85118161 to 85508334
+[  37.450][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  37.477][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  37.605][v][ffmpeg] stream level seek from 85639406 to 85981900
+[  37.605][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  37.605][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  37.622][v][ffmpeg] stream level seek from 86047436 to 86404252
+[  37.622][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  37.623][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  37.686][v][ffmpeg] stream level seek from 86469788 to 86906801
+[  37.686][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  37.686][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  37.696][v][ffmpeg] stream level seek from 86972337 to 87382433
+[  37.696][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  37.697][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  37.836][v][ffmpeg] stream level seek from 87447969 to 87871238
+[  37.836][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  37.837][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  37.948][v][ffmpeg] stream level seek from 87969542 to 88628526
+[  37.948][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  37.949][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  38.073][v][ffmpeg] stream level seek from 88759598 to 89084331
+[  38.073][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  38.074][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  38.087][v][ffmpeg] stream level seek from 89149867 to 89501316
+[  38.087][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  38.088][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  38.219][v][ffmpeg] stream level seek from 89599620 to 90046445
+[  38.219][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  38.219][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  38.275][v][ffmpeg] stream level seek from 90111981 to 90526336
+[  38.275][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  38.276][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  38.357][v][ffmpeg] stream level seek from 90591872 to 90970272
+[  38.357][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  38.358][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  38.398][v][ffmpeg] stream level seek from 91035808 to 91390402
+[  38.398][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  38.398][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  38.462][v][ffmpeg] stream level seek from 91455938 to 92074351
+[  38.462][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  38.462][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  39.184][v][ffmpeg] stream level seek from 92172655 to 92599150
+[  39.184][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  39.185][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  39.349][v][ffmpeg] stream level seek from 92664686 to 93159592
+[  39.349][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  39.350][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  39.352][v][ffmpeg] stream level seek from 93225128 to 93743415
+[  39.352][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  39.379][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  39.501][d][cplayer] Run command: enable-section, flags=64, args=[name="mbtn_left", flags=""]
+[  39.501][d][cplayer] Run command: enable-section, flags=64, args=[name="mbtn_left_dbl", flags=""]
+[  39.502][d][vo/gpu-next/libplacebo] (Re)creating 509x144x0 texture with format r8: unknown
+[  39.534][v][ffmpeg] stream level seek from 93841719 to 94126334
+[  39.534][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  39.535][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  39.557][v][ffmpeg] stream level seek from 94191870 to 94603643
+[  39.558][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  39.559][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  39.578][v][ffmpeg] stream level seek from 94669179 to 95150034
+[  39.578][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  39.579][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  39.608][v][ffmpeg] stream level seek from 95248338 to 95982480
+[  39.609][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  39.609][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  39.632][v][ffmpeg] stream level seek from 96080784 to 96547196
+[  39.633][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  39.633][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  39.889][v][ffmpeg] stream level seek from 96612732 to 97108853
+[  39.889][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  39.890][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  40.040][v][ffmpeg] stream level seek from 97174389 to 97842385
+[  40.040][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  40.041][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  40.055][d][cplayer] Run command: script-binding, flags=73, args=[name="uosc/__keybinding1"]
+[  40.105][v][ffmpeg] stream level seek from 97940689 to 98332062
+[  40.105][d][ffmpeg] tcp: Starting connection attempt to 127.0.0.1 port 50764
+[  40.105][d][ffmpeg] tcp: Successfully connected to 127.0.0.1 port 50764
+[  40.111][d][cplayer] Run command: script-binding, flags=73, args=[name="uosc/__keybinding1"]
+[  40.111][d][cplayer] Run command: quit, flags=73, args=[code="0"]
+[  40.136][d][ffmpeg/demuxer] mov,mp4,m4a,3gp,3g2,mj2: Reconfiguring buffers to size 5384354
+[  40.136][v][demux] Detected file format: mov,mp4,m4a,3gp,3g2,mj2 (libavformat)
+[  40.136][v][cplayer] Opening done: http://127.0.0.1:50764/mpv/da6a8530-8e66-4666-90cb-9b048029e843
+[  40.137][d][ffmpeg] AVIOContext: Statistics: 16137890 bytes read, 157 seeks
+[  40.138][v][cplayer] finished playback, success (reason 3)
+[  40.138][i][cplayer] Exiting... (Quit)
+[  40.138][d][select] Exiting...
+[  40.138][d][auto_profiles] Exiting...
+[  40.138][d][wheel_region_control] Exiting...
+[  40.138][d][delete_current_file] Exiting...
+[  40.138][d][menu] Exiting...
+[  40.138][d][blacklist_extensions] Exiting...
+[  40.138][d][average_frames] Exiting...
+[  40.138][d][dyn_menu] Exiting...
+[  40.138][d][dialog] Exiting...
+[  40.139][d][ytdl_hook] Exiting...
+[  40.139][d][console] Exiting...
+[  40.139][d][stats] Exiting...
+[  40.139][d][eof_restart_click] Exiting...
+[  40.139][d][inputevent] Exiting...
+[  40.141][d][command_palette] Exiting...
+[  40.141][d][clipshot] Exiting...
+[  40.141][d][SystemMediaTransportControls] Exiting...
+[  40.142][d][thumbfast] Exiting...
+[  40.142][d][uosc] Exiting...
+[  40.142][v][cplayer] Set property: user-data/middle_drag_pan/held=false -> 1
+[  40.143][v][cplayer] Set property: user-data/middle_drag_pan/wheel_used_during_hold=false -> 1
+[  40.143][v][cplayer] Set property: user-data/middle_drag_pan/held=false -> 1
+[  40.143][v][cplayer] Set property: user-data/middle_drag_pan/wheel_used_during_hold=false -> 1
+[  40.143][d][middle_drag_pan] Exiting...
+[  40.143][d][cplayer] Run command: script-message-to, flags=64, args=[target="dyn_menu", args="update", args="recent", args="{\"script_name\":\"dyn_menu\",\"submenu\":[{\"cmd\":\"loadfile \\\"http://127.0.0.1:50764/mpv/7a231222-f496-45c0-a9bc-5240c96896a4\\\"\",\"title\":\"7a231222-f496-45c0-a9bc-5240c96896a4\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:50764/mpv/9099ccca-a266-4156-8c85-5df333c04b3f\\\"\",\"title\":\"9099ccca-a266-4156-8c85-5df333c04b3f\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:49983/mpv/62c68a95-8a67-4ab2-afaf-1de22a148921\\\"\",\"title\":\"62c68a95-8a67-4ab2-afaf-1de22a148921\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:49983/mpv/16a6d5c1-c357-4a81-a9e2-502b5f467555\\\"\",\"title\":\"16a6d5c1-c357-4a81-a9e2-502b5f467555\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:49983/mpv/2f188090-f052-4bf2-afee-46ce399104a9\\\"\",\"title\":\"2f188090-f052-4bf2-afee-46ce399104a9\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:65436/mpv/4d019acd-eb73-4467-b398-0b5f5cbadc38\\\"\",\"title\":\"4d019acd-eb73-4467-b398-0b5f5cbadc38\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:65436/mpv/dfeacc40-0def-4956-bd81-6d989a976add\\\"\",\"title\":\"dfeacc40-0def-4956-bd81-6d989a976add\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:65105/mpv/9233322e-476c-4a3a-af64-abe926e5c613\\\"\",\"title\":\"9233322e-476c-4a3a-af64-abe926e5c613\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:65105/mpv/cd80beb7-e9e0-4887-af60-359d5a8cad27\\\"\",\"title\":\"cd80beb7-e9e0-4887-af60-359d5a8cad27\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:64837/mpv/35de1a35-3d85-489b-8150-e73a1a499a4f\\\"\",\"title\":\"35de1a35-3d85-489b-8150-e73a1a499a4f\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:63519/mpv/5af45319-a6c2-4f2c-9edd-b57c9386254b\\\"\",\"title\":\"5af45319-a6c2-4f2c-9edd-b57c9386254b\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:63089/mpv/0524a8ac-09ed-4687-b75e-98c951ccb162\\\"\",\"title\":\"0524a8ac-09ed-4687-b75e-98c951ccb162\\tHTTP\"},{\"cmd\":\"loadfile \\\"D:\\\\\\\\D-Download\\\\\\\\どうやったらこのスタイルになんの.mp4\\\"\",\"title\":\"どうやったらこのスタイルになんの\\tMP4\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:61407/mpv/f09ed12e-cca7-4f83-aecb-7166b7d6c3f2\\\"\",\"title\":\"f09ed12e-cca7-4f83-aecb-7166b7d6c3f2\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:61407/mpv/35d065b3-37ad-43ad-85c5-da66b60aaa9c\\\"\",\"title\":\"35d065b3-37ad-43ad-85c5-da66b60aaa9c\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:61152/mpv/a8e4e93f-705d-4a28-a2ce-72ab98982565\\\"\",\"title\":\"a8e4e93f-705d-4a28-a2ce-72ab98982565\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:61152/mpv/417102f9-030f-4b7c-8591-116119376e99\\\"\",\"title\":\"417102f9-030f-4b7c-8591-116119376e99\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:50478/mpv/ec4e6698-97b9-436a-a3c9-7e6933a8b53d\\\"\",\"title\":\"ec4e6698-97b9-436a-a3c9-7e6933a8b53d\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:50478/mpv/32ce9308-78d1-4433-937a-b7fb95ddd39c\\\"\",\"title\":\"32ce9308-78d1-4433-937a-b7fb95ddd39c\\tHTTP\"},{\"cmd\":\"loadfile \\\"http://127.0.0.1:50478/mpv/08d34b50-f456-483e-a066-07b47b55d884\\\"\",\"title\":\"08d34b50-f456-483e-a066-07b47b55d884\\tHTTP\"}],\"type\":\"submenu\",\"ready\":true}"]
+[  40.143][v][cplayer] Can't find script 'dyn_menu' to send message to.
+[  40.143][d][recentmenu] Exiting...
+[  40.144][d][persistent_ui_state] Exiting...
+[  40.269][v][vo/gpu-next/win32] uninit
