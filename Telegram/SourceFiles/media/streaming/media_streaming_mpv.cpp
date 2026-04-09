@@ -957,6 +957,19 @@ private:
 	}
 
 	OpenResult OpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
+		const auto media = item ? item->media() : nullptr;
+		const auto mediaDocument = media ? media->document() : nullptr;
+		MPV_STREAMING_LOG(("MPV Streaming: Open request passedDocument=%1 mediaDocument=%2 same=%3 passedSize=%4 mediaSize=%5 passedSupports=%6 mediaSupports=%7 passedLoader=%8 mediaLoader=%9 hasQualities=%10.")
+			.arg(qulonglong(document ? document->id : 0))
+			.arg(qulonglong(mediaDocument ? mediaDocument->id : 0))
+			.arg((document == mediaDocument) ? 1 : 0)
+			.arg(document ? document->size : 0)
+			.arg(mediaDocument ? mediaDocument->size : 0)
+			.arg(document ? document->supportsStreaming() : 0)
+			.arg(mediaDocument ? mediaDocument->supportsStreaming() : 0)
+			.arg(document ? document->useStreamingLoader() : 0)
+			.arg(mediaDocument ? mediaDocument->useStreamingLoader() : 0)
+			.arg(media ? media->hasQualitiesList() : 0));
 		if (!CanOpenVideoMessageInMpv(item, document)) {
 			return OpenResult::Unsupported;
 		}
