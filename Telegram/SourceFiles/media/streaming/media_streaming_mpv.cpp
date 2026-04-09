@@ -124,6 +124,7 @@ struct Entry {
 	not_null<DocumentData*> document;
 	Data::FileOrigin origin;
 	std::shared_ptr<Reader> reader;
+	std::shared_ptr<Reader> seekReader;
 	QString mime;
 	int64 size = 0;
 	std::atomic<int> activeRequests = 0;
@@ -131,6 +132,7 @@ struct Entry {
 	std::atomic<bool> headerFinalized = false;
 	std::atomic<int> mp4Layout = 0;
 	std::mutex fillMutex;
+	std::mutex seekFillMutex;
 };
 
 enum class Mp4Layout {
@@ -572,6 +574,9 @@ public:
 			_entries.erase(i);
 		}
 		removed->reader->stopStreaming(false);
+		if (removed->seekReader) {
+			removed->seekReader->stopStreaming(false);
+		}
 	}
 
 	static Server &instance() {
@@ -623,6 +628,9 @@ private:
 		}
 		for (const auto &entry : removed) {
 			entry->reader->stopStreaming(false);
+			if (entry->seekReader) {
+				entry->seekReader->stopStreaming(false);
+			}
 		}
 		const auto guard = std::lock_guard(_entriesMutex);
 		if (!_entries.empty()) {
@@ -788,12 +796,18 @@ private:
 				sequentialLayout
 				&& !initialSequentialOpen
 				&& (range.range.from > 0);
-			auto requestReader = std::shared_ptr<Reader>();
+			auto activeReader = entry->reader;
+			auto *fillMutex = &entry->fillMutex;
 			if (isolatedSeekRequest) {
-				requestReader = CreateDedicatedReaderFromWorker(
-					entry->document,
-					entry->origin);
-				if (requestReader) {
+				const auto lock = std::unique_lock(entry->seekFillMutex);
+				if (!entry->seekReader) {
+					entry->seekReader = CreateDedicatedReaderFromWorker(
+						entry->document,
+						entry->origin);
+				}
+				if (entry->seekReader) {
+					activeReader = entry->seekReader;
+					fillMutex = &entry->seekFillMutex;
 					MPV_STREAMING_LOG(("MPV Streaming: Using isolated seek reader for token %1 at offset %2.")
 						.arg(request.token)
 						.arg(range.range.from));
@@ -803,19 +817,7 @@ private:
 						.arg(range.range.from));
 				}
 			}
-			const auto activeReader = requestReader
-				? requestReader
-				: entry->reader;
-			auto requestFillMutex = std::mutex();
-			auto &fillMutex = requestReader
-				? requestFillMutex
-				: entry->fillMutex;
-			const auto requestReaderGuard = gsl::finally([&] {
-				if (requestReader) {
-					requestReader->stopStreaming(false);
-					requestReader->tryRemoveLoaderAsync();
-				}
-			});
+			const auto usingSeekReader = (activeReader != entry->reader);
 			auto retriedLoadFailure = false;
 			auto clientDisconnected = false;
 			while (left > 0) {
@@ -831,7 +833,7 @@ private:
 				const auto size = int(std::min(left, int64(chunkSize)));
 				auto buffer = QByteArray(size, Qt::Uninitialized);
 				{
-					const auto lock = std::unique_lock(fillMutex);
+					const auto lock = std::unique_lock(*fillMutex);
 					// Re-check after acquiring the lock.
 					socket.waitForReadyRead(0);
 					if (socket.state() != QAbstractSocket::ConnectedState) {
@@ -845,7 +847,7 @@ private:
 								reinterpret_cast<bytes::type*>(buffer.data()),
 								size))) {
 						const auto error = activeReader->streamingError();
-						if (!requestReader
+						if (!usingSeekReader
 							&& !retriedLoadFailure
 							&& error
 							&& (*error == Error::LoadFailed)
@@ -860,7 +862,7 @@ private:
 						return;
 					}
 					if (startedFromZero
-						&& !requestReader
+						&& !usingSeekReader
 						&& !entry->headerFinalized.exchange(true)) {
 						entry->reader->headerDone();
 					}
