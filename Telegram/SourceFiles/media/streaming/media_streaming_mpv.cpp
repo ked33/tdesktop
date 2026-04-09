@@ -49,6 +49,8 @@ constexpr auto kPathPrefixLength = 5;
 constexpr auto kHeadersLimit = 64 * 1024;
 constexpr auto kReadChunkSize = 256 * 1024;
 constexpr auto kInitialReadChunkSize = 64 * 1024;
+constexpr auto kMp4ProbeInitialSize = 256 * 1024;
+constexpr auto kMp4ProbeMaxSize = 4 * 1024 * 1024;
 constexpr auto kCleanupInterval = 60 * crl::time(1000);
 constexpr auto kTokenLifetime = 5 * 60 * crl::time(1000);
 constexpr auto kMpvLoaderPriority = 2;
@@ -135,6 +137,7 @@ enum class Mp4Layout {
 	Unknown = 0,
 	Fragmented = 1,
 	Regular = 2,
+	LargeFrontMoov = 3,
 };
 
 [[nodiscard]] QString StreamingErrorDebugString(std::optional<Error> error) {
@@ -450,6 +453,7 @@ enum class Mp4Layout {
 }
 
 [[nodiscard]] Mp4Layout DetectMp4Layout(const QByteArray &data) {
+	constexpr auto kLargeFrontMoovThreshold = quint64(2 * 1024 * 1024);
 	if (data.size() < 16) {
 		return Mp4Layout::Unknown;
 	}
@@ -459,12 +463,15 @@ enum class Mp4Layout {
 		auto headerSize = 0;
 		const auto atomSize = ReadMp4AtomSize(data, offset, &headerSize);
 		if ((headerSize == 0) || (atomSize < quint64(headerSize))) {
-			break;
+			return Mp4Layout::Unknown;
 		}
 		const auto type = QByteArray::fromRawData(
 			data.constData() + offset + 4, 4);
 		if (type == QByteArray("moov", 4)) {
 			sawMoov = true;
+			if (atomSize >= kLargeFrontMoovThreshold) {
+				return Mp4Layout::LargeFrontMoov;
+			}
 			const auto payloadOffset = offset + headerSize;
 			const auto available = std::max(data.size() - payloadOffset, 0);
 			const auto payloadSize = int(std::min(
@@ -484,11 +491,11 @@ enum class Mp4Layout {
 			return Mp4Layout::Regular;
 		}
 		if (atomSize > quint64(data.size() - offset)) {
-			break;
+			return Mp4Layout::Unknown;
 		}
 		offset += int(atomSize);
 	}
-	return sawMoov ? Mp4Layout::Regular : Mp4Layout::Unknown;
+	return Mp4Layout::Unknown;
 }
 
 class DescriptorServer final : public QTcpServer {
@@ -688,42 +695,53 @@ private:
 			}
 			// Probe the MP4 header once and keep the fallback narrow.
 			// Ordinary faststart files also place moov before mdat,
-			// but only fragmented files advertise mvex/moof and need
-			// the non-seekable sequential path to avoid seek storms.
+			// but only fragmented files or videos with a very large
+			// front moov should take the sequential-open fallback.
 			if (entry->mp4Layout.load() == 0
 				&& range.range.from == 0
 				&& range.satisfiable) {
-				constexpr auto kProbeSize = 256 * 1024;
-				const auto probeActual = int(std::min(
-					int64(kProbeSize), entry->size));
-				auto probe = QByteArray(probeActual, Qt::Uninitialized);
+				auto probeActual = int(std::min(
+					int64(kMp4ProbeInitialSize), entry->size));
+				const auto probeMax = int(std::min(
+					int64(kMp4ProbeMaxSize), entry->size));
+				auto detected = Mp4Layout::Unknown;
 				{
 					const auto lock = std::unique_lock(entry->fillMutex);
-					if (FillBuffer(
-							entry->reader.get(),
-							0,
-							bytes::span(
-								reinterpret_cast<bytes::type*>(probe.data()),
-								probeActual))) {
-						auto detected = DetectMp4Layout(probe);
-						if (detected == Mp4Layout::Unknown) {
+					while (true) {
+						auto probe = QByteArray(probeActual, Qt::Uninitialized);
+						if (!FillBuffer(
+								entry->reader.get(),
+								0,
+								bytes::span(
+									reinterpret_cast<bytes::type*>(probe.data()),
+									probeActual))) {
 							detected = Mp4Layout::Regular;
+							break;
 						}
-						entry->mp4Layout.store(int(detected));
-						MPV_STREAMING_LOG(("MPV Streaming: Detected MP4 layout: %1 for token %2.")
-							.arg(int(detected))
-							.arg(request.token));
-					} else {
-						entry->mp4Layout.store(int(Mp4Layout::Regular));
+						detected = DetectMp4Layout(probe);
+						if (detected != Mp4Layout::Unknown
+							|| probeActual >= probeMax) {
+							break;
+						}
+						probeActual = std::min(probeActual * 2, probeMax);
 					}
+					if (detected == Mp4Layout::Unknown) {
+						detected = Mp4Layout::Regular;
+					}
+					entry->mp4Layout.store(int(detected));
+					MPV_STREAMING_LOG(("MPV Streaming: Detected MP4 layout: %1 for token %2 after probing %3 bytes.")
+						.arg(int(detected))
+						.arg(request.token)
+						.arg(probeActual));
 				}
 			}
-			const auto fragmented =
-				(entry->mp4Layout.load() == int(Mp4Layout::Fragmented));
-			if (fragmented) {
+			const auto sequentialOpen =
+				(entry->mp4Layout.load() == int(Mp4Layout::Fragmented))
+				|| (entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov));
+			if (sequentialOpen) {
 				// Force non-seekable: 200 OK without Accept-Ranges.
-				// FFmpeg will read fragments sequentially instead of
-				// seeking to each moof atom individually.
+				// FFmpeg will read sequentially instead of opening with
+				// a seek storm across fragmented headers or a huge moov.
 				if (!SendResponse(socket, "200 OK", {
 					{ "Connection", "close" },
 					{ "Content-Length", QByteArray::number(entry->size) },
@@ -758,8 +776,8 @@ private:
 			if (request.method == "HEAD") {
 				return;
 			}
-			auto offset = fragmented ? int64(0) : range.range.from;
-			auto left = fragmented ? entry->size : range.range.length;
+			auto offset = sequentialOpen ? int64(0) : range.range.from;
+			auto left = sequentialOpen ? entry->size : range.range.length;
 			const auto startedFromZero = (offset == 0);
 			auto retriedLoadFailure = false;
 			auto clientDisconnected = false;
