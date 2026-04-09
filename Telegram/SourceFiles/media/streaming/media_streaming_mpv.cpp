@@ -784,6 +784,38 @@ private:
 			auto offset = initialSequentialOpen ? int64(0) : range.range.from;
 			auto left = initialSequentialOpen ? entry->size : range.range.length;
 			const auto startedFromZero = (offset == 0);
+			const auto isolatedSeekRequest =
+				sequentialLayout
+				&& !initialSequentialOpen
+				&& (range.range.from > 0);
+			auto requestReader = std::shared_ptr<Reader>();
+			if (isolatedSeekRequest) {
+				requestReader = CreateDedicatedReaderFromWorker(
+					entry->document,
+					entry->origin);
+				if (requestReader) {
+					MPV_STREAMING_LOG(("MPV Streaming: Using isolated seek reader for token %1 at offset %2.")
+						.arg(request.token)
+						.arg(range.range.from));
+				} else {
+					MPV_STREAMING_LOG(("MPV Streaming: Failed to create isolated seek reader for token %1 at offset %2, using primary reader.")
+						.arg(request.token)
+						.arg(range.range.from));
+				}
+			}
+			const auto activeReader = requestReader
+				? requestReader
+				: entry->reader;
+			auto requestFillMutex = std::mutex();
+			auto &fillMutex = requestReader
+				? requestFillMutex
+				: entry->fillMutex;
+			const auto requestReaderGuard = gsl::finally([&] {
+				if (requestReader) {
+					requestReader->stopStreaming(false);
+					requestReader->tryRemoveLoaderAsync();
+				}
+			});
 			auto retriedLoadFailure = false;
 			auto clientDisconnected = false;
 			while (left > 0) {
@@ -799,7 +831,7 @@ private:
 				const auto size = int(std::min(left, int64(chunkSize)));
 				auto buffer = QByteArray(size, Qt::Uninitialized);
 				{
-					const auto lock = std::unique_lock(entry->fillMutex);
+					const auto lock = std::unique_lock(fillMutex);
 					// Re-check after acquiring the lock.
 					socket.waitForReadyRead(0);
 					if (socket.state() != QAbstractSocket::ConnectedState) {
@@ -807,13 +839,14 @@ private:
 						break;
 					}
 					if (!FillBuffer(
-							entry->reader.get(),
+							activeReader.get(),
 							offset,
 							bytes::span(
 								reinterpret_cast<bytes::type*>(buffer.data()),
 								size))) {
-						const auto error = entry->reader->streamingError();
-						if (!retriedLoadFailure
+						const auto error = activeReader->streamingError();
+						if (!requestReader
+							&& !retriedLoadFailure
 							&& error
 							&& (*error == Error::LoadFailed)
 							&& RecoverEntryReader(entry, request.token, offset)) {
@@ -827,6 +860,7 @@ private:
 						return;
 					}
 					if (startedFromZero
+						&& !requestReader
 						&& !entry->headerFinalized.exchange(true)) {
 						entry->reader->headerDone();
 					}
