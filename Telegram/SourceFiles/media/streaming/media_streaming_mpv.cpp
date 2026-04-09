@@ -35,6 +35,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -131,6 +132,7 @@ struct Entry {
 	std::atomic<crl::time> lastActivity = 0;
 	std::atomic<bool> headerFinalized = false;
 	std::atomic<int> mp4Layout = 0;
+	std::atomic<std::uint64_t> latestSeekGeneration = 0;
 	std::mutex fillMutex;
 	std::mutex seekFillMutex;
 };
@@ -818,9 +820,24 @@ private:
 				}
 			}
 			const auto usingSeekReader = (activeReader != entry->reader);
+			const auto seekGenerationManaged =
+				(entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov))
+				&& isolatedSeekRequest;
+			const auto seekGeneration = seekGenerationManaged
+				? (entry->latestSeekGeneration.fetch_add(1) + 1)
+				: std::uint64_t(0);
+			const auto seekSuperseded = [&] {
+				return seekGenerationManaged
+					&& (entry->latestSeekGeneration.load() != seekGeneration);
+			};
 			auto retriedLoadFailure = false;
 			auto clientDisconnected = false;
+			auto supersededSeek = false;
 			while (left > 0) {
+				if (seekSuperseded()) {
+					supersededSeek = true;
+					break;
+				}
 				// Check if client disconnected before acquiring the lock.
 				socket.waitForReadyRead(0);
 				if (socket.state() != QAbstractSocket::ConnectedState) {
@@ -834,6 +851,10 @@ private:
 				auto buffer = QByteArray(size, Qt::Uninitialized);
 				{
 					const auto lock = std::unique_lock(*fillMutex);
+					if (seekSuperseded()) {
+						supersededSeek = true;
+						break;
+					}
 					// Re-check after acquiring the lock.
 					socket.waitForReadyRead(0);
 					if (socket.state() != QAbstractSocket::ConnectedState) {
@@ -867,6 +888,10 @@ private:
 						entry->reader->headerDone();
 					}
 				} // fillMutex released here
+				if (seekSuperseded()) {
+					supersededSeek = true;
+					break;
+				}
 				if (!WriteAll(socket, buffer.constData(), buffer.size())) {
 					const auto error = socket.error();
 					if (error != QAbstractSocket::RemoteHostClosedError) {
@@ -883,6 +908,14 @@ private:
 				offset += size;
 				left -= size;
 				entry->lastActivity = crl::now();
+			}
+			if (supersededSeek) {
+				MPV_STREAMING_LOG(("MPV Streaming: Superseded seek request token=%1 generation=%2 offset=%3 latest=%4.")
+					.arg(request.token)
+					.arg(qulonglong(seekGeneration))
+					.arg(range.range.from)
+					.arg(qulonglong(entry->latestSeekGeneration.load())));
+				return;
 			}
 			// Pre-fill cache sequentially after client disconnect.
 			// When a fragmented MP4 is opened, the demuxer scans
