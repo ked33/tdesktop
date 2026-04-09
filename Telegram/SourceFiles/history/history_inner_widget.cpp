@@ -738,10 +738,10 @@ bool HistoryInner::startModifierClick(
 		if (!item->hasDirectLink()) {
 			return false;
 		}
+	} else if (view && view->media() && view->media()->getDocument()) {
+		document = view->media()->getDocument();
 	} else if (_dragStateItem && _dragStateItem->media()) {
 		document = _dragStateItem->media()->document();
-	} else if (view && view->media()) {
-		document = view->media()->getDocument();
 	} else if (item->media()) {
 		document = item->media()->document();
 	}
@@ -802,9 +802,11 @@ bool HistoryInner::finishModifierClick(
 	}
 
 	const auto resolvedItem = _controller->session().data().message(itemId);
-	const auto resolvedDocument = (resolvedItem && resolvedItem->media())
+	const auto resolvedDocument = fallbackDocument
+		? fallbackDocument
+		: (resolvedItem && resolvedItem->media())
 		? resolvedItem->media()->document()
-		: fallbackDocument;
+		: nullptr;
 	const auto result = ::Media::Streaming::Mpv::OpenVideoMessageInMpv(
 		resolvedItem,
 		resolvedDocument);
@@ -3158,6 +3160,8 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			const auto detailsView = item ? viewByItem(item) : nullptr;
 			const auto streamDocument = lnkDocument
 				? lnkDocument
+				: (detailsView && detailsView->media())
+				? detailsView->media()->getDocument()
 				: (item && item->media())
 				? item->media()->document()
 				: nullptr;
@@ -3474,7 +3478,9 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			const auto detailsItem = partItemOrLeader;
 			const auto detailsView = detailsItem ? viewByItem(detailsItem) : nullptr;
 			const auto mpvItem = partItemOrLeader;
-			const auto mpvDocument = (mpvItem && mpvItem->media())
+			const auto mpvDocument = (detailsView && detailsView->media())
+				? detailsView->media()->getDocument()
+				: (mpvItem && mpvItem->media())
 				? mpvItem->media()->document()
 				: nullptr;
 			const auto actionText = link
