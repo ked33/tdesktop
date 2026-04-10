@@ -205,6 +205,8 @@
     "lng_context_stream_in_mpv": "Stream in mpv",
     "lng_context_stream_in_mpv_not_found": "mpv was not found in PATH.",
     "lng_context_stream_in_mpv_failed": "Failed to start mpv streaming.",
+    "lng_context_stream_in_mpv_local_temp": "MPV Local Temp Play",
+    "lng_context_stream_in_mpv_local_temp_failed": "Failed to start mpv local temp playback.",
     "lng_settings_mpv_debug_logs": "Write MPV debug logs to log.txt",
     "lng_settings_mpv_path": "mpv Path",
     "lng_settings_mpv_path_desc": "Leave empty to use mpv from PATH.",
