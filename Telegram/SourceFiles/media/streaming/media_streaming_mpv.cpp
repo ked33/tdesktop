@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_reader.h"
 #include "logs.h"
 #include "settings.h"
+#include "storage/storage_account.h"
 
 #include <QtCore/QFileInfo>
 #include <QtCore/QDir>
