@@ -53,6 +53,7 @@ constexpr auto kInitialReadChunkSize = 64 * 1024;
 constexpr auto kMp4ProbeInitialSize = 256 * 1024;
 constexpr auto kMp4ProbeMaxSize = 4 * 1024 * 1024;
 constexpr auto kCompatibilitySeekBootstrapBytes = 4 * 1024 * 1024;
+constexpr auto kCompatibilityLateSeekMinOffset = 128 * 1024 * 1024;
 constexpr auto kCompatibilitySeekWaitTimeout = 4000;
 constexpr auto kCompatibilitySeekWaitStep = 10;
 constexpr auto kCleanupInterval = 60 * crl::time(1000);
@@ -527,6 +528,13 @@ enum class Mp4Layout {
 		&& entry->preferCompatibilityForLargeFrontMoov;
 }
 
+[[nodiscard]] bool AllowsCompatibilityLateSeekOffset(
+		const std::shared_ptr<Entry> &entry,
+		int64 offset) {
+	return UsesCompatibilityLateSeekGate(entry)
+		&& (offset >= kCompatibilityLateSeekMinOffset);
+}
+
 void MarkCompatibilityLateSeekReady(
 		const std::shared_ptr<Entry> &entry,
 		const QString &token,
@@ -868,7 +876,17 @@ private:
 				(entry->mp4Layout.load() == int(Mp4Layout::Fragmented));
 			const auto compatibilityLateSeekGate =
 				UsesCompatibilityLateSeekGate(entry);
+			const auto compatibilityFarSeek =
+				AllowsCompatibilityLateSeekOffset(entry, range.range.from);
 			if (compatibilityLateSeekGate
+				&& (range.range.from > 0)
+				&& !compatibilityFarSeek) {
+				MPV_STREAMING_LOG(("MPV Streaming: Keeping compatibility sequential path for token %1 offset=%2 minOffset=%3.")
+					.arg(request.token)
+					.arg(range.range.from)
+					.arg(kCompatibilityLateSeekMinOffset));
+			}
+			if (compatibilityFarSeek
 				&& (range.range.from > 0)
 				&& !WaitForCompatibilityLateSeekReady(
 					entry,
@@ -881,13 +899,16 @@ private:
 				});
 				return;
 			}
-			const auto sequentialLayout =
+			const auto compatibilitySequentialRequest =
 				compatibilitySequentialLayout
+				|| (compatibilityLateSeekGate && !compatibilityFarSeek);
+			const auto sequentialLayout =
+				compatibilitySequentialRequest
 				|| (entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov));
 			const auto initialSequentialOpen =
 				sequentialLayout
 				&& (range.range.from == 0);
-			if (compatibilitySequentialLayout) {
+			if (compatibilitySequentialRequest) {
 				if (!SendResponse(socket, "200 OK", {
 					{ "Connection", "close" },
 					{ "Content-Length", QByteArray::number(entry->size) },
@@ -931,12 +952,12 @@ private:
 			if (request.method == "HEAD") {
 				return;
 			}
-			auto offset = compatibilitySequentialLayout
+			auto offset = compatibilitySequentialRequest
 				? int64(0)
 				: initialSequentialOpen
 				? int64(0)
 				: range.range.from;
-			auto left = compatibilitySequentialLayout
+			auto left = compatibilitySequentialRequest
 				? entry->size
 				: initialSequentialOpen
 				? entry->size
@@ -944,7 +965,7 @@ private:
 			const auto startedFromZero = (offset == 0);
 			const auto isolatedSeekRequest =
 				sequentialLayout
-				&& !compatibilitySequentialLayout
+				&& !compatibilitySequentialRequest
 				&& !initialSequentialOpen
 				&& (range.range.from > 0);
 			auto activeReader = entry->reader;
