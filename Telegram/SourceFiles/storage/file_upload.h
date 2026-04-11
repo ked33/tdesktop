@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer.h"
 #include "base/weak_ptr.h"
 #include "mtproto/facade.h"
+#include "storage/storage_non_premium_delay.h"
 
 class ApiWrap;
 struct FilePrepareResult;
@@ -46,6 +47,11 @@ struct UploadSecureDone {
 	FullMsgId fullId;
 	uint64 fileId = 0;
 	int partsCount = 0;
+};
+
+struct UploadNonPremiumDelay {
+	FullMsgId fullId;
+	NonPremiumDelayInfo info;
 };
 
 class Uploader final : public base::has_weak_ptr {
@@ -93,7 +99,7 @@ public:
 		return _secureFailed.events();
 	}
 
-	[[nodiscard]] rpl::producer<FullMsgId> nonPremiumDelays() const {
+	[[nodiscard]] rpl::producer<UploadNonPremiumDelay> nonPremiumDelays() const {
 		return _nonPremiumDelays.events();
 	}
 
@@ -184,7 +190,7 @@ private:
 	rpl::event_stream<FullMsgId> _photoFailed;
 	rpl::event_stream<FullMsgId> _documentFailed;
 	rpl::event_stream<FullMsgId> _secureFailed;
-	rpl::event_stream<FullMsgId> _nonPremiumDelays;
+	rpl::event_stream<UploadNonPremiumDelay> _nonPremiumDelays;
 
 	rpl::lifetime _lifetime;
 

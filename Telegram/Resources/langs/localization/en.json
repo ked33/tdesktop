@@ -211,5 +211,9 @@
     "lng_settings_mpv_path": "mpv Path",
     "lng_settings_mpv_path_desc": "Leave empty to use mpv from PATH.",
     "lng_settings_mpv_path_placeholder": "Path to mpv.exe",
-    "lng_settings_mpv_path_from_path": "Use PATH"
+    "lng_settings_mpv_path_from_path": "Use PATH",
+    "lng_settings_flood_premium_wait_title": "FLOOD_PREMIUM_WAIT_x",
+    "lng_settings_flood_premium_wait_placeholder": "Leave empty to keep the server wait time",
+    "lng_settings_flood_premium_wait_default": "Default",
+    "lng_settings_flood_premium_wait_invalid": "Please enter a non-negative integer in milliseconds."
 	}
