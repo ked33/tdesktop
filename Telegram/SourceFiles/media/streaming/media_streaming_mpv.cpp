@@ -901,7 +901,9 @@ private:
 			}
 			const auto compatibilitySequentialRequest =
 				compatibilitySequentialLayout
-				|| (compatibilityLateSeekGate && !compatibilityFarSeek);
+				|| (compatibilityLateSeekGate
+					&& (range.range.from > 0)
+					&& !compatibilityFarSeek);
 			const auto sequentialLayout =
 				compatibilitySequentialRequest
 				|| (entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov));
