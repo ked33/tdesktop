@@ -106,6 +106,26 @@ private:
 
 };
 
+class FloodPremiumWaitBox : public Ui::BoxContent {
+public:
+	FloodPremiumWaitBox(QWidget *parent);
+
+	static QString DelayLabel(const QString &value);
+
+protected:
+	void prepare() override;
+
+	void setInnerFocus() override;
+
+	void resizeEvent(QResizeEvent *e) override;
+
+private:
+	void save();
+
+	object_ptr<Ui::InputField> _delay = { nullptr };
+
+};
+
 class BitrateController : public Ui::BoxContent {
 public:
 	BitrateController(QWidget *parent);

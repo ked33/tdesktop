@@ -26,6 +26,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/call_delayed.h"
 #include "base/timer.h"
 #include "base/network_reachability.h"
+#include "settings.h"
+#include <algorithm>
 
 namespace MTP {
 namespace {
@@ -95,12 +97,14 @@ public:
 	void badConfigurationError();
 	void syncHttpUnixtime();
 
-	void restartedByTimeout(ShiftedDcId shiftedDcId);
-	[[nodiscard]] rpl::producer<ShiftedDcId> restartsByTimeout() const;
+		void restartedByTimeout(ShiftedDcId shiftedDcId);
+		[[nodiscard]] rpl::producer<ShiftedDcId> restartsByTimeout() const;
 
-	[[nodiscard]] auto nonPremiumDelayedRequests() const
-	-> rpl::producer<mtpRequestId>;
-	[[nodiscard]] rpl::producer<> frozenErrorReceived() const;
+		[[nodiscard]] auto nonPremiumDelayedRequests() const
+			-> rpl::producer<std::pair<
+				mtpRequestId,
+				Storage::NonPremiumDelayInfo>>;
+		[[nodiscard]] rpl::producer<> frozenErrorReceived() const;
 
 	void restart();
 	void restart(ShiftedDcId shiftedDcId);
@@ -286,8 +290,11 @@ private:
 	Fn<void(ShiftedDcId shiftedDcId, int32 state)> _stateChangedHandler;
 	Fn<void(ShiftedDcId shiftedDcId)> _sessionResetHandler;
 
-	rpl::event_stream<mtpRequestId> _nonPremiumDelayedRequests;
-	rpl::event_stream<> _frozenErrorReceived;
+		rpl::event_stream<std::pair<
+			mtpRequestId,
+			Storage::NonPremiumDelayInfo
+		>> _nonPremiumDelayedRequests;
+		rpl::event_stream<> _frozenErrorReceived;
 
 	base::Timer _checkDelayedTimer;
 
@@ -560,7 +567,7 @@ rpl::producer<ShiftedDcId> Instance::Private::restartsByTimeout() const {
 }
 
 auto Instance::Private::nonPremiumDelayedRequests() const
--> rpl::producer<mtpRequestId> {
+-> rpl::producer<std::pair<mtpRequestId, Storage::NonPremiumDelayInfo>> {
 	return _nonPremiumDelayedRequests.events();
 }
 
@@ -1488,52 +1495,75 @@ bool Instance::Private::onErrorDefault(
 			_dependentRequests.emplace(requestId, request->after->requestId);
 		}
 		return true;
-	} else if (code < 0
-		|| code >= 500
-		|| (m1 = FloodWaitRegExp.match(type)).hasMatch()
-		|| (m2 = FloodPremiumWaitRegExp.match(type)).hasMatch()
-		|| ((m3 = SlowmodeWaitRegExp.match(type)).hasMatch()
-			&& m3.captured(1).toInt() < 3)) {
-		if (!requestId) {
-			return false;
-		}
-
-		auto secs = 1;
-		auto nonPremiumDelay = false;
-		if (code < 0 || code >= 500) {
-			const auto it = _requestsDelays.find(requestId);
-			if (it != _requestsDelays.cend()) {
-				secs = (it->second > 60) ? it->second : (it->second *= 2);
-			} else {
-				_requestsDelays.emplace(requestId, secs);
+		} else if (code < 0
+			|| code >= 500
+			|| (m1 = FloodWaitRegExp.match(type)).hasMatch()
+			|| (m2 = FloodPremiumWaitRegExp.match(type)).hasMatch()
+			|| ((m3 = SlowmodeWaitRegExp.match(type)).hasMatch()
+				&& m3.captured(1).toInt() < 3)) {
+			if (!requestId) {
+				return false;
 			}
-		} else if (m1.hasMatch()) {
-			secs = m1.captured(1).toInt();
-//			if (secs >= 60) return false;
-		} else if (m2.hasMatch()) {
-			secs = m2.captured(1).toInt();
-			nonPremiumDelay = true;
-		} else if (m3.hasMatch()) {
-			secs = m3.captured(1).toInt();
-		}
-		auto sendAt = crl::now() + secs * 1000 + 10;
-		auto it = _delayedRequests.begin(), e = _delayedRequests.end();
-		for (; it != e; ++it) {
-			if (it->first == requestId) {
-				return true;
-			} else if (it->second > sendAt) {
-				break;
+
+			auto secs = 1;
+			auto serverWaitSeconds = 0;
+			auto overrideWaitMs = -1;
+			auto nonPremiumDelay = false;
+			if (code < 0 || code >= 500) {
+				const auto it = _requestsDelays.find(requestId);
+				if (it != _requestsDelays.cend()) {
+					secs = (it->second > 60) ? it->second : (it->second *= 2);
+				} else {
+					_requestsDelays.emplace(requestId, secs);
+				}
+			} else if (m1.hasMatch()) {
+				secs = m1.captured(1).toInt();
+	//			if (secs >= 60) return false;
+			} else if (m2.hasMatch()) {
+				secs = m2.captured(1).toInt();
+				serverWaitSeconds = secs;
+				nonPremiumDelay = true;
+			} else if (m3.hasMatch()) {
+				secs = m3.captured(1).toInt();
 			}
-		}
-		_delayedRequests.insert(it, std::make_pair(requestId, sendAt));
+			auto appliedWaitMs = secs * 1000;
+			if (nonPremiumDelay) {
+				const auto overrideValue = GetEnhancedString(
+					u"flood_premium_wait_override_ms"_q).trimmed();
+				if (!overrideValue.isEmpty()) {
+					auto ok = false;
+					const auto parsed = overrideValue.toInt(&ok);
+					if (ok) {
+						overrideWaitMs = std::max(parsed, 0);
+						appliedWaitMs = overrideWaitMs;
+					}
+				}
+			}
+			auto sendAt = crl::now() + appliedWaitMs + 10;
+			auto it = _delayedRequests.begin(), e = _delayedRequests.end();
+			for (; it != e; ++it) {
+				if (it->first == requestId) {
+					return true;
+				} else if (it->second > sendAt) {
+					break;
+				}
+			}
+			_delayedRequests.insert(it, std::make_pair(requestId, sendAt));
 
-		checkDelayedRequests();
+			checkDelayedRequests();
 
-		if (nonPremiumDelay) {
-			_nonPremiumDelayedRequests.fire_copy(requestId);
-		}
+			if (nonPremiumDelay) {
+				_nonPremiumDelayedRequests.fire_copy({
+					requestId,
+					{
+						.serverWaitSeconds = serverWaitSeconds,
+						.overrideWaitMs = overrideWaitMs,
+						.appliedWaitMs = appliedWaitMs + 10,
+					},
+				});
+			}
 
-		return true;
+			return true;
 	} else if ((code == 401 && type != u"AUTH_KEY_PERM_EMPTY"_q)
 		|| (badGuestDc && _badGuestDcRequests.find(requestId) == _badGuestDcRequests.cend())) {
 		auto dcWithShift = ShiftedDcId(0);
@@ -1924,7 +1954,8 @@ rpl::producer<ShiftedDcId> Instance::restartsByTimeout() const {
 	return _private->restartsByTimeout();
 }
 
-rpl::producer<mtpRequestId> Instance::nonPremiumDelayedRequests() const {
+rpl::producer<std::pair<mtpRequestId, Storage::NonPremiumDelayInfo>>
+Instance::nonPremiumDelayedRequests() const {
 	return _private->nonPremiumDelayedRequests();
 }
 
