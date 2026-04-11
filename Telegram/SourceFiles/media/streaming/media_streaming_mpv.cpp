@@ -20,11 +20,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_reader.h"
 #include "logs.h"
 #include "settings.h"
-#include "storage/storage_account.h"
 
 #include <QtCore/QFileInfo>
-#include <QtCore/QDir>
-#include <QtCore/QFile>
 #include <QtCore/QProcess>
 #include <QtCore/QProcessEnvironment>
 #include <QtCore/QStringList>
@@ -58,8 +55,6 @@ constexpr auto kMp4ProbeMaxSize = 4 * 1024 * 1024;
 constexpr auto kCleanupInterval = 60 * crl::time(1000);
 constexpr auto kTokenLifetime = 5 * 60 * crl::time(1000);
 constexpr auto kMpvLoaderPriority = 2;
-constexpr auto kLocalTempStartBytes = 4 * 1024 * 1024;
-constexpr auto kLocalTempPollInterval = crl::time(400);
 
 [[nodiscard]] bool MpvDebugLogsEnabled() {
 	return GetEnhancedBool("mpv_streaming_debug_logs");
@@ -143,26 +138,6 @@ struct Entry {
 	bool preferCompatibilityForLargeFrontMoov = false;
 	std::mutex fillMutex;
 	std::mutex seekFillMutex;
-};
-
-struct LocalTempPlaybackState {
-	LocalTempPlaybackState(
-		not_null<DocumentData*> document,
-		Data::FileOrigin origin,
-		QString program,
-		QString tempPath)
-	: document(document)
-	, origin(origin)
-	, program(std::move(program))
-	, tempPath(std::move(tempPath)) {
-	}
-
-	not_null<DocumentData*> document;
-	Data::FileOrigin origin;
-	QString program;
-	QString tempPath;
-	base::Timer timer;
-	bool launched = false;
 };
 
 enum class Mp4Layout {
@@ -276,49 +251,6 @@ enum class Mp4Layout {
 	return result;
 }
 
-[[nodiscard]] auto &LocalTempPlaybackStates() {
-	static auto result = std::map<std::uint64_t, std::shared_ptr<LocalTempPlaybackState>>();
-	return result;
-}
-
-[[nodiscard]] std::uint64_t LocalTempPlaybackKey(
-		not_null<DocumentData*> document) {
-	return std::uint64_t(document->id);
-}
-
-[[nodiscard]] QString LocalTempPlaybackPath(
-		not_null<DocumentData*> document) {
-	auto path = document->session().local().tempDirectory();
-	if (path.isEmpty()) {
-		return QString();
-	}
-	auto dir = QDir(path);
-	if (!dir.exists() && !dir.mkpath(".")) {
-		return QString();
-	}
-	auto name = QFileInfo(document->filename()).fileName();
-	if (name.isEmpty()) {
-		name = QStringLiteral("mpv-local-%1.mp4").arg(qulonglong(document->id));
-	} else {
-		name = QStringLiteral("mpv-local-%1-%2")
-			.arg(qulonglong(document->id))
-			.arg(name);
-	}
-	return dir.filePath(name);
-}
-
-[[nodiscard]] QString CurrentLocalPlaybackPath(
-		not_null<DocumentData*> document,
-		const QString &fallback) {
-	if (const auto filepath = document->filepath(true); !filepath.isEmpty()) {
-		return filepath;
-	}
-	if (const auto loadingPath = document->loadingFilePath(); !loadingPath.isEmpty()) {
-		return loadingPath;
-	}
-	return fallback;
-}
-
 [[nodiscard]] bool StartDetachedPlayer(
 		const QString &program,
 		const QString &target) {
@@ -328,43 +260,6 @@ enum class Mp4Layout {
 	process.setWorkingDirectory(QFileInfo(program).absolutePath());
 	process.setProcessEnvironment(LaunchEnvironment());
 	return process.startDetached();
-}
-
-void ForgetLocalTempPlayback(not_null<DocumentData*> document) {
-	LocalTempPlaybackStates().erase(LocalTempPlaybackKey(document));
-}
-
-void CheckLocalTempPlayback(const std::shared_ptr<LocalTempPlaybackState> &state) {
-	if (state->launched) {
-		return;
-	}
-	const auto path = CurrentLocalPlaybackPath(state->document, state->tempPath);
-	const auto info = QFileInfo(path);
-	const auto ready = !path.isEmpty()
-		&& info.exists()
-		&& (info.size() >= kLocalTempStartBytes || !state->document->loading());
-	if (ready) {
-		MPV_STREAMING_LOG(("MPV Streaming: Launching local temp playback '%1' with path %2.")
-			.arg(state->program)
-			.arg(path));
-		state->launched = StartDetachedPlayer(state->program, path);
-		if (!state->launched) {
-			MPV_STREAMING_LOG(("MPV Streaming: Failed to start local temp playback '%1' with path %2.")
-				.arg(state->program)
-				.arg(path));
-		}
-		ForgetLocalTempPlayback(state->document);
-		return;
-	}
-	if (!state->document->loading()
-		&& state->document->filepath(true).isEmpty()
-		&& !info.exists()) {
-		MPV_STREAMING_LOG(("MPV Streaming: Local temp playback did not start downloading for document %1.")
-			.arg(qulonglong(state->document->id)));
-		ForgetLocalTempPlayback(state->document);
-		return;
-	}
-	state->timer.callOnce(kLocalTempPollInterval);
 }
 
 [[nodiscard]] QByteArray ReadHeaders(QTcpSocket &socket) {
@@ -1183,55 +1078,6 @@ private:
 			Server::instance().remove(launch.token);
 			return OpenResult::Failed;
 		}
-		return OpenResult::Success;
-	}
-
-	OpenResult OpenVideoMessageInMpvLocalTemp(HistoryItem *item, DocumentData *document) {
-		if (!CanOpenVideoMessageInMpv(item, document)) {
-			return OpenResult::Unsupported;
-		}
-		const auto program = ResolveProgram();
-		if (program.isEmpty()) {
-			MPV_STREAMING_LOG(("MPV Streaming: Player not found."));
-			return OpenResult::PlayerNotFound;
-		}
-		const auto directPath = document->filepath(true);
-		if (!directPath.isEmpty()) {
-			MPV_STREAMING_LOG(("MPV Streaming: Launching '%1' with existing local path %2.")
-				.arg(program)
-				.arg(directPath));
-			return StartDetachedPlayer(program, directPath)
-				? OpenResult::Success
-				: OpenResult::Failed;
-		}
-		const auto tempPath = LocalTempPlaybackPath(document);
-		if (tempPath.isEmpty()) {
-			MPV_STREAMING_LOG(("MPV Streaming: Failed to resolve temp path for document %1.")
-				.arg(qulonglong(document->id)));
-			return OpenResult::Failed;
-		}
-		if (const auto i = LocalTempPlaybackStates().find(LocalTempPlaybackKey(document));
-			i != end(LocalTempPlaybackStates())) {
-			CheckLocalTempPlayback(i->second);
-			return OpenResult::Success;
-		}
-		const auto origin = Data::FileOrigin(item->fullId());
-		if (!document->loading()) {
-			document->save(origin, tempPath);
-		}
-		auto state = std::make_shared<LocalTempPlaybackState>(
-			document,
-			origin,
-			program,
-			tempPath);
-		state->timer.setCallback(crl::guard(&document->session(), [state] {
-			CheckLocalTempPlayback(state);
-		}));
-		LocalTempPlaybackStates().emplace(LocalTempPlaybackKey(document), state);
-		MPV_STREAMING_LOG(("MPV Streaming: Scheduled local temp playback for document %1 path=%2.")
-			.arg(qulonglong(document->id))
-			.arg(tempPath));
-		CheckLocalTempPlayback(state);
 		return OpenResult::Success;
 	}
 
