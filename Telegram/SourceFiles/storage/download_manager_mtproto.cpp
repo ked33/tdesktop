@@ -896,13 +896,13 @@ void DownloadMtprotoTask::subscribeToNonPremiumLimit() {
 		return;
 	}
 	_owner->api().instance().nonPremiumDelayedRequests(
-	) | rpl::on_next([=](mtpRequestId id) {
-		if (_sentRequests.contains(id)) {
+	) | rpl::on_next([=](const auto &data) {
+		if (_sentRequests.contains(data.first)) {
 			if (const auto documentId = objectId()) {
 				const auto type = v::get<StorageFileLocation>(
 					_location.data).type();
 				if (type == StorageFileLocation::Type::Document) {
-					_owner->notifyNonPremiumDelay(documentId);
+					_owner->notifyNonPremiumDelay(documentId, data.second);
 				}
 			}
 		}

@@ -76,6 +76,34 @@ namespace Settings {
 			Ui::show(Box<DownloadBoostBox>());
 		});
 
+		const auto currentFloodPremiumWaitLabel = [] {
+			return FloodPremiumWaitBox::DelayLabel(
+				GetEnhancedString("flood_premium_wait_override_ms"));
+		};
+		auto floodPremiumWaitValue = rpl::single(
+			currentFloodPremiumWaitLabel()
+		) | rpl::then(
+			_FloodPremiumWaitChanged.events()
+		) | rpl::map([=] {
+			return currentFloodPremiumWaitLabel();
+		});
+		auto floodPremiumWaitButton = AddButtonWithLabel(
+			inner,
+			tr::lng_settings_flood_premium_wait_title(),
+			std::move(floodPremiumWaitValue),
+			st::settingsButtonNoIcon
+		);
+		floodPremiumWaitButton->setColorOverride(QColor(255, 0, 0));
+		floodPremiumWaitButton->events(
+		) | rpl::on_next([=](not_null<QEvent*> e) {
+			if (e->type() == QEvent::UpdateLater) {
+				_FloodPremiumWaitChanged.fire({});
+			}
+		}, container->lifetime());
+		floodPremiumWaitButton->addClickHandler([=] {
+			Ui::show(Box<FloodPremiumWaitBox>());
+		});
+
 		AddSkip(container);
 	}
 

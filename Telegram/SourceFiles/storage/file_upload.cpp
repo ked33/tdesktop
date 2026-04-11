@@ -107,6 +107,7 @@ struct Uploader::Request {
 	bool docPart = false;
 	bool bigPart = false;
 	bool nonPremiumDelayed = false;
+	NonPremiumDelayInfo nonPremiumDelayInfo;
 };
 
 Uploader::Entry::Entry(
@@ -217,10 +218,11 @@ Uploader::Uploader(not_null<ApiWrap*> api)
 	}, _lifetime);
 
 	_api->instance().nonPremiumDelayedRequests(
-	) | rpl::on_next([=](mtpRequestId id) {
-		const auto i = _requests.find(id);
+	) | rpl::on_next([=](const auto &data) {
+		const auto i = _requests.find(data.first);
 		if (i != end(_requests)) {
 			i->second.nonPremiumDelayed = true;
+			i->second.nonPremiumDelayInfo = data.second;
 		}
 	}, _lifetime);
 }
@@ -811,7 +813,10 @@ void Uploader::partLoaded(const MTPBool &result, mtpRequestId requestId) {
 		});
 	}
 	if (request.nonPremiumDelayed) {
-		_nonPremiumDelays.fire_copy(itemId);
+		_nonPremiumDelays.fire_copy({
+			.fullId = itemId,
+			.info = request.nonPremiumDelayInfo,
+		});
 	}
 
 	if (!_queue.empty() && itemId == _queue.front().itemId) {
