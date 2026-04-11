@@ -761,26 +761,16 @@ private:
 						.arg(probeActual));
 				}
 			}
-			const auto mp4Layout = entry->mp4Layout.load();
-			const auto fragmentedLayout =
-				(mp4Layout == int(Mp4Layout::Fragmented));
-			const auto largeFrontMoovLayout =
-				(mp4Layout == int(Mp4Layout::LargeFrontMoov));
-			const auto compatibilityInitialLargeFrontMoov =
-				largeFrontMoovLayout
-				&& entry->preferCompatibilityForLargeFrontMoov
-				&& (range.range.from == 0);
-			const auto compatibilitySequentialLayout = fragmentedLayout;
+			const auto compatibilitySequentialLayout =
+				(entry->mp4Layout.load() == int(Mp4Layout::Fragmented))
+				|| ((entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov))
+					&& entry->preferCompatibilityForLargeFrontMoov);
 			const auto sequentialLayout =
 				compatibilitySequentialLayout
-				|| largeFrontMoovLayout;
+				|| (entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov));
 			const auto initialSequentialOpen =
 				sequentialLayout
 				&& (range.range.from == 0);
-			if (compatibilityInitialLargeFrontMoov) {
-				MPV_STREAMING_LOG(("MPV Streaming: LargeFrontMoov compatibility initial open token=%1 advertises follow-up ranges.")
-					.arg(request.token));
-			}
 			if (compatibilitySequentialLayout) {
 				if (!SendResponse(socket, "200 OK", {
 					{ "Connection", "close" },
