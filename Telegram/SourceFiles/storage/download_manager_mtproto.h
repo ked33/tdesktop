@@ -10,6 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_origin.h"
 #include "base/timer.h"
 #include "base/weak_ptr.h"
+#include "storage/storage_non_premium_delay.h"
+#include <utility>
 
 class ApiWrap;
 
@@ -57,10 +59,11 @@ public:
 	void checkSendNextAfterSuccess(MTP::DcId dcId);
 	[[nodiscard]] int chooseSessionIndex(MTP::DcId dcId) const;
 
-	void notifyNonPremiumDelay(DocumentId id) {
-		_nonPremiumDelays.fire_copy(id);
+	void notifyNonPremiumDelay(DocumentId id, NonPremiumDelayInfo info) {
+		_nonPremiumDelays.fire_copy({ id, info });
 	}
-	[[nodiscard]] rpl::producer<DocumentId> nonPremiumDelays() const {
+	[[nodiscard]] rpl::producer<std::pair<DocumentId, NonPremiumDelayInfo>>
+	nonPremiumDelays() const {
 		return _nonPremiumDelays.events();
 	}
 
@@ -116,7 +119,8 @@ private:
 	const not_null<ApiWrap*> _api;
 
 	rpl::event_stream<> _taskFinished;
-	rpl::event_stream<DocumentId> _nonPremiumDelays;
+	rpl::event_stream<std::pair<DocumentId, NonPremiumDelayInfo>>
+		_nonPremiumDelays;
 
 	base::flat_map<MTP::DcId, DcBalanceData> _balanceData;
 	base::Timer _resetGenerationTimer;

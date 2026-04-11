@@ -227,5 +227,9 @@
     "lng_settings_mpv_path": "mpv 路径",
     "lng_settings_mpv_path_desc": "留空则使用 PATH 中的 mpv。",
     "lng_settings_mpv_path_placeholder": "mpv.exe 路径",
-    "lng_settings_mpv_path_from_path": "使用 PATH"
+    "lng_settings_mpv_path_from_path": "使用 PATH",
+    "lng_settings_flood_premium_wait_title": "FLOOD_PREMIUM_WAIT_x",
+    "lng_settings_flood_premium_wait_placeholder": "留空则保持服务端默认等待时间",
+    "lng_settings_flood_premium_wait_default": "默认",
+    "lng_settings_flood_premium_wait_invalid": "请输入非负整数毫秒值。"
 	}

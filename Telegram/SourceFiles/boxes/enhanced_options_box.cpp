@@ -273,6 +273,61 @@ void MpvPathBox::save() {
 	closeBox();
 }
 
+FloodPremiumWaitBox::FloodPremiumWaitBox(QWidget *parent)
+	: _delay(
+		this,
+		st::defaultInputField,
+		tr::lng_settings_flood_premium_wait_placeholder()) {
+}
+
+QString FloodPremiumWaitBox::DelayLabel(const QString &value) {
+	const auto trimmed = value.trimmed();
+	return trimmed.isEmpty()
+		? tr::lng_settings_flood_premium_wait_default(tr::now)
+		: QString("%1 ms").arg(trimmed);
+}
+
+void FloodPremiumWaitBox::prepare() {
+	setTitle(tr::lng_settings_flood_premium_wait_title());
+
+	addButton(tr::lng_settings_save(), [=] { save(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+
+	_delay->setText(GetEnhancedString("flood_premium_wait_override_ms"));
+	_delay->setMaxLength(12);
+
+	setDimensions(st::boxWidth, _delay->height());
+}
+
+void FloodPremiumWaitBox::setInnerFocus() {
+	_delay->setFocusFast();
+}
+
+void FloodPremiumWaitBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+
+	const auto width = st::boxWidth
+		- st::boxPadding.left()
+		- st::boxPadding.right();
+	_delay->resize(width, _delay->height());
+	_delay->moveToLeft(st::boxPadding.left(), 0);
+}
+
+void FloodPremiumWaitBox::save() {
+	const auto value = _delay->getLastText().trimmed();
+	if (!value.isEmpty()) {
+		auto ok = false;
+		value.toInt(&ok);
+		if (!ok) {
+			Ui::Toast::Show(tr::lng_settings_flood_premium_wait_invalid(tr::now));
+			return;
+		}
+	}
+	SetEnhancedValue("flood_premium_wait_override_ms", value);
+	EnhancedSettings::Write();
+	closeBox();
+}
+
 BitrateController::BitrateController(QWidget *parent) {
 }
 

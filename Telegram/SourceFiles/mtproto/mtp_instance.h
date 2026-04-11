@@ -9,6 +9,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "mtproto/details/mtproto_serialized_request.h"
 #include "mtproto/mtproto_response.h"
+#include "storage/storage_non_premium_delay.h"
+#include <utility>
 
 namespace MTP {
 namespace details {
@@ -141,7 +143,7 @@ public:
 	[[nodiscard]] rpl::producer<ShiftedDcId> restartsByTimeout() const;
 
 	[[nodiscard]] auto nonPremiumDelayedRequests() const
-		-> rpl::producer<mtpRequestId>;
+		-> rpl::producer<std::pair<mtpRequestId, Storage::NonPremiumDelayInfo>>;
 	[[nodiscard]] rpl::producer<> frozenErrorReceived() const;
 
 	void syncHttpUnixtime();
