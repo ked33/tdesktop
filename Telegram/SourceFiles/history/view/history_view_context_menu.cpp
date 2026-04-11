@@ -2361,8 +2361,7 @@ void AddMessageDetailsAction(
 			return;
 		}
 		const auto showStreaming = GetEnhancedBool("show_message_context_stream_in_mpv");
-		const auto showLocalTemp = GetEnhancedBool("show_message_context_stream_in_mpv_local_temp");
-		if (!showStreaming && !showLocalTemp) {
+		if (!showStreaming) {
 			return;
 		}
 		const auto itemId = item->fullId();
@@ -2408,16 +2407,6 @@ void AddMessageDetailsAction(
 						resolvedDocument);
 				},
 				tr::lng_context_stream_in_mpv_failed(tr::now));
-		}
-		if (showLocalTemp) {
-			addAction(
-				tr::lng_context_stream_in_mpv_local_temp(tr::now),
-				[](HistoryItem *resolvedItem, DocumentData *resolvedDocument) {
-					return ::Media::Streaming::Mpv::OpenVideoMessageInMpvLocalTemp(
-						resolvedItem,
-						resolvedDocument);
-				},
-				tr::lng_context_stream_in_mpv_local_temp_failed(tr::now));
 		}
 	}
 
