@@ -395,6 +395,9 @@ namespace Settings {
 				tr::lng_context_stream_in_mpv(tr::now),
 				"show_message_context_stream_in_mpv");
 			addMessageContextToggle(
+				tr::lng_context_stream_in_libmpv(tr::now),
+				"show_message_context_stream_in_libmpv");
+			addMessageContextToggle(
 				tr::lng_settings_mpv_debug_logs(tr::now),
 				"mpv_streaming_debug_logs");
 
