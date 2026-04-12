@@ -213,8 +213,40 @@ jobs:
             python --version
             exit /b %errorlevel%
 
+      - run:
+          name: Locate Telegram.exe artifact
+          command: |
+            $outDir = Join-Path $env:REPO_ROOT 'out'
+            if (-not (Test-Path $outDir)) {
+              throw "Build output directory not found: $outDir"
+            }
+
+            Write-Host "Listing executable files under $outDir"
+            $executables = Get-ChildItem -Path $outDir -Recurse -File -Filter *.exe
+            if (-not $executables) {
+              throw "No .exe files found under $outDir"
+            }
+            $executables | Select-Object FullName, Length | Format-Table -AutoSize
+
+            $artifactSource = $executables |
+              Where-Object { $_.Name -ieq 'Telegram.exe' } |
+              Sort-Object FullName |
+              Select-Object -First 1
+            if (-not $artifactSource) {
+              throw "Telegram.exe was not found under $outDir"
+            }
+
+            $artifactDir = Join-Path $env:REPO_ROOT 'ci-artifacts'
+            New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
+
+            $artifactPath = Join-Path $artifactDir 'Telegram.exe'
+            Copy-Item -LiteralPath $artifactSource.FullName -Destination $artifactPath -Force
+
+            Write-Host "Selected artifact source: $($artifactSource.FullName)"
+            Write-Host "Prepared artifact path: $artifactPath"
+
       - store_artifacts:
-          path: 'C:\Users\circleci\project\TBuild\C1og-tdesktop\out\Release\Telegram.exe'
+          path: 'C:\Users\circleci\project\TBuild\C1og-tdesktop\ci-artifacts\Telegram.exe'
           destination: Telegram-x64/Telegram.exe
 
 workflows:
