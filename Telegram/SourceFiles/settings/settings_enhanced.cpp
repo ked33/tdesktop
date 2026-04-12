@@ -390,13 +390,13 @@ namespace Settings {
 			addMessageContextToggle(
 				tr::lng_context_copy_message_link(tr::now),
 				"show_message_context_copy_link");
+			addMessageContextToggle(
+				tr::lng_context_internal_player_avio(tr::now),
+				"show_message_context_internal_player_avio");
 	#ifdef Q_OS_WIN
 			addMessageContextToggle(
 				tr::lng_context_stream_in_mpv(tr::now),
 				"show_message_context_stream_in_mpv");
-			addMessageContextToggle(
-				tr::lng_context_stream_in_mpv_offset_aware(tr::now),
-				"show_message_context_stream_in_mpv_offset_aware");
 			addMessageContextToggle(
 				tr::lng_settings_mpv_debug_logs(tr::now),
 				"mpv_streaming_debug_logs");

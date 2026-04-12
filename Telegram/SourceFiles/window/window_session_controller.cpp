@@ -59,6 +59,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat_filters.h"
 #include "data/data_replies_list.h"
 #include "data/data_peer_values.h"
+#include "data/data_streaming.h"
 #include "data/data_premium_limits.h"
 #include "data/data_web_page.h"
 #include "data/data_search_calendar.h"
@@ -3285,6 +3286,47 @@ void SessionController::openDocument(
 		item,
 		message.topicRootId,
 		message.monoforumPeerId);
+}
+
+bool SessionController::openDocumentInMediaViewAvio(
+		not_null<DocumentData*> document,
+		MessageContext message,
+		std::optional<TimeId> videoTimestampOverride) {
+	const auto item = session().data().message(message.id);
+	if (!item) {
+		return false;
+	}
+	const auto shared = document->owner().streaming().dedicatedDocument(
+		document,
+		document,
+		item,
+		Data::FileOrigin(item->fullId()),
+		true);
+	if (!shared) {
+		return false;
+	}
+	using namespace Media::View;
+	const auto saved = session().local().mediaLastPlaybackPosition(
+		document->id);
+	const auto timestamp = ExtractVideoTimestamp(item);
+	const auto usedTimestamp = videoTimestampOverride
+		? ((*videoTimestampOverride) * crl::time(1000))
+		: saved
+		? saved
+		: timestamp
+		? (timestamp * crl::time(1000))
+		: crl::time();
+	_window->openInMediaView(OpenRequest(
+		this,
+		document,
+		item,
+		message.topicRootId,
+		message.monoforumPeerId,
+		false,
+		usedTimestamp,
+		true,
+		std::move(shared)));
+	return true;
 }
 
 bool SessionController::openSharedStory(HistoryItem *item) {

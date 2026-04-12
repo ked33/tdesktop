@@ -10,10 +10,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_cloud_themes.h"
 #include "data/data_stories.h"
 
+#include <memory>
+#include <utility>
+
 class DocumentData;
 class PeerData;
 class PhotoData;
 class HistoryItem;
+
+namespace Media::Streaming {
+class Document;
+} // namespace Media::Streaming
 
 namespace Window {
 class SessionController;
@@ -54,14 +61,19 @@ public:
 		MsgId topicRootId,
 		PeerId monoforumPeerId,
 		bool continueStreaming = false,
-		crl::time startTime = 0)
+		crl::time startTime = 0,
+		bool forceDedicatedAvioPlayback = false,
+		std::shared_ptr<::Media::Streaming::Document> streamingDocumentOverride
+			= nullptr)
 	: _controller(controller)
 	, _document(document)
 	, _item(item)
 	, _topicRootId(topicRootId)
 	, _monoforumPeerId(monoforumPeerId)
 	, _continueStreaming(continueStreaming)
-	, _startTime(startTime) {
+	, _forceDedicatedAvioPlayback(forceDedicatedAvioPlayback)
+	, _startTime(startTime)
+	, _streamingDocumentOverride(std::move(streamingDocumentOverride)) {
 	}
 	OpenRequest(
 		Window::SessionController *controller,
@@ -148,6 +160,15 @@ public:
 		return _startTime;
 	}
 
+	[[nodiscard]] bool forceDedicatedAvioPlayback() const {
+		return _forceDedicatedAvioPlayback;
+	}
+
+	[[nodiscard]] const std::shared_ptr<::Media::Streaming::Document>
+	&streamingDocumentOverride() const {
+		return _streamingDocumentOverride;
+	}
+
 private:
 	Window::SessionController *_controller = nullptr;
 	DocumentData *_document = nullptr;
@@ -160,7 +181,9 @@ private:
 	PeerId _monoforumPeerId = 0;
 	std::optional<Data::CloudTheme> _cloudTheme = std::nullopt;
 	bool _continueStreaming = false;
+	bool _forceDedicatedAvioPlayback = false;
 	crl::time _startTime = 0;
+	std::shared_ptr<::Media::Streaming::Document> _streamingDocumentOverride;
 
 	std::shared_ptr<Data::GroupCall> _call;
 	QString _callLinkSlug;
