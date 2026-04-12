@@ -43,7 +43,7 @@ namespace EnhancedSettings {
 				ensureBool(qsl("show_message_context_add_task"), true);
 				ensureBool(qsl("show_message_context_copy_link"), true);
 				ensureBool(qsl("show_message_context_stream_in_mpv"), true);
-				ensureBool(qsl("show_message_context_stream_in_libmpv"), true);
+				ensureBool(qsl("show_message_context_stream_in_mpv_offset_aware"), true);
 				ensureBool(qsl("mpv_streaming_debug_logs"), false);
 				ensureBool(qsl("show_message_context_show_messages_from"), true);
 			ensureBool(qsl("show_message_context_forward"), true);
@@ -370,7 +370,7 @@ namespace EnhancedSettings {
 			settings.insert(qsl("show_message_context_add_task"), true);
 			settings.insert(qsl("show_message_context_copy_link"), true);
 			settings.insert(qsl("show_message_context_stream_in_mpv"), true);
-			settings.insert(qsl("show_message_context_stream_in_libmpv"), true);
+			settings.insert(qsl("show_message_context_stream_in_mpv_offset_aware"), true);
 			settings.insert(qsl("mpv_streaming_debug_logs"), false);
 			settings.insert(qsl("show_message_context_show_messages_from"), true);
 		settings.insert(qsl("show_message_context_forward"), true);
@@ -448,7 +448,7 @@ namespace EnhancedSettings {
 			settings.insert(qsl("show_message_context_add_task"), GetEnhancedBool("show_message_context_add_task"));
 			settings.insert(qsl("show_message_context_copy_link"), GetEnhancedBool("show_message_context_copy_link"));
 			settings.insert(qsl("show_message_context_stream_in_mpv"), GetEnhancedBool("show_message_context_stream_in_mpv"));
-			settings.insert(qsl("show_message_context_stream_in_libmpv"), GetEnhancedBool("show_message_context_stream_in_libmpv"));
+			settings.insert(qsl("show_message_context_stream_in_mpv_offset_aware"), GetEnhancedBool("show_message_context_stream_in_mpv_offset_aware"));
 			settings.insert(qsl("mpv_streaming_debug_logs"), GetEnhancedBool("mpv_streaming_debug_logs"));
 			settings.insert(qsl("show_message_context_show_messages_from"), GetEnhancedBool("show_message_context_show_messages_from"));
 		settings.insert(qsl("show_message_context_forward"), GetEnhancedBool("show_message_context_forward"));
