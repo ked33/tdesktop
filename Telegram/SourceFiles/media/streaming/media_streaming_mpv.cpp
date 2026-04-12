@@ -66,9 +66,38 @@ constexpr auto kCompatibilitySeekWaitStep = 10;
 constexpr auto kCleanupInterval = 60 * crl::time(1000);
 constexpr auto kTokenLifetime = 5 * 60 * crl::time(1000);
 constexpr auto kMpvLoaderPriority = 2;
+constexpr auto kLibMpvReadLogStep = int64(32) * 1024 * 1024;
+
+[[nodiscard]] QString ResolveLibMpvLibraryPath(const QString &programPath) {
+	const auto dir = QFileInfo(programPath).absolutePath();
+	for (const auto &name : {
+		QStringLiteral("libmpv-2.dll"),
+		QStringLiteral("mpv-2.dll"),
+		QStringLiteral("libmpv.dll"),
+		QStringLiteral("mpv.dll"),
+	}) {
+		const auto path = dir + '/' + name;
+		if (QFileInfo(path).isFile()) {
+			return path;
+		}
+	}
+	return {};
+}
 
 [[nodiscard]] bool MpvDebugLogsEnabled() {
 	return GetEnhancedBool("mpv_streaming_debug_logs");
+}
+
+[[nodiscard]] QString MpvLogString(const char *value) {
+	return value ? QString::fromUtf8(value) : QString();
+}
+
+[[nodiscard]] QString MpvLogLine(const char *value) {
+	auto result = MpvLogString(value);
+	while (result.endsWith('\n') || result.endsWith('\r')) {
+		result.chop(1);
+	}
+	return result;
 }
 
 [[nodiscard]] int DownloadBoostLevel() {
@@ -181,6 +210,7 @@ enum mpv_error : int {
 enum mpv_event_id : int {
 	MPV_EVENT_NONE = 0,
 	MPV_EVENT_SHUTDOWN = 1,
+	MPV_EVENT_LOG_MESSAGE = 2,
 	MPV_EVENT_END_FILE = 7,
 	MPV_EVENT_FILE_LOADED = 8,
 	MPV_EVENT_SEEK = 20,
@@ -195,6 +225,13 @@ struct mpv_event_end_file {
 	int64_t playlist_entry_id = 0;
 	int64_t playlist_insert_id = 0;
 	int playlist_insert_num_entries = 0;
+};
+
+struct mpv_event_log_message {
+	const char *prefix = nullptr;
+	const char *level = nullptr;
+	const char *text = nullptr;
+	int log_level = 0;
 };
 
 struct mpv_event {
@@ -264,19 +301,7 @@ public:
 	using StreamCbAddRo = int(*)(mpv_handle*, const char*, void*, mpv_stream_cb_open_ro_fn);
 
 	[[nodiscard]] bool load(const QString &programPath) {
-		const auto dir = QFileInfo(programPath).absolutePath();
-		for (const auto &name : {
-			QStringLiteral("libmpv-2.dll"),
-			QStringLiteral("mpv-2.dll"),
-			QStringLiteral("libmpv.dll"),
-			QStringLiteral("mpv.dll"),
-		}) {
-			const auto path = dir + '/' + name;
-			if (QFileInfo(path).isFile()) {
-				_library.setFileName(path);
-				break;
-			}
-		}
+		_library.setFileName(ResolveLibMpvLibraryPath(programPath));
 		if (_library.fileName().isEmpty()) {
 			return false;
 		} else if (!_library.load()) {
@@ -343,6 +368,9 @@ public:
 	, _origin(origin)
 	, _reader(std::move(reader))
 	, _size(_reader ? _reader->size() : 0) {
+		MPV_STREAMING_LOG(("MPV libmpv: Created stream session for document %1 size=%2.")
+			.arg(qulonglong(_document->id))
+			.arg(_size));
 	}
 
 	[[nodiscard]] int64 size() const {
@@ -377,6 +405,27 @@ public:
 				if (!_headerFinalized.exchange(true)) {
 					_reader->headerDone();
 				}
+				const auto total = _deliveredBytes.fetch_add(limit) + limit;
+				if (!_firstReadLogged.exchange(true)) {
+					MPV_STREAMING_LOG(("MPV libmpv: First read for document %1 offset=%2 bytes=%3 total=%4.")
+						.arg(qulonglong(_document->id))
+						.arg(offset)
+						.arg(limit)
+						.arg(total));
+				}
+				auto next = _nextReadLogAt.load();
+				while (total >= next) {
+					if (_nextReadLogAt.compare_exchange_weak(
+							next,
+							next + kLibMpvReadLogStep)) {
+						MPV_STREAMING_LOG(("MPV libmpv: Read progress for document %1 offset=%2 bytes=%3 total=%4.")
+							.arg(qulonglong(_document->id))
+							.arg(offset)
+							.arg(limit)
+							.arg(total));
+						break;
+					}
+				}
 				return limit;
 			}
 			const auto error = _reader->streamingError();
@@ -384,9 +433,17 @@ public:
 				&& error
 				&& (*error == Error::LoadFailed)
 				&& recreateReader(offset)) {
+				MPV_STREAMING_LOG(("MPV libmpv: Recreated reader after LoadFailed for document %1 at offset %2.")
+					.arg(qulonglong(_document->id))
+					.arg(offset));
 				retriedLoadFailure = true;
 				continue;
 			}
+			MPV_STREAMING_LOG(("MPV libmpv: Read failed for document %1 offset=%2 bytes=%3 retried=%4.")
+				.arg(qulonglong(_document->id))
+				.arg(offset)
+				.arg(limit)
+				.arg(retriedLoadFailure ? 1 : 0));
 			return -1;
 		}
 	}
@@ -400,6 +457,9 @@ public:
 		resetCancelled();
 		auto lock = std::unique_lock(_mutex);
 		_offset = offset;
+		MPV_STREAMING_LOG(("MPV libmpv: Seek for document %1 -> %2.")
+			.arg(qulonglong(_document->id))
+			.arg(_offset));
 		return _offset;
 	}
 
@@ -409,9 +469,14 @@ public:
 
 	void cancel() {
 		_cancelled = true;
+		MPV_STREAMING_LOG(("MPV libmpv: Cancel requested for document %1.")
+			.arg(qulonglong(_document->id)));
 	}
 
 	void close() {
+		MPV_STREAMING_LOG(("MPV libmpv: Closing stream session for document %1 delivered=%2.")
+			.arg(qulonglong(_document->id))
+			.arg(_deliveredBytes.load()));
 		if (_reader) {
 			_reader->stopStreamingAsync();
 			_reader->tryRemoveLoaderAsync();
@@ -450,6 +515,9 @@ private:
 	const int64 _size = 0;
 	std::atomic<bool> _cancelled = false;
 	std::atomic<bool> _headerFinalized = false;
+	std::atomic<bool> _firstReadLogged = false;
+	std::atomic<int64> _deliveredBytes = 0;
+	std::atomic<int64> _nextReadLogAt = kLibMpvReadLogStep;
 	std::mutex _mutex;
 	int64 _offset = 0;
 };
@@ -522,6 +590,9 @@ public:
 				.arg(_protocol));
 			return false;
 		}
+		MPV_STREAMING_LOG(("MPV libmpv: Started controlled player for document %1 protocol=%2.")
+			.arg(qulonglong(_document->id))
+			.arg(_protocol));
 		_window->show();
 		_eventThread = std::thread([self] {
 			self->eventLoop();
@@ -582,6 +653,8 @@ private:
 		if (_closing.exchange(true) || !_handle) {
 			return;
 		}
+		MPV_STREAMING_LOG(("MPV libmpv: Requesting shutdown for document %1.")
+			.arg(qulonglong(_document->id)));
 		const char *command[] = { "quit", nullptr };
 		_api.command(_handle, command);
 	}
@@ -592,8 +665,23 @@ private:
 			if (!event) {
 				continue;
 			}
-			if (event->event_id == MPV_EVENT_FILE_LOADED) {
+			if (event->event_id == MPV_EVENT_LOG_MESSAGE) {
+				const auto message = static_cast<mpv_event_log_message*>(event->data);
+				if (message) {
+					const auto text = MpvLogLine(message->text);
+					if (!text.isEmpty()) {
+						MPV_STREAMING_LOG(("MPV libmpv event: document=%1 prefix=%2 level=%3 text=%4")
+							.arg(qulonglong(_document->id))
+							.arg(MpvLogString(message->prefix))
+							.arg(MpvLogString(message->level))
+							.arg(text));
+					}
+				}
+			} else if (event->event_id == MPV_EVENT_FILE_LOADED) {
 				MPV_STREAMING_LOG(("MPV Streaming: libmpv file loaded for document %1.")
+					.arg(qulonglong(_document->id)));
+			} else if (event->event_id == MPV_EVENT_SEEK) {
+				MPV_STREAMING_LOG(("MPV Streaming: libmpv seek event for document %1.")
 					.arg(qulonglong(_document->id)));
 			} else if (event->event_id == MPV_EVENT_PLAYBACK_RESTART) {
 				MPV_STREAMING_LOG(("MPV Streaming: libmpv playback restart for document %1.")
@@ -639,6 +727,10 @@ private:
 		if (!QByteArray(uri).startsWith(scheme)) {
 			return MPV_ERROR_LOADING_FAILED;
 		}
+		MPV_STREAMING_LOG(("MPV libmpv: open_stream for document %1 uri=%2 size=%3.")
+			.arg(qulonglong(player->_document->id))
+			.arg(QString::fromUtf8(uri))
+			.arg(player->_session->streamSize()));
 		auto *cookie = new LibMpvStreamCookie{ player->_session };
 		info->cookie = cookie;
 		info->read_fn = &LibMpvControlledPlayer::readStream;
@@ -671,6 +763,7 @@ private:
 	static void closeStream(void *cookie) {
 		auto *data = static_cast<LibMpvStreamCookie*>(cookie);
 		if (data && data->session) {
+			MPV_STREAMING_LOG(("MPV libmpv: close_stream callback."));
 			data->session->close();
 		}
 		delete data;
@@ -679,6 +772,7 @@ private:
 	static void cancelStream(void *cookie) {
 		const auto data = static_cast<LibMpvStreamCookie*>(cookie);
 		if (data && data->session) {
+			MPV_STREAMING_LOG(("MPV libmpv: cancel_stream callback."));
 			data->session->cancel();
 		}
 	}
@@ -1063,33 +1157,6 @@ private:
 			return Mp4Layout::Unknown;
 		}
 		offset += int(atomSize);
-	}
-	return Mp4Layout::Unknown;
-}
-
-[[nodiscard]] Mp4Layout ProbeReaderMp4Layout(
-		const std::shared_ptr<Reader> &reader) {
-	if (!reader) {
-		return Mp4Layout::Unknown;
-	}
-	auto probeActual = int(std::min(int64(kMp4ProbeInitialSize), reader->size()));
-	const auto probeMax = int(std::min(int64(kMp4ProbeMaxSize), reader->size()));
-	auto detected = Mp4Layout::Unknown;
-	while (probeActual > 0) {
-		auto probe = QByteArray(probeActual, Qt::Uninitialized);
-		if (!FillBuffer(
-				reader.get(),
-				0,
-				bytes::span(
-					reinterpret_cast<bytes::type*>(probe.data()),
-					probeActual))) {
-			return Mp4Layout::Unknown;
-		}
-		detected = DetectMp4Layout(probe);
-		if (detected != Mp4Layout::Unknown || probeActual >= probeMax) {
-			return detected;
-		}
-		probeActual = std::min(probeActual * 2, probeMax);
 	}
 	return Mp4Layout::Unknown;
 }
@@ -1727,6 +1794,36 @@ private:
 	base::Timer _cleanupTimer;
 };
 
+[[nodiscard]] OpenResult StartExternalBridgePlayback(
+		not_null<DocumentData*> document,
+		Data::FileOrigin origin,
+		const QString &program,
+		std::shared_ptr<Reader> reader,
+		bool preferCompatibilityForLargeFrontMoov) {
+	const auto launch = Server::instance().add(
+		document,
+		origin,
+		std::move(reader),
+		preferCompatibilityForLargeFrontMoov);
+	if (launch.url.isEmpty()) {
+		MPV_STREAMING_LOG(("MPV Streaming: Failed to create launch URL for document %1.")
+			.arg(qulonglong(document->id)));
+		return OpenResult::Failed;
+	}
+	MPV_STREAMING_LOG(("MPV Streaming: Launching '%1' with URL %2.")
+		.arg(program)
+		.arg(launch.url));
+	MPV_STREAMING_LOG(("MPV Streaming: Launch arguments: %1.")
+		.arg(LaunchArguments(launch.url).join(QStringLiteral(" "))));
+	if (!StartDetachedPlayer(program, launch.url)) {
+		MPV_STREAMING_LOG(("MPV Streaming: Failed to start player '%1'.")
+			.arg(program));
+		Server::instance().remove(launch.token);
+		return OpenResult::Failed;
+	}
+	return OpenResult::Success;
+}
+
 } // namespace
 
 	bool CanOpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
@@ -1774,59 +1871,67 @@ private:
 		MPV_STREAMING_LOG(("MPV Streaming: Bridge strategy preferCompatibilityForLargeFrontMoov=%1 hasQualities=%2.")
 			.arg(preferCompatibilityForLargeFrontMoov ? 1 : 0)
 			.arg(media ? media->hasQualitiesList() : 0));
-		const auto reader = CreateDedicatedReader(document, origin);
-			if (!reader) {
-				MPV_STREAMING_LOG(("MPV Streaming: Failed to create dedicated reader for document %1.")
-					.arg(qulonglong(document->id)));
+		auto reader = CreateDedicatedReader(document, origin);
+		if (!reader) {
+			MPV_STREAMING_LOG(("MPV Streaming: Failed to create dedicated reader for document %1.")
+				.arg(qulonglong(document->id)));
 			return OpenResult::Failed;
 		}
-		const auto probedLayout = ProbeReaderMp4Layout(reader);
-		MPV_STREAMING_LOG(("MPV Streaming: Preflight MP4 layout=%1 for document %2.")
-			.arg(int(probedLayout))
-			.arg(qulonglong(document->id)));
-		auto activeReader = reader;
-		if (preferCompatibilityForLargeFrontMoov
-			&& (probedLayout == Mp4Layout::LargeFrontMoov)) {
-			auto controlled = std::make_shared<LibMpvControlledPlayer>(
-				document,
-				std::make_shared<LibMpvStreamSession>(document, origin, reader),
-				program);
-			if (controlled->start()) {
-				LibMpvControlledPlayer::keepAlive(controlled);
-				MPV_STREAMING_LOG(("MPV Streaming: Routed document %1 to libmpv controlled backend.")
-					.arg(qulonglong(document->id)));
-				return OpenResult::Success;
-			}
-			MPV_STREAMING_LOG(("MPV Streaming: libmpv controlled backend failed for document %1, falling back to external bridge.")
-				.arg(qulonglong(document->id)));
-			activeReader = CreateDedicatedReader(document, origin);
-			if (!activeReader) {
-				MPV_STREAMING_LOG(("MPV Streaming: Failed to recreate reader after libmpv fallback for document %1.")
-					.arg(qulonglong(document->id)));
-				return OpenResult::Failed;
-			}
-		}
-		const auto launch = Server::instance().add(
+		return StartExternalBridgePlayback(
 			document,
 			origin,
-			activeReader,
+			program,
+			std::move(reader),
 			preferCompatibilityForLargeFrontMoov);
-			if (launch.url.isEmpty()) {
-				MPV_STREAMING_LOG(("MPV Streaming: Failed to create launch URL for document %1.")
-					.arg(qulonglong(document->id)));
-			reader->stopStreaming(false);
+	}
+
+	OpenResult OpenVideoMessageInLibMpv(HistoryItem *item, DocumentData *document) {
+		const auto media = item ? item->media() : nullptr;
+		const auto mediaDocument = media ? media->document() : nullptr;
+		MPV_STREAMING_LOG(("MPV libmpv: Open request passedDocument=%1 mediaDocument=%2 same=%3 passedSize=%4 mediaSize=%5 passedSupports=%6 mediaSupports=%7 passedLoader=%8 mediaLoader=%9 hasQualities=%10.")
+			.arg(qulonglong(document ? document->id : 0))
+			.arg(qulonglong(mediaDocument ? mediaDocument->id : 0))
+			.arg((document == mediaDocument) ? 1 : 0)
+			.arg(document ? document->size : 0)
+			.arg(mediaDocument ? mediaDocument->size : 0)
+			.arg(document ? document->supportsStreaming() : 0)
+			.arg(mediaDocument ? mediaDocument->supportsStreaming() : 0)
+			.arg(document ? document->useStreamingLoader() : 0)
+			.arg(mediaDocument ? mediaDocument->useStreamingLoader() : 0)
+			.arg(media ? media->hasQualitiesList() : 0));
+		if (!CanOpenVideoMessageInMpv(item, document)) {
+			return OpenResult::Unsupported;
+		}
+		const auto program = ResolveProgram();
+		if (program.isEmpty()) {
+			MPV_STREAMING_LOG(("MPV libmpv: Player not found."));
+			return OpenResult::PlayerNotFound;
+		}
+		const auto libmpvPath = ResolveLibMpvLibraryPath(program);
+		if (libmpvPath.isEmpty()) {
+			MPV_STREAMING_LOG(("MPV libmpv: libmpv was not found next to '%1'.")
+				.arg(program));
+			return OpenResult::PlayerNotFound;
+		}
+		const auto origin = Data::FileOrigin(item->fullId());
+		auto reader = CreateDedicatedReader(document, origin);
+		if (!reader) {
+			MPV_STREAMING_LOG(("MPV libmpv: Failed to create dedicated reader for document %1.")
+				.arg(qulonglong(document->id)));
 			return OpenResult::Failed;
 		}
-		MPV_STREAMING_LOG(("MPV Streaming: Launching '%1' with URL %2.")
-			.arg(program)
-			.arg(launch.url));
-		MPV_STREAMING_LOG(("MPV Streaming: Launch arguments: %1.")
-			.arg(LaunchArguments(launch.url).join(QStringLiteral(" "))));
-		if (!StartDetachedPlayer(program, launch.url)) {
-			MPV_STREAMING_LOG(("MPV Streaming: Failed to start player '%1'.").arg(program));
-			Server::instance().remove(launch.token);
+		auto controlled = std::make_shared<LibMpvControlledPlayer>(
+			document,
+			std::make_shared<LibMpvStreamSession>(document, origin, reader),
+			program);
+		if (!controlled->start()) {
+			MPV_STREAMING_LOG(("MPV libmpv: Failed to start controlled backend for document %1.")
+				.arg(qulonglong(document->id)));
 			return OpenResult::Failed;
 		}
+		LibMpvControlledPlayer::keepAlive(controlled);
+		MPV_STREAMING_LOG(("MPV libmpv: Routed document %1 to libmpv controlled backend.")
+			.arg(qulonglong(document->id)));
 		return OpenResult::Success;
 	}
 

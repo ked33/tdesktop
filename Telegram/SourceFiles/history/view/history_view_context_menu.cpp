@@ -2361,7 +2361,9 @@ void AddMessageDetailsAction(
 			return;
 		}
 		const auto showStreaming = GetEnhancedBool("show_message_context_stream_in_mpv");
-		if (!showStreaming) {
+		const auto showLibMpvStreaming = GetEnhancedBool(
+			"show_message_context_stream_in_libmpv");
+		if (!showStreaming && !showLibMpvStreaming) {
 			return;
 		}
 		const auto itemId = item->fullId();
@@ -2370,7 +2372,11 @@ void AddMessageDetailsAction(
 			afterCopyLink ? 1 : 0,
 			int(menu->actions().size()));
 		auto offset = 0;
-		const auto addAction = [&](const QString &text, auto opener, const QString &failedText) {
+		const auto addAction = [&](
+				const QString &text,
+				auto opener,
+				const QString &notFoundText,
+				const QString &failedText) {
 			menu->insertAction(
 				insertIndex + offset,
 				base::make_unique_q<Ui::Menu::Action>(
@@ -2389,7 +2395,7 @@ void AddMessageDetailsAction(
 							const auto result = opener(resolvedItem, resolvedDocument);
 							if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
 								controller->showToast(
-									tr::lng_context_stream_in_mpv_not_found(tr::now));
+									notFoundText);
 							} else if (result == ::Media::Streaming::Mpv::OpenResult::Failed) {
 								controller->showToast(failedText);
 							}
@@ -2406,7 +2412,19 @@ void AddMessageDetailsAction(
 						resolvedItem,
 						resolvedDocument);
 				},
+				tr::lng_context_stream_in_mpv_not_found(tr::now),
 				tr::lng_context_stream_in_mpv_failed(tr::now));
+		}
+		if (showLibMpvStreaming) {
+			addAction(
+				tr::lng_context_stream_in_libmpv(tr::now),
+				[](HistoryItem *resolvedItem, DocumentData *resolvedDocument) {
+					return ::Media::Streaming::Mpv::OpenVideoMessageInLibMpv(
+						resolvedItem,
+						resolvedDocument);
+				},
+				tr::lng_context_stream_in_libmpv_not_found(tr::now),
+				tr::lng_context_stream_in_libmpv_failed(tr::now));
 		}
 	}
 

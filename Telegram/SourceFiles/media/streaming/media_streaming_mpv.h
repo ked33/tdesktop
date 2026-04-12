@@ -25,5 +25,8 @@ enum class OpenResult {
 [[nodiscard]] OpenResult OpenVideoMessageInMpv(
 	HistoryItem *item,
 	DocumentData *document);
+[[nodiscard]] OpenResult OpenVideoMessageInLibMpv(
+	HistoryItem *item,
+	DocumentData *document);
 
 } // namespace Media::Streaming::Mpv
