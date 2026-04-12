@@ -4,7 +4,6 @@ jobs:
   build-win-x64:
     machine:
       image: 'windows-server-2022-gui:current'
-      shell: 'powershell.exe -ExecutionPolicy Bypass'
     resource_class: windows.large
     working_directory: 'C:\Users\circleci\project\TBuild\C1og-tdesktop'
     environment:
@@ -192,7 +191,7 @@ jobs:
               -D CMAKE_COMPILE_WARNING_AS_ERROR=OFF ^
               -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=
             if errorlevel 1 exit /b %errorlevel%
-            cd /d %REPO_ROOT%\out
+            cd /d %REPO_ROOT%\Telegram\out
             cmake --build . --config Release --target Telegram --parallel
             exit /b %errorlevel%
 
@@ -216,7 +215,7 @@ jobs:
       - run:
           name: Locate Telegram.exe artifact
           command: |
-            $outDir = Join-Path $env:REPO_ROOT 'out'
+            $outDir = Join-Path $env:REPO_ROOT 'Telegram\out'
             if (-not (Test-Path $outDir)) {
               throw "Build output directory not found: $outDir"
             }
