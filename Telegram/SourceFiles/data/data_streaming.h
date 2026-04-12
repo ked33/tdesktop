@@ -44,6 +44,12 @@ public:
 		not_null<DocumentData*> original,
 		HistoryItem *context,
 		FileOrigin origin);
+	[[nodiscard]] std::shared_ptr<Document> dedicatedDocument(
+		not_null<DocumentData*> quality,
+		not_null<DocumentData*> original,
+		HistoryItem *context,
+		FileOrigin origin,
+		bool forceRemoteLoader = true);
 
 	[[nodiscard]] std::shared_ptr<Reader> sharedReader(
 		not_null<PhotoData*> photo,
@@ -74,6 +80,20 @@ private:
 		DocumentData *original,
 		HistoryItem *context,
 		FileOrigin origin);
+
+	template <typename Data>
+	[[nodiscard]] std::shared_ptr<Reader> makeDedicatedReader(
+		not_null<Data*> data,
+		FileOrigin origin,
+		bool forceRemoteLoader = true);
+
+	template <typename Data>
+	[[nodiscard]] std::shared_ptr<Document> makeDedicatedDocument(
+		not_null<Data*> data,
+		DocumentData *original,
+		HistoryItem *context,
+		FileOrigin origin,
+		bool forceRemoteLoader = true);
 
 	template <typename Data>
 	void keepAlive(

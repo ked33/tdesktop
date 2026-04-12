@@ -3226,7 +3226,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 					&st::menuIconLink,
 					&st::menuIconLink));
 			}
-			HistoryView::AddStreamInMpvAction(
+			HistoryView::AddVideoPlaybackActions(
 				_menu,
 				item,
 				streamDocument,
@@ -3656,7 +3656,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 					&st::menuIconLink,
 					&st::menuIconLink));
 			}
-			HistoryView::AddStreamInMpvAction(
+			HistoryView::AddVideoPlaybackActions(
 				_menu,
 				mpvItem,
 				mpvDocument,

@@ -4985,9 +4985,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_context_stream_in_mpv" = "Stream in mpv";
 "lng_context_stream_in_mpv_not_found" = "mpv was not found in PATH.";
 "lng_context_stream_in_mpv_failed" = "Failed to start mpv streaming.";
-"lng_context_stream_in_mpv_offset_aware" = "Play in MPV (Offset-Aware)";
-"lng_context_stream_in_mpv_offset_aware_not_found" = "mpv was not found in PATH.";
-"lng_context_stream_in_mpv_offset_aware_failed" = "Failed to start MPV offset-aware streaming.";
+"lng_context_internal_player_avio" = "内置播放器（AVIO）";
+"lng_context_internal_player_avio_failed" = "Failed to start internal player (AVIO).";
 "lng_settings_mpv_debug_logs" = "Write video playback debug logs to log.txt";
 "lng_settings_mpv_path" = "mpv Path";
 "lng_settings_mpv_path_desc" = "Leave empty to use mpv from PATH.";

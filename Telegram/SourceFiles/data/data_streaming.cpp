@@ -148,6 +148,40 @@ template <typename Data>
 }
 
 template <typename Data>
+[[nodiscard]] std::shared_ptr<Streaming::Reader> Streaming::makeDedicatedReader(
+		not_null<Data*> data,
+		FileOrigin origin,
+		bool forceRemoteLoader) {
+	auto loader = data->createStreamingLoader(origin, forceRemoteLoader);
+	if (!loader && forceRemoteLoader) {
+		loader = data->createStreamingLoader(origin, false);
+	}
+	if (!loader) {
+		return nullptr;
+	}
+	return std::make_shared<Reader>(
+		std::move(loader),
+		&_owner->cacheBigFile());
+}
+
+template <typename Data>
+[[nodiscard]] std::shared_ptr<Streaming::Document> Streaming::makeDedicatedDocument(
+		not_null<Data*> data,
+		DocumentData *original,
+		HistoryItem *context,
+		FileOrigin origin,
+		bool forceRemoteLoader) {
+	auto reader = makeDedicatedReader(data, origin, forceRemoteLoader);
+	if (!reader) {
+		return nullptr;
+	}
+	return std::make_shared<Document>(
+		data,
+		std::move(reader),
+		LookupOtherQualities(original, data, context));
+}
+
+template <typename Data>
 void Streaming::keepAlive(
 		base::flat_map<not_null<Data*>, std::weak_ptr<Document>> &documents,
 		not_null<Data*> data) {
@@ -202,6 +236,20 @@ std::shared_ptr<Streaming::Document> Streaming::sharedDocument(
 		original,
 		context,
 		origin);
+}
+
+std::shared_ptr<Streaming::Document> Streaming::dedicatedDocument(
+		not_null<DocumentData*> quality,
+		not_null<DocumentData*> original,
+		HistoryItem *context,
+		FileOrigin origin,
+		bool forceRemoteLoader) {
+	return makeDedicatedDocument(
+		quality,
+		original,
+		context,
+		origin,
+		forceRemoteLoader);
 }
 
 std::shared_ptr<Streaming::Reader> Streaming::sharedReader(
