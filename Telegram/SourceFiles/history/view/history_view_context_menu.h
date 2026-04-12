@@ -97,7 +97,7 @@ void AddMessageDetailsAction(
 	HistoryItem *item,
 	Element *view,
 	not_null<Window::SessionController*> controller);
-void AddStreamInMpvAction(
+void AddVideoPlaybackActions(
 	not_null<Ui::PopupMenu*> menu,
 	HistoryItem *item,
 	DocumentData *document,

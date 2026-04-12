@@ -67,6 +67,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/components/sponsored_messages.h"
 #include "data/data_group_call.h"
 #include "data/data_session.h"
+#include "data/data_streaming.h"
 #include "data/data_changes.h"
 #include "data/data_channel.h"
 #include "data/data_chat.h"
@@ -353,6 +354,9 @@ struct OverlayWidget::Streamed {
 		Data::FileOrigin origin,
 		Fn<void()> waitingCallback);
 	Streamed(
+		std::shared_ptr<Streaming::Document> shared,
+		Fn<void()> waitingCallback);
+	Streamed(
 		not_null<PhotoData*> photo,
 		Data::FileOrigin origin,
 		Fn<void()> waitingCallback);
@@ -490,6 +494,12 @@ OverlayWidget::Streamed::Streamed(
 	Data::FileOrigin origin,
 	Fn<void()> waitingCallback)
 : instance(quality, original, context, origin, std::move(waitingCallback)) {
+}
+
+OverlayWidget::Streamed::Streamed(
+	std::shared_ptr<Streaming::Document> shared,
+	Fn<void()> waitingCallback)
+: instance(std::move(shared), std::move(waitingCallback)) {
 }
 
 OverlayWidget::Streamed::Streamed(
@@ -3685,6 +3695,8 @@ void OverlayWidget::show(OpenRequest request) {
 	const auto contextItem = request.item();
 	const auto contextPeer = request.peer();
 	const auto contextTopicRootId = request.topicRootId();
+	_forceDedicatedAvioPlayback = request.forceDedicatedAvioPlayback();
+	_streamingDocumentOverride = request.streamingDocumentOverride();
 	if (!request.continueStreaming() && !request.startTime() && !_reShow) {
 		if (_message && (_message == contextItem)) {
 			return close();
@@ -4363,12 +4375,45 @@ bool OverlayWidget::createStreamingObjects() {
 	const auto callback = [=] { waitingAnimationCallback(); };
 	const auto video = _chosenQuality ? _chosenQuality : _document;
 	if (video) {
-		_streamed = std::make_unique<Streamed>(
-			video,
-			_document,
-			_message,
-			origin,
-			callback);
+		if (_forceDedicatedAvioPlayback) {
+			auto dedicatedDocument = std::shared_ptr<Streaming::Document>();
+			if (_streamingDocumentOverride) {
+				dedicatedDocument = std::move(_streamingDocumentOverride);
+				_streamingDocumentOverride = nullptr;
+			} else {
+				dedicatedDocument = video->owner().streaming().dedicatedDocument(
+					video,
+					_document,
+					_message,
+					origin,
+					true);
+			}
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Overlay dedicated AVIO request doc=%1 chosen=%2 created=%3 startPosition=%4.")
+				.arg(qulonglong(_document ? _document->id : video->id))
+				.arg(qulonglong(video->id))
+				.arg(dedicatedDocument ? 1 : 0)
+				.arg(qlonglong(_streamedPosition)));
+			if (!dedicatedDocument) {
+				VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Overlay failed to create dedicated AVIO document doc=%1 chosen=%2 useLoader=%3 remote=%4 size=%5 mime=%6.")
+					.arg(qulonglong(_document ? _document->id : video->id))
+					.arg(qulonglong(video->id))
+					.arg(video->useStreamingLoader())
+					.arg(video->hasRemoteLocation())
+					.arg(qlonglong(video->size))
+					.arg(video->mimeString()));
+				return false;
+			}
+			_streamed = std::make_unique<Streamed>(
+				std::move(dedicatedDocument),
+				callback);
+		} else {
+			_streamed = std::make_unique<Streamed>(
+				video,
+				_document,
+				_message,
+				origin,
+				callback);
+		}
 	} else {
 		_streamed = std::make_unique<Streamed>(_photo, origin, callback);
 	}
@@ -4925,7 +4970,12 @@ void OverlayWidget::switchToPip() {
 			document->owner().message(messageId),
 			topicRootId,
 			monoforumPeerId,
-			true));
+			true,
+			0,
+			_forceDedicatedAvioPlayback,
+			_forceDedicatedAvioPlayback
+				? _streamed->instance.shared()
+				: nullptr));
 	};
 	_showAsPip = true;
 	_pip = std::make_unique<PipWrap>(
