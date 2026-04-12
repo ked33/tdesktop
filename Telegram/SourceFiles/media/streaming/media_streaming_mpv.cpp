@@ -263,6 +263,7 @@ public:
 	explicit LibMpvWindow(std::function<void()> closeRequested)
 	: _closeRequested(std::move(closeRequested)) {
 		setAttribute(Qt::WA_NativeWindow);
+		setAttribute(Qt::WA_QuitOnClose, false);
 		setWindowFlag(Qt::Window, true);
 		resize(960, 540);
 	}
@@ -563,6 +564,9 @@ public:
 			|| !setOption("force-window", "immediate")
 			|| !setOption("title", _window->windowTitle())
 			|| !setOption("demuxer-lavf-o", "ignore_editlist=1")
+			|| !setOption("osc", "yes")
+			|| !setOption("input-default-bindings", "yes")
+			|| !setOption("input-vo-keyboard", "yes")
 			|| !setOption("cache", "yes")
 			|| !setOption("stream-buffer-size", "4194304")) {
 			return false;
