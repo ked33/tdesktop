@@ -2361,9 +2361,9 @@ void AddMessageDetailsAction(
 			return;
 		}
 		const auto showStreaming = GetEnhancedBool("show_message_context_stream_in_mpv");
-		const auto showLibMpvStreaming = GetEnhancedBool(
-			"show_message_context_stream_in_libmpv");
-		if (!showStreaming && !showLibMpvStreaming) {
+		const auto showOffsetAwareStreaming = GetEnhancedBool(
+			"show_message_context_stream_in_mpv_offset_aware");
+		if (!showStreaming && !showOffsetAwareStreaming) {
 			return;
 		}
 		const auto itemId = item->fullId();
@@ -2415,16 +2415,16 @@ void AddMessageDetailsAction(
 				tr::lng_context_stream_in_mpv_not_found(tr::now),
 				tr::lng_context_stream_in_mpv_failed(tr::now));
 		}
-		if (showLibMpvStreaming) {
+		if (showOffsetAwareStreaming) {
 			addAction(
-				tr::lng_context_stream_in_libmpv(tr::now),
+				tr::lng_context_stream_in_mpv_offset_aware(tr::now),
 				[](HistoryItem *resolvedItem, DocumentData *resolvedDocument) {
-					return ::Media::Streaming::Mpv::OpenVideoMessageInLibMpv(
+					return ::Media::Streaming::Mpv::OpenVideoMessageInMpvOffsetAware(
 						resolvedItem,
 						resolvedDocument);
 				},
-				tr::lng_context_stream_in_libmpv_not_found(tr::now),
-				tr::lng_context_stream_in_libmpv_failed(tr::now));
+				tr::lng_context_stream_in_mpv_offset_aware_not_found(tr::now),
+				tr::lng_context_stream_in_mpv_offset_aware_failed(tr::now));
 		}
 	}
 

@@ -25,7 +25,7 @@ enum class OpenResult {
 [[nodiscard]] OpenResult OpenVideoMessageInMpv(
 	HistoryItem *item,
 	DocumentData *document);
-[[nodiscard]] OpenResult OpenVideoMessageInLibMpv(
+[[nodiscard]] OpenResult OpenVideoMessageInMpvOffsetAware(
 	HistoryItem *item,
 	DocumentData *document);
 
