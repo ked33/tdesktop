@@ -652,11 +652,13 @@ private:
 
 	std::unique_ptr<Streamed> _streamed;
 	std::unique_ptr<PipWrap> _pip;
+	std::shared_ptr<Streaming::Document> _streamingDocumentOverride;
 	QImage _streamedQualityChangeFrame;
 	crl::time _streamedPosition = 0;
 	int _streamedCreated = 0;
 	bool _streamedQualityChangeFinished = false;
 	bool _showAsPip = false;
+	bool _forceDedicatedAvioPlayback = false;
 
 	Qt::Orientations _flip;
 

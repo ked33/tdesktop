@@ -61,7 +61,6 @@ constexpr auto kMp4ProbeInitialSize = 256 * 1024;
 constexpr auto kMp4ProbeMaxSize = 4 * 1024 * 1024;
 constexpr auto kCompatibilitySeekBootstrapBytes = 4 * 1024 * 1024;
 constexpr auto kCompatibilityLateSeekMinOffset = 128 * 1024 * 1024;
-constexpr auto kOffsetAwareOpeningFarSeekMinOffset = 256 * 1024 * 1024;
 constexpr auto kCompatibilitySeekWaitTimeout = 4000;
 constexpr auto kCompatibilitySeekWaitStep = 10;
 constexpr auto kCleanupInterval = 60 * crl::time(1000);
@@ -161,7 +160,6 @@ struct Entry {
 	std::atomic<std::uint64_t> latestSeekGeneration = 0;
 	std::atomic<int64> compatibilityBootstrapBytes = 0;
 	std::atomic<bool> compatibilityLateSeekReady = false;
-	std::atomic<int> offsetAwareOpeningSequentialRequests = 0;
 	bool preferCompatibilityForLargeFrontMoov = false;
 	std::mutex fillMutex;
 	std::mutex seekFillMutex;
@@ -568,20 +566,6 @@ enum class Mp4Layout {
 		&& (offset >= kCompatibilityLateSeekMinOffset);
 }
 
-[[nodiscard]] bool UsesOffsetAwareOpeningSeekGate(
-		const std::shared_ptr<Entry> &entry) {
-	return (entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov))
-		&& !entry->preferCompatibilityForLargeFrontMoov;
-}
-
-[[nodiscard]] bool KeepsOffsetAwareOpeningSequential(
-		const std::shared_ptr<Entry> &entry,
-		int64 offset) {
-	return UsesOffsetAwareOpeningSeekGate(entry)
-		&& (offset >= kOffsetAwareOpeningFarSeekMinOffset)
-		&& (entry->offsetAwareOpeningSequentialRequests.load() > 0);
-}
-
 void MarkCompatibilityLateSeekReady(
 		const std::shared_ptr<Entry> &entry,
 		const QString &token,
@@ -932,15 +916,6 @@ private:
 					.arg(range.range.from)
 					.arg(kCompatibilityLateSeekMinOffset));
 			}
-			const auto offsetAwareOpeningSequentialRequest =
-				KeepsOffsetAwareOpeningSequential(entry, range.range.from);
-			if (offsetAwareOpeningSequentialRequest) {
-				MPV_STREAMING_LOG(("MPV Streaming: Holding offset-aware opening seek on sequential path for token %1 offset=%2 activeInitialRequests=%3 minOffset=%4.")
-					.arg(request.token)
-					.arg(range.range.from)
-					.arg(entry->offsetAwareOpeningSequentialRequests.load())
-					.arg(kOffsetAwareOpeningFarSeekMinOffset));
-			}
 			if (compatibilityFarSeek
 				&& (range.range.from > 0)
 				&& !WaitForCompatibilityLateSeekReady(
@@ -958,47 +933,13 @@ private:
 				compatibilitySequentialLayout
 				|| (compatibilityLateSeekGate
 					&& (range.range.from > 0)
-					&& !compatibilityFarSeek)
-				|| offsetAwareOpeningSequentialRequest;
+					&& !compatibilityFarSeek);
 			const auto sequentialLayout =
 				compatibilitySequentialRequest
 				|| (entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov));
 			const auto initialSequentialOpen =
 				sequentialLayout
 				&& (range.range.from == 0);
-			struct OffsetAwareOpeningRequestGuard {
-				std::shared_ptr<Entry> entry;
-				QString token;
-				bool active = false;
-
-				~OffsetAwareOpeningRequestGuard() {
-					if (!active || !entry) {
-						return;
-					}
-					const auto remaining = entry
-						->offsetAwareOpeningSequentialRequests
-						.fetch_sub(1) - 1;
-					MPV_STREAMING_LOG(("MPV Streaming: Offset-aware opening stream finished for token %1 remaining=%2.")
-						.arg(token)
-						.arg(remaining));
-				}
-			};
-			auto offsetAwareOpeningRequestGuard =
-				OffsetAwareOpeningRequestGuard();
-			offsetAwareOpeningRequestGuard.entry = entry;
-			offsetAwareOpeningRequestGuard.token = request.token;
-			const auto trackOffsetAwareOpeningRequest =
-				initialSequentialOpen
-				&& UsesOffsetAwareOpeningSeekGate(entry);
-			if (trackOffsetAwareOpeningRequest) {
-				const auto active = entry
-					->offsetAwareOpeningSequentialRequests
-					.fetch_add(1) + 1;
-				offsetAwareOpeningRequestGuard.active = true;
-				MPV_STREAMING_LOG(("MPV Streaming: Offset-aware opening stream started for token %1 active=%2.")
-					.arg(request.token)
-					.arg(active));
-			}
 			if (compatibilitySequentialRequest) {
 				if (!SendResponse(socket, "200 OK", {
 					{ "Connection", "close" },
@@ -1062,11 +1003,6 @@ private:
 				auto activeReader = entry->reader;
 				auto *fillMutex = &entry->fillMutex;
 				if (isolatedSeekRequest) {
-					if (!entry->preferCompatibilityForLargeFrontMoov) {
-						MPV_STREAMING_LOG(("MPV Streaming: Offset-aware seek session requested for token %1 at offset %2.")
-							.arg(request.token)
-							.arg(range.range.from));
-					}
 					const auto lock = std::unique_lock(entry->seekFillMutex);
 					if (!entry->seekReader) {
 						entry->seekReader = CreateDedicatedReaderFromWorker(
@@ -1343,25 +1279,15 @@ private:
 			preferCompatibilityForLargeFrontMoov);
 	}
 
-	OpenResult OpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
-		const auto media = item ? item->media() : nullptr;
-		return OpenVideoMessageInMpvWithBridgeStrategy(
-			item,
-			document,
-			media ? !media->hasQualitiesList() : true,
-			"default");
-	}
+OpenResult OpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
+	const auto media = item ? item->media() : nullptr;
+	return OpenVideoMessageInMpvWithBridgeStrategy(
+		item,
+		document,
+		media ? !media->hasQualitiesList() : true,
+		"default");
+}
 
-	OpenResult OpenVideoMessageInMpvOffsetAware(
-			HistoryItem *item,
-			DocumentData *document) {
-		return OpenVideoMessageInMpvWithBridgeStrategy(
-			item,
-			document,
-			false,
-			"offset-aware");
-	}
-
-	#undef MPV_STREAMING_LOG
+#undef MPV_STREAMING_LOG
 
 } // namespace Media::Streaming::Mpv

@@ -1948,7 +1948,7 @@ void AddTopMessageActions(
 			: (item && item->media())
 			? item->media()->document()
 			: nullptr;
-		AddStreamInMpvAction(
+		AddVideoPlaybackActions(
 			menu,
 			item,
 			document,
@@ -2351,19 +2351,28 @@ void AddMessageDetailsAction(
 		});
 	}
 
-	void AddStreamInMpvAction(
+	void AddVideoPlaybackActions(
 			not_null<Ui::PopupMenu*> menu,
 			HistoryItem *item,
 			DocumentData *document,
 			not_null<Window::SessionController*> controller,
 			bool afterCopyLink) {
-		if (!::Media::Streaming::Mpv::CanOpenVideoMessageInMpv(item, document)) {
+		const auto canOpenInMpv = ::Media::Streaming::Mpv::CanOpenVideoMessageInMpv(
+			item,
+			document);
+		const auto canOpenInInternalPlayerAvio = item
+			&& document
+			&& (document->size > 0)
+			&& document->useStreamingLoader()
+			&& (document->isVideoFile() || document->isVideoMessage());
+		if (!canOpenInMpv && !canOpenInInternalPlayerAvio) {
 			return;
 		}
 		const auto showStreaming = GetEnhancedBool("show_message_context_stream_in_mpv");
-		const auto showOffsetAwareStreaming = GetEnhancedBool(
-			"show_message_context_stream_in_mpv_offset_aware");
-		if (!showStreaming && !showOffsetAwareStreaming) {
+		const auto showInternalPlayerAvio = GetEnhancedBool(
+			"show_message_context_internal_player_avio");
+		if ((!showStreaming || !canOpenInMpv)
+			&& (!showInternalPlayerAvio || !canOpenInInternalPlayerAvio)) {
 			return;
 		}
 		const auto itemId = item->fullId();
@@ -2372,11 +2381,7 @@ void AddMessageDetailsAction(
 			afterCopyLink ? 1 : 0,
 			int(menu->actions().size()));
 		auto offset = 0;
-		const auto addAction = [&](
-				const QString &text,
-				auto opener,
-				const QString &notFoundText,
-				const QString &failedText) {
+		const auto addAction = [&](const QString &text, auto handler) {
 			menu->insertAction(
 				insertIndex + offset,
 				base::make_unique_q<Ui::Menu::Action>(
@@ -2392,39 +2397,41 @@ void AddMessageDetailsAction(
 								: (resolvedItem && resolvedItem->media())
 								? resolvedItem->media()->document()
 								: nullptr;
-							const auto result = opener(resolvedItem, resolvedDocument);
-							if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
-								controller->showToast(
-									notFoundText);
-							} else if (result == ::Media::Streaming::Mpv::OpenResult::Failed) {
-								controller->showToast(failedText);
-							}
+							handler(resolvedItem, resolvedDocument);
 						}),
 					&st::menuIconLink,
 					&st::menuIconLink));
 			++offset;
 		};
-		if (showStreaming) {
+		if (showStreaming && canOpenInMpv) {
 			addAction(
 				tr::lng_context_stream_in_mpv(tr::now),
-				[](HistoryItem *resolvedItem, DocumentData *resolvedDocument) {
-					return ::Media::Streaming::Mpv::OpenVideoMessageInMpv(
+				[=](HistoryItem *resolvedItem, DocumentData *resolvedDocument) {
+					const auto result = ::Media::Streaming::Mpv::OpenVideoMessageInMpv(
 						resolvedItem,
 						resolvedDocument);
-				},
-				tr::lng_context_stream_in_mpv_not_found(tr::now),
-				tr::lng_context_stream_in_mpv_failed(tr::now));
+					if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
+						controller->showToast(
+							tr::lng_context_stream_in_mpv_not_found(tr::now));
+					} else if (result == ::Media::Streaming::Mpv::OpenResult::Failed) {
+						controller->showToast(
+							tr::lng_context_stream_in_mpv_failed(tr::now));
+					}
+				});
 		}
-		if (showOffsetAwareStreaming) {
+		if (showInternalPlayerAvio && canOpenInInternalPlayerAvio) {
 			addAction(
-				tr::lng_context_stream_in_mpv_offset_aware(tr::now),
-				[](HistoryItem *resolvedItem, DocumentData *resolvedDocument) {
-					return ::Media::Streaming::Mpv::OpenVideoMessageInMpvOffsetAware(
-						resolvedItem,
-						resolvedDocument);
-				},
-				tr::lng_context_stream_in_mpv_offset_aware_not_found(tr::now),
-				tr::lng_context_stream_in_mpv_offset_aware_failed(tr::now));
+				tr::lng_context_internal_player_avio(tr::now),
+				[=](HistoryItem *resolvedItem, DocumentData *resolvedDocument) {
+					if (!resolvedItem
+						|| !resolvedDocument
+						|| !controller->openDocumentInMediaViewAvio(
+							resolvedDocument,
+							{ resolvedItem->fullId() })) {
+						controller->showToast(
+							tr::lng_context_internal_player_avio_failed(tr::now));
+					}
+				});
 		}
 	}
 
