@@ -215,6 +215,12 @@ enum mpv_event_id : int {
 	MPV_EVENT_FILE_LOADED = 8,
 	MPV_EVENT_SEEK = 20,
 	MPV_EVENT_PLAYBACK_RESTART = 21,
+	MPV_EVENT_PROPERTY_CHANGE = 22,
+};
+
+enum mpv_format : int {
+	MPV_FORMAT_NONE = 0,
+	MPV_FORMAT_STRING = 1,
 };
 
 struct mpv_handle;
@@ -232,6 +238,12 @@ struct mpv_event_log_message {
 	const char *level = nullptr;
 	const char *text = nullptr;
 	int log_level = 0;
+};
+
+struct mpv_event_property {
+	const char *name = nullptr;
+	mpv_format format = MPV_FORMAT_NONE;
+	void *data = nullptr;
 };
 
 struct mpv_event {
@@ -299,6 +311,9 @@ public:
 	using TerminateDestroy = void(*)(mpv_handle*);
 	using ErrorString = const char*(*)(int);
 	using RequestLogMessages = int(*)(mpv_handle*, const char*);
+	using ObserveProperty = int(*)(mpv_handle*, uint64_t, const char*, mpv_format);
+	using GetPropertyString = char*(*)(mpv_handle*, const char*);
+	using Free = void(*)(void*);
 	using StreamCbAddRo = int(*)(mpv_handle*, const char*, void*, mpv_stream_cb_open_ro_fn);
 
 	[[nodiscard]] bool load(const QString &programPath) {
@@ -318,6 +333,9 @@ public:
 		terminateDestroy = resolve<TerminateDestroy>("mpv_terminate_destroy");
 		errorString = resolve<ErrorString>("mpv_error_string");
 		requestLogMessages = resolve<RequestLogMessages>("mpv_request_log_messages");
+		observeProperty = resolve<ObserveProperty>("mpv_observe_property");
+		getPropertyString = resolve<GetPropertyString>("mpv_get_property_string");
+		free = resolve<Free>("mpv_free");
 		streamCbAddRo = resolve<StreamCbAddRo>("mpv_stream_cb_add_ro");
 		return clientApiVersion
 			&& create
@@ -329,6 +347,9 @@ public:
 			&& terminateDestroy
 			&& errorString
 			&& requestLogMessages
+			&& observeProperty
+			&& getPropertyString
+			&& free
 			&& streamCbAddRo;
 	}
 
@@ -356,6 +377,9 @@ public:
 	TerminateDestroy terminateDestroy = nullptr;
 	ErrorString errorString = nullptr;
 	RequestLogMessages requestLogMessages = nullptr;
+	ObserveProperty observeProperty = nullptr;
+	GetPropertyString getPropertyString = nullptr;
+	Free free = nullptr;
 	StreamCbAddRo streamCbAddRo = nullptr;
 };
 
@@ -565,12 +589,18 @@ public:
 			|| !setOption("title", _window->windowTitle())
 			|| !setOption("demuxer-lavf-o", "ignore_editlist=1")
 			|| !setOption("osc", "yes")
+			|| !setOption("input-cursor", "yes")
 			|| !setOption("input-default-bindings", "yes")
 			|| !setOption("input-vo-keyboard", "yes")
+			|| !setOption("vo", "gpu-next")
+			|| !setOption("gpu-context", "d3d11")
+			|| !setOption("hwdec", "auto-safe")
 			|| !setOption("cache", "yes")
 			|| !setOption("stream-buffer-size", "4194304")) {
 			return false;
 		}
+		MPV_STREAMING_LOG(("MPV libmpv: Runtime options for document %1 osc=yes input-cursor=yes input-default-bindings=yes input-vo-keyboard=yes vo=gpu-next gpu-context=d3d11 hwdec=auto-safe cache=yes stream-buffer-size=4194304.")
+			.arg(qulonglong(_document->id)));
 		if (_api.streamCbAddRo(
 				_handle,
 				_protocol.toUtf8().constData(),
@@ -586,7 +616,8 @@ public:
 			return false;
 		}
 		_initialized = true;
-		_api.requestLogMessages(_handle, "warn");
+		_api.requestLogMessages(_handle, MpvDebugLogsEnabled() ? "debug" : "warn");
+		observeDebugProperties();
 		const auto uri = (_protocol + QStringLiteral("://stream")).toUtf8();
 		const char *command[] = { "loadfile", uri.constData(), nullptr };
 		if (_api.command(_handle, command) < 0) {
@@ -641,6 +672,75 @@ public:
 	}
 
 private:
+	[[nodiscard]] QString propertyValue(const char *name) const {
+		if (!_handle || !_api.getPropertyString || !_api.free || !name) {
+			return QStringLiteral("<unavailable>");
+		}
+		auto *raw = _api.getPropertyString(_handle, name);
+		if (!raw) {
+			return QStringLiteral("<unavailable>");
+		}
+		const auto result = QString::fromUtf8(raw);
+		_api.free(raw);
+		return result;
+	}
+
+	void logPropertySnapshot(const char *reason) const {
+		MPV_STREAMING_LOG(("MPV libmpv state: document=%1 reason=%2 file-format=%3 video-codec=%4 audio-codec=%5 video-format=%6 hwdec-current=%7 seekable=%8 paused-for-cache=%9 cache-buffering-state=%10 cache-speed=%11 width=%12 height=%13.")
+			.arg(qulonglong(_document->id))
+			.arg(QString::fromLatin1(reason ? reason : "unknown"))
+			.arg(propertyValue("file-format"))
+			.arg(propertyValue("video-codec"))
+			.arg(propertyValue("audio-codec-name"))
+			.arg(propertyValue("video-format"))
+			.arg(propertyValue("hwdec-current"))
+			.arg(propertyValue("seekable"))
+			.arg(propertyValue("paused-for-cache"))
+			.arg(propertyValue("cache-buffering-state"))
+			.arg(propertyValue("cache-speed"))
+			.arg(propertyValue("width"))
+			.arg(propertyValue("height")));
+	}
+
+	void observeProperty(const char *name, uint64_t id) {
+		if (!_api.observeProperty || !_handle || !name) {
+			return;
+		}
+		const auto result = _api.observeProperty(
+			_handle,
+			id,
+			name,
+			MPV_FORMAT_NONE);
+		if (result < 0) {
+			MPV_STREAMING_LOG(("MPV libmpv: mpv_observe_property(%1) failed: %2.")
+				.arg(QString::fromLatin1(name))
+				.arg(_api.describeError(result)));
+		}
+	}
+
+	void observeDebugProperties() {
+		if (!MpvDebugLogsEnabled()) {
+			return;
+		}
+		auto id = uint64_t(1);
+		for (const auto *name : {
+			"file-format",
+			"video-codec",
+			"audio-codec-name",
+			"video-format",
+			"hwdec-current",
+			"seekable",
+			"paused-for-cache",
+			"cache-buffering-state",
+			"cache-speed",
+			"width",
+			"height",
+		}) {
+			observeProperty(name, id++);
+		}
+		logPropertySnapshot("observe-registered");
+	}
+
 	[[nodiscard]] bool setOption(const char *name, const QString &value) {
 		const auto bytes = value.toUtf8();
 		const auto result = _api.setOptionString(_handle, name, bytes.constData());
@@ -684,12 +784,22 @@ private:
 			} else if (event->event_id == MPV_EVENT_FILE_LOADED) {
 				MPV_STREAMING_LOG(("MPV Streaming: libmpv file loaded for document %1.")
 					.arg(qulonglong(_document->id)));
+				logPropertySnapshot("file-loaded");
 			} else if (event->event_id == MPV_EVENT_SEEK) {
 				MPV_STREAMING_LOG(("MPV Streaming: libmpv seek event for document %1.")
 					.arg(qulonglong(_document->id)));
 			} else if (event->event_id == MPV_EVENT_PLAYBACK_RESTART) {
 				MPV_STREAMING_LOG(("MPV Streaming: libmpv playback restart for document %1.")
 					.arg(qulonglong(_document->id)));
+				logPropertySnapshot("playback-restart");
+			} else if (event->event_id == MPV_EVENT_PROPERTY_CHANGE) {
+				const auto property = static_cast<mpv_event_property*>(event->data);
+				if (property && property->name) {
+					MPV_STREAMING_LOG(("MPV libmpv property: document=%1 name=%2 value=%3")
+						.arg(qulonglong(_document->id))
+						.arg(QString::fromLatin1(property->name))
+						.arg(propertyValue(property->name)));
+				}
 			} else if (event->event_id == MPV_EVENT_END_FILE) {
 				const auto end = static_cast<mpv_event_end_file*>(event->data);
 				if (end && end->error < 0) {
