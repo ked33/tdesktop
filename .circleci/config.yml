@@ -81,8 +81,53 @@ jobs:
             & py -3.10 --version
 
       - run:
+          name: Preflight Windows toolchain
+          command: |
+            $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+            if (-not (Test-Path $vswhere)) {
+              throw "vswhere.exe not found: $vswhere"
+            }
+
+            $installPath = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1).Trim()
+            if (-not $installPath) {
+              throw "Visual Studio with VC tools not found."
+            }
+
+            $vcvarsPath = Join-Path $installPath 'VC\Auxiliary\Build\vcvars64.bat'
+            if (-not (Test-Path $vcvarsPath)) {
+              throw "vcvars64.bat not found: $vcvarsPath"
+            }
+
+            $msvcRoot = Join-Path $installPath 'VC\Tools\MSVC'
+            $toolsets = @()
+            if (Test-Path $msvcRoot) {
+              $toolsets = Get-ChildItem -Path $msvcRoot -Directory | Select-Object -ExpandProperty Name
+            }
+
+            Write-Host "VS install path: $installPath"
+            Write-Host "vcvars path: $vcvarsPath"
+            Write-Host "Installed MSVC toolsets: $($toolsets -join ', ')"
+
+            if (-not ($toolsets | Where-Object { $_ -like '14.44*' })) {
+              throw "MSVC 14.44 toolset not found on this CircleCI image. This repo's docs/building-win.md currently requires -vcvars_ver=14.44."
+            }
+
+            if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
+              throw "Python launcher 'py' not found on PATH."
+            }
+            & py -3.10 --version
+            if ($LASTEXITCODE -ne 0) {
+              throw "Python 3.10 launcher entry is not available."
+            }
+
+            if (-not (Get-Command nuget -ErrorAction SilentlyContinue)) {
+              throw "nuget not found on PATH."
+            }
+            & where.exe nuget
+
+      - run:
           name: Prepare third-party libraries
-          shell: 'cmd.exe /S /C'
+          shell: cmd.exe
           no_output_timeout: 90m
           command: |
             @echo OFF
@@ -128,7 +173,7 @@ jobs:
 
       - run:
           name: Configure and build Telegram
-          shell: 'cmd.exe /S /C'
+          shell: cmd.exe
           no_output_timeout: 120m
           command: |
             @echo OFF
