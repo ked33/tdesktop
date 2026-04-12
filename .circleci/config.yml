@@ -1,0 +1,178 @@
+version: 2.1
+
+jobs:
+  build-win-x64:
+    machine:
+      image: 'windows-server-2022-gui:current'
+      shell: 'powershell.exe -ExecutionPolicy Bypass'
+    resource_class: windows.large
+    working_directory: 'C:\Users\circleci\project\TBuild\C1og-tdesktop'
+    environment:
+      BUILD_ROOT: 'C:\Users\circleci\project\TBuild'
+      REPO_ROOT: 'C:\Users\circleci\project\TBuild\C1og-tdesktop'
+      THIRD_PARTY_PATH: 'C:\Users\circleci\project\TBuild\ThirdParty'
+      LIBRARIES_PATH: 'C:\Users\circleci\project\TBuild\Libraries\win64'
+
+    steps:
+      - run:
+          name: Prepare directories
+          command: |
+            New-Item -ItemType Directory -Force -Path $env:BUILD_ROOT | Out-Null
+            New-Item -ItemType Directory -Force -Path $env:THIRD_PARTY_PATH | Out-Null
+            New-Item -ItemType Directory -Force -Path $env:LIBRARIES_PATH | Out-Null
+
+      - checkout:
+          method: full
+
+      - run:
+          name: Sync submodules
+          command: |
+            git submodule sync --recursive
+            git submodule update --init --recursive --jobs 4
+
+      - restore_cache:
+          keys:
+            - win64-third-party-v1-{{ checksum "Telegram/build/prepare/prepare.py" }}-{{ checksum "Telegram/build/qt_version.py" }}-{{ checksum "docs/building-win.md" }}-{{ checksum ".gitmodules" }}
+            - win64-third-party-v1-
+
+      - restore_cache:
+          keys:
+            - win64-libraries-v1-{{ checksum "Telegram/build/prepare/prepare.py" }}-{{ checksum "Telegram/build/qt_version.py" }}-{{ checksum "docs/building-win.md" }}-{{ checksum ".gitmodules" }}
+            - win64-libraries-v1-
+
+      - run:
+          name: Probe toolchain
+          command: |
+            $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+            if (Test-Path $vswhere) {
+              & $vswhere -latest -products * -format json
+            }
+            if (Get-Command py -ErrorAction SilentlyContinue) {
+              & py --list
+            }
+            if (Get-Command python -ErrorAction SilentlyContinue) {
+              & python --version
+            }
+
+      - run:
+          name: Ensure Python 3.10
+          command: |
+            $hasPython310 = $false
+            if (Get-Command py -ErrorAction SilentlyContinue) {
+              try {
+                & py -3.10 --version
+                if ($LASTEXITCODE -eq 0) {
+                  $hasPython310 = $true
+                }
+              } catch {
+              }
+            }
+            if (-not $hasPython310) {
+              choco install python --version=3.10.11 --force -y /norestart
+            }
+            $machinePath = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
+            $userPath = [System.Environment]::GetEnvironmentVariable('Path', 'User')
+            if ($machinePath) {
+              $env:Path = $machinePath
+            }
+            if ($userPath) {
+              $env:Path = "$env:Path;$userPath"
+            }
+            & py -3.10 --version
+
+      - run:
+          name: Prepare third-party libraries
+          shell: 'cmd.exe /S /C'
+          no_output_timeout: 90m
+          command: |
+            @echo OFF
+            setlocal
+            call :init_msvc
+            if errorlevel 1 exit /b %errorlevel%
+            call :use_python310
+            if errorlevel 1 exit /b %errorlevel%
+            where nuget
+            if errorlevel 1 exit /b 1
+            nuget sources Disable -Name "Microsoft Visual Studio Offline Packages" >nul 2>&1
+            nuget sources Add -Name "NuGet.org" -Source https://api.nuget.org/v3/index.json >nul 2>&1
+            cd /d %BUILD_ROOT%
+            call %REPO_ROOT%\Telegram\build\prepare\win.bat silent
+            exit /b %errorlevel%
+
+            :init_msvc
+            set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+            if not exist "%VSWHERE%" exit /b 1
+            for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALLPATH=%%i"
+            if not defined VSINSTALLPATH exit /b 1
+            if not exist "%VSINSTALLPATH%\VC\Auxiliary\Build\vcvars64.bat" exit /b 1
+            call "%VSINSTALLPATH%\VC\Auxiliary\Build\vcvars64.bat" -vcvars_ver=14.44
+            exit /b %errorlevel%
+
+            :use_python310
+            for /f "usebackq delims=" %%i in (`py -3.10 -c "import sys; print(sys.executable)"`) do set "PYTHON310=%%i"
+            if not defined PYTHON310 exit /b 1
+            for %%i in ("%PYTHON310%") do set "PYTHON310_DIR=%%~dpi"
+            set "PATH=%PYTHON310_DIR%;%PYTHON310_DIR%Scripts;%PATH%"
+            python --version
+            exit /b %errorlevel%
+
+      - save_cache:
+          key: win64-third-party-v1-{{ checksum "Telegram/build/prepare/prepare.py" }}-{{ checksum "Telegram/build/qt_version.py" }}-{{ checksum "docs/building-win.md" }}-{{ checksum ".gitmodules" }}
+          paths:
+            - 'C:\Users\circleci\project\TBuild\ThirdParty'
+
+      - save_cache:
+          key: win64-libraries-v1-{{ checksum "Telegram/build/prepare/prepare.py" }}-{{ checksum "Telegram/build/qt_version.py" }}-{{ checksum "docs/building-win.md" }}-{{ checksum ".gitmodules" }}
+          paths:
+            - 'C:\Users\circleci\project\TBuild\Libraries\win64'
+
+      - run:
+          name: Configure and build Telegram
+          shell: 'cmd.exe /S /C'
+          no_output_timeout: 120m
+          command: |
+            @echo OFF
+            setlocal
+            if "%TDESKTOP_API_ID%"=="" exit /b 1
+            if "%TDESKTOP_API_HASH%"=="" exit /b 1
+            call :init_msvc
+            if errorlevel 1 exit /b %errorlevel%
+            call :use_python310
+            if errorlevel 1 exit /b %errorlevel%
+            cd /d %REPO_ROOT%\Telegram
+            call configure.bat x64 ^
+              -D TDESKTOP_API_ID=%TDESKTOP_API_ID% ^
+              -D TDESKTOP_API_HASH=%TDESKTOP_API_HASH% ^
+              -D CMAKE_CONFIGURATION_TYPES=Release ^
+              -D CMAKE_COMPILE_WARNING_AS_ERROR=OFF ^
+              -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=
+            if errorlevel 1 exit /b %errorlevel%
+            cd /d %REPO_ROOT%\out
+            cmake --build . --config Release --target Telegram --parallel
+            exit /b %errorlevel%
+
+            :init_msvc
+            set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+            if not exist "%VSWHERE%" exit /b 1
+            for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALLPATH=%%i"
+            if not defined VSINSTALLPATH exit /b 1
+            if not exist "%VSINSTALLPATH%\VC\Auxiliary\Build\vcvars64.bat" exit /b 1
+            call "%VSINSTALLPATH%\VC\Auxiliary\Build\vcvars64.bat" -vcvars_ver=14.44
+            exit /b %errorlevel%
+
+            :use_python310
+            for /f "usebackq delims=" %%i in (`py -3.10 -c "import sys; print(sys.executable)"`) do set "PYTHON310=%%i"
+            if not defined PYTHON310 exit /b 1
+            for %%i in ("%PYTHON310%") do set "PYTHON310_DIR=%%~dpi"
+            set "PATH=%PYTHON310_DIR%;%PYTHON310_DIR%Scripts;%PATH%"
+            python --version
+            exit /b %errorlevel%
+
+      - store_artifacts:
+          path: 'C:\Users\circleci\project\TBuild\C1og-tdesktop\out\Release\Telegram.exe'
+          destination: Telegram-x64/Telegram.exe
+
+workflows:
+  build-win-x64:
+    jobs:
+      - build-win-x64
