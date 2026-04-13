@@ -3301,7 +3301,7 @@ bool SessionController::openDocumentInMediaViewAvio(
 		document,
 		item,
 		Data::FileOrigin(item->fullId()),
-		true);
+		false);
 	if (!shared) {
 		return false;
 	}
