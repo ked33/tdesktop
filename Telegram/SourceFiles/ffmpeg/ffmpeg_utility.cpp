@@ -279,12 +279,16 @@ FormatPointer MakeFormatPointer(
 #else
 		int(*write)(void *opaque, uint8_t *buffer, int bufferSize),
 #endif
-		int64_t(*seek)(void *opaque, int64_t offset, int whence)) {
+		int64_t(*seek)(void *opaque, int64_t offset, int whence),
+		bool seekableOnOpen) {
 	auto io = MakeIOPointer(opaque, read, write, seek);
 	if (!io) {
 		return {};
 	}
-	io->seekable = (seek != nullptr);
+	io->seekable = ((seek != nullptr) && seekableOnOpen);
+	if (!seekableOnOpen) {
+		io->seek = nullptr;
+	}
 	auto result = avformat_alloc_context();
 	if (!result) {
 		LogError(u"avformat_alloc_context"_q);
@@ -295,7 +299,7 @@ FormatPointer MakeFormatPointer(
 
 	auto options = (AVDictionary*)nullptr;
 	const auto guard = gsl::finally([&] { av_dict_free(&options); });
-	av_dict_set(&options, "usetoc", "1", 0);
+	av_dict_set(&options, "usetoc", seekableOnOpen ? "1" : "0", 0);
 
 	const auto error = AvErrorWrap(avformat_open_input(
 		&result,
@@ -306,6 +310,10 @@ FormatPointer MakeFormatPointer(
 		// avformat_open_input freed 'result' in case an error happened.
 		LogError(u"avformat_open_input"_q, error);
 		return {};
+	}
+	if (!seekableOnOpen && result->pb) {
+		result->pb->seek = seek;
+		result->pb->seekable = (seek != nullptr);
 	}
 	if (seek) {
 		result->flags |= AVFMT_FLAG_FAST_SEEK;
