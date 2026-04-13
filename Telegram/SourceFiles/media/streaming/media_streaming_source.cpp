@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_debug.h"
 #include "media/streaming/media_streaming_loader.h"
 #include "media/streaming/media_streaming_reader.h"
+#include "storage/cache/storage_cache_types.h"
 #include "base/flat_map.h"
 #include "base/flat_set.h"
 #include "base/thread_safe_wrap.h"
@@ -158,7 +159,7 @@ public:
 			return FillState::Failed;
 		};
 
-		processLoadedParts();
+		[[maybe_unused]] const auto loaded = processLoadedParts();
 		if (_streamingError) {
 			return FillState::Failed;
 		}
@@ -274,7 +275,7 @@ private:
 				return _streamingError ? FillState::Failed : FillState::WaitingRemote;
 			}
 			const auto copy = std::min<int64>(bytes.size() - from, end - cursor);
-			bytes::copy(out.first(copy), bytes.subspan(from, copy));
+			bytes::copy(out.subspan(0, copy), bytes.subspan(from, copy));
 			out = out.subspan(copy);
 			cursor += copy;
 		}
