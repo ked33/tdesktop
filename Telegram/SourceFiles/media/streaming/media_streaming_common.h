@@ -48,6 +48,7 @@ struct PlaybackOptions {
 	bool hwAllowed = false;
 	bool seekable = true;
 	bool loop = false;
+	bool sequentialOpen = false;
 };
 
 struct TrackState {
