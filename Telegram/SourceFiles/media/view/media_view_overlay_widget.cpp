@@ -4798,6 +4798,7 @@ void OverlayWidget::restartAtSeekPosition(crl::time position) {
 			: crl::time(0)),
 		.hwAllowed = Core::App().settings().hardwareAcceleratedVideo(),
 		.seekable = !_stories,
+		.sequentialOpen = _forceDedicatedAvioPlayback,
 	};
 	if (!_streamed->withSound) {
 		options.mode = Streaming::Mode::Video;

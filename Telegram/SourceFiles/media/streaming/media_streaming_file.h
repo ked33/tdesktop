@@ -27,6 +27,7 @@ struct StartOptions {
 	crl::time durationOverride = 0;
 	bool seekable = true;
 	bool hwAllow = false;
+	bool sequentialOpen = false;
 };
 
 class File final {

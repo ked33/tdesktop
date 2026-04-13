@@ -133,7 +133,8 @@ using FormatPointer = std::unique_ptr<AVFormatContext, FormatDeleter>;
 #else
 	int(*write)(void *opaque, uint8_t *buffer, int bufferSize),
 #endif
-	int64_t(*seek)(void *opaque, int64_t offset, int whence));
+	int64_t(*seek)(void *opaque, int64_t offset, int whence),
+	bool seekableOnOpen = true);
 [[nodiscard]] FormatPointer MakeWriteFormatPointer(
 	void *opaque,
 	int(*read)(void *opaque, uint8_t *buffer, int bufferSize),
