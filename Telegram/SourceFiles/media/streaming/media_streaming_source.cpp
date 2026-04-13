@@ -24,6 +24,8 @@ namespace Media::Streaming {
 namespace {
 
 constexpr auto kPreloadPartsAhead = 8;
+constexpr auto kVerboseFillLogs = 24;
+constexpr auto kVerbosePartLogs = 24;
 
 class ReaderFileSource final : public FileSource {
 public:
@@ -117,9 +119,22 @@ public:
 	, _totalParts((_size + Loader::kPartSize - 1) / Loader::kPartSize)
 	, _fullInCache(!_remoteLoader) {
 		Expects(_loader != nullptr);
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Direct AVIO source created size=%1 remote=%2 totalParts=%3.")
+			.arg(qlonglong(_size))
+			.arg(_remoteLoader ? 1 : 0)
+			.arg(qlonglong(_totalParts)));
 
 		_loader->parts(
 		) | rpl::on_next([=](LoadedPart &&part) {
+			if ((_debugPartNotifications < kVerbosePartLogs)
+				|| !(_debugPartNotifications % 32)
+				|| (part.offset == LoadedPart::kFailedOffset)) {
+				VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Direct AVIO source part notification offset=%1 bytes=%2 failed=%3.")
+					.arg(qlonglong(part.offset))
+					.arg(qlonglong(part.bytes.size()))
+					.arg(part.offset == LoadedPart::kFailedOffset ? 1 : 0));
+			}
+			++_debugPartNotifications;
 			_loadedParts.emplace(std::move(part));
 			if (const auto waiting = _waiting.load(std::memory_order_acquire)) {
 				_waiting.store(nullptr, std::memory_order_release);
@@ -142,6 +157,17 @@ public:
 			not_null<crl::semaphore*> notify) override {
 		Expects(offset >= 0);
 		Expects(offset + buffer.size() <= _size);
+
+		if ((_debugFillCalls < kVerboseFillLogs) || !(_debugFillCalls % 32)) {
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Direct AVIO fill enter offset=%1 amount=%2 contiguous=%3 loadedParts=%4 queued=%5 waitingCount=%6.")
+				.arg(qlonglong(offset))
+				.arg(qlonglong(buffer.size()))
+				.arg(qlonglong(_contiguousLoadedTill))
+				.arg(qlonglong(_loadedPartCount))
+				.arg(qlonglong(_loadingOffsets.size()))
+				.arg(_debugWaitReturns));
+		}
+		++_debugFillCalls;
 
 		const auto startWaiting = [&] {
 			_waiting.store(notify.get(), std::memory_order_release);
@@ -167,6 +193,17 @@ public:
 		auto last = fillFromLoaded(offset, buffer);
 		while (last != FillState::Success) {
 			startWaiting();
+			++_debugWaitReturns;
+			if ((_debugWaitReturns <= kVerboseFillLogs)
+				|| !(_debugWaitReturns % 32)) {
+				VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Direct AVIO fill waiting offset=%1 amount=%2 waitCount=%3 contiguous=%4 queued=%5 lastMissing=%6.")
+					.arg(qlonglong(offset))
+					.arg(qlonglong(buffer.size()))
+					.arg(_debugWaitReturns)
+					.arg(qlonglong(_contiguousLoadedTill))
+					.arg(qlonglong(_loadingOffsets.size()))
+					.arg(qlonglong(_lastMissingPartOffset)));
+			}
 			if (!processLoadedParts()) {
 				break;
 			}
@@ -174,6 +211,19 @@ public:
 				return failed();
 			}
 			last = fillFromLoaded(offset, buffer);
+		}
+		if (last == FillState::Success
+			&& ((_debugSuccessfulFills < kVerboseFillLogs)
+				|| !(_debugSuccessfulFills % 32))) {
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Direct AVIO fill success offset=%1 amount=%2 contiguous=%3 loadedParts=%4 queued=%5.")
+				.arg(qlonglong(offset))
+				.arg(qlonglong(buffer.size()))
+				.arg(qlonglong(_contiguousLoadedTill))
+				.arg(qlonglong(_loadedPartCount))
+				.arg(qlonglong(_loadingOffsets.size())));
+		}
+		if (last == FillState::Success) {
+			++_debugSuccessfulFills;
 		}
 		return _streamingError ? failed() : (last == FillState::Success ? done() : last);
 	}
@@ -267,6 +317,7 @@ private:
 			const auto partOffset = AlignOffset(cursor);
 			const auto i = _parts.find(partOffset);
 			if (i == end(_parts)) {
+				_lastMissingPartOffset = partOffset;
 				return _streamingError ? FillState::Failed : FillState::WaitingRemote;
 			}
 			const auto partBytes = bytes::make_span(i->second);
@@ -294,7 +345,7 @@ private:
 				VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Direct AVIO source load failed size=%1 partOffset=%2 partBytes=%3.")
 					.arg(qlonglong(_size))
 					.arg(qlonglong(part.offset))
-					.arg(part.bytes.size()));
+					.arg(qlonglong(part.bytes.size())));
 				return false;
 			}
 			const auto inserted = _parts.emplace(part.offset, std::move(part.bytes));
@@ -305,6 +356,15 @@ private:
 			++_loadedPartCount;
 			changed = true;
 			updateContiguousLoadedTill();
+			if ((_debugLoadedParts < kVerbosePartLogs) || !(_debugLoadedParts % 32)) {
+				VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Direct AVIO part loaded offset=%1 bytes=%2 contiguous=%3 loadedParts=%4 queued=%5.")
+					.arg(qlonglong(part.offset))
+					.arg(qlonglong(inserted.first->second.size()))
+					.arg(qlonglong(_contiguousLoadedTill))
+					.arg(qlonglong(_loadedPartCount))
+					.arg(qlonglong(_loadingOffsets.size())));
+			}
+			++_debugLoadedParts;
 		}
 		if (_loadedPartCount >= _totalParts) {
 			_fullInCache = true;
@@ -332,6 +392,9 @@ private:
 			AlignOffset(offset + preload + Loader::kPartSize - 1)
 				+ Loader::kPartSize);
 		auto needed = base::flat_set<int64>();
+		auto added = 0;
+		auto firstAdded = int64(-1);
+		auto lastAdded = int64(-1);
 		for (auto part = start; part < till; part += Loader::kPartSize) {
 			needed.emplace(part);
 			if (_parts.contains(part) || _loadingOffsets.contains(part)) {
@@ -342,7 +405,26 @@ private:
 			}
 			_loadingOffsets.emplace(part);
 			_loader->load(part);
+			++added;
+			if (firstAdded < 0) {
+				firstAdded = part;
+			}
+			lastAdded = part;
 		}
+		if (((_debugQueueCalls < kVerboseFillLogs) || !(_debugQueueCalls % 32))
+			&& (added > 0 || _loadingOffsets.empty())) {
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Direct AVIO queue request offset=%1 amount=%2 rangeStart=%3 rangeTill=%4 added=%5 firstAdded=%6 lastAdded=%7 queued=%8 contiguous=%9.")
+				.arg(qlonglong(offset))
+				.arg(qlonglong(amount))
+				.arg(qlonglong(start))
+				.arg(qlonglong(till))
+				.arg(added)
+				.arg(qlonglong(firstAdded))
+				.arg(qlonglong(lastAdded))
+				.arg(qlonglong(_loadingOffsets.size()))
+				.arg(qlonglong(_contiguousLoadedTill)));
+		}
+		++_debugQueueCalls;
 		cancelOutstandingLoads(needed);
 	}
 
@@ -386,6 +468,13 @@ private:
 	int _headerSize = 0;
 	int _loadedPartCount = 0;
 	int64 _contiguousLoadedTill = 0;
+	int64 _lastMissingPartOffset = -1;
+	int _debugFillCalls = 0;
+	int _debugSuccessfulFills = 0;
+	int _debugWaitReturns = 0;
+	int _debugQueueCalls = 0;
+	int _debugLoadedParts = 0;
+	int _debugPartNotifications = 0;
 
 	rpl::lifetime _lifetime;
 };
