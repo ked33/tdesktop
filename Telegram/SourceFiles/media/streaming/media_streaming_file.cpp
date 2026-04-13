@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/streaming/media_streaming_file.h"
 
+#include "media/streaming/media_streaming_debug.h"
 #include "media/streaming/media_streaming_loader.h"
 #include "media/streaming/media_streaming_file_delegate.h"
 #include "ffmpeg/ffmpeg_utility.h"
@@ -57,6 +58,7 @@ int File::Context::read(bytes::span buffer) {
 	Expects(_size >= _offset);
 
 	const auto amount = std::min(_size - _offset, int64(buffer.size()));
+	const auto requestedOffset = _offset;
 
 	if (unroll()) {
 		return AVERROR_EXTERNAL;
@@ -69,11 +71,25 @@ int File::Context::read(bytes::span buffer) {
 	}
 
 	buffer = buffer.subspan(0, amount);
+	if (_debugReadCalls < 12) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: AVIO read enter offset=%1 amount=%2 requested=%3 size=%4.")
+			.arg(qlonglong(requestedOffset))
+			.arg(qlonglong(amount))
+			.arg(qlonglong(buffer.size()))
+			.arg(qlonglong(_size)));
+	}
 	while (true) {
 		const auto result = _source->fill(_offset, buffer, &_semaphore);
 		if (result == FileSource::FillState::Success) {
 			break;
 		} else if (result == FileSource::FillState::WaitingRemote) {
+			++_debugWaitingCount;
+			if ((_debugWaitingCount <= 8) || !(_debugWaitingCount % 25)) {
+				VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: AVIO read waiting offset=%1 amount=%2 waitCount=%3.")
+					.arg(qlonglong(_offset))
+					.arg(qlonglong(buffer.size()))
+					.arg(_debugWaitingCount));
+			}
 			// Perhaps for the correct sleeping in case of enough packets
 			// being read already we require SleepPolicy::Allowed here.
 			// Otherwise if we wait for the remote frequently and
@@ -97,6 +113,14 @@ int File::Context::read(bytes::span buffer) {
 	sendFullInCache();
 
 	_offset += amount;
+	++_debugReadCalls;
+	if (_debugReadCalls <= 12) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: AVIO read success offset=%1 amount=%2 nextOffset=%3 waits=%4.")
+			.arg(qlonglong(requestedOffset))
+			.arg(qlonglong(amount))
+			.arg(qlonglong(_offset))
+			.arg(_debugWaitingCount));
+	}
 	return amount;
 }
 
@@ -279,6 +303,12 @@ void File::Context::start(StartOptions options) {
 	if (unroll()) {
 		return;
 	}
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File start sourceSize=%1 seekable=%2 position=%3 durationOverride=%4 remote=%5.")
+		.arg(qlonglong(_size))
+		.arg(options.seekable ? 1 : 0)
+		.arg(qlonglong(options.position))
+		.arg(qlonglong(options.durationOverride))
+		.arg(_source->isRemoteLoader() ? 1 : 0));
 	auto format = FFmpeg::MakeFormatPointer(
 		static_cast<void*>(this),
 		&Context::Read,
@@ -287,10 +317,17 @@ void File::Context::start(StartOptions options) {
 	if (!format) {
 		return fail(Error::OpenFailed);
 	}
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File format context created sourceSize=%1.")
+		.arg(qlonglong(_size)));
 
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File calling avformat_find_stream_info size=%1 position=%2.")
+		.arg(qlonglong(_size))
+		.arg(qlonglong(options.position)));
 	if ((error = avformat_find_stream_info(format.get(), nullptr))) {
 		return logFatal(qstr("avformat_find_stream_info"), error);
 	}
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File avformat_find_stream_info done size=%1.")
+		.arg(qlonglong(_size)));
 
 	const auto mode = _delegate->fileOpenMode();
 	auto video = initStream(
@@ -312,6 +349,9 @@ void File::Context::start(StartOptions options) {
 	}
 
 	_source->headerDone();
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File header done headerSize=%1 remote=%2.")
+		.arg(_source->headerSize())
+		.arg(_source->isRemoteLoader() ? 1 : 0));
 	if (_source->isRemoteLoader()) {
 		sendFullInCache(true);
 	}
@@ -333,6 +373,12 @@ void File::Context::start(StartOptions options) {
 	}
 
 	const auto header = _source->headerSize();
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File ready callback header=%1 hasVideo=%2 hasAudio=%3 videoIndex=%4 audioIndex=%5.")
+		.arg(header)
+		.arg(video.codec ? 1 : 0)
+		.arg(audio.codec ? 1 : 0)
+		.arg(video.index)
+		.arg(audio.index));
 	if (!_delegate->fileReady(header, std::move(video), std::move(audio))) {
 		return fail(Error::OpenFailed);
 	}
@@ -345,6 +391,9 @@ void File::Context::sendFullInCache(bool force) {
 		const auto nowFullInCache = _source->fullInCache();
 		if (!started || *_fullInCache != nowFullInCache) {
 			_fullInCache = nowFullInCache;
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File fullInCache changed value=%1 force=%2.")
+				.arg(nowFullInCache ? 1 : 0)
+				.arg(force ? 1 : 0));
 			_delegate->fileFullInCache(nowFullInCache);
 		}
 	}
