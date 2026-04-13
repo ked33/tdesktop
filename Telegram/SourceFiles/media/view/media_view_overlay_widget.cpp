@@ -4381,7 +4381,7 @@ bool OverlayWidget::createStreamingObjects() {
 				dedicatedDocument = std::move(_streamingDocumentOverride);
 				_streamingDocumentOverride = nullptr;
 			} else {
-				dedicatedDocument = video->owner().streaming().dedicatedDocument(
+				dedicatedDocument = video->owner().streaming().dedicatedAvioDocument(
 					video,
 					_document,
 					_message,

@@ -1334,6 +1334,8 @@ PRIVATE
     media/streaming/media_streaming_reader.h
     media/streaming/media_streaming_round_preview.cpp
     media/streaming/media_streaming_round_preview.h
+    media/streaming/media_streaming_source.cpp
+    media/streaming/media_streaming_source.h
     media/streaming/media_streaming_utility.cpp
     media/streaming/media_streaming_utility.h
     media/streaming/media_streaming_video_track.cpp

@@ -125,7 +125,11 @@ void SaveValidStartInformation(Information &to, Information &&from) {
 } // namespace
 
 Player::Player(std::shared_ptr<Reader> reader)
-: _file(std::make_unique<File>(std::move(reader)))
+: Player(MakeFileSource(std::move(reader))) {
+}
+
+Player::Player(std::shared_ptr<FileSource> source)
+: _file(std::make_unique<File>(std::move(source)))
 , _remoteLoader(_file->isRemoteLoader())
 , _renderFrameTimer([=] { checkNextFrameRender(); }) {
 }

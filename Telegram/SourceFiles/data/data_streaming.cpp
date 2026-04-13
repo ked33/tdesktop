@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_loader.h"
 #include "media/streaming/media_streaming_reader.h"
 #include "media/streaming/media_streaming_document.h"
+#include "media/streaming/media_streaming_source.h"
 
 namespace Data {
 namespace {
@@ -182,6 +183,26 @@ template <typename Data>
 }
 
 template <typename Data>
+[[nodiscard]] std::shared_ptr<Streaming::Document> Streaming::makeDedicatedAvioDocument(
+		not_null<Data*> data,
+		DocumentData *original,
+		HistoryItem *context,
+		FileOrigin origin,
+		bool forceRemoteLoader) {
+	auto loader = data->createStreamingLoader(origin, forceRemoteLoader);
+	if (!loader && forceRemoteLoader) {
+		loader = data->createStreamingLoader(origin, false);
+	}
+	if (!loader) {
+		return nullptr;
+	}
+	return std::make_shared<Document>(
+		data,
+		::Media::Streaming::MakeDirectFileSource(std::move(loader)),
+		LookupOtherQualities(original, data, context));
+}
+
+template <typename Data>
 void Streaming::keepAlive(
 		base::flat_map<not_null<Data*>, std::weak_ptr<Document>> &documents,
 		not_null<Data*> data) {
@@ -245,6 +266,20 @@ std::shared_ptr<Streaming::Document> Streaming::dedicatedDocument(
 		FileOrigin origin,
 		bool forceRemoteLoader) {
 	return makeDedicatedDocument(
+		quality,
+		original,
+		context,
+		origin,
+		forceRemoteLoader);
+}
+
+std::shared_ptr<Streaming::Document> Streaming::dedicatedAvioDocument(
+		not_null<DocumentData*> quality,
+		not_null<DocumentData*> original,
+		HistoryItem *context,
+		FileOrigin origin,
+		bool forceRemoteLoader) {
+	return makeDedicatedAvioDocument(
 		quality,
 		original,
 		context,

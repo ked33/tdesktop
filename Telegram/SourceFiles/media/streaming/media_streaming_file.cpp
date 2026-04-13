@@ -36,10 +36,10 @@ constexpr auto kMaxQueuedPackets = 1024;
 
 File::Context::Context(
 	not_null<FileDelegate*> delegate,
-	not_null<Reader*> reader)
+	not_null<FileSource*> source)
 : _delegate(delegate)
-, _reader(reader)
-, _size(reader->size()) {
+, _source(source)
+, _size(source->size()) {
 }
 
 File::Context::~Context() = default;
@@ -70,10 +70,10 @@ int File::Context::read(bytes::span buffer) {
 
 	buffer = buffer.subspan(0, amount);
 	while (true) {
-		const auto result = _reader->fill(_offset, buffer, &_semaphore);
-		if (result == Reader::FillState::Success) {
+		const auto result = _source->fill(_offset, buffer, &_semaphore);
+		if (result == FileSource::FillState::Success) {
 			break;
-		} else if (result == Reader::FillState::WaitingRemote) {
+		} else if (result == FileSource::FillState::WaitingRemote) {
 			// Perhaps for the correct sleeping in case of enough packets
 			// being read already we require SleepPolicy::Allowed here.
 			// Otherwise if we wait for the remote frequently and
@@ -88,7 +88,7 @@ int File::Context::read(bytes::span buffer) {
 		_semaphore.acquire();
 		if (_interrupted) {
 			return AVERROR_EXTERNAL;
-		} else if (const auto error = _reader->streamingError()) {
+		} else if (const auto error = _source->streamingError()) {
 			fail(*error);
 			return AVERROR_EXTERNAL;
 		}
@@ -311,8 +311,8 @@ void File::Context::start(StartOptions options) {
 		return;
 	}
 
-	_reader->headerDone();
-	if (_reader->isRemoteLoader()) {
+	_source->headerDone();
+	if (_source->isRemoteLoader()) {
 		sendFullInCache(true);
 	}
 	if (options.seekable && (video.codec || audio.codec)) {
@@ -332,7 +332,7 @@ void File::Context::start(StartOptions options) {
 		_queuedPackets[audio.index].reserve(kMaxQueuedPackets);
 	}
 
-	const auto header = _reader->headerSize();
+	const auto header = _source->headerSize();
 	if (!_delegate->fileReady(header, std::move(video), std::move(audio))) {
 		return fail(Error::OpenFailed);
 	}
@@ -392,7 +392,7 @@ void File::Context::handleEndOfFile() {
 		// If we loaded a file till the end then we think it is fully cached,
 		// assume we finished loading and don't want to keep all other
 		// download tasks throttled because of an active streaming.
-		_reader->tryRemoveLoaderAsync();
+		_source->tryRemoveLoaderAsync();
 	} else {
 		_readTillEnd = true;
 	}
@@ -402,9 +402,9 @@ void File::Context::processQueuedPackets(SleepPolicy policy) {
 	const auto more = _delegate->fileProcessPackets(_queuedPackets);
 	if (!more && policy == SleepPolicy::Allowed) {
 		do {
-			_reader->startSleep(&_semaphore);
+			_source->startSleep(&_semaphore);
 			_semaphore.acquire();
-			_reader->stopSleep();
+			_source->stopSleep();
 		} while (!unroll() && !_delegate->fileReadMore());
 	}
 }
@@ -442,18 +442,22 @@ bool File::Context::finished() const {
 void File::Context::stopStreamingAsync() {
 	// If we finished loading we don't want to keep all other
 	// download tasks throttled because of an active streaming.
-	_reader->stopStreamingAsync();
+	_source->stopStreamingAsync();
+}
+
+File::File(std::shared_ptr<FileSource> source)
+: _source(std::move(source)) {
 }
 
 File::File(std::shared_ptr<Reader> reader)
-: _reader(std::move(reader)) {
+: File(MakeFileSource(std::move(reader))) {
 }
 
 void File::start(not_null<FileDelegate*> delegate, StartOptions options) {
 	stop(true);
 
-	_reader->startStreaming();
-	_context.emplace(delegate, _reader.get());
+	_source->startStreaming();
+	_context.emplace(delegate, _source.get());
 
 	_thread = std::thread([=, context = &*_context] {
 		crl::toggle_fp_exceptions(true);
@@ -478,24 +482,24 @@ void File::stop(bool stillActive) {
 		_context->interrupt();
 		_thread.join();
 	}
-	_reader->stopStreaming(stillActive);
+	_source->stopStreaming(stillActive);
 	_context.reset();
 }
 
 bool File::isRemoteLoader() const {
-	return _reader->isRemoteLoader();
+	return _source->isRemoteLoader();
 }
 
 void File::setLoaderPriority(int priority) {
-	_reader->setLoaderPriority(priority);
+	_source->setLoaderPriority(priority);
 }
 
 int64 File::size() const {
-	return _reader->size();
+	return _source->size();
 }
 
 rpl::producer<SpeedEstimate> File::speedEstimate() const {
-	return _reader->speedEstimate();
+	return _source->speedEstimate();
 }
 
 File::~File() {

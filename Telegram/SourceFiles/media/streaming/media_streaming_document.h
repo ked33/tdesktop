@@ -17,6 +17,7 @@ class DocumentData;
 namespace Media::Streaming {
 
 class Instance;
+class FileSource;
 class Loader;
 
 struct QualityDescriptor {
@@ -28,7 +29,15 @@ class Document {
 public:
 	Document(
 		not_null<DocumentData*> document,
+		std::shared_ptr<FileSource> source,
+		std::vector<QualityDescriptor> otherQualities = {});
+	Document(
+		not_null<DocumentData*> document,
 		std::shared_ptr<Reader> reader,
+		std::vector<QualityDescriptor> otherQualities = {});
+	Document(
+		not_null<PhotoData*> photo,
+		std::shared_ptr<FileSource> source,
 		std::vector<QualityDescriptor> otherQualities = {});
 	Document(
 		not_null<PhotoData*> photo,
@@ -51,6 +60,11 @@ public:
 	[[nodiscard]] rpl::producer<int> switchQualityRequests() const;
 
 private:
+	Document(
+		std::shared_ptr<FileSource> source,
+		DocumentData *document,
+		PhotoData *photo,
+		std::vector<QualityDescriptor> otherQualities);
 	Document(
 		std::shared_ptr<Reader> reader,
 		DocumentData *document,

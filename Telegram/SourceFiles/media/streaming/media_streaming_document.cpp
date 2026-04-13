@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_debug.h"
 #include "media/streaming/media_streaming_loader.h"
 #include "media/streaming/media_streaming_reader.h"
+#include "media/streaming/media_streaming_source.h"
 #include "data/data_session.h"
 #include "data/data_document.h"
 #include "data/data_photo.h"
@@ -37,9 +38,9 @@ constexpr auto kSwitchQualityUpSpeedMultiplier = 1.2;
 
 Document::Document(
 	not_null<DocumentData*> document,
-	std::shared_ptr<Reader> reader,
+	std::shared_ptr<FileSource> source,
 	std::vector<QualityDescriptor> otherQualities)
-: Document(std::move(reader), document, {}, std::move(otherQualities)) {
+: Document(std::move(source), document, {}, std::move(otherQualities)) {
 	_player.fullInCache(
 	) | rpl::on_next([=](bool fullInCache) {
 		_document->setLoadedInMediaCache(fullInCache);
@@ -47,10 +48,27 @@ Document::Document(
 }
 
 Document::Document(
+	not_null<DocumentData*> document,
+	std::shared_ptr<Reader> reader,
+	std::vector<QualityDescriptor> otherQualities)
+: Document(
+	document,
+	MakeFileSource(std::move(reader)),
+	std::move(otherQualities)) {
+}
+
+Document::Document(
+	not_null<PhotoData*> photo,
+	std::shared_ptr<FileSource> source,
+	std::vector<QualityDescriptor> otherQualities)
+: Document(std::move(source), {}, photo, std::move(otherQualities)) {
+}
+
+Document::Document(
 	not_null<PhotoData*> photo,
 	std::shared_ptr<Reader> reader,
 	std::vector<QualityDescriptor> otherQualities)
-: Document(std::move(reader), {}, photo, {}) {
+: Document(photo, MakeFileSource(std::move(reader)), std::move(otherQualities)) {
 }
 
 Document::Document(std::unique_ptr<Loader> loader)
@@ -58,18 +76,30 @@ Document::Document(std::unique_ptr<Loader> loader)
 }
 
 Document::Document(
-	std::shared_ptr<Reader> reader,
+	std::shared_ptr<FileSource> source,
 	DocumentData *document,
 	PhotoData *photo,
 	std::vector<QualityDescriptor> otherQualities)
 : _document(document)
 , _photo(photo)
-, _player(std::move(reader))
+, _player(std::move(source))
 , _radial(
 	[=] { waitingCallback(); },
 	st::defaultInfiniteRadialAnimation)
 , _otherQualities(std::move(otherQualities)) {
 	resubscribe();
+}
+
+Document::Document(
+	std::shared_ptr<Reader> reader,
+	DocumentData *document,
+	PhotoData *photo,
+	std::vector<QualityDescriptor> otherQualities)
+: Document(
+	MakeFileSource(std::move(reader)),
+	document,
+	photo,
+	std::move(otherQualities)) {
 }
 
 void Document::resubscribe() {

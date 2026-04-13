@@ -3296,7 +3296,7 @@ bool SessionController::openDocumentInMediaViewAvio(
 	if (!item) {
 		return false;
 	}
-	const auto shared = document->owner().streaming().dedicatedDocument(
+	const auto shared = document->owner().streaming().dedicatedAvioDocument(
 		document,
 		document,
 		item,
