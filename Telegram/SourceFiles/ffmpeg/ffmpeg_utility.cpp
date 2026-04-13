@@ -396,6 +396,9 @@ CodecPointer MakeCodecPointer(CodecDescriptor descriptor) {
 		return {};
 	}
 	const auto stream = descriptor.stream;
+	DEBUG_LOG(("Video Playback: MakeCodecPointer enter codecId=%1 hwAllowed=%2.")
+		.arg(int(stream->codecpar ? stream->codecpar->codec_id : AV_CODEC_ID_NONE))
+		.arg(descriptor.hwAllowed ? 1 : 0));
 	error = avcodec_parameters_to_context(context, stream->codecpar);
 	if (error) {
 		LogError(u"avcodec_parameters_to_context"_q, error);
@@ -410,6 +413,10 @@ CodecPointer MakeCodecPointer(CodecDescriptor descriptor) {
 		LogError(u"avcodec_find_decoder"_q, context->codec_id);
 		return {};
 	}
+	DEBUG_LOG(("Video Playback: MakeCodecPointer decoder codecId=%1 name=%2 hwAllowed=%3.")
+		.arg(int(context->codec_id))
+		.arg(codec->name ? QString::fromLatin1(codec->name) : QStringLiteral("null"))
+		.arg(descriptor.hwAllowed ? 1 : 0));
 
 	if (descriptor.hwAllowed) {
 		context->get_format = GetHwFormat;
@@ -419,10 +426,16 @@ CodecPointer MakeCodecPointer(CodecDescriptor descriptor) {
 			).arg(codec->name));
 	}
 
+	DEBUG_LOG(("Video Playback: MakeCodecPointer opening codecId=%1 hwAllowed=%2.")
+		.arg(int(context->codec_id))
+		.arg(descriptor.hwAllowed ? 1 : 0));
 	if ((error = avcodec_open2(context, codec, nullptr))) {
 		LogError(u"avcodec_open2"_q, error);
 		return {};
 	}
+	DEBUG_LOG(("Video Playback: MakeCodecPointer opened codecId=%1 hwAllowed=%2.")
+		.arg(int(context->codec_id))
+		.arg(descriptor.hwAllowed ? 1 : 0));
 	return result;
 }
 

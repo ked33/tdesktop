@@ -620,7 +620,7 @@ void Player::play(const PlaybackOptions &options) {
 		.position = _options.position,
 		.durationOverride = options.durationOverride,
 		.seekable = _options.seekable,
-		.hwAllow = _options.hwAllowed,
+		.hwAllow = (_options.sequentialOpen ? false : _options.hwAllowed),
 		.sequentialOpen = _options.sequentialOpen,
 	});
 }

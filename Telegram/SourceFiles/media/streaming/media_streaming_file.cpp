@@ -176,6 +176,11 @@ Stream File::Context::initStream(
 		Mode mode,
 		StartOptions options) {
 	auto result = Stream();
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream enter type=%1 hwAllow=%2 sequentialOpen=%3 streamCount=%4.")
+		.arg(int(type))
+		.arg(options.hwAllow ? 1 : 0)
+		.arg(options.sequentialOpen ? 1 : 0)
+		.arg(format->nb_streams));
 	const auto index = result.index = av_find_best_stream(
 		format,
 		type,
@@ -183,6 +188,9 @@ Stream File::Context::initStream(
 		-1,
 		nullptr,
 		0);
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream best stream type=%1 index=%2.")
+		.arg(int(type))
+		.arg(index));
 	if (index < 0) {
 		return {};
 	}
@@ -193,10 +201,18 @@ Stream File::Context::initStream(
 			// ignore cover streams
 			return Stream();
 		}
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream video codecId=%1 hwAllow=%2 width=%3 height=%4.")
+			.arg(int(info->codecpar ? info->codecpar->codec_id : AV_CODEC_ID_NONE))
+			.arg(options.hwAllow ? 1 : 0)
+			.arg(info->codecpar ? info->codecpar->width : 0)
+			.arg(info->codecpar ? info->codecpar->height : 0));
 		result.codec = FFmpeg::MakeCodecPointer({
 			.stream = info,
 			.hwAllowed = options.hwAllow,
 		});
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream video codec ready=%1 index=%2.")
+			.arg(result.codec ? 1 : 0)
+			.arg(index));
 		if (!result.codec) {
 			return result;
 		}
@@ -205,10 +221,16 @@ Stream File::Context::initStream(
 			info->sample_aspect_ratio);
 	} else if (type == AVMEDIA_TYPE_AUDIO) {
 		result.frequency = info->codecpar->sample_rate;
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream audio codecId=%1 frequency=%2.")
+			.arg(int(info->codecpar ? info->codecpar->codec_id : AV_CODEC_ID_NONE))
+			.arg(result.frequency));
 		if (!result.frequency) {
 			return result;
 		}
 		result.codec = FFmpeg::MakeCodecPointer({ .stream = info });
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream audio codec ready=%1 index=%2.")
+			.arg(result.codec ? 1 : 0)
+			.arg(index));
 		if (!result.codec) {
 			return result;
 		}
@@ -238,6 +260,11 @@ Stream File::Context::initStream(
 			result.codec = nullptr;
 		}
 	}
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream exit type=%1 index=%2 codec=%3 duration=%4.")
+		.arg(int(type))
+		.arg(result.index)
+		.arg(result.codec ? 1 : 0)
+		.arg(qlonglong(result.duration)));
 	return result;
 }
 
