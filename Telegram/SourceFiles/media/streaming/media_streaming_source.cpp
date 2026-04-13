@@ -260,22 +260,22 @@ public:
 private:
 	[[nodiscard]] FillState fillFromLoaded(int64 offset, bytes::span buffer) {
 		queueRequiredOffsets(offset, buffer.size());
-		const auto end = offset + buffer.size();
+		const auto till = offset + buffer.size();
 		auto cursor = offset;
 		auto out = buffer;
-		while (cursor < end) {
+		while (cursor < till) {
 			const auto partOffset = AlignOffset(cursor);
 			const auto i = _parts.find(partOffset);
 			if (i == end(_parts)) {
 				return _streamingError ? FillState::Failed : FillState::WaitingRemote;
 			}
-			const auto bytes = bytes::make_span(i->second);
+			const auto partBytes = bytes::make_span(i->second);
 			const auto from = int(cursor - partOffset);
-			if (from < 0 || from >= bytes.size()) {
+			if (from < 0 || from >= partBytes.size()) {
 				return _streamingError ? FillState::Failed : FillState::WaitingRemote;
 			}
-			const auto copy = std::min<int64>(bytes.size() - from, end - cursor);
-			bytes::copy(out.subspan(0, copy), bytes.subspan(from, copy));
+			const auto copy = std::min<int64>(partBytes.size() - from, till - cursor);
+			bytes::copy(out.subspan(0, copy), partBytes.subspan(from, copy));
 			out = out.subspan(copy);
 			cursor += copy;
 		}
