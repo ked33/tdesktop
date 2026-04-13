@@ -4386,13 +4386,14 @@ bool OverlayWidget::createStreamingObjects() {
 					_document,
 					_message,
 					origin,
-					true);
+					false);
 			}
-			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Overlay dedicated AVIO request doc=%1 chosen=%2 created=%3 startPosition=%4.")
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Overlay dedicated AVIO request doc=%1 chosen=%2 created=%3 startPosition=%4 forceRemote=%5.")
 				.arg(qulonglong(_document ? _document->id : video->id))
 				.arg(qulonglong(video->id))
 				.arg(dedicatedDocument ? 1 : 0)
-				.arg(qlonglong(_streamedPosition)));
+				.arg(qlonglong(_streamedPosition))
+				.arg(0));
 			if (!dedicatedDocument) {
 				VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Overlay failed to create dedicated AVIO document doc=%1 chosen=%2 useLoader=%3 remote=%4 size=%5 mime=%6.")
 					.arg(qulonglong(_document ? _document->id : video->id))
