@@ -309,11 +309,15 @@ void File::Context::start(StartOptions options) {
 		.arg(qlonglong(options.position))
 		.arg(qlonglong(options.durationOverride))
 		.arg(_source->isRemoteLoader() ? 1 : 0));
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File open strategy sequentialOpen=%1 seekableOnOpen=%2.")
+		.arg(options.sequentialOpen ? 1 : 0)
+		.arg((options.seekable && !options.sequentialOpen) ? 1 : 0));
 	auto format = FFmpeg::MakeFormatPointer(
 		static_cast<void*>(this),
 		&Context::Read,
 		nullptr,
-		options.seekable ? &Context::Seek : nullptr);
+		options.seekable ? &Context::Seek : nullptr,
+		(options.seekable && !options.sequentialOpen));
 	if (!format) {
 		return fail(Error::OpenFailed);
 	}
