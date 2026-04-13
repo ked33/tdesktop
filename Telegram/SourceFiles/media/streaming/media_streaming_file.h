@@ -8,8 +8,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "media/streaming/media_streaming_common.h"
+#include "media/streaming/media_streaming_source.h"
 #include "media/streaming/media_streaming_utility.h"
-#include "media/streaming/media_streaming_reader.h"
 #include "ffmpeg/ffmpeg_utility.h"
 #include "base/bytes.h"
 #include "base/weak_ptr.h"
@@ -20,6 +20,7 @@ namespace Media {
 namespace Streaming {
 
 class FileDelegate;
+class Reader;
 
 struct StartOptions {
 	crl::time position = 0;
@@ -30,6 +31,7 @@ struct StartOptions {
 
 class File final {
 public:
+	explicit File(std::shared_ptr<FileSource> source);
 	explicit File(std::shared_ptr<Reader> reader);
 
 	File(const File &other) = delete;
@@ -50,7 +52,7 @@ public:
 private:
 	class Context final : public base::has_weak_ptr {
 	public:
-		Context(not_null<FileDelegate*> delegate, not_null<Reader*> reader);
+		Context(not_null<FileDelegate*> delegate, not_null<FileSource*> source);
 		~Context();
 
 		void start(StartOptions options);
@@ -101,7 +103,7 @@ private:
 		void sendFullInCache(bool force = false);
 
 		const not_null<FileDelegate*> _delegate;
-		const not_null<Reader*> _reader;
+		const not_null<FileSource*> _source;
 
 		base::flat_map<int, std::vector<FFmpeg::Packet>> _queuedPackets;
 		int64 _offset = 0;
@@ -117,7 +119,7 @@ private:
 	};
 
 	std::optional<Context> _context;
-	std::shared_ptr<Reader> _reader;
+	std::shared_ptr<FileSource> _source;
 	std::thread _thread;
 
 };
