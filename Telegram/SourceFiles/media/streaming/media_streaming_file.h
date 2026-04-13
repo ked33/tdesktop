@@ -110,6 +110,8 @@ private:
 		int64 _size = 0;
 		bool _failed = false;
 		bool _readTillEnd = false;
+		int _debugReadCalls = 0;
+		int _debugWaitingCount = 0;
 		std::optional<bool> _fullInCache;
 		crl::semaphore _semaphore;
 		std::atomic<bool> _interrupted = false;
