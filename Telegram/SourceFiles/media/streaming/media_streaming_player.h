@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "media/streaming/media_streaming_common.h"
 #include "media/streaming/media_streaming_file_delegate.h"
+#include "media/streaming/media_streaming_source.h"
 #include "base/weak_ptr.h"
 #include "base/timer.h"
 
@@ -30,6 +31,7 @@ class Instance;
 class Player final : private FileDelegate {
 public:
 	// Public interfaces is used from the main thread.
+	explicit Player(std::shared_ptr<FileSource> source);
 	explicit Player(std::shared_ptr<Reader> reader);
 
 	// Because we remember 'this' in calls to crl::on_main.
