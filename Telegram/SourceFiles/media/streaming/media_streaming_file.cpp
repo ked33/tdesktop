@@ -18,6 +18,8 @@ namespace {
 
 constexpr auto kMaxSingleReadAmount = 8 * 1024 * 1024;
 constexpr auto kMaxQueuedPackets = 1024;
+constexpr auto kSequentialOpenProbeSize = int64(2) * 1024 * 1024;
+constexpr auto kSequentialOpenAnalyzeDuration = int64(3) * AV_TIME_BASE;
 
 [[nodiscard]] bool UnreliableFormatDuration(
 		not_null<AVFormatContext*> format,
@@ -350,6 +352,13 @@ void File::Context::start(StartOptions options) {
 	}
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File format context created sourceSize=%1.")
 		.arg(qlonglong(_size)));
+	if (options.sequentialOpen) {
+		format->probesize = kSequentialOpenProbeSize;
+		format->max_analyze_duration = kSequentialOpenAnalyzeDuration;
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File sequential analyze limits probesize=%1 analyzeUs=%2.")
+			.arg(qlonglong(format->probesize))
+			.arg(qlonglong(format->max_analyze_duration)));
+	}
 
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File calling avformat_find_stream_info size=%1 position=%2.")
 		.arg(qlonglong(_size))
