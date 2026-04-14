@@ -69,6 +69,7 @@ namespace EnhancedSettings {
 			ensureBool(qsl("show_message_context_select"), true);
 			ensureBool(qsl("show_message_context_reschedule"), true);
 			ensureString(qsl("mpv_path"), QString());
+			ensureString(qsl("flood_premium_wait_override_ms"), QString());
 		}
 
 		QString DefaultFilePath() {
@@ -401,6 +402,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("hide_stories"), false);
 		settings.insert(qsl("screenshot_mode"), false);
 		settings.insert(qsl("mpv_path"), "");
+		settings.insert(qsl("flood_premium_wait_override_ms"), "");
 		settings.insert(qsl("update_url"), "");
 
 		auto document = QJsonDocument();
@@ -479,6 +481,9 @@ namespace EnhancedSettings {
 		settings.insert(qsl("hide_stories"), GetEnhancedBool("hide_stories"));
 		settings.insert(qsl("screenshot_mode"), GetEnhancedBool("screenshot_mode"));
 		settings.insert(qsl("mpv_path"), GetEnhancedString("mpv_path"));
+		settings.insert(
+			qsl("flood_premium_wait_override_ms"),
+			GetEnhancedString("flood_premium_wait_override_ms"));
 		settings.insert(qsl("update_url"), GetEnhancedString("update_url"));
 
 		auto document = QJsonDocument();
