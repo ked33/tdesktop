@@ -366,16 +366,32 @@ void File::Context::start(StartOptions options) {
 		AVMEDIA_TYPE_VIDEO,
 		mode,
 		options);
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File after video init interrupted=%1 failed=%2 readTillEnd=%3.")
+		.arg(interrupted() ? 1 : 0)
+		.arg(failed() ? 1 : 0)
+		.arg(_readTillEnd ? 1 : 0));
 	if (unroll()) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File unroll after video init interrupted=%1 failed=%2.")
+			.arg(interrupted() ? 1 : 0)
+			.arg(failed() ? 1 : 0));
 		return;
 	}
 
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File before audio init mode=%1.")
+		.arg(int(mode)));
 	auto audio = initStream(
 		format.get(),
 		AVMEDIA_TYPE_AUDIO,
 		mode,
 		options);
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File after audio init interrupted=%1 failed=%2 readTillEnd=%3.")
+		.arg(interrupted() ? 1 : 0)
+		.arg(failed() ? 1 : 0)
+		.arg(_readTillEnd ? 1 : 0));
 	if (unroll()) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File unroll after audio init interrupted=%1 failed=%2.")
+			.arg(interrupted() ? 1 : 0)
+			.arg(failed() ? 1 : 0));
 		return;
 	}
 
@@ -490,6 +506,10 @@ void File::Context::processQueuedPackets(SleepPolicy policy) {
 }
 
 void File::Context::interrupt() {
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File context interrupt offset=%1 failed=%2 readTillEnd=%3.")
+		.arg(qlonglong(_offset))
+		.arg(_failed ? 1 : 0)
+		.arg(_readTillEnd ? 1 : 0));
 	_interrupted = true;
 	_semaphore.release();
 }
@@ -511,6 +531,10 @@ bool File::Context::unroll() const {
 }
 
 void File::Context::fail(Error error) {
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File context fail error=%1 interrupted=%2 offset=%3.")
+		.arg(PlaybackErrorDebugString(error))
+		.arg(_interrupted ? 1 : 0)
+		.arg(qlonglong(_offset)));
 	_failed = true;
 	_delegate->fileError(error);
 }
@@ -534,6 +558,9 @@ File::File(std::shared_ptr<Reader> reader)
 }
 
 void File::start(not_null<FileDelegate*> delegate, StartOptions options) {
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File start thread launch seekable=%1 sequentialOpen=%2.")
+		.arg(options.seekable ? 1 : 0)
+		.arg(options.sequentialOpen ? 1 : 0));
 	stop(true);
 
 	_source->startStreaming();
@@ -545,6 +572,10 @@ void File::start(not_null<FileDelegate*> delegate, StartOptions options) {
 		while (!context->finished()) {
 			context->readNextPacket();
 		}
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File thread exit interrupted=%1 failed=%2 readTillEnd=%3.")
+			.arg(context->interrupted() ? 1 : 0)
+			.arg(context->failed() ? 1 : 0)
+			.arg(context->finished() ? 1 : 0));
 		if (!context->interrupted()) {
 			context->stopStreamingAsync();
 		}
@@ -558,6 +589,10 @@ void File::wake() {
 }
 
 void File::stop(bool stillActive) {
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File stop stillActive=%1 joinable=%2 hasContext=%3.")
+		.arg(stillActive ? 1 : 0)
+		.arg(_thread.joinable() ? 1 : 0)
+		.arg(_context.has_value() ? 1 : 0));
 	if (_thread.joinable()) {
 		_context->interrupt();
 		_thread.join();
