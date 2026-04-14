@@ -1283,6 +1283,15 @@ bool OverlayWidget::opaqueContentShown() const {
 }
 
 void OverlayWidget::clearStreaming(bool savePosition) {
+	if (_streamed && _document) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Overlay clearStreaming doc=%1 savePosition=%2 ready=%3 active=%4 failed=%5 finished=%6.")
+			.arg(qulonglong(_document->id))
+			.arg(savePosition ? 1 : 0)
+			.arg(_streamed->instance.player().ready() ? 1 : 0)
+			.arg(_streamed->instance.player().active() ? 1 : 0)
+			.arg(_streamed->instance.player().failed().has_value() ? 1 : 0)
+			.arg(_streamed->instance.player().finished() ? 1 : 0));
+	}
 	if (_streamed && _document && savePosition) {
 		Media::Player::SaveLastPlaybackPosition(
 			_document,
