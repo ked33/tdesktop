@@ -859,6 +859,12 @@ void Player::checkVideoStep() {
 }
 
 void Player::stop(bool stillActive) {
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player stop stillActive=%1 stage=%2 audio=%3 video=%4 failed=%5.")
+		.arg(stillActive ? 1 : 0)
+		.arg(int(_stage))
+		.arg(_audio ? 1 : 0)
+		.arg(_video ? 1 : 0)
+		.arg(_lastFailure.has_value() ? 1 : 0));
 	_file->stop(stillActive);
 	_sessionLifetime = rpl::lifetime();
 	_stage = Stage::Uninitialized;
