@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/streaming/media_streaming_audio_track.h"
 
+#include "media/streaming/media_streaming_debug.h"
 #include "media/streaming/media_streaming_utility.h"
 #include "media/audio/media_audio.h"
 #include "media/audio/media_child_ffmpeg_loader.h"
@@ -14,6 +15,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Media {
 namespace Streaming {
+namespace {
+
+constexpr auto kSequentialSeekReadyTolerance = 5 * crl::time(1000);
+
+[[nodiscard]] bool AllowApproximateSequentialSeekReady(
+		const PlaybackOptions &options,
+		crl::time startedPosition) {
+	return options.sequentialOpen
+		&& (options.position > 0)
+		&& (startedPosition != kTimeUnknown)
+		&& (startedPosition < options.position)
+		&& ((options.position - startedPosition) <= kSequentialSeekReadyTolerance);
+}
+
+} // namespace
 
 AudioTrack::AudioTrack(
 	const PlaybackOptions &options,
@@ -97,6 +113,14 @@ bool AudioTrack::tryReadFirstFrame(FFmpeg::Packet &&packet) {
 		} else if (!fillStateFromFrame()) {
 			return false;
 		} else if (_startedPosition >= _options.position) {
+			return processFirstFrame();
+		} else if (AllowApproximateSequentialSeekReady(
+				_options,
+				_startedPosition)) {
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: AudioTrack approximate seek ready started=%1 target=%2 delta=%3.")
+				.arg(qlonglong(_startedPosition))
+				.arg(qlonglong(_options.position))
+				.arg(qlonglong(_options.position - _startedPosition)));
 			return processFirstFrame();
 		}
 
