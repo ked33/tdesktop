@@ -20,6 +20,8 @@ constexpr auto kMaxSingleReadAmount = 8 * 1024 * 1024;
 constexpr auto kMaxQueuedPackets = 1024;
 constexpr auto kSequentialOpenProbeSize = int64(2) * 1024 * 1024;
 constexpr auto kSequentialOpenAnalyzeDuration = int64(3) * AV_TIME_BASE;
+constexpr auto kSeekPrefetchBackAmount = int64(2) * 1024 * 1024;
+constexpr auto kSeekPrefetchAheadAmount = int64(8) * 1024 * 1024;
 
 [[nodiscard]] bool UnreliableFormatDuration(
 		not_null<AVFormatContext*> format,
@@ -133,13 +135,23 @@ int64_t File::Context::seek(int64_t offset, int whence) {
 		}
 		return (_offset = offset);
 	};
+	auto result = int64(-1);
 	switch (whence) {
-	case SEEK_SET: return checkedSeek(offset);
-	case SEEK_CUR: return checkedSeek(_offset + offset);
-	case SEEK_END: return checkedSeek(_size + offset);
-	case AVSEEK_SIZE: return _size;
+	case SEEK_SET: result = checkedSeek(offset); break;
+	case SEEK_CUR: result = checkedSeek(_offset + offset); break;
+	case SEEK_END: result = checkedSeek(_size + offset); break;
+	case AVSEEK_SIZE: result = _size; break;
+	default: break;
 	}
-	return -1;
+	if (whence != AVSEEK_SIZE) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: AVIO seek request offset=%1 whence=%2 result=%3 currentOffset=%4 size=%5.")
+			.arg(qlonglong(offset))
+			.arg(whence)
+			.arg(qlonglong(result))
+			.arg(qlonglong(_offset))
+			.arg(qlonglong(_size)));
+	}
+	return result;
 }
 
 void File::Context::logError(QLatin1String method) {
@@ -286,6 +298,21 @@ void File::Context::seekToPosition(
 	const auto timestamp = FFmpeg::TimeToPts(
 		std::clamp(position, crl::time(0), stream.duration - 1),
 		stream.timeBase);
+	const auto prefetchAroundCurrentOffset = [&] {
+		if (_offset < 0 || _offset >= _size) {
+			return;
+		}
+		const auto start = std::max<int64>(0, _offset - kSeekPrefetchBackAmount);
+		const auto amount = std::min<int64>(
+			_size - start,
+			kSeekPrefetchBackAmount + kSeekPrefetchAheadAmount);
+		_source->prefetch(start, amount);
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File seek prefetch target=%1 currentOffset=%2 start=%3 amount=%4.")
+			.arg(qlonglong(position))
+			.arg(qlonglong(_offset))
+			.arg(qlonglong(start))
+			.arg(qlonglong(amount)));
+	};
 	const auto trySeek = [&](int flags, const char *name) {
 		error = av_seek_frame(
 			format,
@@ -297,7 +324,11 @@ void File::Context::seekToPosition(
 			.arg(flags)
 			.arg(QString::fromLatin1(name))
 			.arg(error.code()));
-		return !error;
+		if (!error) {
+			prefetchAroundCurrentOffset();
+			return true;
+		}
+		return false;
 	};
 	if (options.sequentialOpen) {
 		if (trySeek(AVSEEK_FLAG_ANY, "any")) {
@@ -342,17 +373,15 @@ void File::Context::start(StartOptions options) {
 		.arg(qlonglong(options.position))
 		.arg(qlonglong(options.durationOverride))
 		.arg(_source->isRemoteLoader() ? 1 : 0));
-	const auto seekableOnOpen = options.seekable
-		&& (!options.sequentialOpen || options.position > 0);
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File open strategy sequentialOpen=%1 seekableOnOpen=%2.")
 		.arg(options.sequentialOpen ? 1 : 0)
-		.arg(seekableOnOpen ? 1 : 0));
+		.arg((options.seekable && !options.sequentialOpen) ? 1 : 0));
 	auto format = FFmpeg::MakeFormatPointer(
 		static_cast<void*>(this),
 		&Context::Read,
 		nullptr,
 		options.seekable ? &Context::Seek : nullptr,
-		seekableOnOpen);
+		(options.seekable && !options.sequentialOpen));
 	if (!format) {
 		return fail(Error::OpenFailed);
 	}
@@ -375,19 +404,10 @@ void File::Context::start(StartOptions options) {
 			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File sequential analyze seek restored."));
 		}
 	});
-	if (options.sequentialOpen
-		&& options.seekable
-		&& !options.position
-		&& format->pb) {
+	if (options.sequentialOpen && options.seekable && format->pb) {
 		format->pb->seek = nullptr;
 		format->pb->seekable = 0;
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File sequential analyze seek disabled during stream info."));
-	} else if (options.sequentialOpen
-		&& options.seekable
-		&& options.position
-		&& format->pb) {
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File sequential analyze keeps seek enabled for nonzero start position=%1.")
-			.arg(qlonglong(options.position)));
 	}
 
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File calling avformat_find_stream_info size=%1 position=%2.")
