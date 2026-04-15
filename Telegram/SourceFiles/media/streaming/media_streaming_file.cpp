@@ -12,6 +12,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_file_delegate.h"
 #include "ffmpeg/ffmpeg_utility.h"
 
+#include <QtCore/QtEndian>
+
+#include <algorithm>
+#include <cstring>
+#include <limits>
+#include <vector>
+
 namespace Media {
 namespace Streaming {
 namespace {
@@ -35,6 +42,553 @@ constexpr auto kSeekPrefetchAheadAmount = int64(8) * 1024 * 1024;
 		&& QString::fromLatin1(
 			format->iformat->name
 		).split(QChar(',')).contains(u"webm");
+}
+
+struct Mp4Atom {
+	int offset = 0;
+	int headerSize = 0;
+	quint64 size = 0;
+	QByteArray type;
+
+	[[nodiscard]] int payloadOffset() const {
+		return offset + headerSize;
+	}
+
+	[[nodiscard]] int payloadSize() const {
+		return int(size) - headerSize;
+	}
+};
+
+struct Mp4SttsEntry {
+	uint32 sampleCount = 0;
+	uint32 sampleDelta = 0;
+};
+
+struct Mp4StscEntry {
+	uint32 firstChunk = 0;
+	uint32 samplesPerChunk = 0;
+};
+
+struct Mp4SeekTrack {
+	uint32 timeScale = 0;
+	uint32 sampleCount = 0;
+	uint64 durationUnits = 0;
+	crl::time duration = 0;
+	std::vector<Mp4SttsEntry> stts;
+	std::vector<uint32> stss;
+	std::vector<Mp4StscEntry> stsc;
+	std::vector<uint64> chunkOffsets;
+	uint32 constantSampleSize = 0;
+	std::vector<uint32> sampleSizes;
+};
+
+template <typename Type>
+[[nodiscard]] bool ReadBigEndianAt(
+		bytes::const_span data,
+		int offset,
+		Type *out) {
+	if (!out
+		|| (offset < 0)
+		|| (offset + int(sizeof(Type)) > data.size())) {
+		return false;
+	}
+	*out = qFromBigEndian<Type>(
+		reinterpret_cast<const uchar*>(data.data() + offset));
+	return true;
+}
+
+[[nodiscard]] bool AtomTypeEquals(
+		const Mp4Atom &atom,
+		const char (&type)[5]) {
+	return (atom.type.size() == 4)
+		&& (std::memcmp(atom.type.constData(), type, 4) == 0);
+}
+
+[[nodiscard]] std::optional<Mp4Atom> ReadMp4Atom(
+		bytes::const_span data,
+		int offset) {
+	uint32 size32 = 0;
+	if (!ReadBigEndianAt(data, offset, &size32)) {
+		return std::nullopt;
+	}
+	auto headerSize = 8;
+	auto size = quint64(size32);
+	if (size32 == 1) {
+		if (!ReadBigEndianAt(data, offset + 8, &size)) {
+			return std::nullopt;
+		}
+		headerSize = 16;
+	} else if (size32 == 0) {
+		size = data.size() - offset;
+	}
+	if ((size < quint64(headerSize))
+		|| (offset < 0)
+		|| (size > quint64(data.size() - offset))) {
+		return std::nullopt;
+	}
+	return Mp4Atom{
+		.offset = offset,
+		.headerSize = headerSize,
+		.size = size,
+		.type = QByteArray::fromRawData(
+			reinterpret_cast<const char*>(data.data() + offset + 4),
+			4),
+	};
+}
+
+template <typename Callback>
+[[nodiscard]] bool ForEachChildAtom(
+		bytes::const_span data,
+		const Mp4Atom &parent,
+		Callback &&callback) {
+	auto offset = parent.payloadOffset();
+	const auto end = offset + parent.payloadSize();
+	while (offset < end) {
+		const auto atom = ReadMp4Atom(data, offset);
+		if (!atom || (atom->offset + int(atom->size) > end)) {
+			return false;
+		}
+		if (!callback(*atom)) {
+			return true;
+		}
+		offset += int(atom->size);
+	}
+	return true;
+}
+
+[[nodiscard]] std::optional<Mp4Atom> FindChildAtom(
+		bytes::const_span data,
+		const Mp4Atom &parent,
+		const char (&type)[5]) {
+	auto result = std::optional<Mp4Atom>();
+	ForEachChildAtom(data, parent, [&](const Mp4Atom &atom) {
+		if (AtomTypeEquals(atom, type)) {
+			result = atom;
+			return false;
+		}
+		return true;
+	});
+	return result;
+}
+
+[[nodiscard]] std::vector<Mp4Atom> FindChildAtoms(
+		bytes::const_span data,
+		const Mp4Atom &parent,
+		const char (&type)[5]) {
+	auto result = std::vector<Mp4Atom>();
+	ForEachChildAtom(data, parent, [&](const Mp4Atom &atom) {
+		if (AtomTypeEquals(atom, type)) {
+			result.push_back(atom);
+		}
+		return true;
+	});
+	return result;
+}
+
+[[nodiscard]] std::optional<uint32> ParseMdhdTimeScale(
+		bytes::const_span data,
+		const Mp4Atom &atom) {
+	const auto payload = atom.payloadOffset();
+	if (payload >= data.size() || atom.payloadSize() < 16) {
+		return std::nullopt;
+	}
+	const auto version = static_cast<uchar>(data[payload]);
+	const auto timeScaleOffset = payload + ((version == 1) ? 20 : 12);
+	uint32 result = 0;
+	return ReadBigEndianAt(data, timeScaleOffset, &result) && result
+		? std::optional<uint32>(result)
+		: std::nullopt;
+}
+
+[[nodiscard]] bool ParseHdlrIsVideo(
+		bytes::const_span data,
+		const Mp4Atom &atom) {
+	const auto payload = atom.payloadOffset();
+	return (payload + 12 <= data.size())
+		&& (atom.payloadSize() >= 12)
+		&& (std::memcmp(data.data() + payload + 8, "vide", 4) == 0);
+}
+
+[[nodiscard]] bool ParseStts(
+		bytes::const_span data,
+		const Mp4Atom &atom,
+		Mp4SeekTrack *track) {
+	if (!track) {
+		return false;
+	}
+	const auto payload = atom.payloadOffset();
+	uint32 entryCount = 0;
+	if (!ReadBigEndianAt(data, payload + 4, &entryCount)) {
+		return false;
+	}
+	auto offset = payload + 8;
+	track->stts.clear();
+	track->stts.reserve(entryCount);
+	track->sampleCount = 0;
+	track->durationUnits = 0;
+	for (auto i = uint32(0); i != entryCount; ++i) {
+		auto entry = Mp4SttsEntry();
+		if (!ReadBigEndianAt(data, offset, &entry.sampleCount)
+			|| !ReadBigEndianAt(data, offset + 4, &entry.sampleDelta)
+			|| !entry.sampleCount
+			|| !entry.sampleDelta) {
+			return false;
+		}
+		track->sampleCount += entry.sampleCount;
+		track->durationUnits += uint64(entry.sampleCount) * entry.sampleDelta;
+		track->stts.push_back(entry);
+		offset += 8;
+	}
+	return !track->stts.empty();
+}
+
+[[nodiscard]] bool ParseStss(
+		bytes::const_span data,
+		const Mp4Atom &atom,
+		Mp4SeekTrack *track) {
+	if (!track) {
+		return false;
+	}
+	const auto payload = atom.payloadOffset();
+	uint32 entryCount = 0;
+	if (!ReadBigEndianAt(data, payload + 4, &entryCount)) {
+		return false;
+	}
+	auto offset = payload + 8;
+	track->stss.clear();
+	track->stss.reserve(entryCount);
+	for (auto i = uint32(0); i != entryCount; ++i) {
+		uint32 sample = 0;
+		if (!ReadBigEndianAt(data, offset, &sample) || !sample) {
+			return false;
+		}
+		track->stss.push_back(sample);
+		offset += 4;
+	}
+	return true;
+}
+
+[[nodiscard]] bool ParseStsc(
+		bytes::const_span data,
+		const Mp4Atom &atom,
+		Mp4SeekTrack *track) {
+	if (!track) {
+		return false;
+	}
+	const auto payload = atom.payloadOffset();
+	uint32 entryCount = 0;
+	if (!ReadBigEndianAt(data, payload + 4, &entryCount)) {
+		return false;
+	}
+	auto offset = payload + 8;
+	track->stsc.clear();
+	track->stsc.reserve(entryCount);
+	for (auto i = uint32(0); i != entryCount; ++i) {
+		auto entry = Mp4StscEntry();
+		uint32 description = 0;
+		if (!ReadBigEndianAt(data, offset, &entry.firstChunk)
+			|| !ReadBigEndianAt(data, offset + 4, &entry.samplesPerChunk)
+			|| !ReadBigEndianAt(data, offset + 8, &description)
+			|| !entry.firstChunk
+			|| !entry.samplesPerChunk) {
+			return false;
+		}
+		track->stsc.push_back(entry);
+		offset += 12;
+	}
+	return !track->stsc.empty();
+}
+
+[[nodiscard]] bool ParseStsz(
+		bytes::const_span data,
+		const Mp4Atom &atom,
+		Mp4SeekTrack *track) {
+	if (!track) {
+		return false;
+	}
+	const auto payload = atom.payloadOffset();
+	uint32 sampleSize = 0;
+	uint32 sampleCount = 0;
+	if (!ReadBigEndianAt(data, payload + 4, &sampleSize)
+		|| !ReadBigEndianAt(data, payload + 8, &sampleCount)
+		|| !sampleCount) {
+		return false;
+	}
+	track->constantSampleSize = sampleSize;
+	track->sampleSizes.clear();
+	if (sampleSize) {
+		return true;
+	}
+	auto offset = payload + 12;
+	track->sampleSizes.reserve(sampleCount);
+	for (auto i = uint32(0); i != sampleCount; ++i) {
+		uint32 current = 0;
+		if (!ReadBigEndianAt(data, offset, &current) || !current) {
+			return false;
+		}
+		track->sampleSizes.push_back(current);
+		offset += 4;
+	}
+	return true;
+}
+
+[[nodiscard]] bool ParseChunkOffsets(
+		bytes::const_span data,
+		const Mp4Atom &atom,
+		Mp4SeekTrack *track) {
+	if (!track) {
+		return false;
+	}
+	const auto payload = atom.payloadOffset();
+	uint32 entryCount = 0;
+	if (!ReadBigEndianAt(data, payload + 4, &entryCount) || !entryCount) {
+		return false;
+	}
+	auto offset = payload + 8;
+	track->chunkOffsets.clear();
+	track->chunkOffsets.reserve(entryCount);
+	if (AtomTypeEquals(atom, "stco")) {
+		for (auto i = uint32(0); i != entryCount; ++i) {
+			uint32 current = 0;
+			if (!ReadBigEndianAt(data, offset, &current)) {
+				return false;
+			}
+			track->chunkOffsets.push_back(current);
+			offset += 4;
+		}
+	} else {
+		for (auto i = uint32(0); i != entryCount; ++i) {
+			uint64 current = 0;
+			if (!ReadBigEndianAt(data, offset, &current)) {
+				return false;
+			}
+			track->chunkOffsets.push_back(current);
+			offset += 8;
+		}
+	}
+	return true;
+}
+
+[[nodiscard]] std::optional<Mp4SeekTrack> ParseVideoSeekTrack(
+		bytes::const_span data,
+		const Mp4Atom &trak) {
+	const auto mdia = FindChildAtom(data, trak, "mdia");
+	if (!mdia) {
+		return std::nullopt;
+	}
+	const auto hdlr = FindChildAtom(data, *mdia, "hdlr");
+	const auto mdhd = FindChildAtom(data, *mdia, "mdhd");
+	const auto minf = FindChildAtom(data, *mdia, "minf");
+	if (!hdlr || !mdhd || !minf || !ParseHdlrIsVideo(data, *hdlr)) {
+		return std::nullopt;
+	}
+	const auto stbl = FindChildAtom(data, *minf, "stbl");
+	if (!stbl) {
+		return std::nullopt;
+	}
+	auto track = Mp4SeekTrack();
+	const auto timeScale = ParseMdhdTimeScale(data, *mdhd);
+	const auto stts = FindChildAtom(data, *stbl, "stts");
+	const auto stsc = FindChildAtom(data, *stbl, "stsc");
+	const auto stsz = FindChildAtom(data, *stbl, "stsz");
+	const auto stco = FindChildAtom(data, *stbl, "stco");
+	const auto co64 = FindChildAtom(data, *stbl, "co64");
+	if (!timeScale
+		|| !stts
+		|| !stsc
+		|| !stsz
+		|| (!stco && !co64)
+		|| !ParseStts(data, *stts, &track)
+		|| !ParseStsc(data, *stsc, &track)
+		|| !ParseStsz(data, *stsz, &track)
+		|| !ParseChunkOffsets(data, stco ? *stco : *co64, &track)) {
+		return std::nullopt;
+	}
+	if (const auto stss = FindChildAtom(data, *stbl, "stss")) {
+		if (!ParseStss(data, *stss, &track)) {
+			return std::nullopt;
+		}
+	}
+	track.timeScale = *timeScale;
+	track.duration = track.timeScale
+		? crl::time((track.durationUnits * 1000) / track.timeScale)
+		: 0;
+	if (!track.duration
+		|| !track.sampleCount
+		|| track.chunkOffsets.empty()
+		|| track.stsc.empty()
+		|| (!track.constantSampleSize
+			&& (track.sampleSizes.size() != track.sampleCount))) {
+		return std::nullopt;
+	}
+	return track;
+}
+
+template <typename Stop>
+[[nodiscard]] std::optional<QByteArray> ReadSourceBytes(
+		not_null<FileSource*> source,
+		int64 offset,
+		int size,
+		Stop &&stop) {
+	if ((offset < 0)
+		|| (size <= 0)
+		|| (offset + size > source->size())) {
+		return std::nullopt;
+	}
+	auto result = QByteArray(size, Qt::Uninitialized);
+	auto wait = crl::semaphore();
+	auto buffer = bytes::span(
+		reinterpret_cast<bytes::type*>(result.data()),
+		size);
+	while (true) {
+		if (stop()) {
+			return std::nullopt;
+		}
+		const auto state = source->fill(offset, buffer, &wait);
+		if (state == FileSource::FillState::Success) {
+			return result;
+		} else if (state == FileSource::FillState::Failed) {
+			return std::nullopt;
+		}
+		wait.acquire();
+	}
+}
+
+[[nodiscard]] std::optional<Mp4SeekTrack> BuildMp4SeekTrack(
+		not_null<FileSource*> source,
+		const Stream &stream,
+		[[maybe_unused]] const std::atomic<bool> &interrupted) {
+	const auto headerSize = source->headerSize();
+	if (headerSize <= 0) {
+		return std::nullopt;
+	}
+	const auto headerBytes = ReadSourceBytes(
+		source,
+		0,
+		headerSize,
+		[&] { return interrupted.load(); });
+	if (!headerBytes) {
+		return std::nullopt;
+	}
+	const auto data = bytes::make_span(
+		reinterpret_cast<const bytes::type*>(headerBytes->constData()),
+		headerBytes->size());
+	auto best = std::optional<Mp4SeekTrack>();
+	auto bestDelta = std::numeric_limits<crl::time>::max();
+	auto offset = 0;
+	while (offset < data.size()) {
+		const auto atom = ReadMp4Atom(data, offset);
+		if (!atom || !atom->size) {
+			return best;
+		}
+		if (AtomTypeEquals(*atom, "moov")) {
+			for (const auto &trak : FindChildAtoms(data, *atom, "trak")) {
+				if (const auto candidate = ParseVideoSeekTrack(data, trak)) {
+					const auto delta = (candidate->duration > stream.duration)
+						? (candidate->duration - stream.duration)
+						: (stream.duration - candidate->duration);
+					if (!best || (delta < bestDelta)) {
+						best = candidate;
+						bestDelta = delta;
+					}
+				}
+			}
+			return best;
+		}
+		offset += int(atom->size);
+	}
+	return std::nullopt;
+}
+
+[[nodiscard]] std::optional<uint32> FindTargetSample(
+		const Mp4SeekTrack &track,
+		crl::time position) {
+	if (!track.timeScale || !track.sampleCount) {
+		return std::nullopt;
+	}
+	const auto clamped = std::clamp(
+		position,
+		crl::time(0),
+		std::max(track.duration - 1, crl::time(0)));
+	const auto targetUnits = uint64(clamped) * track.timeScale / 1000;
+	auto sampleCursor = uint32(0);
+	auto timeCursor = uint64(0);
+	for (const auto &entry : track.stts) {
+		const auto duration = uint64(entry.sampleCount) * entry.sampleDelta;
+		if (targetUnits < timeCursor + duration) {
+			return sampleCursor
+				+ uint32((targetUnits - timeCursor) / entry.sampleDelta)
+				+ 1;
+		}
+		sampleCursor += entry.sampleCount;
+		timeCursor += duration;
+	}
+	return track.sampleCount;
+}
+
+[[nodiscard]] uint32 FindSyncSample(
+		const Mp4SeekTrack &track,
+		uint32 sample) {
+	if (track.stss.empty()) {
+		return sample;
+	}
+	const auto i = std::upper_bound(
+		begin(track.stss),
+		end(track.stss),
+		sample);
+	return (i == begin(track.stss)) ? track.stss.front() : *(i - 1);
+}
+
+[[nodiscard]] std::optional<uint64> ComputeSampleOffset(
+		const Mp4SeekTrack &track,
+		uint32 sample) {
+	if (!sample || (sample > track.sampleCount)) {
+		return std::nullopt;
+	}
+	const auto sampleZero = uint64(sample - 1);
+	auto sampleCursor = uint64(0);
+	for (auto i = 0, count = int(track.stsc.size()); i != count; ++i) {
+		const auto &entry = track.stsc[i];
+		const auto chunkStart = uint64(entry.firstChunk - 1);
+		const auto chunkEnd = (i + 1 == count)
+			? uint64(track.chunkOffsets.size())
+			: uint64(track.stsc[i + 1].firstChunk - 1);
+		if ((chunkStart >= chunkEnd)
+			|| (chunkEnd > track.chunkOffsets.size())) {
+			return std::nullopt;
+		}
+		const auto samplesPerChunk = uint64(entry.samplesPerChunk);
+		const auto groupSamples = (chunkEnd - chunkStart) * samplesPerChunk;
+		if (sampleZero >= sampleCursor + groupSamples) {
+			sampleCursor += groupSamples;
+			continue;
+		}
+		const auto relative = sampleZero - sampleCursor;
+		const auto chunk = chunkStart + (relative / samplesPerChunk);
+		const auto insideChunk = uint32(relative % samplesPerChunk);
+		auto offset = track.chunkOffsets[chunk];
+		if (track.constantSampleSize) {
+			offset += uint64(insideChunk) * track.constantSampleSize;
+			return offset;
+		}
+		const auto firstSample = size_t(sampleZero - insideChunk);
+		if ((firstSample + insideChunk) > track.sampleSizes.size()) {
+			return std::nullopt;
+		}
+		for (auto j = uint32(0); j != insideChunk; ++j) {
+			offset += track.sampleSizes[firstSample + j];
+		}
+		return offset;
+	}
+	return std::nullopt;
+}
+
+[[nodiscard]] bool IsMp4LikeFormat(not_null<AVFormatContext*> format) {
+	return format->iformat
+		&& format->iformat->name
+		&& QString::fromLatin1(format->iformat->name)
+			.split(QChar(','))
+			.contains(u"mov");
 }
 
 } // namespace
@@ -313,6 +867,23 @@ void File::Context::seekToPosition(
 			.arg(qlonglong(start))
 			.arg(qlonglong(amount)));
 	};
+	const auto tryByteSeek = [&](int64 offset, const char *name) {
+		error = av_seek_frame(
+			format,
+			-1,
+			offset,
+			AVSEEK_FLAG_BYTE);
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File seek attempt target=%1 flags=%2 name=%3 result=%4.")
+			.arg(qlonglong(position))
+			.arg(AVSEEK_FLAG_BYTE)
+			.arg(QString::fromLatin1(name))
+			.arg(error.code()));
+		if (!error) {
+			prefetchAroundCurrentOffset();
+			return true;
+		}
+		return false;
+	};
 	const auto trySeek = [&](int flags, const char *name) {
 		error = av_seek_frame(
 			format,
@@ -331,6 +902,33 @@ void File::Context::seekToPosition(
 		return false;
 	};
 	if (options.sequentialOpen) {
+		if (IsMp4LikeFormat(format)) {
+			if (const auto track = BuildMp4SeekTrack(
+					_source,
+					stream,
+					_interrupted)) {
+				if (const auto targetSample = FindTargetSample(*track, position)) {
+					const auto syncSample = FindSyncSample(*track, *targetSample);
+					if (const auto sampleOffset = ComputeSampleOffset(
+							*track,
+							syncSample)) {
+						const auto adjustedOffset = std::max<int64>(
+							0,
+							int64(*sampleOffset) - kSeekPrefetchBackAmount);
+						VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File explicit seek map target=%1 duration=%2 sample=%3 sync=%4 sampleOffset=%5 adjustedOffset=%6.")
+							.arg(qlonglong(position))
+							.arg(qlonglong(track->duration))
+							.arg(*targetSample)
+							.arg(syncSample)
+							.arg(qlonglong(*sampleOffset))
+							.arg(qlonglong(adjustedOffset)));
+						if (tryByteSeek(adjustedOffset, "byte-map")) {
+							return;
+						}
+					}
+				}
+			}
+		}
 		if (trySeek(AVSEEK_FLAG_ANY, "any")) {
 			return;
 		} else if (trySeek(0, "default")) {
