@@ -90,10 +90,11 @@ private:
 			AVMediaType type,
 			Mode mode,
 			StartOptions options);
-		void seekToPosition(
-			not_null<AVFormatContext *> format,
-			const Stream &stream,
-			crl::time position);
+			void seekToPosition(
+				not_null<AVFormatContext *> format,
+				const Stream &stream,
+				StartOptions options,
+				crl::time position);
 
 		// TODO base::expected.
 		[[nodiscard]] auto readPacket()
