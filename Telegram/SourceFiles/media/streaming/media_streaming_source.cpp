@@ -228,6 +228,24 @@ public:
 		return _streamingError ? failed() : (last == FillState::Success ? done() : last);
 	}
 
+	void prefetch(int64 offset, int64 amount) override {
+		if (offset < 0 || offset >= _size || amount <= 0) {
+			return;
+		}
+		processLoadedParts();
+		if (_streamingError) {
+			return;
+		}
+		const auto limited = std::min<int64>(amount, _size - offset);
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Direct AVIO prefetch offset=%1 amount=%2 contiguous=%3 loadedParts=%4 queued=%5.")
+			.arg(qlonglong(offset))
+			.arg(qlonglong(limited))
+			.arg(qlonglong(_contiguousLoadedTill))
+			.arg(qlonglong(_loadedPartCount))
+			.arg(qlonglong(_loadingOffsets.size())));
+		queueRequiredOffsets(offset, limited);
+	}
+
 	[[nodiscard]] std::optional<Error> streamingError() const override {
 		return _streamingError;
 	}
