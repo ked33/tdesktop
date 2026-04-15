@@ -24,6 +24,8 @@ namespace Media::Streaming {
 namespace {
 
 constexpr auto kPreloadPartsAhead = 8;
+constexpr auto kRandomSeekPreloadPartsAhead = 128;
+constexpr auto kRandomSeekKeepPartsBehind = 16;
 constexpr auto kVerboseFillLogs = 24;
 constexpr auto kVerbosePartLogs = 24;
 
@@ -401,10 +403,17 @@ private:
 	}
 
 	void queueRequiredOffsets(int64 offset, int64 amount) {
-		const auto start = AlignOffset(offset);
+		const auto alignedOffset = AlignOffset(offset);
+		const auto randomSeek = (alignedOffset > _contiguousLoadedTill);
+		const auto keepBehind = randomSeek
+			? (kRandomSeekKeepPartsBehind * Loader::kPartSize)
+			: int64(0);
+		const auto start = std::max<int64>(0, AlignOffset(offset - keepBehind));
 		const auto preload = std::max<int64>(
 			amount,
-			kPreloadPartsAhead * Loader::kPartSize);
+			(randomSeek
+				? kRandomSeekPreloadPartsAhead
+				: kPreloadPartsAhead) * Loader::kPartSize);
 		const auto till = std::min(
 			_size,
 			AlignOffset(offset + preload + Loader::kPartSize - 1)
@@ -431,7 +440,7 @@ private:
 		}
 		if (((_debugQueueCalls < kVerboseFillLogs) || !(_debugQueueCalls % 32))
 			&& (added > 0 || _loadingOffsets.empty())) {
-			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Direct AVIO queue request offset=%1 amount=%2 rangeStart=%3 rangeTill=%4 added=%5 firstAdded=%6 lastAdded=%7 queued=%8 contiguous=%9.")
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Direct AVIO queue request offset=%1 amount=%2 rangeStart=%3 rangeTill=%4 added=%5 firstAdded=%6 lastAdded=%7 queued=%8 contiguous=%9 randomSeek=%10.")
 				.arg(qlonglong(offset))
 				.arg(qlonglong(amount))
 				.arg(qlonglong(start))
@@ -440,7 +449,8 @@ private:
 				.arg(qlonglong(firstAdded))
 				.arg(qlonglong(lastAdded))
 				.arg(qlonglong(_loadingOffsets.size()))
-				.arg(qlonglong(_contiguousLoadedTill)));
+				.arg(qlonglong(_contiguousLoadedTill))
+				.arg(randomSeek ? 1 : 0));
 		}
 		++_debugQueueCalls;
 		cancelOutstandingLoads(needed);
