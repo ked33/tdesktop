@@ -273,6 +273,7 @@ Stream File::Context::initStream(
 void File::Context::seekToPosition(
 		not_null<AVFormatContext*> format,
 		const Stream &stream,
+		StartOptions options,
 		crl::time position) {
 	auto error = FFmpeg::AvErrorWrap();
 
@@ -282,28 +283,31 @@ void File::Context::seekToPosition(
 		// Seek in files with unknown duration is not supported.
 		return;
 	}
-	//
-	// Non backward search reads the whole file if the position is after
-	// the last keyframe inside the index. So we search only backward.
-	//
-	//const auto seekFlags = 0;
-	//error = av_seek_frame(
-	//	format,
-	//	streamIndex,
-	//	TimeToPts(position, kUniversalTimeBase),
-	//	seekFlags);
-	//if (!error) {
-	//	return;
-	//}
-	//
-	error = av_seek_frame(
-		format,
-		stream.index,
-		FFmpeg::TimeToPts(
-			std::clamp(position, crl::time(0), stream.duration - 1),
-			stream.timeBase),
-		AVSEEK_FLAG_BACKWARD);
-	if (!error) {
+	const auto timestamp = FFmpeg::TimeToPts(
+		std::clamp(position, crl::time(0), stream.duration - 1),
+		stream.timeBase);
+	const auto trySeek = [&](int flags, const char *name) {
+		error = av_seek_frame(
+			format,
+			stream.index,
+			timestamp,
+			flags);
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File seek attempt target=%1 flags=%2 name=%3 result=%4.")
+			.arg(qlonglong(position))
+			.arg(flags)
+			.arg(QString::fromLatin1(name))
+			.arg(error.code()));
+		return !error;
+	};
+	if (options.sequentialOpen) {
+		if (trySeek(AVSEEK_FLAG_ANY, "any")) {
+			return;
+		} else if (trySeek(0, "default")) {
+			return;
+		} else if (trySeek(AVSEEK_FLAG_BACKWARD, "backward")) {
+			return;
+		}
+	} else if (trySeek(AVSEEK_FLAG_BACKWARD, "backward")) {
 		return;
 	}
 	return logFatal(qstr("av_seek_frame"), error);
@@ -426,12 +430,13 @@ void File::Context::start(StartOptions options) {
 	if (_source->isRemoteLoader()) {
 		sendFullInCache(true);
 	}
-	if (options.seekable && (video.codec || audio.codec)) {
-		seekToPosition(
-			format.get(),
-			video.codec ? video : audio,
-			options.position);
-	}
+		if (options.seekable && (video.codec || audio.codec)) {
+			seekToPosition(
+				format.get(),
+				video.codec ? video : audio,
+				options,
+				options.position);
+		}
 	if (unroll()) {
 		return;
 	}
