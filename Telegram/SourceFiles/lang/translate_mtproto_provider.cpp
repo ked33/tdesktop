@@ -111,18 +111,22 @@ public:
 			//}).fail([=](const MTP::Error &) {
 			//	failAll();
 			//}).send();
-			auto toTC = GetEnhancedBool("translate_to_tc"); // Override translate setting :)
 
 			try {
-				auto result = GoogleAppTranslator::instance()->translate(requests[0].text.text, "auto", toTC ? "zh-Hant" : to.twoLetterCode());
-				auto text = QVector<MTPTextWithEntities>();
-				text.push_back(MTP_textWithEntities(
-					MTP_string(result.translation),
-					Api::EntitiesToMTP(
-						_session,
-						TextWithEntities().entities,
-						Api::ConvertOption::SkipLocal)));
-				doneFromList(text);
+				crl::async([=] {
+					auto toTC = GetEnhancedBool("translate_to_tc"); // Override translate setting :)
+					auto result = GoogleAppTranslator::instance()->translate(requests[0].text.text, "auto", toTC ? "zh-Hant" : to.twoLetterCode());
+					crl::on_main([=] {
+						auto text = QVector<MTPTextWithEntities>();
+						text.push_back(MTP_textWithEntities(
+								MTP_string(result.translation),
+								Api::EntitiesToMTP(
+									_session,
+									TextWithEntities().entities,
+									Api::ConvertOption::SkipLocal)));
+						doneFromList(text);
+					});
+				});
 			} catch (...) {
 				failAll();
 			}
@@ -165,18 +169,21 @@ public:
 		//	failAll();
 		//}).send();
 
-		auto toTC = GetEnhancedBool("translate_to_tc"); // Override translate setting :)
-
 		try {
-			auto result = GoogleAppTranslator::instance()->translate(requests[0].text.text, "auto", toTC ? "zh-Hant" : to.twoLetterCode());
-			auto text = QVector<MTPTextWithEntities>();
-			text.push_back(MTP_textWithEntities(
-				MTP_string(result.translation),
-				Api::EntitiesToMTP(
-				_session,
-				TextWithEntities().entities,
-				Api::ConvertOption::SkipLocal)));
-			doneFromList(text);
+			crl::async([=] {
+				auto toTC = GetEnhancedBool("translate_to_tc"); // Override translate setting :)
+				auto result = GoogleAppTranslator::instance()->translate(requests[0].text.text, "auto", toTC ? "zh-Hant" : to.twoLetterCode());
+				crl::on_main([=] {
+					auto text = QVector<MTPTextWithEntities>();
+					text.push_back(MTP_textWithEntities(
+						MTP_string(result.translation),
+						Api::EntitiesToMTP(
+							_session,
+							TextWithEntities().entities,
+							Api::ConvertOption::SkipLocal)));
+					doneFromList(text);
+				});
+			});
 		}
 		catch (...) {
 			failAll();
