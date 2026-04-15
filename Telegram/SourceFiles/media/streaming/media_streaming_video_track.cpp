@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/streaming/media_streaming_video_track.h"
 
+#include "media/streaming/media_streaming_debug.h"
 #include "ffmpeg/ffmpeg_utility.h"
 #include "media/audio/media_audio.h"
 #include "base/concurrent_timer.h"
@@ -20,7 +21,18 @@ namespace {
 constexpr auto kMaxFrameArea = 3840 * 2160; // usual 4K
 constexpr auto kDisplaySkipped = crl::time(-1);
 constexpr auto kFinishedPosition = std::numeric_limits<crl::time>::max();
+constexpr auto kSequentialSeekReadyTolerance = 5 * crl::time(1000);
 static_assert(kDisplaySkipped != kTimeUnknown);
+
+[[nodiscard]] bool AllowApproximateSequentialSeekReady(
+		const PlaybackOptions &options,
+		crl::time startedPosition) {
+	return options.sequentialOpen
+		&& (options.position > 0)
+		&& (startedPosition != kTimeUnknown)
+		&& (startedPosition < options.position)
+		&& ((options.position - startedPosition) <= kSequentialSeekReadyTolerance);
+}
 
 [[nodiscard]] QImage ConvertToARGB32(
 		FrameFormat format,
@@ -632,11 +644,19 @@ bool VideoTrackObject::tryReadFirstFrame(FFmpeg::Packet &&packet) {
 				// Waiting for more packets.
 				return true;
 			}
-		} else if (!fillStateFromFrame()) {
-			return false;
-		} else if (_syncTimePoint.trackTime >= _options.position) {
-			return processFirstFrame();
-		}
+			} else if (!fillStateFromFrame()) {
+				return false;
+			} else if (_syncTimePoint.trackTime >= _options.position) {
+				return processFirstFrame();
+			} else if (AllowApproximateSequentialSeekReady(
+					_options,
+					_syncTimePoint.trackTime)) {
+				VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: VideoTrack approximate seek ready started=%1 target=%2 delta=%3.")
+					.arg(qlonglong(_syncTimePoint.trackTime))
+					.arg(qlonglong(_options.position))
+					.arg(qlonglong(_options.position - _syncTimePoint.trackTime)));
+				return processFirstFrame();
+			}
 
 		// Seek was with AVSEEK_FLAG_BACKWARD so first we get old frames.
 		// Try skipping frames until one is after the requested position.
