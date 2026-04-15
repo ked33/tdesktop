@@ -992,16 +992,6 @@ void File::Context::start(StartOptions options) {
 			.arg(qlonglong(format->probesize))
 			.arg(qlonglong(format->max_analyze_duration)));
 	}
-	const auto restoreSeekAfterAnalyze = gsl::finally([&] {
-		if (options.sequentialOpen
-			&& options.seekable
-			&& format
-			&& format->pb) {
-			format->pb->seek = &Context::Seek;
-			format->pb->seekable = 1;
-			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File sequential analyze seek restored."));
-		}
-	});
 	if (options.sequentialOpen && options.seekable && format->pb) {
 		format->pb->seek = nullptr;
 		format->pb->seekable = 0;
@@ -1016,6 +1006,11 @@ void File::Context::start(StartOptions options) {
 	}
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File avformat_find_stream_info done size=%1.")
 		.arg(qlonglong(_size)));
+	if (options.sequentialOpen && options.seekable && format->pb) {
+		format->pb->seek = &Context::Seek;
+		format->pb->seekable = 1;
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File sequential analyze seek restored."));
+	}
 
 	const auto mode = _delegate->fileOpenMode();
 	auto video = initStream(
