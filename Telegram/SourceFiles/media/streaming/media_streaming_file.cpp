@@ -342,15 +342,17 @@ void File::Context::start(StartOptions options) {
 		.arg(qlonglong(options.position))
 		.arg(qlonglong(options.durationOverride))
 		.arg(_source->isRemoteLoader() ? 1 : 0));
+	const auto seekableOnOpen = options.seekable
+		&& (!options.sequentialOpen || options.position > 0);
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File open strategy sequentialOpen=%1 seekableOnOpen=%2.")
 		.arg(options.sequentialOpen ? 1 : 0)
-		.arg((options.seekable && !options.sequentialOpen) ? 1 : 0));
+		.arg(seekableOnOpen ? 1 : 0));
 	auto format = FFmpeg::MakeFormatPointer(
 		static_cast<void*>(this),
 		&Context::Read,
 		nullptr,
 		options.seekable ? &Context::Seek : nullptr,
-		(options.seekable && !options.sequentialOpen));
+		seekableOnOpen);
 	if (!format) {
 		return fail(Error::OpenFailed);
 	}
@@ -373,10 +375,19 @@ void File::Context::start(StartOptions options) {
 			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File sequential analyze seek restored."));
 		}
 	});
-	if (options.sequentialOpen && options.seekable && format->pb) {
+	if (options.sequentialOpen
+		&& options.seekable
+		&& !options.position
+		&& format->pb) {
 		format->pb->seek = nullptr;
 		format->pb->seekable = 0;
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File sequential analyze seek disabled during stream info."));
+	} else if (options.sequentialOpen
+		&& options.seekable
+		&& options.position
+		&& format->pb) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File sequential analyze keeps seek enabled for nonzero start position=%1.")
+			.arg(qlonglong(options.position)));
 	}
 
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File calling avformat_find_stream_info size=%1 position=%2.")
