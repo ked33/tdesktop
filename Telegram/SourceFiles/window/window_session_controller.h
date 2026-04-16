@@ -579,10 +579,6 @@ public:
 		MessageContext message,
 		const Data::StoriesContext *stories = nullptr,
 		std::optional<TimeId> videoTimestampOverride = {});
-	[[nodiscard]] bool openDocumentInMediaViewAvio(
-		not_null<DocumentData*> document,
-		MessageContext message,
-		std::optional<TimeId> videoTimestampOverride = {});
 	bool openSharedStory(HistoryItem *item);
 	bool openFakeItemStory(
 		FullMsgId fakeItemId,

@@ -15,7 +15,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Media::Streaming {
 
-class Loader;
 class Reader;
 
 class FileSource {
@@ -52,7 +51,5 @@ public:
 
 [[nodiscard]] std::shared_ptr<FileSource> MakeFileSource(
 	std::shared_ptr<Reader> reader);
-[[nodiscard]] std::shared_ptr<FileSource> MakeDirectFileSource(
-	std::unique_ptr<Loader> loader);
 
 } // namespace Media::Streaming
