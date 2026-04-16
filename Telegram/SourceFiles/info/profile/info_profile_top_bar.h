@@ -32,6 +32,7 @@ class MultiPlayer;
 } // namespace Lottie
 
 namespace Ui {
+class UploadProgressOverlay;
 class VideoUserpicPlayer;
 struct OutlineSegment;
 namespace Text {
@@ -151,6 +152,7 @@ private:
 		not_null<Window::SessionController*> controller,
 		const Ui::Menu::MenuCallback &addAction);
 	void setupUserpicButton(not_null<Window::SessionController*> controller);
+	void startUploadOverlay();
 	void setupActions(not_null<Window::SessionController*> controller);
 	void setupButtons(
 		not_null<Window::SessionController*> controller,
@@ -222,9 +224,8 @@ private:
 	object_ptr<Ui::FlatLabel> _status;
 	std::unique_ptr<StatusLabel> _statusLabel;
 	rpl::variable<int> _statusShift = 0;
-	object_ptr<Ui::RoundButton> _showLastSeen = { nullptr };
+	object_ptr<Ui::FadeWrap<Ui::RoundButton>> _showLastSeen = { nullptr };
 	object_ptr<Ui::RoundButton> _forumButton = { nullptr };
-	QGraphicsOpacityEffect *_showLastSeenOpacity = nullptr;
 	object_ptr<Ui::FlatLabel> _id;
 	QGraphicsOpacityEffect *_idOpacity = nullptr;
 
@@ -256,6 +257,9 @@ private:
 	QImage _monoforumMask;
 	std::unique_ptr<Ui::VideoUserpicPlayer> _videoUserpicPlayer;
 	std::unique_ptr<TopicIconView> _topicIconView;
+	std::unique_ptr<Ui::UploadProgressOverlay> _uploadOverlay;
+	rpl::lifetime _uploadLifetime;
+	bool _waitingUserpicCloudLoad = false;
 	rpl::lifetime _userpicLoadingLifetime;
 
 	base::unique_qptr<Ui::IconButton> _close;
