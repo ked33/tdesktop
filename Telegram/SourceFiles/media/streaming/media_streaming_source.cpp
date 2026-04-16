@@ -418,17 +418,35 @@ private:
 			_size,
 			AlignOffset(offset + preload + Loader::kPartSize - 1)
 				+ Loader::kPartSize);
+		const auto reprioritizeWindow = (_priorityWindowStart != start)
+			|| (_priorityWindowTill != till);
 		auto needed = base::flat_set<int64>();
 		auto added = 0;
+		auto reprioritized = 0;
 		auto firstAdded = int64(-1);
 		auto lastAdded = int64(-1);
+		auto firstReprioritized = int64(-1);
+		auto lastReprioritized = int64(-1);
+		if (reprioritizeWindow) {
+			_loader->resetPriorities();
+			_priorityWindowStart = start;
+			_priorityWindowTill = till;
+		}
 		for (auto part = start; part < till; part += Loader::kPartSize) {
 			needed.emplace(part);
-			if (_parts.contains(part) || _loadingOffsets.contains(part)) {
+			if (_parts.contains(part)) {
 				continue;
 			}
-			if (_loadingOffsets.empty() || *_loadingOffsets.begin() != part) {
-				_loader->resetPriorities();
+			if (_loadingOffsets.contains(part)) {
+				if (reprioritizeWindow) {
+					_loader->load(part);
+					++reprioritized;
+					if (firstReprioritized < 0) {
+						firstReprioritized = part;
+					}
+					lastReprioritized = part;
+				}
+				continue;
 			}
 			_loadingOffsets.emplace(part);
 			_loader->load(part);
@@ -440,7 +458,7 @@ private:
 		}
 		if (((_debugQueueCalls < kVerboseFillLogs) || !(_debugQueueCalls % 32))
 			&& (added > 0 || _loadingOffsets.empty())) {
-			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Direct AVIO queue request offset=%1 amount=%2 rangeStart=%3 rangeTill=%4 added=%5 firstAdded=%6 lastAdded=%7 queued=%8 contiguous=%9 randomSeek=%10.")
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Direct AVIO queue request offset=%1 amount=%2 rangeStart=%3 rangeTill=%4 added=%5 firstAdded=%6 lastAdded=%7 reprioritized=%8 firstReprioritized=%9 lastReprioritized=%10 queued=%11 contiguous=%12 randomSeek=%13.")
 				.arg(qlonglong(offset))
 				.arg(qlonglong(amount))
 				.arg(qlonglong(start))
@@ -448,6 +466,9 @@ private:
 				.arg(added)
 				.arg(qlonglong(firstAdded))
 				.arg(qlonglong(lastAdded))
+				.arg(reprioritized)
+				.arg(qlonglong(firstReprioritized))
+				.arg(qlonglong(lastReprioritized))
 				.arg(qlonglong(_loadingOffsets.size()))
 				.arg(qlonglong(_contiguousLoadedTill))
 				.arg(randomSeek ? 1 : 0));
@@ -503,6 +524,8 @@ private:
 	int _debugQueueCalls = 0;
 	int _debugLoadedParts = 0;
 	int _debugPartNotifications = 0;
+	int64 _priorityWindowStart = -1;
+	int64 _priorityWindowTill = -1;
 
 	rpl::lifetime _lifetime;
 };
