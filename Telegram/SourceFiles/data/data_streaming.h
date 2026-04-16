@@ -50,12 +50,6 @@ public:
 		HistoryItem *context,
 		FileOrigin origin,
 		bool forceRemoteLoader = false);
-	[[nodiscard]] std::shared_ptr<Document> dedicatedAvioDocument(
-		not_null<DocumentData*> quality,
-		not_null<DocumentData*> original,
-		HistoryItem *context,
-		FileOrigin origin,
-		bool forceRemoteLoader = false);
 
 	[[nodiscard]] std::shared_ptr<Reader> sharedReader(
 		not_null<PhotoData*> photo,
@@ -95,13 +89,6 @@ private:
 
 	template <typename Data>
 	[[nodiscard]] std::shared_ptr<Document> makeDedicatedDocument(
-		not_null<Data*> data,
-		DocumentData *original,
-		HistoryItem *context,
-		FileOrigin origin,
-		bool forceRemoteLoader = false);
-	template <typename Data>
-	[[nodiscard]] std::shared_ptr<Document> makeDedicatedAvioDocument(
 		not_null<Data*> data,
 		DocumentData *original,
 		HistoryItem *context,
