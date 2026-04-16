@@ -61,19 +61,14 @@ public:
 		MsgId topicRootId,
 		PeerId monoforumPeerId,
 		bool continueStreaming = false,
-		crl::time startTime = 0,
-		bool forceDedicatedAvioPlayback = false,
-		std::shared_ptr<::Media::Streaming::Document> streamingDocumentOverride
-			= nullptr)
+		crl::time startTime = 0)
 	: _controller(controller)
 	, _document(document)
 	, _item(item)
 	, _topicRootId(topicRootId)
 	, _monoforumPeerId(monoforumPeerId)
 	, _continueStreaming(continueStreaming)
-	, _forceDedicatedAvioPlayback(forceDedicatedAvioPlayback)
-	, _startTime(startTime)
-	, _streamingDocumentOverride(std::move(streamingDocumentOverride)) {
+	, _startTime(startTime) {
 	}
 	OpenRequest(
 		Window::SessionController *controller,
@@ -160,15 +155,6 @@ public:
 		return _startTime;
 	}
 
-	[[nodiscard]] bool forceDedicatedAvioPlayback() const {
-		return _forceDedicatedAvioPlayback;
-	}
-
-	[[nodiscard]] const std::shared_ptr<::Media::Streaming::Document>
-	&streamingDocumentOverride() const {
-		return _streamingDocumentOverride;
-	}
-
 private:
 	Window::SessionController *_controller = nullptr;
 	DocumentData *_document = nullptr;
@@ -181,9 +167,7 @@ private:
 	PeerId _monoforumPeerId = 0;
 	std::optional<Data::CloudTheme> _cloudTheme = std::nullopt;
 	bool _continueStreaming = false;
-	bool _forceDedicatedAvioPlayback = false;
 	crl::time _startTime = 0;
-	std::shared_ptr<::Media::Streaming::Document> _streamingDocumentOverride;
 
 	std::shared_ptr<Data::GroupCall> _call;
 	QString _callLinkSlug;

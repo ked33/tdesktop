@@ -50,6 +50,7 @@ struct ContextMenuRequest {
 	TextForMimeData selectedText;
 	SelectedQuote quote;
 	bool overSelection = false;
+	bool showSpecialMpv = false;
 	PointState pointState = PointState();
 };
 
@@ -102,7 +103,8 @@ void AddVideoPlaybackActions(
 	HistoryItem *item,
 	DocumentData *document,
 	not_null<Window::SessionController*> controller,
-	bool afterCopyLink = false);
+	bool afterCopyLink = false,
+	bool showSpecialMpv = false);
 void MaybeAddWhenEditedForwardedAction(
 	not_null<Ui::PopupMenu*> menu,
 	not_null<HistoryItem*> item,

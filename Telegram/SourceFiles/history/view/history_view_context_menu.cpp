@@ -78,6 +78,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_channel.h"
 #include "data/data_chat.h"
 #include "data/data_user.h"
+
 #include "data/data_file_click_handler.h"
 #include "data/data_file_origin.h"
 #include "data/data_message_reactions.h"
@@ -1953,7 +1954,8 @@ void AddTopMessageActions(
 			item,
 			document,
 			list->controller(),
-			(menu->actions().size() > before));
+			(menu->actions().size() > before),
+			request.showSpecialMpv);
 		AddMsgsFromUserAction(menu, request, list);
 		AddForwardAction(menu, request, list);
 		AddRepeaterAction(menu, request, list);
@@ -2356,23 +2358,19 @@ void AddMessageDetailsAction(
 			HistoryItem *item,
 			DocumentData *document,
 			not_null<Window::SessionController*> controller,
-			bool afterCopyLink) {
+			bool afterCopyLink,
+			bool showSpecialMpv) {
 		const auto canOpenInMpv = ::Media::Streaming::Mpv::CanOpenVideoMessageInMpv(
 			item,
 			document);
-		const auto canOpenInInternalPlayerAvio = item
-			&& document
-			&& (document->size > 0)
-			&& document->useStreamingLoader()
-			&& (document->isVideoFile() || document->isVideoMessage());
-		if (!canOpenInMpv && !canOpenInInternalPlayerAvio) {
+		if (!canOpenInMpv) {
 			return;
 		}
 		const auto showStreaming = GetEnhancedBool("show_message_context_stream_in_mpv");
-		const auto showInternalPlayerAvio = GetEnhancedBool(
-			"show_message_context_internal_player_avio");
-		if ((!showStreaming || !canOpenInMpv)
-			&& (!showInternalPlayerAvio || !canOpenInInternalPlayerAvio)) {
+		const auto showStreamingSpecial = GetEnhancedBool(
+			"show_message_context_stream_in_mpv_special");
+		const auto showSpecialNow = showStreamingSpecial && showSpecialMpv;
+		if (!showStreaming && !showSpecialNow) {
 			return;
 		}
 		const auto itemId = item->fullId();
@@ -2419,17 +2417,19 @@ void AddMessageDetailsAction(
 					}
 				});
 		}
-		if (showInternalPlayerAvio && canOpenInInternalPlayerAvio) {
+		if (showSpecialNow && canOpenInMpv) {
 			addAction(
-				tr::lng_context_internal_player_avio(tr::now),
+				tr::lng_context_stream_in_mpv_special(tr::now),
 				[=](HistoryItem *resolvedItem, DocumentData *resolvedDocument) {
-					if (!resolvedItem
-						|| !resolvedDocument
-						|| !controller->openDocumentInMediaViewAvio(
-							resolvedDocument,
-							{ resolvedItem->fullId() })) {
+					const auto result = ::Media::Streaming::Mpv::OpenVideoMessageInMpvSpecial(
+						resolvedItem,
+						resolvedDocument);
+					if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
 						controller->showToast(
-							tr::lng_context_internal_player_avio_failed(tr::now));
+							tr::lng_context_stream_in_mpv_not_found(tr::now));
+					} else if (result == ::Media::Streaming::Mpv::OpenResult::Failed) {
+						controller->showToast(
+							tr::lng_context_stream_in_mpv_special_failed(tr::now));
 					}
 				});
 		}

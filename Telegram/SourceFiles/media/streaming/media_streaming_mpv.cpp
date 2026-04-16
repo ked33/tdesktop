@@ -139,11 +139,13 @@ struct Entry {
 		not_null<DocumentData*> document,
 		Data::FileOrigin origin,
 		std::shared_ptr<Reader> reader,
-		bool preferCompatibilityForLargeFrontMoov)
+		bool preferCompatibilityForLargeFrontMoov,
+		bool allowCompatibilityLateSeekGate)
 	: document(document)
 	, origin(origin)
 	, reader(std::move(reader))
 	, preferCompatibilityForLargeFrontMoov(preferCompatibilityForLargeFrontMoov)
+	, allowCompatibilityLateSeekGate(allowCompatibilityLateSeekGate)
 	, size(this->reader ? this->reader->size() : 0) {
 	}
 
@@ -161,6 +163,7 @@ struct Entry {
 	std::atomic<int64> compatibilityBootstrapBytes = 0;
 	std::atomic<bool> compatibilityLateSeekReady = false;
 	bool preferCompatibilityForLargeFrontMoov = false;
+	bool allowCompatibilityLateSeekGate = true;
 	std::mutex fillMutex;
 	std::mutex seekFillMutex;
 };
@@ -556,6 +559,7 @@ enum class Mp4Layout {
 [[nodiscard]] bool UsesCompatibilityLateSeekGate(
 		const std::shared_ptr<Entry> &entry) {
 	return (entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov))
+		&& entry->allowCompatibilityLateSeekGate
 		&& entry->preferCompatibilityForLargeFrontMoov;
 }
 
@@ -680,7 +684,8 @@ public:
 			not_null<DocumentData*> document,
 			Data::FileOrigin origin,
 			std::shared_ptr<Reader> reader,
-			bool preferCompatibilityForLargeFrontMoov) {
+			bool preferCompatibilityForLargeFrontMoov,
+			bool allowCompatibilityLateSeekGate) {
 		if (!ensureListening()) {
 			return {};
 		}
@@ -688,7 +693,8 @@ public:
 			document,
 			origin,
 			std::move(reader),
-			preferCompatibilityForLargeFrontMoov);
+			preferCompatibilityForLargeFrontMoov,
+			allowCompatibilityLateSeekGate);
 		entry->mime = document->mimeString().isEmpty()
 			? QStringLiteral("application/octet-stream")
 			: document->mimeString();
@@ -1190,12 +1196,14 @@ private:
 		Data::FileOrigin origin,
 		const QString &program,
 		std::shared_ptr<Reader> reader,
-		bool preferCompatibilityForLargeFrontMoov) {
+		bool preferCompatibilityForLargeFrontMoov,
+		bool allowCompatibilityLateSeekGate) {
 	const auto launch = Server::instance().add(
 		document,
 		origin,
 		std::move(reader),
-		preferCompatibilityForLargeFrontMoov);
+		preferCompatibilityForLargeFrontMoov,
+		allowCompatibilityLateSeekGate);
 	if (launch.url.isEmpty()) {
 		MPV_STREAMING_LOG(("MPV Streaming: Failed to create launch URL for document %1.")
 			.arg(qulonglong(document->id)));
@@ -1237,6 +1245,7 @@ private:
 			HistoryItem *item,
 			DocumentData *document,
 			bool preferCompatibilityForLargeFrontMoov,
+			bool allowCompatibilityLateSeekGate,
 			const char *mode) {
 		const auto media = item ? item->media() : nullptr;
 		const auto mediaDocument = media ? media->document() : nullptr;
@@ -1276,7 +1285,8 @@ private:
 			origin,
 			program,
 			std::move(reader),
-			preferCompatibilityForLargeFrontMoov);
+			preferCompatibilityForLargeFrontMoov,
+			allowCompatibilityLateSeekGate);
 	}
 
 OpenResult OpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
@@ -1285,7 +1295,20 @@ OpenResult OpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
 		item,
 		document,
 		media ? !media->hasQualitiesList() : true,
+		true,
 		"default");
+}
+
+OpenResult OpenVideoMessageInMpvSpecial(
+		HistoryItem *item,
+		DocumentData *document) {
+	const auto media = item ? item->media() : nullptr;
+	return OpenVideoMessageInMpvWithBridgeStrategy(
+		item,
+		document,
+		media ? !media->hasQualitiesList() : true,
+		false,
+		"special");
 }
 
 #undef MPV_STREAMING_LOG

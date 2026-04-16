@@ -2965,6 +2965,8 @@ void ListWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		: SelectedQuote();
 	request.selectedText = _selectedText;
 	request.selectedItems = collectSelectedItems();
+	request.showSpecialMpv = (e->reason() == QContextMenuEvent::Mouse)
+		&& e->modifiers().testFlag(Qt::ControlModifier);
 	const auto hasSelection = !request.selectedItems.empty()
 		|| !request.selectedText.empty();
 	request.overSelection = (showFromTouch && hasSelection)

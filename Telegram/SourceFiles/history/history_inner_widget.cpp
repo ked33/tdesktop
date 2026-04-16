@@ -2563,6 +2563,8 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 	if (e->reason() == QContextMenuEvent::Mouse) {
 		mouseActionUpdate(e->globalPos());
 	}
+	const auto showSpecialMpv = (e->reason() == QContextMenuEvent::Mouse)
+		&& e->modifiers().testFlag(Qt::ControlModifier);
 
 	const auto link = ClickHandler::getActive();
 	if (_controller->showFrozenError()) {
@@ -3235,7 +3237,8 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 					&& item
 					&& item->hasDirectLink()
 					&& isUponSelected != 2
-					&& isUponSelected != -2));
+					&& isUponSelected != -2),
+				showSpecialMpv);
 			if (isUponSelected > 1) {
 				if (GetEnhancedBool("show_message_context_forward")
 					&& selectedState.count > 0
@@ -3664,7 +3667,8 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				(item
 					&& item->hasDirectLink()
 					&& isUponSelected != 2
-					&& isUponSelected != -2));
+					&& isUponSelected != -2),
+				showSpecialMpv);
 			if (sponsored) {
 				const auto hasAbout = ranges::any_of(
 					_menu->actions(),
