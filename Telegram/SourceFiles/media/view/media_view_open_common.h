@@ -38,12 +38,14 @@ public:
 		not_null<PhotoData*> photo,
 		HistoryItem *item,
 		MsgId topicRootId,
-		PeerId monoforumPeerId)
+		PeerId monoforumPeerId,
+		bool showDrawButton = false)
 	: _controller(controller)
 	, _photo(photo)
 	, _item(item)
 	, _topicRootId(topicRootId)
-	, _monoforumPeerId(monoforumPeerId) {
+	, _monoforumPeerId(monoforumPeerId)
+	, _showDrawButton(showDrawButton) {
 	}
 	OpenRequest(
 		Window::SessionController *controller,
@@ -61,14 +63,16 @@ public:
 		MsgId topicRootId,
 		PeerId monoforumPeerId,
 		bool continueStreaming = false,
-		crl::time startTime = 0)
+		crl::time startTime = 0,
+		bool showDrawButton = false)
 	: _controller(controller)
 	, _document(document)
 	, _item(item)
 	, _topicRootId(topicRootId)
 	, _monoforumPeerId(monoforumPeerId)
 	, _continueStreaming(continueStreaming)
-	, _startTime(startTime) {
+	, _startTime(startTime)
+	, _showDrawButton(showDrawButton) {
 	}
 	OpenRequest(
 		Window::SessionController *controller,
@@ -155,6 +159,10 @@ public:
 		return _startTime;
 	}
 
+	[[nodiscard]] bool showDrawButton() const {
+		return _showDrawButton;
+	}
+
 private:
 	Window::SessionController *_controller = nullptr;
 	DocumentData *_document = nullptr;
@@ -168,6 +176,7 @@ private:
 	std::optional<Data::CloudTheme> _cloudTheme = std::nullopt;
 	bool _continueStreaming = false;
 	crl::time _startTime = 0;
+	bool _showDrawButton = false;
 
 	std::shared_ptr<Data::GroupCall> _call;
 	QString _callLinkSlug;

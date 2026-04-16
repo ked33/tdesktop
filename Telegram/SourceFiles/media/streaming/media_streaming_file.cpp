@@ -787,6 +787,10 @@ Stream File::Context::initStream(
 		result.rotation = FFmpeg::ReadRotationFromMetadata(info);
 		result.aspect = FFmpeg::ValidateAspectRatio(
 			info->sample_aspect_ratio);
+		const auto guessed = av_guess_frame_rate(format, info, nullptr);
+		if (guessed.num > 0 && guessed.den > 0) {
+			result.fps = av_q2d(guessed);
+		}
 	} else if (type == AVMEDIA_TYPE_AUDIO) {
 		result.frequency = info->codecpar->sample_rate;
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream audio codecId=%1 frequency=%2.")
