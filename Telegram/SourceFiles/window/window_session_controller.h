@@ -26,6 +26,7 @@ enum class WindowLayout;
 
 namespace Data {
 struct StoriesContext;
+struct DrawToReplyRequest;
 class SavedMessages;
 enum class StorySourcesList : uchar;
 } // namespace Data
@@ -74,11 +75,18 @@ struct ChatThemeBackgroundData;
 class MessageSendingAnimationController;
 struct BoostCounters;
 struct ChatPaintContextArgs;
+struct PreparedList;
+struct PreparedBundle;
 } // namespace Ui
+
+namespace Api {
+struct SendOptions;
+} // namespace Api
 
 namespace Data {
 struct CloudTheme;
 enum class CloudThemeType;
+class PhotoMedia;
 class Thread;
 class Forum;
 class ForumTopic;
@@ -111,6 +119,8 @@ class ChatSwitchProcess;
 
 struct PeerByLinkInfo;
 struct SeparateId;
+
+extern const char kOptionExternalMediaViewer[];
 
 struct PeerThemeOverride {
 	PeerData *peer = nullptr;
@@ -448,7 +458,8 @@ public:
 
 	void showForum(
 		not_null<Data::Forum*> forum,
-		const SectionShow &params = SectionShow::Way::ClearStack);
+		const SectionShow &params = SectionShow::Way::ClearStack,
+		MsgId showAtMsgId = ShowAtUnreadMsgId);
 	void closeForum();
 	const rpl::variable<Data::Forum*> &shownForum() const;
 
@@ -551,7 +562,7 @@ public:
 		QDate date;
 		bool mediaPhoto = false;
 		bool mediaVideo = false;
-		Fn<void(MsgId, Fn<void()>)> customJump;
+		Fn<void(FullMsgId, Fn<void()>)> customJump;
 	};
 	void showCalendar(ShowCalendarDescriptor &&descriptor);
 
@@ -567,6 +578,7 @@ public:
 		FullMsgId id;
 		MsgId topicRootId;
 		PeerId monoforumPeerId;
+		bool showDrawButton = false;
 	};
 	void openPhoto(
 		not_null<PhotoData*> photo,
@@ -782,7 +794,24 @@ private:
 	bool openFolderInDifferentWindow(not_null<Data::Folder*> folder);
 	bool showForumInDifferentWindow(
 		not_null<Data::Forum*> forum,
-		const SectionShow &params);
+		const SectionShow &params,
+		MsgId showAtMsgId);
+
+	[[nodiscard]] bool openPhotoExternal(
+		not_null<PhotoData*> photo,
+		Data::FileOrigin origin);
+	void handleDrawToReplyRequest(Data::DrawToReplyRequest request);
+	[[nodiscard]] Data::Thread *resolveDrawToReplyThread(
+		const Data::DrawToReplyRequest &request) const;
+	void showDrawToReplyFilesBox(
+		not_null<Data::Thread*> thread,
+		FullMsgId replyTo,
+		Ui::PreparedList &&list);
+	void sendDrawToReplyFiles(
+		not_null<Data::Thread*> thread,
+		FullMsgId replyTo,
+		std::shared_ptr<Ui::PreparedBundle> bundle,
+		Api::SendOptions options);
 
 	const not_null<Controller*> _window;
 	const std::unique_ptr<ChatHelpers::EmojiInteractions> _emojiInteractions;
@@ -842,6 +871,13 @@ private:
 	rpl::variable<PeerThemeOverride> _peerThemeOverride;
 
 	std::unique_ptr<ChatSwitchProcess> _chatSwitchProcess;
+
+	DocumentId _pendingOpenDocumentId = 0;
+	struct PendingOpenPhoto {
+		PhotoData *data = nullptr;
+		std::shared_ptr<Data::PhotoMedia> media;
+		QString filepath;
+	} _pendingOpenPhoto;
 
 	base::has_weak_ptr _storyOpenGuard;
 

@@ -385,6 +385,11 @@ auto VideoTrackObject::readFrame(not_null<Frame*> frame) -> FrameResult {
 		_waitingForData.fire({});
 		return FrameResult::Waiting;
 	}
+	const auto decodedFrame = _stream.decodedFrame.get();
+	if (int64(decodedFrame->width) * decodedFrame->height > kMaxFrameArea) {
+		fail(Error::InvalidData);
+		return FrameResult::Error;
+	}
 	const auto position = currentFramePosition();
 	if (position == kTimeUnknown) {
 		fail(Error::InvalidData);
@@ -669,7 +674,7 @@ bool VideoTrackObject::tryReadFirstFrame(FFmpeg::Packet &&packet) {
 
 bool VideoTrackObject::processFirstFrame() {
 	const auto decodedFrame = _stream.decodedFrame.get();
-	if (decodedFrame->width * decodedFrame->height > kMaxFrameArea) {
+	if (int64(decodedFrame->width) * decodedFrame->height > kMaxFrameArea) {
 		return false;
 	} else if (decodedFrame->hw_frames_ctx) {
 		if (!_stream.transferredFrame) {
@@ -749,6 +754,7 @@ void VideoTrackObject::callReady() {
 			_stream.rotation),
 		.cover = frame->original,
 		.rotation = _stream.rotation,
+		.fps = _stream.fps,
 		.alpha = frame->alpha,
 	} });
 }

@@ -1752,7 +1752,7 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 		const auto showRecentForwardsToSelf = result.size() == 1
 			&& result.front()->peer()->isSelf()
 			&& history->session().premium();
-		for (const auto thread : result) {
+		for (const auto &thread : result) {
 			const auto peer = thread->peer();
 			const auto threadHistory = thread->owningHistory();
 			const auto forum = threadHistory->asForum();
@@ -2041,16 +2041,18 @@ void FastShareMessageToSelf(
 		std::shared_ptr<Main::SessionShow> show,
 		not_null<HistoryItem*> item) {
 	const auto self = show->session().user();
+	auto &owner = self->owner();
+	const auto items = owner.idsToItems(owner.itemOrItsGroup(item));
 	const auto donePhraseArgs = ChatHelpers::ForwardedMessagePhraseArgs{
 		.toCount = 1,
-		.singleMessage = true,
+		.singleMessage = (items.size() == 1),
 		.to1 = self,
 		.to2 = nullptr,
 	};
-	auto sendAction = Api::SendAction(self->owner().history(self));
+	auto sendAction = Api::SendAction(owner.history(self));
 	sendAction.clearDraft = false;
 	show->session().api().forwardMessages(
-		Data::ResolvedForwardDraft{ .items = {item} },
+		Data::ResolvedForwardDraft{ .items = items },
 		std::move(sendAction),
 		[=] {
 			auto phrase = rpl::variable<TextWithEntities>(
@@ -2123,7 +2125,7 @@ void FastShareLink(
 			comment.text = url;
 		}
 		auto &api = show->session().api();
-		for (const auto thread : result) {
+		for (const auto &thread : result) {
 			auto message = Api::MessageToSend(
 				Api::SendAction(thread, options));
 			message.textWithTags = comment;

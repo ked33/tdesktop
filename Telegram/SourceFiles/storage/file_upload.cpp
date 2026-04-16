@@ -19,8 +19,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item.h"
 #include "history/history.h"
 #include "core/file_location.h"
+#include "core/application.h"
 #include "core/mime_type.h"
 #include "main/main_session.h"
+#include "storage/storage_account.h"
 #include "apiwrap.h"
 
 namespace Storage {
@@ -341,6 +343,20 @@ void Uploader::upload(
 		}
 		if (!file->filepath.isEmpty()) {
 			document->setLocation(Core::FileLocation(file->filepath));
+		} else if (!file->content.isEmpty()
+			&& Core::App().canSaveFileWithoutAskingForPath()) {
+			const auto path = DocumentFileNameForSave(document);
+			if (!path.isEmpty()) {
+				auto f = QFile(path);
+				if (f.open(QIODevice::WriteOnly)
+					&& f.write(file->content) == file->content.size()) {
+					f.close();
+					document->setLocation(Core::FileLocation(path));
+					session().local().writeFileLocation(
+						document->mediaKey(),
+						Core::FileLocation(path));
+				}
+			}
 		}
 		if (file->type == SendMediaType::ThemeFile) {
 			document->checkWallPaperProperties();
@@ -989,7 +1005,8 @@ void Uploader::uploadCoverAsPhoto(
 			MTP_flags(0),
 			cover.info.file,
 			MTP_vector<MTPInputDocument>(0),
-			MTP_int(0))
+			MTP_int(0),
+			MTPInputDocument()) // video
 	)).done([=](const MTPMessageMedia &result) {
 		result.match([&](const MTPDmessageMediaPhoto &data) {
 			const auto photo = data.vphoto();
