@@ -88,8 +88,6 @@ namespace {
 		return tr::lng_settings_experimental_uncolored_quote(tr::now);
 	} else if (id == Media::Player::kOptionDisableAutoplayNext) {
 		return tr::lng_settings_experimental_disable_autoplay_next(tr::now);
-	} else if (id == kOptionSendLargePhotos) {
-		return tr::lng_settings_experimental_send_large_photos(tr::now);
 	} else if (id == Webview::kOptionWebviewDebugEnabled) {
 		return tr::lng_settings_experimental_webview_debug_enabled(tr::now);
 	} else if (id == Webview::kOptionWebviewLegacyEdge) {
@@ -110,8 +108,6 @@ namespace {
 			tr::now);
 	} else if (id == Core::kOptionDeadlockDetector) {
 		return tr::lng_settings_experimental_deadlock_detector(tr::now);
-	} else if (id == Data::kOptionExternalVideoPlayer) {
-		return tr::lng_settings_experimental_external_video_player(tr::now);
 	} else if (id == Window::kOptionNewWindowsSizeAsFirst) {
 		return tr::lng_settings_experimental_new_windows_size_as_first(
 			tr::now);
@@ -173,9 +169,6 @@ namespace {
 	} else if (id == Media::Player::kOptionDisableAutoplayNext) {
 		return tr::lng_settings_experimental_disable_autoplay_next_desc(
 			tr::now);
-	} else if (id == kOptionSendLargePhotos) {
-		return tr::lng_settings_experimental_send_large_photos_desc(
-			tr::now);
 	} else if (id == Webview::kOptionWebviewDebugEnabled) {
 		return tr::lng_settings_experimental_webview_debug_enabled_desc(
 			tr::now);
@@ -200,9 +193,6 @@ namespace {
 			tr::now);
 	} else if (id == Core::kOptionDeadlockDetector) {
 		return tr::lng_settings_experimental_deadlock_detector_desc(
-			tr::now);
-	} else if (id == Data::kOptionExternalVideoPlayer) {
-		return tr::lng_settings_experimental_external_video_player_desc(
 			tr::now);
 	} else if (id == Window::kOptionNewWindowsSizeAsFirst) {
 		return tr::lng_settings_experimental_new_windows_size_as_first_desc(
