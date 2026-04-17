@@ -2268,12 +2268,8 @@ void FillContextMenuItems(
 		: nullptr;
 	const auto hasSelection = !request.selectedItems.empty()
 		|| !request.selectedText.empty();
-	const auto hasWhoReactedItem = item
+	auto hasWhoReactedItem = item
 		&& Api::WhoReactedExists(item, Api::WhoReactedList::All);
-
-	auto result = base::make_unique_q<Ui::PopupMenu>(
-		list,
-		st::popupMenuWithIcons);
 
 	AddMessageDetailsAction(result, item, view, list->controller());
 	if (hasWhoReactedItem) {
