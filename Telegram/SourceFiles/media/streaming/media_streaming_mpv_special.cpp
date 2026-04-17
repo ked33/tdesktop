@@ -5,9 +5,9 @@ the official desktop application for the Telegram messaging service.
 For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
-#include "media/streaming/media_streaming_mpv.h"
-
 #include "media/streaming/media_streaming_mpv_special.h"
+
+#include "media/streaming/media_streaming_mpv.h"
 
 #include "base/bytes.h"
 #include "base/platform/base_platform_info.h"
@@ -24,23 +24,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings.h"
 
 #include <QtCore/QFileInfo>
-#include <QtCore/QCoreApplication>
-#include <QtCore/QLibrary>
-#include <QtCore/QMetaObject>
-#include <QtCore/QPointer>
 #include <QtCore/QProcess>
 #include <QtCore/QProcessEnvironment>
 #include <QtCore/QStringList>
 #include <QtCore/QStandardPaths>
-#include <QtCore/QTimer>
 #include <QtCore/QUuid>
 #include <QtCore/QUrl>
-#include <QtGui/QCloseEvent>
 #include <QtEndian>
 #include <QtNetwork/QHostAddress>
 #include <QtNetwork/QTcpServer>
 #include <QtNetwork/QTcpSocket>
-#include <QtWidgets/QWidget>
 
 #include <algorithm>
 #include <atomic>
@@ -51,7 +44,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <thread>
 #include <vector>
 
-namespace Media::Streaming::Mpv {
+namespace Media::Streaming::MpvSpecial {
+
+using Mpv::OpenResult;
+
 namespace {
 
 constexpr auto kPathPrefix = "/mpv/";
@@ -61,28 +57,12 @@ constexpr auto kReadChunkSize = 256 * 1024;
 constexpr auto kInitialReadChunkSize = 64 * 1024;
 constexpr auto kMp4ProbeInitialSize = 256 * 1024;
 constexpr auto kMp4ProbeMaxSize = 4 * 1024 * 1024;
-constexpr auto kCompatibilitySeekBootstrapBytes = 4 * 1024 * 1024;
-constexpr auto kCompatibilityLateSeekMinOffset = 128 * 1024 * 1024;
-constexpr auto kCompatibilitySeekWaitTimeout = 4000;
-constexpr auto kCompatibilitySeekWaitStep = 10;
 constexpr auto kCleanupInterval = 60 * crl::time(1000);
 constexpr auto kTokenLifetime = 5 * 60 * crl::time(1000);
-	constexpr auto kMpvLoaderPriority = 2;
+constexpr auto kMpvLoaderPriority = 2;
 
 [[nodiscard]] bool MpvDebugLogsEnabled() {
 	return GetEnhancedBool("mpv_streaming_debug_logs");
-}
-
-[[nodiscard]] QString MpvLogString(const char *value) {
-	return value ? QString::fromUtf8(value) : QString();
-}
-
-[[nodiscard]] QString MpvLogLine(const char *value) {
-	auto result = MpvLogString(value);
-	while (result.endsWith('\n') || result.endsWith('\r')) {
-		result.chop(1);
-	}
-	return result;
 }
 
 [[nodiscard]] int DownloadBoostLevel() {
@@ -141,13 +121,11 @@ struct Entry {
 		not_null<DocumentData*> document,
 		Data::FileOrigin origin,
 		std::shared_ptr<Reader> reader,
-		bool preferCompatibilityForLargeFrontMoov,
-		bool allowCompatibilityLateSeekGate)
+		bool preferCompatibilityForLargeFrontMoov)
 	: document(document)
 	, origin(origin)
 	, reader(std::move(reader))
 	, preferCompatibilityForLargeFrontMoov(preferCompatibilityForLargeFrontMoov)
-	, allowCompatibilityLateSeekGate(allowCompatibilityLateSeekGate)
 	, size(this->reader ? this->reader->size() : 0) {
 	}
 
@@ -162,10 +140,7 @@ struct Entry {
 	std::atomic<bool> headerFinalized = false;
 	std::atomic<int> mp4Layout = 0;
 	std::atomic<std::uint64_t> latestSeekGeneration = 0;
-	std::atomic<int64> compatibilityBootstrapBytes = 0;
-	std::atomic<bool> compatibilityLateSeekReady = false;
 	bool preferCompatibilityForLargeFrontMoov = false;
-	bool allowCompatibilityLateSeekGate = true;
 	std::mutex fillMutex;
 	std::mutex seekFillMutex;
 };
@@ -176,18 +151,6 @@ enum class Mp4Layout {
 	Regular = 2,
 	LargeFrontMoov = 3,
 };
-
-[[nodiscard]] std::shared_ptr<Reader> CreateDedicatedReader(
-	not_null<DocumentData*> document,
-	Data::FileOrigin origin);
-[[nodiscard]] std::shared_ptr<Reader> CreateDedicatedReaderFromWorker(
-	not_null<DocumentData*> document,
-	Data::FileOrigin origin);
-[[nodiscard]] bool FillBuffer(
-	not_null<Reader*> reader,
-	int64 offset,
-	bytes::span buffer);
-
 
 [[nodiscard]] QString StreamingErrorDebugString(std::optional<Error> error) {
 	if (!error) {
@@ -238,7 +201,7 @@ enum class Mp4Layout {
 			entry->document,
 			entry->origin);
 			if (!fresh) {
-				MPV_STREAMING_LOG(("MPV Streaming: Failed to recreate reader for token %1 at offset %2.")
+				MPV_STREAMING_LOG(("MPV Streaming (Special): Failed to recreate reader for token %1 at offset %2.")
 					.arg(token)
 					.arg(offset));
 				return false;
@@ -250,7 +213,7 @@ enum class Mp4Layout {
 			previous->stopStreamingAsync();
 			previous->tryRemoveLoaderAsync();
 		}
-		MPV_STREAMING_LOG(("MPV Streaming: Recreated reader for token %1 after LoadFailed at offset %2.")
+		MPV_STREAMING_LOG(("MPV Streaming (Special): Recreated reader for token %1 after LoadFailed at offset %2.")
 			.arg(token)
 			.arg(offset));
 		return true;
@@ -558,99 +521,6 @@ enum class Mp4Layout {
 	return Mp4Layout::Unknown;
 }
 
-[[nodiscard]] bool UsesCompatibilityLateSeekGate(
-		const std::shared_ptr<Entry> &entry) {
-	return (entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov))
-		&& entry->allowCompatibilityLateSeekGate
-		&& entry->preferCompatibilityForLargeFrontMoov;
-}
-
-[[nodiscard]] bool AllowsCompatibilityLateSeekOffset(
-		const std::shared_ptr<Entry> &entry,
-		int64 offset) {
-	return UsesCompatibilityLateSeekGate(entry)
-		&& (offset >= kCompatibilityLateSeekMinOffset);
-}
-
-void MarkCompatibilityLateSeekReady(
-		const std::shared_ptr<Entry> &entry,
-		const QString &token,
-		const char *reason) {
-	if (!UsesCompatibilityLateSeekGate(entry)) {
-		return;
-	}
-	if (!entry->compatibilityLateSeekReady.exchange(true)) {
-		MPV_STREAMING_LOG(("MPV Streaming: Compatibility late seek ready for token %1 reason=%2 bootstrapBytes=%3.")
-			.arg(token)
-			.arg(QString::fromLatin1(reason))
-			.arg(entry->compatibilityBootstrapBytes.load()));
-	}
-}
-
-void NoteCompatibilityBootstrapProgress(
-		const std::shared_ptr<Entry> &entry,
-		const QString &token,
-		int size) {
-	if (!UsesCompatibilityLateSeekGate(entry) || (size <= 0)) {
-		return;
-	}
-	const auto served = entry->compatibilityBootstrapBytes.fetch_add(size) + size;
-	if (served >= kCompatibilitySeekBootstrapBytes) {
-		MarkCompatibilityLateSeekReady(entry, token, "bootstrap-bytes");
-	}
-}
-
-[[nodiscard]] bool WaitForCompatibilityLateSeekReady(
-		const std::shared_ptr<Entry> &entry,
-		const QString &token,
-		int64 offset) {
-	if (!UsesCompatibilityLateSeekGate(entry)
-		|| entry->compatibilityLateSeekReady.load()) {
-		return true;
-	}
-	const auto started = crl::now();
-	while (!entry->compatibilityLateSeekReady.load()) {
-		if ((crl::now() - started) >= kCompatibilitySeekWaitTimeout) {
-			MPV_STREAMING_LOG(("MPV Streaming: Compatibility late seek wait timed out for token %1 offset=%2 bootstrapBytes=%3 activeRequests=%4.")
-				.arg(token)
-				.arg(offset)
-				.arg(entry->compatibilityBootstrapBytes.load())
-				.arg(entry->activeRequests.load()));
-			return false;
-		}
-		std::this_thread::sleep_for(
-			std::chrono::milliseconds(kCompatibilitySeekWaitStep));
-	}
-	MPV_STREAMING_LOG(("MPV Streaming: Compatibility late seek released for token %1 offset=%2 bootstrapBytes=%3.")
-		.arg(token)
-		.arg(offset)
-		.arg(entry->compatibilityBootstrapBytes.load()));
-	return true;
-}
-
-	[[nodiscard]] bool WaitForMp4LayoutForSeek(
-			const std::shared_ptr<Entry> &entry,
-			const QString &token,
-			int64 offset) {
-		if (entry->mp4Layout.load() != 0) {
-			return true;
-		}
-		const auto started = crl::now();
-		while (entry->mp4Layout.load() == 0) {
-			if ((crl::now() - started) >= kCompatibilitySeekWaitTimeout) {
-			MPV_STREAMING_LOG(("MPV Streaming: MP4 layout wait timed out for token %1 offset=%2 bootstrapBytes=%3 activeRequests=%4.")
-				.arg(token)
-				.arg(offset)
-				.arg(entry->compatibilityBootstrapBytes.load())
-				.arg(entry->activeRequests.load()));
-			return false;
-		}
-		std::this_thread::sleep_for(
-			std::chrono::milliseconds(kCompatibilitySeekWaitStep));
-	}
-	return true;
-}
-
 class DescriptorServer final : public QTcpServer {
 public:
 	explicit DescriptorServer(std::function<void(qintptr)> accepted)
@@ -686,8 +556,7 @@ public:
 			not_null<DocumentData*> document,
 			Data::FileOrigin origin,
 			std::shared_ptr<Reader> reader,
-			bool preferCompatibilityForLargeFrontMoov,
-			bool allowCompatibilityLateSeekGate) {
+			bool preferCompatibilityForLargeFrontMoov) {
 		if (!ensureListening()) {
 			return {};
 		}
@@ -695,8 +564,7 @@ public:
 			document,
 			origin,
 			std::move(reader),
-			preferCompatibilityForLargeFrontMoov,
-			allowCompatibilityLateSeekGate);
+			preferCompatibilityForLargeFrontMoov);
 		entry->mime = document->mimeString().isEmpty()
 			? QStringLiteral("application/octet-stream")
 			: document->mimeString();
@@ -805,14 +673,14 @@ private:
 		void handleConnection(qintptr descriptor) {
 			auto socket = QTcpSocket();
 				if (!socket.setSocketDescriptor(descriptor)) {
-					MPV_STREAMING_LOG(("MPV Streaming: Failed to adopt socket descriptor %1.")
+					MPV_STREAMING_LOG(("MPV Streaming (Special): Failed to adopt socket descriptor %1.")
 						.arg(qulonglong(descriptor)));
 					return;
 				}
 			const auto headers = ReadHeaders(socket);
 			const auto request = ParseRequest(headers);
 				if (!request.valid) {
-					MPV_STREAMING_LOG(("MPV Streaming: Invalid request, headers size %1.")
+					MPV_STREAMING_LOG(("MPV Streaming (Special): Invalid request, headers size %1.")
 						.arg(headers.size()));
 				(void)SendResponse(socket, "400 Bad Request", {
 					{ "Connection", "close" },
@@ -820,13 +688,13 @@ private:
 				});
 				return;
 			}
-				MPV_STREAMING_LOG(("MPV Streaming: Request %1 token=%2 range='%3'.")
+				MPV_STREAMING_LOG(("MPV Streaming (Special): Request %1 token=%2 range='%3'.")
 					.arg(QString::fromLatin1(request.method))
 					.arg(request.token)
 					.arg(QString::fromLatin1(request.rangeHeader)));
 			const auto entry = lookupRetained(request.token);
 				if (!entry) {
-					MPV_STREAMING_LOG(("MPV Streaming: Token not found: %1.").arg(request.token));
+					MPV_STREAMING_LOG(("MPV Streaming (Special): Token not found: %1.").arg(request.token));
 				(void)SendResponse(socket, "404 Not Found", {
 					{ "Connection", "close" },
 					{ "Content-Length", "0" },
@@ -836,7 +704,7 @@ private:
 			const auto releaseGuard = gsl::finally([&] { release(entry); });
 			const auto range = ParseRange(request.rangeHeader, entry->size);
 				if (!range.valid) {
-					MPV_STREAMING_LOG(("MPV Streaming: Invalid range '%1' for size %2.")
+					MPV_STREAMING_LOG(("MPV Streaming (Special): Invalid range '%1' for size %2.")
 						.arg(QString::fromLatin1(request.rangeHeader))
 						.arg(entry->size));
 				(void)SendResponse(socket, "400 Bad Request", {
@@ -845,7 +713,7 @@ private:
 				});
 				return;
 				} else if (!range.satisfiable) {
-					MPV_STREAMING_LOG(("MPV Streaming: Unsatisfiable range '%1' for size %2.")
+					MPV_STREAMING_LOG(("MPV Streaming (Special): Unsatisfiable range '%1' for size %2.")
 						.arg(QString::fromLatin1(request.rangeHeader))
 						.arg(entry->size));
 				(void)SendResponse(socket, "416 Range Not Satisfiable", {
@@ -892,63 +760,23 @@ private:
 						detected = Mp4Layout::Regular;
 					}
 					entry->mp4Layout.store(int(detected));
-					MPV_STREAMING_LOG(("MPV Streaming: Detected MP4 layout: %1 for token %2 after probing %3 bytes.")
+					MPV_STREAMING_LOG(("MPV Streaming (Special): Detected MP4 layout: %1 for token %2 after probing %3 bytes.")
 						.arg(int(detected))
 						.arg(request.token)
 						.arg(probeActual));
 				}
 			}
-			if ((range.range.from > 0)
-				&& !WaitForMp4LayoutForSeek(
-					entry,
-					request.token,
-					range.range.from)) {
-				(void)SendResponse(socket, "503 Service Unavailable", {
-					{ "Connection", "close" },
-					{ "Content-Length", "0" },
-					{ "Retry-After", "1" },
-				});
-				return;
-			}
 			const auto compatibilitySequentialLayout =
-				(entry->mp4Layout.load() == int(Mp4Layout::Fragmented));
-			const auto compatibilityLateSeekGate =
-				UsesCompatibilityLateSeekGate(entry);
-			const auto compatibilityFarSeek =
-				AllowsCompatibilityLateSeekOffset(entry, range.range.from);
-			if (compatibilityLateSeekGate
-				&& (range.range.from > 0)
-				&& !compatibilityFarSeek) {
-				MPV_STREAMING_LOG(("MPV Streaming: Keeping compatibility sequential path for token %1 offset=%2 minOffset=%3.")
-					.arg(request.token)
-					.arg(range.range.from)
-					.arg(kCompatibilityLateSeekMinOffset));
-			}
-			if (compatibilityFarSeek
-				&& (range.range.from > 0)
-				&& !WaitForCompatibilityLateSeekReady(
-					entry,
-					request.token,
-					range.range.from)) {
-				(void)SendResponse(socket, "503 Service Unavailable", {
-					{ "Connection", "close" },
-					{ "Content-Length", "0" },
-					{ "Retry-After", "1" },
-				});
-				return;
-			}
-			const auto compatibilitySequentialRequest =
-				compatibilitySequentialLayout
-				|| (compatibilityLateSeekGate
-					&& (range.range.from > 0)
-					&& !compatibilityFarSeek);
+				(entry->mp4Layout.load() == int(Mp4Layout::Fragmented))
+				|| ((entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov))
+					&& entry->preferCompatibilityForLargeFrontMoov);
 			const auto sequentialLayout =
-				compatibilitySequentialRequest
+				compatibilitySequentialLayout
 				|| (entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov));
 			const auto initialSequentialOpen =
 				sequentialLayout
 				&& (range.range.from == 0);
-			if (compatibilitySequentialRequest) {
+			if (compatibilitySequentialLayout) {
 				if (!SendResponse(socket, "200 OK", {
 					{ "Connection", "close" },
 					{ "Content-Length", QByteArray::number(entry->size) },
@@ -992,43 +820,43 @@ private:
 			if (request.method == "HEAD") {
 				return;
 			}
-			auto offset = compatibilitySequentialRequest
+			auto offset = compatibilitySequentialLayout
 				? int64(0)
 				: initialSequentialOpen
 				? int64(0)
 				: range.range.from;
-				auto left = compatibilitySequentialRequest
-					? entry->size
-					: initialSequentialOpen
-					? entry->size
-					: range.range.length;
-				const auto startedFromZero = (offset == 0);
-				const auto isolatedSeekRequest =
-					sequentialLayout
-					&& !compatibilitySequentialRequest
-					&& !initialSequentialOpen
-					&& (range.range.from > 0);
-				auto activeReader = entry->reader;
-				auto *fillMutex = &entry->fillMutex;
-				if (isolatedSeekRequest) {
-					const auto lock = std::unique_lock(entry->seekFillMutex);
-					if (!entry->seekReader) {
-						entry->seekReader = CreateDedicatedReaderFromWorker(
-							entry->document,
-							entry->origin);
-					}
-					if (entry->seekReader) {
-						activeReader = entry->seekReader;
-						fillMutex = &entry->seekFillMutex;
-						MPV_STREAMING_LOG(("MPV Streaming: Using isolated seek reader for token %1 at offset %2.")
-							.arg(request.token)
-							.arg(range.range.from));
-					} else {
-						MPV_STREAMING_LOG(("MPV Streaming: Failed to create isolated seek reader for token %1 at offset %2, using primary reader.")
-							.arg(request.token)
-							.arg(range.range.from));
-					}
+			auto left = compatibilitySequentialLayout
+				? entry->size
+				: initialSequentialOpen
+				? entry->size
+				: range.range.length;
+			const auto startedFromZero = (offset == 0);
+			const auto isolatedSeekRequest =
+				sequentialLayout
+				&& !compatibilitySequentialLayout
+				&& !initialSequentialOpen
+				&& (range.range.from > 0);
+			auto activeReader = entry->reader;
+			auto *fillMutex = &entry->fillMutex;
+			if (isolatedSeekRequest) {
+				const auto lock = std::unique_lock(entry->seekFillMutex);
+				if (!entry->seekReader) {
+					entry->seekReader = CreateDedicatedReaderFromWorker(
+						entry->document,
+						entry->origin);
 				}
+				if (entry->seekReader) {
+					activeReader = entry->seekReader;
+					fillMutex = &entry->seekFillMutex;
+					MPV_STREAMING_LOG(("MPV Streaming (Special): Using isolated seek reader for token %1 at offset %2.")
+						.arg(request.token)
+						.arg(range.range.from));
+				} else {
+					MPV_STREAMING_LOG(("MPV Streaming (Special): Failed to create isolated seek reader for token %1 at offset %2, using primary reader.")
+						.arg(request.token)
+						.arg(range.range.from));
+				}
+			}
 			const auto usingSeekReader = (activeReader != entry->reader);
 			const auto seekGenerationManaged =
 				(entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov))
@@ -1086,7 +914,7 @@ private:
 							retriedLoadFailure = true;
 							continue;
 						}
-						MPV_STREAMING_LOG(("MPV Streaming: FillBuffer failed at offset %1, size %2, error=%3.")
+						MPV_STREAMING_LOG(("MPV Streaming (Special): FillBuffer failed at offset %1, size %2, error=%3.")
 							.arg(offset)
 							.arg(size)
 							.arg(StreamingErrorDebugString(error)));
@@ -1105,7 +933,7 @@ private:
 				if (!WriteAll(socket, buffer.constData(), buffer.size())) {
 					const auto error = socket.error();
 					if (error != QAbstractSocket::RemoteHostClosedError) {
-						MPV_STREAMING_LOG(("MPV Streaming: WriteAll failed at offset %1, size %2, error=%3, detail='%4'.")
+						MPV_STREAMING_LOG(("MPV Streaming (Special): WriteAll failed at offset %1, size %2, error=%3, detail='%4'.")
 							.arg(offset)
 							.arg(size)
 							.arg(int(error))
@@ -1118,26 +946,14 @@ private:
 				offset += size;
 				left -= size;
 				entry->lastActivity = crl::now();
-				if (startedFromZero && !usingSeekReader) {
-					NoteCompatibilityBootstrapProgress(
-						entry,
-						request.token,
-						size);
-				}
 			}
 			if (supersededSeek) {
-				MPV_STREAMING_LOG(("MPV Streaming: Superseded seek request token=%1 generation=%2 offset=%3 latest=%4.")
+				MPV_STREAMING_LOG(("MPV Streaming (Special): Superseded seek request token=%1 generation=%2 offset=%3 latest=%4.")
 					.arg(request.token)
 					.arg(qulonglong(seekGeneration))
 					.arg(range.range.from)
 					.arg(qulonglong(entry->latestSeekGeneration.load())));
 				return;
-			}
-			if (clientDisconnected && startedFromZero && !usingSeekReader) {
-				MarkCompatibilityLateSeekReady(
-					entry,
-					request.token,
-					"initial-stream-ended");
 			}
 			// Pre-fill cache sequentially after client disconnect.
 			// When a fragmented MP4 is opened, the demuxer scans
@@ -1193,41 +1009,9 @@ private:
 	base::Timer _cleanupTimer;
 };
 
-[[nodiscard]] OpenResult StartExternalBridgePlayback(
-		not_null<DocumentData*> document,
-		Data::FileOrigin origin,
-		const QString &program,
-		std::shared_ptr<Reader> reader,
-		bool preferCompatibilityForLargeFrontMoov,
-		bool allowCompatibilityLateSeekGate) {
-	const auto launch = Server::instance().add(
-		document,
-		origin,
-		std::move(reader),
-		preferCompatibilityForLargeFrontMoov,
-		allowCompatibilityLateSeekGate);
-	if (launch.url.isEmpty()) {
-		MPV_STREAMING_LOG(("MPV Streaming: Failed to create launch URL for document %1.")
-			.arg(qulonglong(document->id)));
-		return OpenResult::Failed;
-	}
-	MPV_STREAMING_LOG(("MPV Streaming: Launching '%1' with URL %2.")
-		.arg(program)
-		.arg(launch.url));
-	MPV_STREAMING_LOG(("MPV Streaming: Launch arguments: %1.")
-		.arg(LaunchArguments(launch.url).join(QStringLiteral(" "))));
-	if (!StartDetachedPlayer(program, launch.url)) {
-		MPV_STREAMING_LOG(("MPV Streaming: Failed to start player '%1'.")
-			.arg(program));
-		Server::instance().remove(launch.token);
-		return OpenResult::Failed;
-	}
-	return OpenResult::Success;
-}
-
 } // namespace
 
-	bool CanOpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
+	bool CanOpenVideoMessageInMpvSpecial(HistoryItem *item, DocumentData *document) {
 	#ifndef Q_OS_WIN
 		return false;
 	#else
@@ -1243,16 +1027,10 @@ private:
 	#endif
 	}
 
-	[[nodiscard]] OpenResult OpenVideoMessageInMpvWithBridgeStrategy(
-			HistoryItem *item,
-			DocumentData *document,
-			bool preferCompatibilityForLargeFrontMoov,
-			bool allowCompatibilityLateSeekGate,
-			const char *mode) {
+	OpenResult OpenVideoMessageInMpvSpecial(HistoryItem *item, DocumentData *document) {
 		const auto media = item ? item->media() : nullptr;
 		const auto mediaDocument = media ? media->document() : nullptr;
-		MPV_STREAMING_LOG(("MPV Streaming: Open request mode=%1 passedDocument=%2 mediaDocument=%3 same=%4 passedSize=%5 mediaSize=%6 passedSupports=%7 mediaSupports=%8 passedLoader=%9 mediaLoader=%10 hasQualities=%11.")
-			.arg(QString::fromLatin1(mode))
+		MPV_STREAMING_LOG(("MPV Streaming (Special): Open request passedDocument=%1 mediaDocument=%2 same=%3 passedSize=%4 mediaSize=%5 passedSupports=%6 mediaSupports=%7 passedLoader=%8 mediaLoader=%9 hasQualities=%10.")
 			.arg(qulonglong(document ? document->id : 0))
 			.arg(qulonglong(mediaDocument ? mediaDocument->id : 0))
 			.arg((document == mediaDocument) ? 1 : 0)
@@ -1263,50 +1041,51 @@ private:
 			.arg(document ? document->useStreamingLoader() : 0)
 			.arg(mediaDocument ? mediaDocument->useStreamingLoader() : 0)
 			.arg(media ? media->hasQualitiesList() : 0));
-		if (!CanOpenVideoMessageInMpv(item, document)) {
+		if (!CanOpenVideoMessageInMpvSpecial(item, document)) {
 			return OpenResult::Unsupported;
 		}
 		const auto program = ResolveProgram();
 		if (program.isEmpty()) {
-			MPV_STREAMING_LOG(("MPV Streaming: Player not found."));
+			MPV_STREAMING_LOG(("MPV Streaming (Special): Player not found."));
 			return OpenResult::PlayerNotFound;
 		}
 		const auto origin = Data::FileOrigin(item->fullId());
-		MPV_STREAMING_LOG(("MPV Streaming: Bridge strategy mode=%1 preferCompatibilityForLargeFrontMoov=%2 hasQualities=%3.")
-			.arg(QString::fromLatin1(mode))
+		const auto preferCompatibilityForLargeFrontMoov = media
+			? !media->hasQualitiesList()
+			: true;
+		MPV_STREAMING_LOG(("MPV Streaming (Special): Bridge strategy preferCompatibilityForLargeFrontMoov=%1 hasQualities=%2.")
 			.arg(preferCompatibilityForLargeFrontMoov ? 1 : 0)
 			.arg(media ? media->hasQualitiesList() : 0));
-		auto reader = CreateDedicatedReader(document, origin);
-		if (!reader) {
-			MPV_STREAMING_LOG(("MPV Streaming: Failed to create dedicated reader for document %1.")
-				.arg(qulonglong(document->id)));
+		const auto reader = CreateDedicatedReader(document, origin);
+			if (!reader) {
+				MPV_STREAMING_LOG(("MPV Streaming (Special): Failed to create dedicated reader for document %1.")
+					.arg(qulonglong(document->id)));
 			return OpenResult::Failed;
 		}
-		return StartExternalBridgePlayback(
+		const auto launch = Server::instance().add(
 			document,
 			origin,
-			program,
-			std::move(reader),
-			preferCompatibilityForLargeFrontMoov,
-			allowCompatibilityLateSeekGate);
+			reader,
+			preferCompatibilityForLargeFrontMoov);
+			if (launch.url.isEmpty()) {
+				MPV_STREAMING_LOG(("MPV Streaming (Special): Failed to create launch URL for document %1.")
+					.arg(qulonglong(document->id)));
+			reader->stopStreaming(false);
+			return OpenResult::Failed;
+		}
+		MPV_STREAMING_LOG(("MPV Streaming (Special): Launching '%1' with URL %2.")
+			.arg(program)
+			.arg(launch.url));
+		MPV_STREAMING_LOG(("MPV Streaming (Special): Launch arguments: %1.")
+			.arg(LaunchArguments(launch.url).join(QStringLiteral(" "))));
+		if (!StartDetachedPlayer(program, launch.url)) {
+			MPV_STREAMING_LOG(("MPV Streaming (Special): Failed to start player '%1'.").arg(program));
+			Server::instance().remove(launch.token);
+			return OpenResult::Failed;
+		}
+		return OpenResult::Success;
 	}
 
-OpenResult OpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
-	const auto media = item ? item->media() : nullptr;
-	return OpenVideoMessageInMpvWithBridgeStrategy(
-		item,
-		document,
-		media ? !media->hasQualitiesList() : true,
-		true,
-		"default");
-}
+	#undef MPV_STREAMING_LOG
 
-OpenResult OpenVideoMessageInMpvSpecial(
-		HistoryItem *item,
-		DocumentData *document) {
-	return MpvSpecial::OpenVideoMessageInMpvSpecial(item, document);
-}
-
-#undef MPV_STREAMING_LOG
-
-} // namespace Media::Streaming::Mpv
+} // namespace Media::Streaming::MpvSpecial
