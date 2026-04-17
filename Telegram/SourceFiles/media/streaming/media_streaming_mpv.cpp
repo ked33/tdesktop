@@ -73,6 +73,33 @@ constexpr auto kTokenLifetime = 5 * 60 * crl::time(1000);
 	return GetEnhancedBool("mpv_streaming_debug_logs");
 }
 
+[[nodiscard]] bool LooksLikeMp4Stream(not_null<DocumentData*> document) {
+	const auto mime = document->mimeString().toLower();
+	if (mime == QStringLiteral("video/mp4")
+		|| mime == QStringLiteral("video/quicktime")
+		|| mime == QStringLiteral("video/x-m4v")) {
+		return true;
+	}
+	const auto name = document->filename().toLower();
+	return name.endsWith(QStringLiteral(".mp4"))
+		|| name.endsWith(QStringLiteral(".mov"))
+		|| name.endsWith(QStringLiteral(".m4v"));
+}
+
+[[nodiscard]] int64 TailPrefetchBytesForDocument(
+		not_null<DocumentData*> document) {
+	if (!LooksLikeMp4Stream(document)) {
+		return 0;
+	}
+	const auto boost = GetEnhancedInt("net_download_speed_boost");
+	if (boost <= 0) {
+		return 0;
+	}
+	constexpr auto kPart = int64(128 * 1024);
+	const auto parts = (boost >= 5) ? 4 : (boost >= 3) ? 3 : 2;
+	return parts * kPart;
+}
+
 [[nodiscard]] QString MpvLogString(const char *value) {
 	return value ? QString::fromUtf8(value) : QString();
 }
@@ -213,6 +240,9 @@ enum class Mp4Layout {
 		std::move(loader),
 		nullptr);
 	reader->setLoaderPriority(kMpvLoaderPriority);
+	if (const auto bytes = TailPrefetchBytesForDocument(document)) {
+		reader->requestTailPrefetch(bytes);
+	}
 	reader->startStreaming();
 	return reader;
 }
