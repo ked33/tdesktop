@@ -53,6 +53,27 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 	return (DownloadBoostLevel() > 0);
 }
 
+[[nodiscard]] bool StreamingTailPrefetchEnabled() {
+	return (DownloadBoostLevel() > 0);
+}
+
+[[nodiscard]] int64 StreamingTailPrefetchBytes() {
+	// Keep the speculative MP4 moov tail small: most container footers fit
+	// in 128-256 KB. We align up to kPartSize.
+	switch (DownloadBoostLevel()) {
+	case 1:
+	case 2:
+		return int64(2 * kPartSize);
+	case 3:
+	case 4:
+		return int64(3 * kPartSize);
+	case 5:
+		return int64(4 * kPartSize);
+	default:
+		return int64(0);
+	}
+}
+
 [[nodiscard]] int PreloadPartsAhead() {
 	switch (DownloadBoostLevel()) {
 	case 1:
@@ -948,6 +969,14 @@ void Reader::tryRemoveLoaderAsync() {
 	_loader->tryRemoveFromQueue();
 }
 
+void Reader::requestTailPrefetch(int64 bytes) {
+	if (bytes <= 0) {
+		return;
+	}
+	// Consumed on the streaming thread in consumePendingTailPrefetch().
+	_pendingTailPrefetchBytes.store(bytes, std::memory_order_release);
+}
+
 void Reader::startStreaming() {
 	_streamingActive = true;
 	refreshLoaderPriority();
@@ -969,6 +998,7 @@ void Reader::stopStreaming(bool stillActive) {
 		_streamingActive = false;
 		refreshLoaderPriority();
 		_loadingOffsets.clear();
+		_pinnedTailOffsets.clear();
 		processDownloaderRequests();
 	}
 }
@@ -1348,8 +1378,8 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		putToCache(std::move(result.toCache));
 	}
 	auto checkPriority = true;
-	if (GetEnhancedInt("net_download_speed_boost") > 0
-			&& !_loadingOffsets.empty()) {
+	consumePendingTailPrefetch();
+	if (StreamingSeekCancelEnabled() && !_loadingOffsets.empty()) {
 		auto minOff = std::numeric_limits<uint32>::max();
 		auto maxOff = uint32(0);
 		auto hasAny = false;
@@ -1404,16 +1434,53 @@ void Reader::cancelLoadInRange(uint32 from, uint32 till) {
 void Reader::cancelLoadOutsideWindow(uint32 windowStart, uint32 windowTill) {
 	Expects(windowStart < windowTill);
 
+	const auto cancelOne = [&](int64 offset) {
+		if (_pinnedTailOffsets.contains(offset)) {
+			// Keep speculative moov-tail requests alive across far seeks.
+			_loadingOffsets.add(offset);
+			return;
+		}
+		if (!_downloaderOffsetsRequested.contains(uint32(offset))) {
+			_loader->cancel(offset);
+		}
+	};
 	if (windowStart > 0) {
-		cancelLoadInRange(0, windowStart);
+		for (const auto off : _loadingOffsets.takeInRange(0, windowStart)) {
+			cancelOne(off);
+		}
 	}
 	constexpr auto kMax = std::numeric_limits<uint32>::max();
 	if (windowTill < kMax) {
-		cancelLoadInRange(windowTill, kMax);
+		for (const auto off : _loadingOffsets.takeInRange(windowTill, kMax)) {
+			cancelOne(off);
+		}
+	}
+}
+
+void Reader::consumePendingTailPrefetch() {
+	const auto tail = _pendingTailPrefetchBytes.exchange(
+		0,
+		std::memory_order_acq_rel);
+	if (tail <= 0) {
+		return;
+	}
+	const auto fileSize = size();
+	// Skip tiny files: FFmpeg will read them end-to-end anyway, and for
+	// files fully embedded in the header slice the moov is already there.
+	if (fileSize <= kMaxOnlyInHeader || fileSize <= tail) {
+		return;
+	}
+	const auto clamped = std::min(tail, fileSize);
+	const auto tailStart = fileSize - clamped;
+	const auto alignedStart = (tailStart / kPartSize) * kPartSize;
+	for (auto off = alignedStart; off < fileSize; off += kPartSize) {
+		_pinnedTailOffsets.emplace(off);
+		loadAtOffset(uint32(off));
 	}
 }
 
 void Reader::cancelStreamingLoads() {
+	_pinnedTailOffsets.clear();
 	for (const auto offset : _loadingOffsets.takeInRange(
 		0,
 		std::numeric_limits<int64>::max())) {
