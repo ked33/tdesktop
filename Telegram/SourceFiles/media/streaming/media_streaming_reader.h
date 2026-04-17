@@ -214,6 +214,7 @@ private:
 	void putToCache(SerializedSlice &&data);
 
 	void cancelLoadInRange(uint32 from, uint32 till);
+	void cancelLoadOutsideWindow(uint32 windowStart, uint32 windowTill);
 	void cancelStreamingLoads();
 	void loadAtOffset(uint32 offset);
 	void checkLoadWillBeFirst(uint32 offset);
