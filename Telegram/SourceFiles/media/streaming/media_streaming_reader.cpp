@@ -1348,6 +1348,39 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		putToCache(std::move(result.toCache));
 	}
 	auto checkPriority = true;
+	if (GetEnhancedInt("net_download_speed_boost") > 0
+			&& !_loadingOffsets.empty()) {
+		auto minOff = std::numeric_limits<uint32>::max();
+		auto maxOff = uint32(0);
+		auto hasAny = false;
+		for (const auto off : result.offsetsFromLoader.values()) {
+			hasAny = true;
+			if (off < minOff) {
+				minOff = off;
+			}
+			if (off > maxOff) {
+				maxOff = off;
+			}
+		}
+		if (hasAny) {
+			// Guard adjacent parts to avoid killing useful prefetch on
+			// tiny local re-seeks. Only parts clearly outside the new
+			// desired window get cancelled to free up bandwidth for it.
+			constexpr auto kGuardParts = int64(2);
+			constexpr auto kUintMax
+				= std::numeric_limits<uint32>::max();
+			const auto guard = kGuardParts * kPartSize;
+			const auto startBelow = int64(minOff) - guard;
+			const auto windowStart = (startBelow > 0)
+				? uint32(startBelow)
+				: uint32(0);
+			const auto tillAbove = int64(maxOff) + kPartSize + guard;
+			const auto windowTill = (tillAbove >= int64(kUintMax))
+				? kUintMax
+				: uint32(tillAbove);
+			cancelLoadOutsideWindow(windowStart, windowTill);
+		}
+	}
 	for (const auto offset : result.offsetsFromLoader.values()) {
 		if (checkPriority) {
 			checkLoadWillBeFirst(offset);
@@ -1365,6 +1398,18 @@ void Reader::cancelLoadInRange(uint32 from, uint32 till) {
 		if (!_downloaderOffsetsRequested.contains(offset)) {
 			_loader->cancel(offset);
 		}
+	}
+}
+
+void Reader::cancelLoadOutsideWindow(uint32 windowStart, uint32 windowTill) {
+	Expects(windowStart < windowTill);
+
+	if (windowStart > 0) {
+		cancelLoadInRange(0, windowStart);
+	}
+	constexpr auto kMax = std::numeric_limits<uint32>::max();
+	if (windowTill < kMax) {
+		cancelLoadInRange(windowTill, kMax);
 	}
 }
 
