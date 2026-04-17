@@ -67,6 +67,7 @@ public:
 	void stopSleep();
 	void stopStreamingAsync();
 	void tryRemoveLoaderAsync();
+	void requestTailPrefetch(int64 bytes);
 
 	// Main thread.
 	void startStreaming();
@@ -215,6 +216,7 @@ private:
 
 	void cancelLoadInRange(uint32 from, uint32 till);
 	void cancelLoadOutsideWindow(uint32 windowStart, uint32 windowTill);
+	void consumePendingTailPrefetch();
 	void cancelStreamingLoads();
 	void loadAtOffset(uint32 offset);
 	void checkLoadWillBeFirst(uint32 offset);
@@ -251,7 +253,9 @@ private:
 	std::atomic<crl::semaphore*> _waiting = nullptr;
 	std::atomic<crl::semaphore*> _sleeping = nullptr;
 	std::atomic<bool> _stopStreamingAsync = false;
+	std::atomic<int64> _pendingTailPrefetchBytes = 0;
 	PriorityQueue _loadingOffsets;
+	base::flat_set<int64> _pinnedTailOffsets;
 
 	Slices _slices;
 
