@@ -1,0 +1,130 @@
+[2026.04.16 15:17:48] Launched version: 1001095, install beta: [FALSE], alpha: 0, debug mode: [FALSE]
+[2026.04.16 15:17:48] Executable dir: D:/D-Software/64Gram Desktop/, name: Telegram - 02378f3（所有视频都能MPV播放但部分正常和特殊视频无法拖动）.exe
+[2026.04.16 15:17:48] Initial working dir: D:/D-Software/64Gram Desktop/
+[2026.04.16 15:17:48] Working dir: D:/D-Software/64Gram Desktop/
+[2026.04.16 15:17:48] Command line: D:\D-Software\64Gram Desktop\Telegram - 02378f3（所有视频都能MPV播放但部分正常和特殊视频无法拖动）.exe
+[2026.04.16 15:17:48] Executable path before check: D:/D-Software/64Gram Desktop/Telegram - 02378f3（所有视频都能MPV播放但部分正常和特殊视频无法拖动）.exe
+[2026.04.16 15:17:48] Logs started
+[2026.04.16 15:17:48] WinRT Supported: [TRUE]
+[2026.04.16 15:17:48] AppUserModelID: 64Gram.64GramDesktop.429eb00e95ef538ef5f609a9d495f505
+[2026.04.16 15:17:48] Using DirectX compiler 'D:\D-Software\64Gram Desktop\modules\x64\d3d\d3dcompiler_47.dll'.
+[2026.04.16 15:17:48] Connecting local socket to Global\92bc016f1c1270c973ff64d389d33b84-{87A94AB0-E370-4cde-98D3-ACC110C5967D}...
+[2026.04.16 15:17:48] This is the only instance of Telegram, starting server and app...
+[2026.04.16 15:17:48] Moved logging from 'D:/D-Software/64Gram Desktop/log_start0.txt' to 'D:/D-Software/64Gram Desktop/log.txt'!
+[2026.04.16 15:17:48] Global devicePixelRatio: 1
+[2026.04.16 15:17:48] QT_DPI_ADJUSTMENT_POLICY: AdjustDpi
+[2026.04.16 15:17:48] Primary screen DPI: 96, Base: 96.
+[2026.04.16 15:17:48] Computed screen scale: 100
+[2026.04.16 15:17:48] DevicePixelRatio: 1
+[2026.04.16 15:17:48] ScreenScale: 100
+[2026.04.16 15:17:48] Media Info: Type Playback, default: {0.0.0.00000000}.{50ad5b11-cccd-4d43-929d-4f1f04e9d183}, list: { "扬声器 (High Definition Audio 设备)" <{0.0.0.00000000}.{24b22838-7796-49a1-8de9-5c8958ab0f32}>, "英特尔(R) 显示器音频 - HDMI 2 (英特尔(R) 显示器音频)" <{0.0.0.00000000}.{2faf11bf-1b2e-4a08-958e-031b56d93800}>, "耳机 (High Definition Audio 设备)" <{0.0.0.00000000}.{393538b1-9a3c-4c10-8f22-cfaf9c6e97ec}>, "PHL 246E9Q (英特尔(R) 显示器音频)" <{0.0.0.00000000}.{3b77f9fb-a5a1-4958-8c5c-21164476c86f}>, "扬声器 (Realtek High Definition Audio)" <{0.0.0.00000000}.{50ad5b11-cccd-4d43-929d-4f1f04e9d183}>, "数字音频(HDMI) (High Definition Audio 设备)" <{0.0.0.00000000}.{6fb6fbc0-c813-4933-8c07-b481bc205d60}> }, full list refresh: false
+[2026.04.16 15:17:48] Media Info: Type Capture, default: {0.0.1.00000000}.{12464ea7-035b-49db-9f0a-61872aa36f4b}, list: { "麦克风 (Realtek High Definition Audio)" <{0.0.1.00000000}.{12464ea7-035b-49db-9f0a-61872aa36f4b}>, "内部 AUX 插座 (High Definition Audio 设备)" <{0.0.1.00000000}.{61f94864-fe7d-4e18-854c-eeb7aa7a30de}>, "麦克风 (High Definition Audio 设备)" <{0.0.1.00000000}.{80f07b9c-7bc2-4ee7-ad65-6bafc4b463de}>, "立体声混音 (Realtek High Definition Audio)" <{0.0.1.00000000}.{ee84c7b8-59e7-478e-816f-5e1c733a83bb}> }, full list refresh: false
+[2026.04.16 15:17:48] Media Info: Type Camera, default: \\?\usb#vid_05c8&pid_03a2&mi_00#6&8277b87&0&0000#{65e8773d-8f56-11d0-a3b9-00a0c9223196}\global, list: { "XiaoMi USB 2.0 Webcam" <\\?\usb#vid_05c8&pid_03a2&mi_00#6&8277b87&0&0000#{65e8773d-8f56-11d0-a3b9-00a0c9223196}\global> }, full list refresh: true
+[2026.04.16 15:17:48] App Info: reading settings...
+[2026.04.16 15:17:48] App Info: reading encrypted settings...
+[2026.04.16 15:17:48] Lang Info: Loaded cached, keys: 10426
+[2026.04.16 15:17:48] Lang Error: Unexpected tag (key 'lng_action_add_user:users')
+[2026.04.16 15:17:48] Lang Error: Expected '}' after tag name (key 'lng_confirm_phone_about:phone')
+[2026.04.16 15:17:48] Lang Info: Loaded cached, keys: 8429
+[2026.04.16 15:17:48] Current Language pack ID: cusotm, Base ID: zh-hans-raw
+[2026.04.16 15:17:49] Fetching cusotm lang pack...
+[2026.04.16 15:17:49] Font: from ':/gui/fonts/OpenSans-Italic.ttf' loaded 'Open Sans'
+[2026.04.16 15:17:49] Font: from ':/gui/fonts/OpenSans-Regular.ttf' loaded 'Open Sans'
+[2026.04.16 15:17:49] Font: from ':/gui/fonts/OpenSans-SemiBold.ttf' loaded 'Open Sans Semibold'
+[2026.04.16 15:17:49] Font: from ':/gui/fonts/OpenSans-SemiBoldItalic.ttf' loaded 'Open Sans Semibold'
+[2026.04.16 15:17:49] Font: from ':/gui/fonts/Vazirmatn-UI-NL-Regular.ttf' loaded 'Vazirmatn UI NL'
+[2026.04.16 15:17:49] Font: from ':/gui/fonts/Vazirmatn-UI-NL-SemiBold.ttf' loaded 'Vazirmatn UI NL SemiBold'
+[2026.04.16 15:17:50] OpenAL Logging Level: (not set)
+[2026.04.16 15:17:50] Screen Reader: inactive
+[2026.04.16 15:17:50] App Info: reading accounts info...
+[2026.04.16 15:17:50] App Info: reading encrypted info...
+[2026.04.16 15:17:50] App Info: reading map...
+[2026.04.16 15:17:50] App Info: reading encrypted map...
+[2026.04.16 15:17:50] App Info: reading encrypted user settings...
+[2026.04.16 15:17:50] App Info: encrypted user settings read.
+[2026.04.16 15:17:50] App Info: reading encrypted mtp data...
+[2026.04.16 15:17:50] MTP Info: read keys, current: 5, to destroy: 0
+[2026.04.16 15:17:50] Map read time: 7
+[2026.04.16 15:17:50] App Info: reading encrypted mtp config...
+[2026.04.16 15:17:50] App Info: reading map...
+[2026.04.16 15:17:50] App Info: reading encrypted map...
+[2026.04.16 15:17:50] App Info: reading encrypted user settings...
+[2026.04.16 15:17:50] App Info: encrypted user settings read.
+[2026.04.16 15:17:50] App Info: reading encrypted mtp data...
+[2026.04.16 15:17:50] MTP Info: read keys, current: 5, to destroy: 0
+[2026.04.16 15:17:50] Map read time: 64
+[2026.04.16 15:17:50] App Info: reading encrypted mtp config...
+[2026.04.16 15:17:51] Export Info: Destroy top bar by controller removal.
+[2026.04.16 15:17:51] OpenGL: Using custom 'gpu_driver_bug_list.json'.
+[2026.04.16 15:17:52] OpenGL Profile: OpenGLES.
+[2026.04.16 15:17:52] OpenGL Renderer: ANGLE (Intel, Intel(R) HD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11-31.0.101.2111)
+[2026.04.16 15:17:52] OpenGL Vendor: Google Inc. (Intel)
+[2026.04.16 15:17:52] OpenGL Version: OpenGL ES 3.0.0 (ANGLE 2.1.10 git hash: e3f59e8d0c3e)
+[2026.04.16 15:17:52] OpenGL Extensions: GL_ANGLE_polygon_mode, GL_OES_rgb8_rgba8, GL_EXT_debug_marker, GL_EXT_texture_rg, GL_ANGLE_framebuffer_multisample, GL_APPLE_clip_distance, GL_OES_compressed_EAC_R11_unsigned_texture, GL_NV_pack_subimage, GL_OES_texture_float_linear, GL_EXT_occlusion_query_boolean, GL_OES_surfaceless_context, GL_EXT_draw_elements_base_vertex, GL_OES_texture_npot, GL_EXT_color_buffer_float, GL_EXT_texture_compression_dxt1, GL_EXT_unpack_subimage, GL_CHROMIUM_lose_context, GL_OES_packed_depth_stencil, GL_EXT_texture_filter_anisotropic, GL_ANGLE_texture_compression_dxt3, GL_EXT_draw_buffers, GL_OES_texture_float, GL_EXT_texture_norm16, GL_NV_pixel_buffer_object, GL_OES_compressed_ETC2_punchthroughA_sRGB8_alpha_texture, GL_ANGLE_client_arrays, GL_EXT_frag_depth, GL_OES_compressed_EAC_R11_signed_texture, GL_ANGLE_multiview_multisample, GL_EXT_texture_border_clamp, GL_OES_compressed_EAC_RG11_signed_texture, GL_ANGLE_shader_pixel_local_storage_coherent, GL_EXT_EGL_image_external_wrap_modes, GL_EXT_texture_storage, GL_ANGLE_texture_multisample, GL_ANGLE_provoking_vertex, GL_ANGLE_translated_shader_source, GL_ANGLE_framebuffer_blit, GL_OES_compressed_ETC2_sRGB8_texture, GL_EXT_polygon_offset_clamp, GL_WEBGL_video_texture, GL_EXT_texture_format_BGRA8888, GL_EXT_texture_mirror_clamp_to_edge, GL_OES_compressed_ETC2_punchthroughA_RGBA8_texture, , GL_EXT_float_blend, GL_EXT_sRGB, GL_OES_standard_derivatives, GL_ANGLE_stencil_texturing, GL_CHROMIUM_bind_uniform_location, GL_ANGLE_lossy_etc_decode, GL_OES_draw_buffers_indexed, GL_EXT_base_instance, GL_OES_fbo_render_mipmap, GL_ANGLE_renderability_validation, GL_EXT_clip_control, GL_EXT_draw_buffers_indexed, GL_EXT_texture_compression_rgtc, GL_EXT_read_format_bgra, GL_OES_element_index_uint, GL_ANGLE_clip_cull_distance, GL_EXT_map_buffer_range, GL_EXT_multisampled_render_to_texture, GL_OES_sample_variables, GL_OES_draw_elements_base_vertex, GL_CHROMIUM_bind_generates_resource, GL_EXT_clip_cull_distance, GL_KHR_parallel_shader_compile, GL_OES_shader_multisample_interpolation, GL_ANGLE_texture_compression_dxt5, GL_OES_mapbuffer, GL_OES_compressed_EAC_RG11_unsigned_texture, GL_ANGLE_texture_usage, GL_CHROMIUM_copy_compressed_texture, GL_OES_texture_stencil8, GL_OVR_multiview, GL_OVR_multiview2, GL_NV_shader_noperspective_interpolation, GL_OES_texture_half_float, GL_CHROMIUM_copy_texture, GL_KHR_debug, GL_ANGLE_get_serialized_context_string, GL_ANGLE_get_tex_level_parameter, GL_ANGLE_robust_client_memory, GL_EXT_discard_framebuffer, GL_EXT_render_snorm, GL_OES_get_program_binary, GL_ANGLE_shader_pixel_local_storage, GL_EXT_conservative_depth, GL_EXT_disjoint_timer_query, GL_OES_compressed_ETC2_sRGB8_alpha8_texture, GL_EXT_blend_minmax, GL_EXT_robustness, GL_NV_EGL_stream_consumer_external, GL_EXT_depth_clamp, GL_ANGLE_instanced_arrays, GL_OES_texture_half_float_linear, GL_ANGLE_depth_texture, GL_CHROMIUM_sync_query, GL_EXT_debug_label, GL_OES_EGL_image, GL_AMD_performance_monitor, GL_ANGLE_program_cache_control, GL_EXT_texture_compression_bptc, GL_NV_framebuffer_blit, GL_ANGLE_base_vertex_base_instance, GL_EXT_color_buffer_half_float, GL_EXT_blend_func_extended, GL_OES_compressed_ETC2_RGB8_texture, GL_EXT_instanced_arrays, GL_ANGLE_base_vertex_base_instance_shader_builtin, GL_ANGLE_multi_draw, GL_ANGLE_request_extension, GL_OES_EGL_image_external_essl3, GL_EXT_shader_texture_lod, GL_EXT_multi_draw_indirect, GL_OES_depth32, GL_OES_depth24, GL_OES_compressed_ETC2_RGBA8_texture, GL_EXT_texture_compression_s3tc_srgb, GL_OES_vertex_array_object, GL_ANGLE_memory_size, GL_NV_fence, GL_OES_EGL_image_external, GL_ANGLE_pack_reverse_row_order, GL_EXT_texture_type_2_10_10_10_REV, GL_OES_texture_border_clamp, GL_ANGLE_copy_texture_3d
+[2026.04.16 15:17:52] EGL Extensions: EGL_EXT_create_context_robustness, EGL_ANGLE_d3d_share_handle_client_buffer, EGL_ANGLE_d3d_texture_client_buffer, EGL_ANGLE_surface_d3d_texture_2d_share_handle, EGL_ANGLE_query_surface_pointer, EGL_ANGLE_window_fixed_size, EGL_ANGLE_keyed_mutex, EGL_ANGLE_surface_orientation, EGL_ANGLE_direct_composition, EGL_ANGLE_windows_ui_composition, EGL_NV_post_sub_buffer, EGL_KHR_create_context, EGL_KHR_image, EGL_KHR_image_base, EGL_KHR_gl_texture_2D_image, EGL_KHR_gl_texture_cubemap_image, EGL_KHR_gl_renderbuffer_image, EGL_KHR_get_all_proc_addresses, EGL_KHR_stream, EGL_KHR_stream_consumer_gltexture, EGL_NV_stream_consumer_gltexture_yuv, EGL_ANGLE_stream_producer_d3d_texture, EGL_ANGLE_create_context_webgl_compatibility, EGL_CHROMIUM_create_context_bind_generates_resource, EGL_CHROMIUM_sync_control, EGL_EXT_pixel_format_float, EGL_KHR_surfaceless_context, EGL_ANGLE_display_texture_share_group, EGL_ANGLE_display_semaphore_share_group, EGL_ANGLE_create_context_client_arrays, EGL_ANGLE_program_cache_control, EGL_ANGLE_robust_resource_initialization, EGL_ANGLE_create_context_extensions_enabled, EGL_ANDROID_blob_cache, EGL_ANDROID_recordable, EGL_ANGLE_image_d3d11_texture, EGL_ANGLE_create_context_backwards_compatible, EGL_KHR_no_config_context, EGL_KHR_create_context_no_error, EGL_KHR_reusable_sync, 
+[2026.04.16 15:17:52] OpenGL: QOpenGLContext created, version: 3.3.
+[2026.04.16 15:17:52] OpenGL: [TRUE] (Window)
+[2026.04.16 15:17:52] Screen Reader: active
+[2026.04.16 15:17:52] Network error: 203
+[2026.04.16 15:17:52] 64Gram Language pack not found! Fallback to main language: zh-hans-raw...
+[2026.04.16 15:17:52] Current Language pack ID: , Base ID: zh-hans-raw
+[2026.04.16 15:17:52] Fetching zh-hans-raw lang pack...
+[2026.04.16 15:17:54] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:17:54] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:17:54] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:17:54] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:17:54] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:17:54] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:17:54] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:17:54] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:17:56] RPC Error: request 157 got fail with code 400, error PEER_ID_INVALID
+[2026.04.16 15:17:57] RPC Error: request 164 got fail with code 400, error PEER_ID_INVALID
+[2026.04.16 15:17:58] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:02] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:02] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:02] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:03] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:11] History::unknownMessageDeleted. Peer ID: 1680975844, Message ID: 7913260.
+[2026.04.16 15:18:11] History::unknownMessageDeleted. Peer ID: 1695109454, Message ID: 224094.
+[2026.04.16 15:18:11] History::unknownMessageDeleted. Peer ID: 1695109454, Message ID: 224067.
+[2026.04.16 15:18:22] History::unknownMessageDeleted. Peer ID: 2124027757, Message ID: 2584827.
+[2026.04.16 15:18:26] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:26] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:26] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:26] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:26] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:26] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:26] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:26] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:26] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:26] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:26] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:30] MPV Streaming: Open request passedDocument=5075870510227653992 mediaDocument=5075870510227653992 same=1 passedSize=840534589 mediaSize=840534589 passedSupports=1 mediaSupports=1 passedLoader=1 mediaLoader=1 hasQualities=0.
+[2026.04.16 15:18:30] MPV Streaming: Bridge strategy preferCompatibilityForLargeFrontMoov=1 hasQualities=0.
+[2026.04.16 15:18:30] MPV Streaming: Launching 'D:/D-Software/mpv-hero/mpv.exe' with URL http://127.0.0.1:54758/mpv/128bed61-96bc-4b09-a08f-d5252c8c14f9.
+[2026.04.16 15:18:30] MPV Streaming: Launch arguments: --force-window=immediate --demuxer-lavf-o=ignore_editlist=1 --cache=yes --demuxer-seekable-cache=yes --demuxer-max-bytes=536870912 --demuxer-max-back-bytes=134217728 http://127.0.0.1:54758/mpv/128bed61-96bc-4b09-a08f-d5252c8c14f9.
+[2026.04.16 15:18:31] MPV Streaming: Request GET token=128bed61-96bc-4b09-a08f-d5252c8c14f9 range='bytes=0-'.
+[2026.04.16 15:18:35] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:35] MPV Streaming: Detected MP4 layout: 3 for token 128bed61-96bc-4b09-a08f-d5252c8c14f9 after probing 262144 bytes.
+[2026.04.16 15:18:36] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:36] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:36] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:36] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:36] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:36] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:36] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:36] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:36] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:36] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:37] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:46] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:50] API Warning: not loaded minimal channel applied.
+[2026.04.16 15:18:50] History::unknownMessageDeleted. Peer ID: 2124027757, Message ID: 2502007.
+[2026.04.16 15:18:51] History::unknownMessageDeleted. Peer ID: 1680975844, Message ID: 7913262.
+[2026.04.16 15:18:51] History::unknownMessageDeleted. Peer ID: 1680975844, Message ID: 7913263.
+[2026.04.16 15:18:51] History::unknownMessageDeleted. Peer ID: 1680975844, Message ID: 7913264.
+[2026.04.16 15:18:51] History::unknownMessageDeleted. Peer ID: 1695109454, Message ID: 224126.
+[2026.04.16 15:18:51] History::unknownMessageDeleted. Peer ID: 1695109454, Message ID: 224077.
+[2026.04.16 15:18:51] History::unknownMessageDeleted. Peer ID: 1695109454, Message ID: 224088.
+[2026.04.16 15:18:51] History::unknownMessageDeleted. Peer ID: 1695109454, Message ID: 224099.
+[2026.04.16 15:18:51] History::unknownMessageDeleted. Peer ID: 1695109454, Message ID: 224120.
