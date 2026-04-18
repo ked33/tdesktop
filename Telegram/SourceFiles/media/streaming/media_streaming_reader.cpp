@@ -75,35 +75,25 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 }
 
 // Burst-mode adaptive preload multiplier: 100 = base depth, 200 = 2x.
-// Updated by Reader on speedEstimate events, read in PreloadPartsAhead
-// from the streaming thread. Shared across Readers (desktop normally plays
-// a single streaming video at a time).
-std::atomic<int> g_preloadMultiplierPercent{ 100 };
+// Per-Reader state is stored on the Reader; these free helpers return the
+// static base values and the Reader scales them via atomics before passing
+// the final counts into Slices::fill.
 
 [[nodiscard]] int PreloadPartsAhead() {
-	const auto base = [] {
-		switch (DownloadBoostLevel()) {
-		case 1:
-			return 12;
-		case 2:
-			return 16;
-		case 3:
-			return 24;
-		case 4:
-			return 32;
-		case 5:
-			return 48;
-		default:
-			return 8;
-		}
-	}();
-	if (DownloadBoostLevel() == 0) {
-		return base;
+	switch (DownloadBoostLevel()) {
+	case 1:
+		return 12;
+	case 2:
+		return 16;
+	case 3:
+		return 24;
+	case 4:
+		return 32;
+	case 5:
+		return 48;
+	default:
+		return 8;
 	}
-	const auto mult = g_preloadMultiplierPercent.load(
-		std::memory_order_relaxed);
-	const auto scaled = (mult > 100) ? ((base * mult) / 100) : base;
-	return std::max(base, scaled);
 }
 
 struct ParsedCacheEntry {
@@ -347,13 +337,15 @@ void Reader::Slice::addPart(uint32 offset, QByteArray bytes) {
 
 auto Reader::Slice::prepareFill(
 		uint32 from,
-		uint32 till) -> PrepareFillResult {
+		uint32 till,
+		int preloadParts,
+		int requestsLimit) -> PrepareFillResult {
 	auto result = PrepareFillResult();
 
 	result.ready = false;
 	const auto fromOffset = (from / kPartSize) * kPartSize;
 	const auto tillPart = (till + kPartSize - 1) / kPartSize;
-	const auto preloadTillOffset = (tillPart + PreloadPartsAhead())
+	const auto preloadTillOffset = (tillPart + preloadParts)
 		* kPartSize;
 
 	const auto after = ranges::upper_bound(
@@ -364,7 +356,8 @@ auto Reader::Slice::prepareFill(
 	if (after == begin(parts)) {
 		result.offsetsFromLoader = offsetsFromLoader(
 			fromOffset,
-			preloadTillOffset);
+			preloadTillOffset,
+			requestsLimit);
 		return result;
 	}
 
@@ -381,7 +374,8 @@ auto Reader::Slice::prepareFill(
 	if (haveTill < till) {
 		result.offsetsFromLoader = offsetsFromLoader(
 			haveTill,
-			preloadTillOffset);
+			preloadTillOffset,
+			requestsLimit);
 		return result;
 	}
 	result.ready = true;
@@ -389,14 +383,18 @@ auto Reader::Slice::prepareFill(
 	result.finish = finish;
 	result.offsetsFromLoader = offsetsFromLoader(
 		tillPart * kPartSize,
-		preloadTillOffset);
+		preloadTillOffset,
+		requestsLimit);
 	return result;
 }
 
-auto Reader::Slice::offsetsFromLoader(uint32 from, uint32 till) const
+auto Reader::Slice::offsetsFromLoader(
+	uint32 from,
+	uint32 till,
+	int requestsLimit) const
 -> StackIntVector<Reader::kLoadFromRemoteMax> {
 	auto result = StackIntVector<kLoadFromRemoteMax>();
-	const auto limit = StreamingRequestsLimit();
+	const auto limit = requestsLimit;
 	auto added = 0;
 
 	const auto after = ranges::upper_bound(
@@ -628,7 +626,11 @@ void Reader::Slices::processPart(
 	checkSliceFullLoaded(index + 1);
 }
 
-auto Reader::Slices::fill(uint32 offset, bytes::span buffer) -> FillResult {
+auto Reader::Slices::fill(
+		uint32 offset,
+		bytes::span buffer,
+		int preloadParts,
+		int requestsLimit) -> FillResult {
 	Expects(!buffer.empty());
 	Expects(offset < _size);
 	Expects(offset + buffer.size() <= _size);
@@ -642,7 +644,7 @@ auto Reader::Slices::fill(uint32 offset, bytes::span buffer) -> FillResult {
 		Assert(waitingForHeaderCache());
 		return {};
 	} else if (isFullInHeader()) {
-		return fillFromHeader(offset, buffer);
+		return fillFromHeader(offset, buffer, preloadParts, requestsLimit);
 	}
 
 	auto result = FillResult();
@@ -696,9 +698,17 @@ auto Reader::Slices::fill(uint32 offset, bytes::span buffer) -> FillResult {
 	const auto secondTill = (till > (fromSlice + 1) * kInSlice)
 		? (till - (fromSlice + 1) * kInSlice)
 		: 0;
-	const auto first = _data[fromSlice].prepareFill(firstFrom, firstTill);
+	const auto first = _data[fromSlice].prepareFill(
+		firstFrom,
+		firstTill,
+		preloadParts,
+		requestsLimit);
 	const auto second = (fromSlice + 1 < tillSlice)
-		? _data[fromSlice + 1].prepareFill(secondFrom, secondTill)
+		? _data[fromSlice + 1].prepareFill(
+			secondFrom,
+			secondTill,
+			preloadParts,
+			requestsLimit)
 		: Slice::PrepareFillResult();
 	handlePrepareResult(fromSlice, first);
 	if (fromSlice + 1 < tillSlice) {
@@ -730,13 +740,20 @@ auto Reader::Slices::fill(uint32 offset, bytes::span buffer) -> FillResult {
 	return result;
 }
 
-auto Reader::Slices::fillFromHeader(uint32 offset, bytes::span buffer)
--> FillResult {
+auto Reader::Slices::fillFromHeader(
+		uint32 offset,
+		bytes::span buffer,
+		int preloadParts,
+		int requestsLimit) -> FillResult {
 	auto result = FillResult();
 	const auto from = offset;
 	const auto till = uint32(offset + buffer.size());
 
-	const auto prepared = _header.prepareFill(from, till);
+	const auto prepared = _header.prepareFill(
+		from,
+		till,
+		preloadParts,
+		requestsLimit);
 	for (const auto full : prepared.offsetsFromLoader.values()) {
 		if (full < _size) {
 			result.offsetsFromLoader.add(full);
@@ -950,9 +967,16 @@ Reader::Reader(
 		}
 	}, _lifetime);
 
-	// Adaptive burst-mode preload: during high-bandwidth bursts, grow the
-	// preload depth so that we bank enough buffer to absorb the throttled
-	// troughs that follow. Only active when the speed boost is enabled.
+	// Adaptive scheduling driven by measured download speed. Three states:
+	//   - Burst: sustained >= 1.5 MB/s. Grow preload depth and the per-fill
+	//     request cap so we bank extra buffer before the server-side throttle
+	//     kicks in again.
+	//   - Normal: between thresholds. Baseline behaviour.
+	//   - Throttle: sustained <= 200 KB/s. Keep scaling at baseline but flag
+	//     the state so the far-seek cancel path can back off and not thrash
+	//     requests that the server is already queueing slowly.
+	// Only active when net_download_speed_boost > 0; state stays at Normal
+	// for boost level 0 and atomics stay at 100/100.
 	_loader->speedEstimate(
 	) | rpl::on_next([=](SpeedEstimate estimate) {
 		if (DownloadBoostLevel() == 0 || estimate.unreliable) {
@@ -961,19 +985,72 @@ Reader::Reader(
 		constexpr auto kAlpha = 0.4;
 		_burstSpeedEma = (_burstSpeedEma * (1.0 - kAlpha))
 			+ (double(estimate.bytesPerSecond) * kAlpha);
-		// Enter burst above 1.5 MB/s sustained, leave below 1.0 MB/s.
+
 		constexpr auto kBurstEnter = 1'500'000.0;
 		constexpr auto kBurstLeave = 1'000'000.0;
-		const auto current = g_preloadMultiplierPercent.load(
-			std::memory_order_relaxed);
-		if (current < 200 && _burstSpeedEma >= kBurstEnter) {
-			g_preloadMultiplierPercent.store(
-				200,
-				std::memory_order_relaxed);
-		} else if (current > 100 && _burstSpeedEma <= kBurstLeave) {
-			g_preloadMultiplierPercent.store(
-				100,
-				std::memory_order_relaxed);
+		constexpr auto kThrottleEnter = 200'000.0;
+		constexpr auto kThrottleLeave = 500'000.0;
+
+		const auto apply = [&](SpeedState next) {
+			if (_speedState == next) {
+				return;
+			}
+			_speedState = next;
+			switch (next) {
+			case SpeedState::Burst:
+				_adaptivePreloadPercent.store(
+					200,
+					std::memory_order_relaxed);
+				_adaptiveLimitPercent.store(
+					150,
+					std::memory_order_relaxed);
+				_speedIsThrottled.store(
+					false,
+					std::memory_order_relaxed);
+				break;
+			case SpeedState::Normal:
+				_adaptivePreloadPercent.store(
+					100,
+					std::memory_order_relaxed);
+				_adaptiveLimitPercent.store(
+					100,
+					std::memory_order_relaxed);
+				_speedIsThrottled.store(
+					false,
+					std::memory_order_relaxed);
+				break;
+			case SpeedState::Throttle:
+				_adaptivePreloadPercent.store(
+					100,
+					std::memory_order_relaxed);
+				_adaptiveLimitPercent.store(
+					100,
+					std::memory_order_relaxed);
+				_speedIsThrottled.store(
+					true,
+					std::memory_order_relaxed);
+				break;
+			}
+		};
+
+		switch (_speedState) {
+		case SpeedState::Burst:
+			if (_burstSpeedEma <= kBurstLeave) {
+				apply(SpeedState::Normal);
+			}
+			break;
+		case SpeedState::Throttle:
+			if (_burstSpeedEma >= kThrottleLeave) {
+				apply(SpeedState::Normal);
+			}
+			break;
+		case SpeedState::Normal:
+			if (_burstSpeedEma >= kBurstEnter) {
+				apply(SpeedState::Burst);
+			} else if (_burstSpeedEma <= kThrottleEnter) {
+				apply(SpeedState::Throttle);
+			}
+			break;
 		}
 	}, _lifetime);
 
@@ -1396,7 +1473,19 @@ Reader::FillState Reader::fill(
 Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	using namespace rpl::mappers;
 
-	auto result = _slices.fill(offset, buffer);
+	const auto preloadBase = PreloadPartsAhead();
+	const auto limitBase = StreamingRequestsLimit();
+	const auto preloadParts = std::clamp(
+		(preloadBase * _adaptivePreloadPercent.load(
+			std::memory_order_relaxed)) / 100,
+		preloadBase,
+		int(kLoadFromRemoteMax) * 2);
+	const auto requestsLimit = std::clamp(
+		(limitBase * _adaptiveLimitPercent.load(
+			std::memory_order_relaxed)) / 100,
+		limitBase,
+		int(kLoadFromRemoteMax));
+	auto result = _slices.fill(offset, buffer, preloadParts, requestsLimit);
 	if (result.state != FillState::Success && _slices.headerWontBeFilled()) {
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader header limit hit at offset=%1 size=%2 headerBytes=%3.")
 			.arg(qulonglong(offset))
@@ -1475,6 +1564,14 @@ void Reader::cancelLoadInRange(uint32 from, uint32 till) {
 
 void Reader::cancelLoadOutsideWindow(uint32 windowStart, uint32 windowTill) {
 	Expects(windowStart < windowTill);
+
+	// During server-side throttle periods, the in-flight parts are usually
+	// already paid for (sitting in the server's slow queue). Cancelling and
+	// re-queuing just re-submits to the back of the queue, making things
+	// worse. Skip far-seek cancellation until bandwidth recovers.
+	if (_speedIsThrottled.load(std::memory_order_relaxed)) {
+		return;
+	}
 
 	const auto cancelOne = [&](int64 offset) {
 		if (_pinnedTailOffsets.contains(offset)) {

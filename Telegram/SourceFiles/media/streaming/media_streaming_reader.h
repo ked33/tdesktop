@@ -135,12 +135,17 @@ private:
 
 		void processCacheData(PartsMap &&data);
 		void addPart(uint32 offset, QByteArray bytes);
-		PrepareFillResult prepareFill(uint32 from, uint32 till);
+		PrepareFillResult prepareFill(
+			uint32 from,
+			uint32 till,
+			int preloadParts,
+			int requestsLimit);
 
 		// Get up to the runtime remote-load limit in from-till range.
 		StackIntVector<kLoadFromRemoteMax> offsetsFromLoader(
 			uint32 from,
-			uint32 till) const;
+			uint32 till,
+			int requestsLimit) const;
 
 		PartsMap parts;
 		Flags flags;
@@ -166,7 +171,11 @@ private:
 		void processCachedSizes(const std::vector<int> &sizes);
 		void processPart(uint32 offset, QByteArray &&bytes);
 
-		[[nodiscard]] FillResult fill(uint32 offset, bytes::span buffer);
+		[[nodiscard]] FillResult fill(
+			uint32 offset,
+			bytes::span buffer,
+			int preloadParts,
+			int requestsLimit);
 		[[nodiscard]] SerializedSlice unloadToCache();
 
 		[[nodiscard]] QByteArray partForDownloader(uint32 offset) const;
@@ -193,7 +202,9 @@ private:
 		[[nodiscard]] bool computeIsGoodHeader() const;
 		[[nodiscard]] FillResult fillFromHeader(
 			uint32 offset,
-			bytes::span buffer);
+			bytes::span buffer,
+			int preloadParts,
+			int requestsLimit);
 		void unloadSlice(Slice &slice) const;
 		void checkSliceFullLoaded(int sliceNumber);
 		[[nodiscard]] bool checkFullInCache() const;
@@ -254,7 +265,16 @@ private:
 	std::atomic<crl::semaphore*> _sleeping = nullptr;
 	std::atomic<bool> _stopStreamingAsync = false;
 	std::atomic<int64> _pendingTailPrefetchBytes = 0;
+
+	// Adaptive scheduling driven by speedEstimate (main thread updates,
+	// streaming thread reads). 100 = static baseline.
+	enum class SpeedState : uchar { Normal, Burst, Throttle };
+	SpeedState _speedState = SpeedState::Normal;
 	double _burstSpeedEma = 0.0;
+	std::atomic<int> _adaptivePreloadPercent = 100;
+	std::atomic<int> _adaptiveLimitPercent = 100;
+	std::atomic<bool> _speedIsThrottled = false;
+
 	PriorityQueue _loadingOffsets;
 	base::flat_set<int64> _pinnedTailOffsets;
 
