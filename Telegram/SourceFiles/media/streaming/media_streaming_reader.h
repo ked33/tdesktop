@@ -254,6 +254,7 @@ private:
 	std::atomic<crl::semaphore*> _sleeping = nullptr;
 	std::atomic<bool> _stopStreamingAsync = false;
 	std::atomic<int64> _pendingTailPrefetchBytes = 0;
+	double _burstSpeedEma = 0.0;
 	PriorityQueue _loadingOffsets;
 	base::flat_set<int64> _pinnedTailOffsets;
 
