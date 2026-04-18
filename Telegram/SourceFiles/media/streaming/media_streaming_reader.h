@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_common.h"
 #include "media/streaming/media_streaming_loader.h"
 #include "base/bytes.h"
+#include "base/timer.h"
 #include "base/weak_ptr.h"
 #include "base/thread_safe_wrap.h"
 
@@ -274,6 +275,15 @@ private:
 	std::atomic<int> _adaptivePreloadPercent = 100;
 	std::atomic<int> _adaptiveLimitPercent = 100;
 	std::atomic<bool> _speedIsThrottled = false;
+
+	// Playback-consumption estimator (streaming thread only). Updated from
+	// Reader::fill() by sampling forward offset advancement, then read in
+	// fillFromSlices() to cap Burst-mode preload to "enough for the next
+	// N seconds" instead of spending bandwidth on parts that will not be
+	// consumed within the banked-buffer horizon.
+	crl::time _consumptionLastTime = 0;
+	int64 _consumptionLastOffset = -1;
+	double _consumptionBytesPerSec = 0.0;
 
 	PriorityQueue _loadingOffsets;
 	base::flat_set<int64> _pinnedTailOffsets;
