@@ -1431,6 +1431,34 @@ Reader::FillState Reader::fill(
 	Expects(offset + buffer.size() <= size());
 	Expects(offset >= 0 && size() <= std::numeric_limits<uint32>::max());
 
+	// Sample forward-consumption rate (bytes of video consumed per second of
+	// wall time). FFmpeg/AVIO drive fill() in bursts, so we accumulate over
+	// at least 500ms to get a stable reading. A backward seek or long idle
+	// just re-anchors without touching the EMA.
+	{
+		const auto now = crl::now();
+		if (_consumptionLastOffset < 0) {
+			_consumptionLastOffset = offset;
+			_consumptionLastTime = now;
+		} else {
+			const auto deltaMs = now - _consumptionLastTime;
+			if (deltaMs >= 500) {
+				if (offset > _consumptionLastOffset && deltaMs <= 5000) {
+					const auto deltaBytes = double(
+						offset - _consumptionLastOffset);
+					const auto instantBps = deltaBytes * 1000.0
+						/ double(deltaMs);
+					constexpr auto kAlpha = 0.3;
+					_consumptionBytesPerSec = _consumptionBytesPerSec
+						* (1.0 - kAlpha)
+						+ instantBps * kAlpha;
+				}
+				_consumptionLastOffset = offset;
+				_consumptionLastTime = now;
+			}
+		}
+	}
+
 	const auto startWaiting = [&] {
 		if (_cacheHelper) {
 			_cacheHelper->waiting = notify.get();
@@ -1475,11 +1503,27 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 
 	const auto preloadBase = PreloadPartsAhead();
 	const auto limitBase = StreamingRequestsLimit();
-	const auto preloadParts = std::clamp(
+	auto preloadParts = std::clamp(
 		(preloadBase * _adaptivePreloadPercent.load(
 			std::memory_order_relaxed)) / 100,
 		preloadBase,
 		int(kLoadFromRemoteMax) * 2);
+	// Consumption-aware cap: once we know how fast video is being read,
+	// avoid preloading past roughly the next N seconds of playback. This
+	// keeps Burst mode from spending bandwidth on parts the user will not
+	// reach within the already-banked buffer horizon.
+	if (DownloadBoostLevel() > 0 && _consumptionBytesPerSec > 0.0) {
+		constexpr auto kTargetSecondsAhead = 30.0;
+		const auto neededBytes = _consumptionBytesPerSec
+			* kTargetSecondsAhead;
+		const auto neededParts = int(std::min<double>(
+			(neededBytes + double(kPartSize - 1)) / double(kPartSize),
+			double(int(kLoadFromRemoteMax) * 2)));
+		preloadParts = std::clamp(
+			preloadParts,
+			preloadBase,
+			std::max(preloadBase, neededParts));
+	}
 	const auto requestsLimit = std::clamp(
 		(limitBase * _adaptiveLimitPercent.load(
 			std::memory_order_relaxed)) / 100,
