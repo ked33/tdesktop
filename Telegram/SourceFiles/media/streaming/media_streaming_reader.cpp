@@ -74,21 +74,36 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 	}
 }
 
+// Burst-mode adaptive preload multiplier: 100 = base depth, 200 = 2x.
+// Updated by Reader on speedEstimate events, read in PreloadPartsAhead
+// from the streaming thread. Shared across Readers (desktop normally plays
+// a single streaming video at a time).
+std::atomic<int> g_preloadMultiplierPercent{ 100 };
+
 [[nodiscard]] int PreloadPartsAhead() {
-	switch (DownloadBoostLevel()) {
-	case 1:
-		return 12;
-	case 2:
-		return 16;
-	case 3:
-		return 24;
-	case 4:
-		return 32;
-	case 5:
-		return 48;
-	default:
-		return 8;
+	const auto base = [] {
+		switch (DownloadBoostLevel()) {
+		case 1:
+			return 12;
+		case 2:
+			return 16;
+		case 3:
+			return 24;
+		case 4:
+			return 32;
+		case 5:
+			return 48;
+		default:
+			return 8;
+		}
+	}();
+	if (DownloadBoostLevel() == 0) {
+		return base;
 	}
+	const auto mult = g_preloadMultiplierPercent.load(
+		std::memory_order_relaxed);
+	const auto scaled = (mult > 100) ? ((base * mult) / 100) : base;
+	return std::max(base, scaled);
 }
 
 struct ParsedCacheEntry {
@@ -932,6 +947,33 @@ Reader::Reader(
 		if (const auto waiting = _waiting.load(std::memory_order_acquire)) {
 			_waiting.store(nullptr, std::memory_order_release);
 			waiting->release();
+		}
+	}, _lifetime);
+
+	// Adaptive burst-mode preload: during high-bandwidth bursts, grow the
+	// preload depth so that we bank enough buffer to absorb the throttled
+	// troughs that follow. Only active when the speed boost is enabled.
+	_loader->speedEstimate(
+	) | rpl::on_next([=](SpeedEstimate estimate) {
+		if (DownloadBoostLevel() == 0 || estimate.unreliable) {
+			return;
+		}
+		constexpr auto kAlpha = 0.4;
+		_burstSpeedEma = (_burstSpeedEma * (1.0 - kAlpha))
+			+ (double(estimate.bytesPerSecond) * kAlpha);
+		// Enter burst above 1.5 MB/s sustained, leave below 1.0 MB/s.
+		constexpr auto kBurstEnter = 1'500'000.0;
+		constexpr auto kBurstLeave = 1'000'000.0;
+		const auto current = g_preloadMultiplierPercent.load(
+			std::memory_order_relaxed);
+		if (current < 200 && _burstSpeedEma >= kBurstEnter) {
+			g_preloadMultiplierPercent.store(
+				200,
+				std::memory_order_relaxed);
+		} else if (current > 100 && _burstSpeedEma <= kBurstLeave) {
+			g_preloadMultiplierPercent.store(
+				100,
+				std::memory_order_relaxed);
 		}
 	}, _lifetime);
 
