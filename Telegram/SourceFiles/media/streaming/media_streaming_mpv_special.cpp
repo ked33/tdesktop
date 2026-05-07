@@ -57,6 +57,10 @@ constexpr auto kReadChunkSize = 256 * 1024;
 constexpr auto kInitialReadChunkSize = 64 * 1024;
 constexpr auto kMp4ProbeInitialSize = 256 * 1024;
 constexpr auto kMp4ProbeMaxSize = 4 * 1024 * 1024;
+constexpr auto kCompatibilitySeekBootstrapBytes = 4 * 1024 * 1024;
+constexpr auto kCompatibilityLateSeekMinOffset = 128 * 1024 * 1024;
+constexpr auto kCompatibilitySeekWaitTimeout = 4000;
+constexpr auto kCompatibilitySeekWaitStep = 10;
 constexpr auto kCleanupInterval = 60 * crl::time(1000);
 constexpr auto kTokenLifetime = 5 * 60 * crl::time(1000);
 constexpr auto kMpvLoaderPriority = 2;
@@ -147,10 +151,14 @@ struct Entry {
 	Entry(
 		not_null<DocumentData*> document,
 		Data::FileOrigin origin,
-		std::shared_ptr<Reader> reader)
+		std::shared_ptr<Reader> reader,
+		bool preferCompatibilityForLargeFrontMoov,
+		bool allowCompatibilityLateSeekGate)
 	: document(document)
 	, origin(origin)
 	, reader(std::move(reader))
+	, preferCompatibilityForLargeFrontMoov(preferCompatibilityForLargeFrontMoov)
+	, allowCompatibilityLateSeekGate(allowCompatibilityLateSeekGate)
 	, size(this->reader ? this->reader->size() : 0) {
 	}
 
@@ -165,6 +173,10 @@ struct Entry {
 	std::atomic<bool> headerFinalized = false;
 	std::atomic<int> mp4Layout = 0;
 	std::atomic<std::uint64_t> latestSeekGeneration = 0;
+	std::atomic<int64> compatibilityBootstrapBytes = 0;
+	std::atomic<bool> compatibilityLateSeekReady = false;
+	bool preferCompatibilityForLargeFrontMoov = false;
+	bool allowCompatibilityLateSeekGate = true;
 	std::mutex fillMutex;
 	std::mutex seekFillMutex;
 };
@@ -218,6 +230,99 @@ enum class Mp4Layout {
 	});
 	semaphore.acquire();
 	return result;
+}
+
+[[nodiscard]] bool UsesCompatibilityLateSeekGate(
+		const std::shared_ptr<Entry> &entry) {
+	return (entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov))
+		&& entry->allowCompatibilityLateSeekGate
+		&& entry->preferCompatibilityForLargeFrontMoov;
+}
+
+[[nodiscard]] bool AllowsCompatibilityLateSeekOffset(
+		const std::shared_ptr<Entry> &entry,
+		int64 offset) {
+	return UsesCompatibilityLateSeekGate(entry)
+		&& (offset >= kCompatibilityLateSeekMinOffset);
+}
+
+void MarkCompatibilityLateSeekReady(
+		const std::shared_ptr<Entry> &entry,
+		const QString &token,
+		const char *reason) {
+	if (!UsesCompatibilityLateSeekGate(entry)) {
+		return;
+	}
+	if (!entry->compatibilityLateSeekReady.exchange(true)) {
+		MPV_STREAMING_LOG(("MPV Streaming (Special): Compatibility late seek ready for token %1 reason=%2 bootstrapBytes=%3.")
+			.arg(token)
+			.arg(QString::fromLatin1(reason))
+			.arg(entry->compatibilityBootstrapBytes.load()));
+	}
+}
+
+void NoteCompatibilityBootstrapProgress(
+		const std::shared_ptr<Entry> &entry,
+		const QString &token,
+		int size) {
+	if (!UsesCompatibilityLateSeekGate(entry) || (size <= 0)) {
+		return;
+	}
+	const auto served = entry->compatibilityBootstrapBytes.fetch_add(size) + size;
+	if (served >= kCompatibilitySeekBootstrapBytes) {
+		MarkCompatibilityLateSeekReady(entry, token, "bootstrap-bytes");
+	}
+}
+
+[[nodiscard]] bool WaitForCompatibilityLateSeekReady(
+		const std::shared_ptr<Entry> &entry,
+		const QString &token,
+		int64 offset) {
+	if (!UsesCompatibilityLateSeekGate(entry)
+		|| entry->compatibilityLateSeekReady.load()) {
+		return true;
+	}
+	const auto started = crl::now();
+	while (!entry->compatibilityLateSeekReady.load()) {
+		if ((crl::now() - started) >= kCompatibilitySeekWaitTimeout) {
+			MPV_STREAMING_LOG(("MPV Streaming (Special): Compatibility late seek wait timed out for token %1 offset=%2 bootstrapBytes=%3 activeRequests=%4.")
+				.arg(token)
+				.arg(offset)
+				.arg(entry->compatibilityBootstrapBytes.load())
+				.arg(entry->activeRequests.load()));
+			return false;
+		}
+		std::this_thread::sleep_for(
+			std::chrono::milliseconds(kCompatibilitySeekWaitStep));
+	}
+	MPV_STREAMING_LOG(("MPV Streaming (Special): Compatibility late seek released for token %1 offset=%2 bootstrapBytes=%3.")
+		.arg(token)
+		.arg(offset)
+		.arg(entry->compatibilityBootstrapBytes.load()));
+	return true;
+}
+
+[[nodiscard]] bool WaitForMp4LayoutForSeek(
+		const std::shared_ptr<Entry> &entry,
+		const QString &token,
+		int64 offset) {
+	if (entry->mp4Layout.load() != 0) {
+		return true;
+	}
+	const auto started = crl::now();
+	while (entry->mp4Layout.load() == 0) {
+		if ((crl::now() - started) >= kCompatibilitySeekWaitTimeout) {
+			MPV_STREAMING_LOG(("MPV Streaming (Special): MP4 layout wait timed out for token %1 offset=%2 bootstrapBytes=%3 activeRequests=%4.")
+				.arg(token)
+				.arg(offset)
+				.arg(entry->compatibilityBootstrapBytes.load())
+				.arg(entry->activeRequests.load()));
+			return false;
+		}
+		std::this_thread::sleep_for(
+			std::chrono::milliseconds(kCompatibilitySeekWaitStep));
+	}
+	return true;
 }
 
 	[[nodiscard]] bool RecoverEntryReader(
@@ -582,14 +687,18 @@ public:
 	[[nodiscard]] Launch add(
 			not_null<DocumentData*> document,
 			Data::FileOrigin origin,
-			std::shared_ptr<Reader> reader) {
+			std::shared_ptr<Reader> reader,
+			bool preferCompatibilityForLargeFrontMoov,
+			bool allowCompatibilityLateSeekGate) {
 		if (!ensureListening()) {
 			return {};
 		}
 		auto entry = std::make_shared<Entry>(
 			document,
 			origin,
-			std::move(reader));
+			std::move(reader),
+			preferCompatibilityForLargeFrontMoov,
+			allowCompatibilityLateSeekGate);
 		entry->mime = document->mimeString().isEmpty()
 			? QStringLiteral("application/octet-stream")
 			: document->mimeString();
@@ -793,13 +902,55 @@ private:
 			}
 			const auto compatibilitySequentialLayout =
 				(entry->mp4Layout.load() == int(Mp4Layout::Fragmented));
-			const auto sequentialLayout =
+			if ((range.range.from > 0)
+				&& !WaitForMp4LayoutForSeek(
+					entry,
+					request.token,
+					range.range.from)) {
+				(void)SendResponse(socket, "503 Service Unavailable", {
+					{ "Connection", "close" },
+					{ "Content-Length", "0" },
+					{ "Retry-After", "1" },
+				});
+				return;
+			}
+			const auto compatibilityLateSeekGate =
+				UsesCompatibilityLateSeekGate(entry);
+			const auto compatibilityFarSeek =
+				AllowsCompatibilityLateSeekOffset(entry, range.range.from);
+			if (compatibilityLateSeekGate
+				&& (range.range.from > 0)
+				&& !compatibilityFarSeek) {
+				MPV_STREAMING_LOG(("MPV Streaming (Special): Keeping compatibility sequential path for token %1 offset=%2 minOffset=%3.")
+					.arg(request.token)
+					.arg(range.range.from)
+					.arg(kCompatibilityLateSeekMinOffset));
+			}
+			if (compatibilityFarSeek
+				&& (range.range.from > 0)
+				&& !WaitForCompatibilityLateSeekReady(
+					entry,
+					request.token,
+					range.range.from)) {
+				(void)SendResponse(socket, "503 Service Unavailable", {
+					{ "Connection", "close" },
+					{ "Content-Length", "0" },
+					{ "Retry-After", "1" },
+				});
+				return;
+			}
+			const auto compatibilitySequentialRequest =
 				compatibilitySequentialLayout
+				|| (compatibilityLateSeekGate
+					&& (range.range.from > 0)
+					&& !compatibilityFarSeek);
+			const auto sequentialLayout =
+				compatibilitySequentialRequest
 				|| (entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov));
 			const auto initialSequentialOpen =
 				sequentialLayout
 				&& (range.range.from == 0);
-			if (compatibilitySequentialLayout) {
+			if (compatibilitySequentialRequest) {
 				if (!SendResponse(socket, "200 OK", {
 					{ "Connection", "close" },
 					{ "Content-Length", QByteArray::number(entry->size) },
@@ -843,12 +994,12 @@ private:
 			if (request.method == "HEAD") {
 				return;
 			}
-			auto offset = compatibilitySequentialLayout
+			auto offset = compatibilitySequentialRequest
 				? int64(0)
 				: initialSequentialOpen
 				? int64(0)
 				: range.range.from;
-			auto left = compatibilitySequentialLayout
+			auto left = compatibilitySequentialRequest
 				? entry->size
 				: initialSequentialOpen
 				? entry->size
@@ -856,7 +1007,7 @@ private:
 			const auto startedFromZero = (offset == 0);
 			const auto isolatedSeekRequest =
 				sequentialLayout
-				&& !compatibilitySequentialLayout
+				&& !compatibilitySequentialRequest
 				&& !initialSequentialOpen
 				&& (range.range.from > 0);
 			auto activeReader = entry->reader;
@@ -969,6 +1120,12 @@ private:
 				offset += size;
 				left -= size;
 				entry->lastActivity = crl::now();
+				if (startedFromZero && !usingSeekReader) {
+					NoteCompatibilityBootstrapProgress(
+						entry,
+						request.token,
+						size);
+				}
 			}
 			if (supersededSeek) {
 				MPV_STREAMING_LOG(("MPV Streaming (Special): Superseded seek request token=%1 generation=%2 offset=%3 latest=%4.")
@@ -977,6 +1134,12 @@ private:
 					.arg(range.range.from)
 					.arg(qulonglong(entry->latestSeekGeneration.load())));
 				return;
+			}
+			if (clientDisconnected && startedFromZero && !usingSeekReader) {
+				MarkCompatibilityLateSeekReady(
+					entry,
+					request.token,
+					"initial-stream-ended");
 			}
 			// Pre-fill cache sequentially after client disconnect.
 			// When a fragmented MP4 is opened, the demuxer scans
@@ -1073,7 +1236,13 @@ private:
 			return OpenResult::PlayerNotFound;
 		}
 		const auto origin = Data::FileOrigin(item->fullId());
-		MPV_STREAMING_LOG(("MPV Streaming (Special): Bridge strategy hasQualities=%1.")
+		const auto preferCompatibilityForLargeFrontMoov = media
+			? !media->hasQualitiesList()
+			: true;
+		const auto allowCompatibilityLateSeekGate = true;
+		MPV_STREAMING_LOG(("MPV Streaming (Special): Bridge strategy preferCompatibilityForLargeFrontMoov=%1 allowCompatibilityLateSeekGate=%2 hasQualities=%3.")
+			.arg(preferCompatibilityForLargeFrontMoov ? 1 : 0)
+			.arg(allowCompatibilityLateSeekGate ? 1 : 0)
 			.arg(media ? media->hasQualitiesList() : 0));
 		const auto reader = CreateDedicatedReader(document, origin);
 			if (!reader) {
@@ -1084,7 +1253,9 @@ private:
 		const auto launch = Server::instance().add(
 			document,
 			origin,
-			reader);
+			reader,
+			preferCompatibilityForLargeFrontMoov,
+			allowCompatibilityLateSeekGate);
 			if (launch.url.isEmpty()) {
 				MPV_STREAMING_LOG(("MPV Streaming (Special): Failed to create launch URL for document %1.")
 					.arg(qulonglong(document->id)));
