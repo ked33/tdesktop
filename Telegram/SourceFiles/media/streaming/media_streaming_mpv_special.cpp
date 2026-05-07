@@ -147,12 +147,10 @@ struct Entry {
 	Entry(
 		not_null<DocumentData*> document,
 		Data::FileOrigin origin,
-		std::shared_ptr<Reader> reader,
-		bool preferCompatibilityForLargeFrontMoov)
+		std::shared_ptr<Reader> reader)
 	: document(document)
 	, origin(origin)
 	, reader(std::move(reader))
-	, preferCompatibilityForLargeFrontMoov(preferCompatibilityForLargeFrontMoov)
 	, size(this->reader ? this->reader->size() : 0) {
 	}
 
@@ -167,7 +165,6 @@ struct Entry {
 	std::atomic<bool> headerFinalized = false;
 	std::atomic<int> mp4Layout = 0;
 	std::atomic<std::uint64_t> latestSeekGeneration = 0;
-	bool preferCompatibilityForLargeFrontMoov = false;
 	std::mutex fillMutex;
 	std::mutex seekFillMutex;
 };
@@ -585,16 +582,14 @@ public:
 	[[nodiscard]] Launch add(
 			not_null<DocumentData*> document,
 			Data::FileOrigin origin,
-			std::shared_ptr<Reader> reader,
-			bool preferCompatibilityForLargeFrontMoov) {
+			std::shared_ptr<Reader> reader) {
 		if (!ensureListening()) {
 			return {};
 		}
 		auto entry = std::make_shared<Entry>(
 			document,
 			origin,
-			std::move(reader),
-			preferCompatibilityForLargeFrontMoov);
+			std::move(reader));
 		entry->mime = document->mimeString().isEmpty()
 			? QStringLiteral("application/octet-stream")
 			: document->mimeString();
@@ -797,9 +792,7 @@ private:
 				}
 			}
 			const auto compatibilitySequentialLayout =
-				(entry->mp4Layout.load() == int(Mp4Layout::Fragmented))
-				|| ((entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov))
-					&& entry->preferCompatibilityForLargeFrontMoov);
+				(entry->mp4Layout.load() == int(Mp4Layout::Fragmented));
 			const auto sequentialLayout =
 				compatibilitySequentialLayout
 				|| (entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov));
@@ -1080,11 +1073,7 @@ private:
 			return OpenResult::PlayerNotFound;
 		}
 		const auto origin = Data::FileOrigin(item->fullId());
-		const auto preferCompatibilityForLargeFrontMoov = media
-			? !media->hasQualitiesList()
-			: true;
-		MPV_STREAMING_LOG(("MPV Streaming (Special): Bridge strategy preferCompatibilityForLargeFrontMoov=%1 hasQualities=%2.")
-			.arg(preferCompatibilityForLargeFrontMoov ? 1 : 0)
+		MPV_STREAMING_LOG(("MPV Streaming (Special): Bridge strategy hasQualities=%1.")
 			.arg(media ? media->hasQualitiesList() : 0));
 		const auto reader = CreateDedicatedReader(document, origin);
 			if (!reader) {
@@ -1095,8 +1084,7 @@ private:
 		const auto launch = Server::instance().add(
 			document,
 			origin,
-			reader,
-			preferCompatibilityForLargeFrontMoov);
+			reader);
 			if (launch.url.isEmpty()) {
 				MPV_STREAMING_LOG(("MPV Streaming (Special): Failed to create launch URL for document %1.")
 					.arg(qulonglong(document->id)));
