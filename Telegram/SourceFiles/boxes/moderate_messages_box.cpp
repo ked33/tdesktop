@@ -1061,6 +1061,10 @@ void CreateModerateMessagesBox(
 		return result;
 	};
 	auto title = [&]() -> rpl::producer<TextWithEntities> {
+		if (hasItems && (GetEnhancedInt("always_delete_for") == 1 || GetEnhancedInt("always_delete_for") == 3)) {
+			deleteMessages->setChecked(true);
+			deleteReactions->setChecked(true);
+		}
 		if (showMessagesCheckbox && !(hasReaction && !hasItems)) {
 			auto messageTitleData = rpl::combine(
 				deleteMessagesCounts->value(),
@@ -1159,10 +1163,6 @@ void CreateModerateMessagesBox(
 					? tr::lng_delete_title_reaction_all(tr::now)
 					: tr::lng_delete_title_reaction_this(tr::now) };
 			});
-
-		if (GetEnhancedInt("always_delete_for") == 1 || GetEnhancedInt("always_delete_for") == 3) {
-			deleteAll->setChecked(true);
-		}
 		}
 		return rpl::duplicate(langUpdated) | rpl::map([](int) {
 			return TextWithEntities{
