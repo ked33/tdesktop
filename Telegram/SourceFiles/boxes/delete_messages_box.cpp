@@ -269,13 +269,10 @@ void DeleteMessagesBox::prepare() {
 			+ _text->height()
 			+ st::boxPadding.bottom();
 		if (_revoke) {
-		if (GetEnhancedInt("always_delete_for") == 1 || GetEnhancedInt("always_delete_for") == 3) {
-			_deleteAll->setChecked(true);
-		}
 			fullHeight += st::boxMediumSkip + _revoke->heightNoMargins();
-		if (GetEnhancedInt("always_delete_for") == 2 || GetEnhancedInt("always_delete_for") == 3) {
-			_revoke->setChecked(true);
-		}
+			if (GetEnhancedInt("always_delete_for") == 2 || GetEnhancedInt("always_delete_for") == 3) {
+				_revoke->setChecked(true);
+			}
 		}
 		if (_autoDeleteSettings) {
 			fullHeight += st::boxMediumSkip
