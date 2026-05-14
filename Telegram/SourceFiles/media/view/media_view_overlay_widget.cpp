@@ -19,6 +19,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "calls/calls_instance.h"
 #include "core/application.h"
 #include "core/click_handler_types.h"
+#include "core/enhanced_settings.h"
+#include "settings.h"
 #include "core/file_utilities.h"
 #include "core/mime_type.h"
 #include "core/ui_integration.h"
@@ -627,6 +629,17 @@ OverlayWidget::OverlayWidget()
 	_chapterTimer.setCallback([=, delay = st::mediaviewChapterHiding] {
 		_chapterAnimation.start([=] { updateChapter(); }, 1., 0., delay);
 	});
+
+	_wheelHintTimer.setCallback([=, delay = st::mediaviewChapterHiding] {
+		_wheelHintAnimation.start([=] { updateWheelHint(); }, 1., 0., delay);
+	});
+
+	{
+		const auto stored = GetEnhancedInt("media_viewer_brightness");
+		_mediaViewerBrightness = (stored >= 10 && stored <= 100)
+			? stored
+			: 100;
+	}
 
 	_speedBoostHoldTimer.setCallback([=] {
 		startSpeedBoost();
@@ -5885,6 +5898,9 @@ void OverlayWidget::paint(not_null<Renderer*> renderer) {
 	if (isSpeedBoostShown()) {
 		renderer->paintSpeedBoost(_speedBoostRect);
 	}
+	if (isWheelHintShown()) {
+		renderer->paintWheelHint(_wheelHintRect);
+	}
 
 	const auto opacity = _fullScreenVideo ? 0. : _controlsOpacity.current();
 	if (opacity > 0) {
@@ -6456,6 +6472,120 @@ void OverlayWidget::updateSpeedBoost() {
 	update(_speedBoostRect);
 }
 
+float64 OverlayWidget::mediaViewerBrightnessFactor() const {
+	if (!GetEnhancedBool("media_viewer_wheel_control_enabled")) {
+		return 1.;
+	}
+	const auto percent = std::clamp(_mediaViewerBrightness, 10, 100);
+	return percent / 100.;
+}
+
+void OverlayWidget::adjustMediaViewerBrightness(int deltaPercent) {
+	const auto next = std::clamp(
+		_mediaViewerBrightness + deltaPercent,
+		10,
+		100);
+	if (next == _mediaViewerBrightness) {
+		showWheelHint(tr::lng_media_viewer_brightness_osd(
+			tr::now,
+			lt_percent,
+			QString::number(next)));
+		return;
+	}
+	_mediaViewerBrightness = next;
+	SetEnhancedValue("media_viewer_brightness", next);
+	EnhancedSettings::Write();
+	showWheelHint(tr::lng_media_viewer_brightness_osd(
+		tr::now,
+		lt_percent,
+		QString::number(next)));
+	update();
+}
+
+void OverlayWidget::adjustMediaViewerVolume(float64 delta) {
+	const auto current = Core::App().settings().videoVolume();
+	const auto next = std::clamp(current + delta, 0., 1.);
+	playbackControlsVolumeChanged(next);
+	playbackControlsVolumeChangeFinished();
+	activateControls();
+	showWheelHint(tr::lng_media_viewer_volume_osd(
+		tr::now,
+		lt_percent,
+		QString::number(qRound(next * 100))));
+}
+
+void OverlayWidget::showWheelHint(const QString &text) {
+	_wheelHintText = text;
+	updateWheelHintRect();
+	if (isWheelHintShown()) {
+		_wheelHintTimer.callOnce(st::mediaviewChapterShown);
+	} else {
+		_wheelHintAnimation.start(
+			[=] {
+				updateWheelHint();
+				if (!_wheelHintAnimation.animating()) {
+					_wheelHintTimer.callOnce(st::mediaviewChapterShown);
+				}
+			},
+			0.,
+			1.,
+			st::mediaviewChapterShowing);
+	}
+	updateWheelHint();
+}
+
+void OverlayWidget::updateWheelHintRect() {
+	const auto was = _wheelHintRect;
+	const auto font = st::mediaviewChapterFont;
+	const auto padding = st::mediaviewChapterPadding;
+	const auto textWidth = font->width(_wheelHintText);
+	const auto w = padding.left() + textWidth + padding.right();
+	const auto h = rect::m::sum::v(padding) + font->height;
+	_wheelHintRect = QRect(
+		(width() - w) / 2,
+		_minUsedTop + st::mediaviewSpeedBoostTop,
+		w,
+		h);
+	if (was != _wheelHintRect && !was.isEmpty()) {
+		update(was);
+	}
+}
+
+void OverlayWidget::updateWheelHint() {
+	update(_wheelHintRect);
+}
+
+bool OverlayWidget::isWheelHintShown() const {
+	return _wheelHintAnimation.animating() || _wheelHintTimer.isActive();
+}
+
+void OverlayWidget::paintWheelHintContent(
+		Painter &p,
+		QRect outer,
+		QRect clip) {
+	const auto opacity = _wheelHintAnimation.value(
+		_wheelHintTimer.isActive() ? 1. : 0.);
+	if (opacity <= 0.) {
+		return;
+	}
+	p.setOpacity(opacity);
+	Ui::FillRoundRect(
+		p,
+		outer,
+		st::mediaviewSaveMsgBg,
+		Ui::MediaviewSaveCorners);
+
+	const auto font = st::mediaviewChapterFont;
+	const auto padding = st::mediaviewChapterPadding;
+	p.setFont(font);
+	p.setPen(st::mediaviewSaveMsgFg);
+	p.drawText(
+		outer.x() + padding.left(),
+		outer.y() + padding.top() + font->ascent,
+		_wheelHintText);
+	p.setOpacity(1);
+}
+
 bool OverlayWidget::saveControlLocked() const {
 	const auto story = _stories ? _stories->story() : nullptr;
 	return story
@@ -6995,22 +7125,46 @@ void OverlayWidget::handleWheelEvent(not_null<QWheelEvent*> e) {
 	const auto acceptForJump = !_stories
 		&& ((e->source() == Qt::MouseEventNotSynthesized)
 			|| (e->source() == Qt::MouseEventSynthesizedBySystem));
+	const auto ctrl = e->modifiers().testFlag(Qt::ControlModifier);
+	const auto enhanced = !ctrl
+		&& !_stories
+		&& GetEnhancedBool("media_viewer_wheel_control_enabled");
+	const auto pos = e->position().toPoint();
+	const auto w = width();
+	const auto h = height();
+	const auto hasVideo = (_streamed != nullptr);
+
 	_verticalWheelDelta += e->angleDelta().y();
 	while (qAbs(_verticalWheelDelta) >= step) {
-		if (_verticalWheelDelta < 0) {
-			_verticalWheelDelta += step;
-			if (e->modifiers().testFlag(Qt::ControlModifier)) {
-				zoomOut();
-			} else if (acceptForJump) {
-				moveToNext(1);
+		const auto up = (_verticalWheelDelta > 0);
+		_verticalWheelDelta += up ? -step : step;
+
+		if (ctrl) {
+			up ? zoomIn() : zoomOut();
+			continue;
+		}
+		if (!enhanced) {
+			if (acceptForJump) {
+				moveToNext(up ? -1 : 1);
 			}
-		} else {
-			_verticalWheelDelta -= step;
-			if (e->modifiers().testFlag(Qt::ControlModifier)) {
-				zoomIn();
+			continue;
+		}
+		if (pos.x() < w / 3) {
+			if (pos.y() < h / 2) {
+				adjustMediaViewerBrightness(up ? 10 : -10);
+			} else if (hasVideo) {
+				adjustMediaViewerVolume(up ? 0.1 : -0.1);
 			} else if (acceptForJump) {
-				moveToNext(-1);
+				moveToNext(up ? -1 : 1);
 			}
+		} else if (pos.x() < (2 * w) / 3) {
+			if (acceptForJump) {
+				moveToNext(up ? -1 : 1);
+			}
+		} else if (hasVideo) {
+			seekRelativeTime(up ? -1000 : 2000);
+		} else if (acceptForJump) {
+			moveToNext(up ? -1 : 1);
 		}
 	}
 }
