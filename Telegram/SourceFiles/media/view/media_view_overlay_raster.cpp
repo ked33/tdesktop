@@ -132,6 +132,7 @@ void OverlayWidget::RendererSW::paintTransformedVideoFrame(
 		? StoryCropRect(QSizeF(image.size()), geometry.rect.size())
 		: QRectF();
 	paintTransformedImage(image, rect, rotation, sourceRect);
+	applyMediaViewerBrightness(rect);
 	paintControlsFade(rect, geometry);
 }
 
@@ -155,8 +156,21 @@ void OverlayWidget::RendererSW::paintTransformedStaticContent(
 			? StoryCropRect(QSizeF(image.size()), geometry.rect.size())
 			: QRectF();
 		paintTransformedImage(image, rect, rotation, sourceRect);
+		applyMediaViewerBrightness(rect);
 	}
 	paintControlsFade(rect, geometry);
+}
+
+void OverlayWidget::RendererSW::applyMediaViewerBrightness(QRect content) {
+	const auto factor = _owner->mediaViewerBrightnessFactor();
+	if (factor >= 1.) {
+		return;
+	}
+	const auto v = int(std::clamp(255. * factor, 0., 255.));
+	const auto saved = _p->compositionMode();
+	_p->setCompositionMode(QPainter::CompositionMode_Multiply);
+	_p->fillRect(content, QColor(v, v, v));
+	_p->setCompositionMode(saved);
 }
 
 void OverlayWidget::RendererSW::paintControlsFade(
@@ -284,6 +298,12 @@ void OverlayWidget::RendererSW::paintChapter(QRect outer) {
 void OverlayWidget::RendererSW::paintSpeedBoost(QRect outer) {
 	if (outer.intersects(_clipOuter)) {
 		_owner->paintSpeedBoostContent(*_p, outer, _clipOuter);
+	}
+}
+
+void OverlayWidget::RendererSW::paintWheelHint(QRect outer) {
+	if (outer.intersects(_clipOuter)) {
+		_owner->paintWheelHintContent(*_p, outer, _clipOuter);
 	}
 }
 

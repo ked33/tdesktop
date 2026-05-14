@@ -75,6 +75,11 @@ namespace EnhancedSettings {
 			if (!gEnhancedOptions.contains(qsl("preview_brightness"))) {
 				gEnhancedOptions.insert(qsl("preview_brightness"), 70);
 			}
+
+			ensureBool(qsl("media_viewer_wheel_control_enabled"), false);
+			if (!gEnhancedOptions.contains(qsl("media_viewer_brightness"))) {
+				gEnhancedOptions.insert(qsl("media_viewer_brightness"), 100);
+			}
 		}
 
 		QString DefaultFilePath() {
@@ -411,6 +416,8 @@ namespace EnhancedSettings {
 		settings.insert(qsl("update_url"), "");
 		settings.insert(qsl("preview_brightness_enabled"), false);
 		settings.insert(qsl("preview_brightness"), 70);
+		settings.insert(qsl("media_viewer_wheel_control_enabled"), false);
+		settings.insert(qsl("media_viewer_brightness"), 100);
 
 		auto document = QJsonDocument();
 		document.setObject(settings);
@@ -498,6 +505,12 @@ namespace EnhancedSettings {
 		settings.insert(
 			qsl("preview_brightness"),
 			GetEnhancedInt("preview_brightness"));
+		settings.insert(
+			qsl("media_viewer_wheel_control_enabled"),
+			GetEnhancedBool("media_viewer_wheel_control_enabled"));
+		settings.insert(
+			qsl("media_viewer_brightness"),
+			GetEnhancedInt("media_viewer_brightness"));
 
 		auto document = QJsonDocument();
 		document.setObject(settings);

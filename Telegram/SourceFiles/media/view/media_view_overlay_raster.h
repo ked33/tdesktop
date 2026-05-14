@@ -36,6 +36,7 @@ private:
 		int rotation,
 		const QRectF &sourceRect = QRectF());
 	void paintControlsFade(QRect content, const ContentGeometry &geometry);
+	void applyMediaViewerBrightness(QRect content);
 	void paintRadialLoading(
 		QRect inner,
 		bool radial,
@@ -45,6 +46,7 @@ private:
 	void paintSaveMsg(QRect outer) override;
 	void paintChapter(QRect outer) override;
 	void paintSpeedBoost(QRect outer) override;
+	void paintWheelHint(QRect outer) override;
 	void paintControlsStart() override;
 	void paintControl(
 		Over control,

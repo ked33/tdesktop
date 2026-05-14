@@ -30,7 +30,8 @@ constexpr auto kDocumentBubbleOffset = kThemePreviewOffset + 4;
 constexpr auto kSaveMsgOffset = kDocumentBubbleOffset + 4;
 constexpr auto kChapterOffset = kSaveMsgOffset + 4;
 constexpr auto kSpeedBoostOffset = kChapterOffset + 4;
-constexpr auto kFooterOffset = kSpeedBoostOffset + 4;
+constexpr auto kWheelHintOffset = kSpeedBoostOffset + 4;
+constexpr auto kFooterOffset = kWheelHintOffset + 4;
 constexpr auto kCaptionOffset = kFooterOffset + 4;
 constexpr auto kGroupThumbsOffset = kCaptionOffset + 4;
 constexpr auto kControlsOffset = kGroupThumbsOffset + 4;
@@ -61,6 +62,17 @@ uniform vec4 shadowBottomSkipOpacityFullFade;
 	vec4 fadeBottom = texture2D(f_texture, vec2(0.5, bottomY)) * opacity;
 	float fade = min((1. - fadeTop.a) * (1. - fadeBottom.a), fullFade);
 	result.rgb = result.rgb * fade;
+)",
+	};
+}
+
+[[nodiscard]] ShaderPart FragmentAdjustBrightness() {
+	return {
+		.header = R"(
+uniform float contentBrightness;
+)",
+		.body = R"(
+	result.rgb *= contentBrightness;
 )",
 	};
 }
@@ -169,7 +181,7 @@ OverlayWidget::RendererGL::RendererGL(not_null<OverlayWidget*> owner)
 }
 
 void OverlayWidget::RendererGL::init(QOpenGLFunctions &f) {
-	constexpr auto kQuads = 9;
+	constexpr auto kQuads = 10;
 	constexpr auto kQuadVertices = kQuads * 4;
 	constexpr auto kQuadValues = kQuadVertices * 4;
 	constexpr auto kControlsValues = kControlsCount * kControlValues;
@@ -207,6 +219,7 @@ void OverlayWidget::RendererGL::init(QOpenGLFunctions &f) {
 		_texturedVertexShader,
 		FragmentShader({
 			FragmentSampleARGB32Texture(),
+			FragmentAdjustBrightness(),
 			FragmentApplyControlsFade(),
 			FragmentRoundedCorners()
 		}));
@@ -218,6 +231,7 @@ void OverlayWidget::RendererGL::init(QOpenGLFunctions &f) {
 		FragmentShader({
 			FragmentSampleARGB32Texture(),
 			FragmentPlaceOnTransparentBackground(),
+			FragmentAdjustBrightness(),
 			FragmentApplyControlsFade()
 		}));
 
@@ -227,6 +241,7 @@ void OverlayWidget::RendererGL::init(QOpenGLFunctions &f) {
 		_texturedVertexShader,
 		FragmentShader({
 			FragmentSampleYUV420Texture(),
+			FragmentAdjustBrightness(),
 			FragmentApplyControlsFade(),
 			FragmentRoundedCorners()
 		}));
@@ -237,6 +252,7 @@ void OverlayWidget::RendererGL::init(QOpenGLFunctions &f) {
 		_texturedVertexShader,
 		FragmentShader({
 			FragmentSampleNV12Texture(),
+			FragmentAdjustBrightness(),
 			FragmentApplyControlsFade(),
 			FragmentRoundedCorners()
 		}));
@@ -664,6 +680,9 @@ void OverlayWidget::RendererGL::paintTransformedContent(
 			"roundRadius",
 			GLfloat(geometry.roundRadius * _factor));
 	}
+	program->setUniformValue(
+		"contentBrightness",
+		GLfloat(_owner->mediaViewerBrightnessFactor()));
 	FillTexturedRectangle(*_f, &*program);
 }
 
@@ -748,6 +767,13 @@ void OverlayWidget::RendererGL::paintSpeedBoost(QRect outer) {
 		const auto newOuter = QRect(QPoint(), outer.size());
 		_owner->paintSpeedBoostContent(p, newOuter, newOuter);
 	}, kSpeedBoostOffset, true);
+}
+
+void OverlayWidget::RendererGL::paintWheelHint(QRect outer) {
+	paintUsingRaster(_wheelHintImage, outer, [&](Painter &&p) {
+		const auto newOuter = QRect(QPoint(), outer.size());
+		_owner->paintWheelHintContent(p, newOuter, newOuter);
+	}, kWheelHintOffset, true);
 }
 
 void OverlayWidget::RendererGL::paintControlsStart() {
