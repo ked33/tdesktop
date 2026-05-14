@@ -532,6 +532,15 @@ private:
 	[[nodiscard]] bool isSpeedBoostShown() const;
 	void updateSpeedBoost();
 
+	[[nodiscard]] float64 mediaViewerBrightnessFactor() const;
+	void adjustMediaViewerBrightness(int deltaPercent);
+	void adjustMediaViewerVolume(float64 delta);
+	void showWheelHint(const QString &text);
+	void updateWheelHintRect();
+	void updateWheelHint();
+	void paintWheelHintContent(Painter &p, QRect outer, QRect clip);
+	[[nodiscard]] bool isWheelHintShown() const;
+
 	void updateOverRect(Over state);
 	bool updateOverState(Over newState);
 	float64 overLevel(Over control) const;
@@ -825,6 +834,12 @@ private:
 	rpl::event_stream<bool> _touchbarFullscreenToggled;
 
 	int _verticalWheelDelta = 0;
+
+	int _mediaViewerBrightness = 100;
+	QString _wheelHintText;
+	QRect _wheelHintRect;
+	Ui::Animations::Simple _wheelHintAnimation;
+	base::Timer _wheelHintTimer;
 
 	Platform::TextRecognition::Result _recognitionResult;
 	uint64 _recognitionPendingSessionUniqueId = 0;
