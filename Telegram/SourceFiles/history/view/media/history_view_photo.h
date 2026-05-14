@@ -165,6 +165,8 @@ private:
 	mutable std::unique_ptr<MediaSpoilerTag> _spoilerTag;
 	mutable QImage _imageCache;
 	mutable std::optional<Ui::BubbleRounding> _imageCacheRounding;
+	mutable int _imageCacheBrightness = 0;
+	mutable int _spoilerCacheBrightness = 0;
 	uint32 _serviceWidth : 26 = 0;
 	uint32 _purchasedPriceTag : 1 = 0;
 	const uint32 _sensitiveSpoiler : 1 = 0;

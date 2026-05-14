@@ -391,3 +391,54 @@ void BitrateController::save() {
 	Ui::Toast::Show(tr::lng_bitrate_controller_hint(tr::now));
 	closeBox();
 }
+
+PreviewBrightnessBox::PreviewBrightnessBox(QWidget *parent) {
+}
+
+void PreviewBrightnessBox::prepare() {
+	setTitle(tr::lng_settings_preview_brightness_title());
+
+	addButton(tr::lng_settings_save(), [=] { save(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+
+	auto y = st::boxOptionListPadding.top();
+	_description.create(
+		this,
+		tr::lng_settings_preview_brightness_desc(tr::now),
+		st::boxLabel);
+	_description->moveToLeft(st::boxPadding.left(), y);
+
+	y += _description->height() + st::boxMediumSkip;
+
+	const auto current = GetEnhancedInt("preview_brightness");
+	const auto initial = (current >= 10 && current <= 100)
+		? ((current / 10) * 10)
+		: 70;
+	_brightnessGroup = std::make_shared<Ui::RadiobuttonGroup>(initial);
+
+	for (auto percent = 100; percent >= 10; percent -= 10) {
+		const auto button = Ui::CreateChild<Ui::Radiobutton>(
+			this,
+			_brightnessGroup,
+			percent,
+			BrightnessLabel(percent),
+			st::autolockButton);
+		button->moveToLeft(st::boxPadding.left(), y);
+		y += button->heightNoMargins() + st::boxOptionListSkip;
+	}
+	showChildren();
+	setDimensions(st::boxWidth, y);
+}
+
+QString PreviewBrightnessBox::BrightnessLabel(int percent) {
+	return tr::lng_settings_preview_brightness_percent(
+		tr::now,
+		lt_percent,
+		QString::number(percent));
+}
+
+void PreviewBrightnessBox::save() {
+	SetEnhancedValue("preview_brightness", _brightnessGroup->current());
+	EnhancedSettings::Write();
+	closeBox();
+}
