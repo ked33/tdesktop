@@ -61,6 +61,7 @@ private:
 	void paintSaveMsg(QRect outer) override;
 	void paintChapter(QRect outer) override;
 	void paintSpeedBoost(QRect outer) override;
+	void paintWheelHint(QRect outer) override;
 	void paintControlsStart() override;
 	void paintControl(
 		Over control,
@@ -149,6 +150,7 @@ private:
 	Ui::GL::Image _saveMsgImage;
 	Ui::GL::Image _chapterImage;
 	Ui::GL::Image _speedBoostImage;
+	Ui::GL::Image _wheelHintImage;
 	Ui::GL::Image _footerImage;
 	Ui::GL::Image _captionImage;
 	Ui::GL::Image _groupThumbsImage;

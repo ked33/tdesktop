@@ -789,6 +789,68 @@ namespace Settings {
 			brightnessInner,
 			tr::lng_settings_preview_brightness_desc());
 
+		const auto wheelHolder
+			= std::make_shared<Ui::SlideWrap<Ui::VerticalLayout>*>(nullptr);
+
+		AddButtonWithIcon(
+				container,
+				tr::lng_settings_media_wheel_control(),
+				st::settingsButtonNoIcon
+		)->toggleOn(
+				rpl::single(
+					GetEnhancedBool("media_viewer_wheel_control_enabled"))
+		)->toggledValue(
+		) | rpl::filter([](bool enabled) {
+			return (enabled
+				!= GetEnhancedBool("media_viewer_wheel_control_enabled"));
+		}) | rpl::on_next([=](bool enabled) {
+			SetEnhancedValue("media_viewer_wheel_control_enabled", enabled);
+			EnhancedSettings::Write();
+			if (*wheelHolder) {
+				(*wheelHolder)->toggle(enabled, anim::type::normal);
+			}
+		}, container->lifetime());
+
+		const auto wheelWrap = container->add(
+				object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+						container,
+						object_ptr<Ui::VerticalLayout>(container)));
+		*wheelHolder = wheelWrap;
+		const auto wheelInner = wheelWrap->entity();
+
+		wheelWrap->toggle(
+			GetEnhancedBool("media_viewer_wheel_control_enabled"),
+			anim::type::instant);
+
+		auto mediaBrightnessValue = rpl::single(
+				MediaViewerBrightnessBox::BrightnessLabel(
+					GetEnhancedInt("media_viewer_brightness"))
+		) | rpl::then(
+				_MediaViewerBrightnessChanged.events()
+		) | rpl::map([] {
+			return MediaViewerBrightnessBox::BrightnessLabel(
+				GetEnhancedInt("media_viewer_brightness"));
+		});
+
+		auto mediaBrightnessBtn = AddButtonWithLabel(
+				wheelInner,
+				tr::lng_settings_media_viewer_brightness(),
+				std::move(mediaBrightnessValue),
+				st::settingsButtonNoIcon);
+		mediaBrightnessBtn->events(
+		) | rpl::on_next([=](not_null<QEvent*> e) {
+			if (e->type() == QEvent::UpdateLater) {
+				_MediaViewerBrightnessChanged.fire({});
+			}
+		}, container->lifetime());
+		mediaBrightnessBtn->addClickHandler([=] {
+			Ui::show(Box<MediaViewerBrightnessBox>());
+		});
+
+		AddDividerText(
+			wheelInner,
+			tr::lng_settings_media_wheel_control_desc());
+
 		AddSkip(container);
 	}
 
