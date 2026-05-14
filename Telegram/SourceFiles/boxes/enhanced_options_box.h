@@ -142,3 +142,20 @@ private:
 	std::shared_ptr<Ui::RadiobuttonGroup> _bitrateGroup;
 
 };
+
+class PreviewBrightnessBox : public Ui::BoxContent {
+public:
+	PreviewBrightnessBox(QWidget *parent);
+
+	static QString BrightnessLabel(int percent);
+
+protected:
+	void prepare() override;
+
+private:
+	void save();
+
+	object_ptr<Ui::FlatLabel> _description = { nullptr };
+	std::shared_ptr<Ui::RadiobuttonGroup> _brightnessGroup;
+
+};
