@@ -36,6 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/media/history_view_document.h" // TTLVoiceStops
 #include "history/view/media/history_view_media_common.h"
 #include "history/view/media/history_view_media_spoiler.h"
+#include "history/view/media/history_view_preview_brightness.h"
 #include "window/window_session_controller.h"
 #include "core/application.h" // Application::showDocument.
 #include "core/core_settings.h"
@@ -1087,18 +1088,22 @@ void Gif::validateThumbCache(
 			&& (normal->height() < kUseNonBlurredThreshold))
 		: !videothumb;
 	const auto ratio = style::DevicePixelRatio();
+	const auto brightnessKey = PreviewBrightnessKey();
 	if (_thumbCache.size() == (outer * ratio)
 		&& _thumbCacheRounding == rounding
 		&& _thumbCacheBlurred == blurred
-		&& _thumbIsEllipse == isEllipse) {
+		&& _thumbIsEllipse == isEllipse
+		&& _thumbCacheBrightness == brightnessKey) {
 		return;
 	}
 	auto cache = prepareThumbCache(outer);
+	ApplyPreviewBrightness(cache);
 	_thumbCache = isEllipse
 		? Images::Circle(std::move(cache))
 		: Images::Round(std::move(cache), MediaRoundingMask(rounding));
 	_thumbCacheRounding = rounding;
 	_thumbCacheBlurred = blurred;
+	_thumbCacheBrightness = brightnessKey;
 }
 
 QImage Gif::prepareThumbCache(QSize outer) const {

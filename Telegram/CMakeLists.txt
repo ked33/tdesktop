@@ -915,6 +915,8 @@ PRIVATE
     history/view/media/history_view_no_forwards_request.h
     history/view/media/history_view_photo.cpp
     history/view/media/history_view_photo.h
+    history/view/media/history_view_preview_brightness.cpp
+    history/view/media/history_view_preview_brightness.h
     history/view/media/history_view_poll.cpp
     history/view/media/history_view_poll.h
     history/view/media/menu/history_view_poll_menu.cpp

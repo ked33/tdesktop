@@ -729,6 +729,66 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
+		const auto brightnessToggleHolder
+			= std::make_shared<Ui::SlideWrap<Ui::VerticalLayout>*>(nullptr);
+
+		AddButtonWithIcon(
+				container,
+				tr::lng_settings_preview_brightness(),
+				st::settingsButtonNoIcon
+		)->toggleOn(
+				rpl::single(GetEnhancedBool("preview_brightness_enabled"))
+		)->toggledValue(
+		) | rpl::filter([](bool enabled) {
+			return (enabled != GetEnhancedBool("preview_brightness_enabled"));
+		}) | rpl::on_next([=](bool enabled) {
+			SetEnhancedValue("preview_brightness_enabled", enabled);
+			EnhancedSettings::Write();
+			if (*brightnessToggleHolder) {
+				(*brightnessToggleHolder)->toggle(enabled, anim::type::normal);
+			}
+		}, container->lifetime());
+
+		const auto brightnessWrap = container->add(
+				object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+						container,
+						object_ptr<Ui::VerticalLayout>(container)));
+		*brightnessToggleHolder = brightnessWrap;
+		const auto brightnessInner = brightnessWrap->entity();
+
+		brightnessWrap->toggle(
+			GetEnhancedBool("preview_brightness_enabled"),
+			anim::type::instant);
+
+		auto brightnessValue = rpl::single(
+				PreviewBrightnessBox::BrightnessLabel(
+					GetEnhancedInt("preview_brightness"))
+		) | rpl::then(
+				_PreviewBrightnessChanged.events()
+		) | rpl::map([] {
+			return PreviewBrightnessBox::BrightnessLabel(
+				GetEnhancedInt("preview_brightness"));
+		});
+
+		auto brightnessBtn = AddButtonWithLabel(
+				brightnessInner,
+				tr::lng_settings_preview_brightness_value(),
+				std::move(brightnessValue),
+				st::settingsButtonNoIcon);
+		brightnessBtn->events(
+		) | rpl::on_next([=](not_null<QEvent*> e) {
+			if (e->type() == QEvent::UpdateLater) {
+				_PreviewBrightnessChanged.fire({});
+			}
+		}, container->lifetime());
+		brightnessBtn->addClickHandler([=] {
+			Ui::show(Box<PreviewBrightnessBox>());
+		});
+
+		AddDividerText(
+			brightnessInner,
+			tr::lng_settings_preview_brightness_desc());
+
 		AddSkip(container);
 	}
 

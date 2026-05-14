@@ -8195,6 +8195,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_show_view_as_json" = "Show View As JSON";
 "lng_settings_hide_counter" = "Hide online users counter";
 "lng_settings_hide_stories" = "Hide Stories";
+"lng_settings_preview_brightness" = "Reduce chat preview brightness";
+"lng_settings_preview_brightness_desc" = "Darken still photos and video preview thumbnails in the chat list. Does not affect playback or media viewer.";
+"lng_settings_preview_brightness_value" = "Brightness level";
+"lng_settings_preview_brightness_title" = "Preview brightness";
+"lng_settings_preview_brightness_percent" = "{percent}%";
 "lng_settings_translate_to_tc" = "使用正體中文翻譯訊息";
 "lng_settings_screen_shot_mode" = "Screenshot Mode";
 "lng_settings_restart_hint" = "WARNING: Changing options that are colored in red will take effect only after the app restarts.";

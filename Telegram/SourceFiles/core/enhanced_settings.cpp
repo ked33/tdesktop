@@ -70,6 +70,11 @@ namespace EnhancedSettings {
 			ensureBool(qsl("show_message_context_reschedule"), true);
 			ensureString(qsl("mpv_path"), QString());
 			ensureString(qsl("flood_premium_wait_override_ms"), QString());
+
+			ensureBool(qsl("preview_brightness_enabled"), false);
+			if (!gEnhancedOptions.contains(qsl("preview_brightness"))) {
+				gEnhancedOptions.insert(qsl("preview_brightness"), 70);
+			}
 		}
 
 		QString DefaultFilePath() {
@@ -404,6 +409,8 @@ namespace EnhancedSettings {
 		settings.insert(qsl("mpv_path"), "");
 		settings.insert(qsl("flood_premium_wait_override_ms"), "");
 		settings.insert(qsl("update_url"), "");
+		settings.insert(qsl("preview_brightness_enabled"), false);
+		settings.insert(qsl("preview_brightness"), 70);
 
 		auto document = QJsonDocument();
 		document.setObject(settings);
@@ -485,6 +492,12 @@ namespace EnhancedSettings {
 			qsl("flood_premium_wait_override_ms"),
 			GetEnhancedString("flood_premium_wait_override_ms"));
 		settings.insert(qsl("update_url"), GetEnhancedString("update_url"));
+		settings.insert(
+			qsl("preview_brightness_enabled"),
+			GetEnhancedBool("preview_brightness_enabled"));
+		settings.insert(
+			qsl("preview_brightness"),
+			GetEnhancedInt("preview_brightness"));
 
 		auto document = QJsonDocument();
 		document.setObject(settings);

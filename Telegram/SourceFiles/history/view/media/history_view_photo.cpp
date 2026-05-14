@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_cursor_state.h"
 #include "history/view/media/history_view_media_common.h"
 #include "history/view/media/history_view_media_spoiler.h"
+#include "history/view/media/history_view_preview_brightness.h"
 #include "lang/lang_keys.h"
 #include "media/streaming/media_streaming_instance.h"
 #include "media/streaming/media_streaming_player.h"
@@ -497,16 +498,21 @@ void Photo::validateImageCache(
 	const auto large = _dataMedia->image(PhotoSize::Large);
 	const auto ratio = style::DevicePixelRatio();
 	const auto blurredValue = large ? 0 : 1;
+	const auto brightnessKey = PreviewBrightnessKey();
 	if (_imageCache.size() == (outer * ratio)
 		&& _imageCacheRounding == rounding
-		&& _imageCacheBlurred == blurredValue) {
+		&& _imageCacheBlurred == blurredValue
+		&& _imageCacheBrightness == brightnessKey) {
 		return;
 	}
+	auto prepared = prepareImageCache(outer);
+	ApplyPreviewBrightness(prepared);
 	_imageCache = Images::Round(
-		prepareImageCache(outer),
+		std::move(prepared),
 		MediaRoundingMask(rounding));
 	_imageCacheRounding = rounding;
 	_imageCacheBlurred = blurredValue;
+	_imageCacheBrightness = brightnessKey;
 }
 
 void Photo::validateSpoilerImageCache(
@@ -515,14 +521,19 @@ void Photo::validateSpoilerImageCache(
 	Expects(_spoiler != nullptr);
 
 	const auto ratio = style::DevicePixelRatio();
+	const auto brightnessKey = PreviewBrightnessKey();
 	if (_spoiler->background.size() == (outer * ratio)
-		&& _spoiler->backgroundRounding == rounding) {
+		&& _spoiler->backgroundRounding == rounding
+		&& _spoilerCacheBrightness == brightnessKey) {
 		return;
 	}
+	auto prepared = prepareImageCacheWithLarge(outer, nullptr);
+	ApplyPreviewBrightness(prepared);
 	_spoiler->background = Images::Round(
-		prepareImageCacheWithLarge(outer, nullptr),
+		std::move(prepared),
 		MediaRoundingMask(rounding));
 	_spoiler->backgroundRounding = rounding;
+	_spoilerCacheBrightness = brightnessKey;
 }
 
 QImage Photo::prepareImageCache(QSize outer) const {

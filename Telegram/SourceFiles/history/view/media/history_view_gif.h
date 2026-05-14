@@ -248,6 +248,7 @@ private:
 	mutable QImage _seekLastFrame;
 	mutable TimeId _videoTimestamp = 0;
 	mutable std::optional<Ui::BubbleRounding> _thumbCacheRounding;
+	mutable int _thumbCacheBrightness = 0;
 	mutable bool _thumbCacheBlurred : 1 = false;
 	mutable bool _thumbIsEllipse : 1 = false;
 	mutable bool _pollingStory : 1 = false;
