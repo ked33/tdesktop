@@ -931,11 +931,16 @@ void Photo::validateGroupedCache(
 	const auto width = geometry.width();
 	const auto height = geometry.height();
 	const auto options = (loaded ? Option() : Option::Blur);
+	const auto brightnessRaw = PreviewBrightnessKey();
+	const auto brightnessSlot = (brightnessRaw < 0)
+		? uint64(0)
+		: uint64(std::clamp(brightnessRaw / 10, 1, 10));
 	const auto key = (uint64(width) << 48)
 		| (uint64(height) << 32)
 		| (uint64(options) << 16)
 		| (uint64(rounding.key()) << 8)
-		| (uint64(loadLevel));
+		| (brightnessSlot << 4)
+		| (uint64(loadLevel) & 0xF);
 	if (*cacheKey == key) {
 		return;
 	}
@@ -962,6 +967,7 @@ void Photo::validateGroupedCache(
 		image->original(),
 		pixSize * ratio,
 		{ .options = options, .outer = { width, height } });
+	ApplyPreviewBrightness(scaled);
 	auto rounded = Images::Round(
 		std::move(scaled),
 		MediaRoundingMask(rounding));
