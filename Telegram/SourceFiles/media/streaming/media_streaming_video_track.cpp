@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_debug.h"
 #include "ffmpeg/ffmpeg_utility.h"
 #include "media/audio/media_audio.h"
+#include "media/media_common.h"
 #include "base/concurrent_timer.h"
 #include "core/crash_reports.h"
 #include "base/debug_log.h"
@@ -18,11 +19,12 @@ namespace Media {
 namespace Streaming {
 namespace {
 
-constexpr auto kMaxFrameArea = 3840 * 2160; // usual 4K
 constexpr auto kDisplaySkipped = crl::time(-1);
 constexpr auto kFinishedPosition = std::numeric_limits<crl::time>::max();
 constexpr auto kSequentialSeekReadyTolerance = 5 * crl::time(1000);
 static_assert(kDisplaySkipped != kTimeUnknown);
+
+using ::Media::ValidFrameSize;
 
 [[nodiscard]] bool AllowApproximateSequentialSeekReady(
 		const PlaybackOptions &options,
@@ -47,6 +49,9 @@ static_assert(kDisplaySkipped != kTimeUnknown);
 	//}
 
 	auto result = FFmpeg::CreateFrameStorage(data.size);
+	if (result.isNull()) {
+		return QImage();
+	}
 	const auto swscale = FFmpeg::MakeSwscalePointer(
 		data.size,
 		(format == FrameFormat::YUV420
@@ -386,7 +391,11 @@ auto VideoTrackObject::readFrame(not_null<Frame*> frame) -> FrameResult {
 		return FrameResult::Waiting;
 	}
 	const auto decodedFrame = _stream.decodedFrame.get();
-	if (int64(decodedFrame->width) * decodedFrame->height > kMaxFrameArea) {
+	const auto valid = ValidFrameSize(
+		decodedFrame->width,
+		decodedFrame->height,
+		kMaxFrameArea);
+	if (!valid) {
 		fail(Error::InvalidData);
 		return FrameResult::Error;
 	}
@@ -674,7 +683,11 @@ bool VideoTrackObject::tryReadFirstFrame(FFmpeg::Packet &&packet) {
 
 bool VideoTrackObject::processFirstFrame() {
 	const auto decodedFrame = _stream.decodedFrame.get();
-	if (int64(decodedFrame->width) * decodedFrame->height > kMaxFrameArea) {
+	const auto valid = ValidFrameSize(
+		decodedFrame->width,
+		decodedFrame->height,
+		kMaxFrameArea);
+	if (!valid) {
 		return false;
 	} else if (decodedFrame->hw_frames_ctx) {
 		if (!_stream.transferredFrame) {
