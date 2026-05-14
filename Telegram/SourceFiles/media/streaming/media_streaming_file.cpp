@@ -777,6 +777,7 @@ Stream File::Context::initStream(
 		result.codec = FFmpeg::MakeCodecPointer({
 			.stream = info,
 			.hwAllowed = options.hwAllow,
+			.videoMaxArea = kMaxFrameArea,
 		});
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream video codec ready=%1 index=%2.")
 			.arg(result.codec ? 1 : 0)
