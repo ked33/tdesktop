@@ -8202,8 +8202,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_preview_brightness_percent" = "{percent}%";
 "lng_settings_media_wheel_control" = "Enhanced media viewer wheel control";
 "lng_settings_media_wheel_control_desc" = "Divides the viewer into 3 columns. Top-left scroll adjusts brightness, bottom-left adjusts volume, middle switches media, right seeks the video.";
-"lng_settings_media_viewer_brightness" = "Media viewer brightness";
-"lng_settings_media_viewer_brightness_title" = "Media viewer brightness";
 "lng_media_viewer_brightness_osd" = "Brightness {percent}%";
 "lng_media_viewer_volume_osd" = "Volume {percent}%";
 "lng_settings_translate_to_tc" = "使用正體中文翻譯訊息";
