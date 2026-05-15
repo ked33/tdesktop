@@ -634,13 +634,6 @@ OverlayWidget::OverlayWidget()
 		_wheelHintAnimation.start([=] { updateWheelHint(); }, 1., 0., delay);
 	});
 
-	{
-		const auto stored = GetEnhancedInt("media_viewer_brightness");
-		_mediaViewerBrightness = (stored >= 10 && stored <= 100)
-			? stored
-			: 100;
-	}
-
 	_speedBoostHoldTimer.setCallback([=] {
 		startSpeedBoost();
 	});
@@ -6485,21 +6478,14 @@ void OverlayWidget::adjustMediaViewerBrightness(int deltaPercent) {
 		_mediaViewerBrightness + deltaPercent,
 		10,
 		100);
-	if (next == _mediaViewerBrightness) {
-		showWheelHint(tr::lng_media_viewer_brightness_osd(
-			tr::now,
-			lt_percent,
-			QString::number(next)));
-		return;
+	if (next != _mediaViewerBrightness) {
+		_mediaViewerBrightness = next;
+		update();
 	}
-	_mediaViewerBrightness = next;
-	SetEnhancedValue("media_viewer_brightness", next);
-	EnhancedSettings::Write();
 	showWheelHint(tr::lng_media_viewer_brightness_osd(
 		tr::now,
 		lt_percent,
 		QString::number(next)));
-	update();
 }
 
 void OverlayWidget::adjustMediaViewerVolume(float64 delta) {
