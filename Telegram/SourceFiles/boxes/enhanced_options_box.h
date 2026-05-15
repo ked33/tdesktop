@@ -159,20 +159,3 @@ private:
 	std::shared_ptr<Ui::RadiobuttonGroup> _brightnessGroup;
 
 };
-
-class MediaViewerBrightnessBox : public Ui::BoxContent {
-public:
-	MediaViewerBrightnessBox(QWidget *parent);
-
-	static QString BrightnessLabel(int percent);
-
-protected:
-	void prepare() override;
-
-private:
-	void save();
-
-	object_ptr<Ui::FlatLabel> _description = { nullptr };
-	std::shared_ptr<Ui::RadiobuttonGroup> _brightnessGroup;
-
-};
