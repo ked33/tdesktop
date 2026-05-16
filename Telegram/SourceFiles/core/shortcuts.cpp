@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_controller.h"
 #include "media/player/media_player_instance.h"
 #include "platform/platform_specific.h"
+#include "settings.h"
 
 #include <QAction>
 #include <QShortcut>
@@ -838,13 +839,60 @@ bool MarkChatSwitchKeyPressHandled(Qt::Key key, bool handled) {
 }
 
 bool CancelChatSwitch(Qt::Key result) {
+	const auto started = ChatSwitchStarted;
 	ChatSwitchModifier = Qt::Key();
-	if (!ChatSwitchStarted) {
-		return false;
-	}
 	ChatSwitchStarted = false;
 	delete base::take(ChatSwitchFilter);
+	for (auto &key : ChatSwitchKeyPressHandled) {
+		key = Qt::Key();
+	}
+	if (!started) {
+		return false;
+	}
 	ChatSwitchStream.fire({ .action = result });
+	return true;
+}
+
+bool MatchesPersistentChatSwitch(not_null<QKeyEvent*> event) {
+	if (event->isAutoRepeat()) {
+		return false;
+	}
+	const auto configured = GetEnhancedString(
+		u"chat_switch_persistent_shortcut"_q).trimmed();
+	if (configured.isEmpty()) {
+		return false;
+	}
+	const auto expected = QKeySequence(
+		configured,
+		QKeySequence::PortableText);
+	if (expected.isEmpty()) {
+		return false;
+	}
+	const auto key = Qt::Key(event->key());
+	if (key == Qt::Key_Control
+		|| key == Qt::Key_Shift
+		|| key == Qt::Key_Alt
+		|| key == Qt::Key_Meta) {
+		return false;
+	}
+	const auto modifiers = event->modifiers()
+		& (Qt::ControlModifier
+			| Qt::ShiftModifier
+			| Qt::AltModifier
+			| Qt::MetaModifier);
+	const auto current = QKeySequence(int(key) | int(modifiers));
+	return (expected.matches(current) == QKeySequence::ExactMatch);
+}
+
+bool StartPersistentChatSwitch(not_null<QKeyEvent*> event) {
+	if (!MatchesPersistentChatSwitch(event)) {
+		return false;
+	}
+	CancelChatSwitch(Qt::Key_Escape);
+	ChatSwitchStream.fire({
+		.action = Qt::Key(),
+		.started = true,
+	});
 	return true;
 }
 
@@ -896,6 +944,10 @@ bool HandleEvent(
 
 rpl::producer<ChatSwitchRequest> ChatSwitchRequests() {
 	return ChatSwitchStream.events();
+}
+
+void ResetChatSwitchState() {
+	CancelChatSwitch(Qt::Key_Escape);
 }
 
 bool HandlePossibleChatSwitch(not_null<QKeyEvent*> event) {
@@ -970,6 +1022,9 @@ bool HandlePossibleChatSwitch(not_null<QKeyEvent*> event) {
 			}
 		}
 	} else if (type == QEvent::KeyPress) {
+		if (StartPersistentChatSwitch(event)) {
+			return true;
+		}
 		return CheckChatSwitchEvent(Qt::Key(event->key()));
 	} else if (type == QEvent::KeyRelease) {
 		const auto key = Qt::Key(event->key());
