@@ -142,9 +142,10 @@ bool Launch(Command command);
 bool HandleEvent(not_null<QObject*> object, not_null<QShortcutEvent*> event);
 
 bool HandlePossibleChatSwitch(not_null<QKeyEvent*> event);
+void ResetChatSwitchState();
 
 struct ChatSwitchRequest {
-	Qt::Key action = Qt::Key_Tab; // Key_Tab, Key_Backtab or Key_Escape.
+	Qt::Key action = Qt::Key_Tab; // Key_Tab, Key_Backtab, Key_Escape or empty.
 	bool started = false;
 };
 [[nodiscard]] rpl::producer<ChatSwitchRequest> ChatSwitchRequests();
