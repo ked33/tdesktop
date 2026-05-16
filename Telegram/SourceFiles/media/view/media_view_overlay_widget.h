@@ -533,6 +533,7 @@ private:
 	void updateSpeedBoost();
 
 	[[nodiscard]] float64 mediaViewerBrightnessFactor() const;
+	void resetMediaViewerAdjustments();
 	void adjustMediaViewerBrightness(int deltaPercent);
 	void adjustMediaViewerVolume(float64 delta);
 	void showWheelHint(const QString &text);

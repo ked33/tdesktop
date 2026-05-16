@@ -4169,7 +4169,8 @@ void OverlayWidget::show(OpenRequest request) {
 	const auto contextPeer = request.peer();
 	const auto contextTopicRootId = request.topicRootId();
 	_drawButtonEnabled = request.showDrawButton();
-	if (!request.continueStreaming() && !request.startTime() && !_reShow) {
+	const auto resetAdjustments = !request.continueStreaming() && !_reShow;
+	if (resetAdjustments && !request.startTime()) {
 		if (_message && (_message == contextItem)) {
 			return close();
 		} else if (_user && (_user == contextPeer)) {
@@ -4178,11 +4179,9 @@ void OverlayWidget::show(OpenRequest request) {
 				return close();
 			}
 		}
-		_mediaViewerBrightness = 100;
-		if (GetEnhancedBool("media_viewer_wheel_control_enabled")) {
-			Core::App().settings().setVideoVolume(1.);
-			Core::App().saveSettingsDelayed();
-		}
+	}
+	if (resetAdjustments) {
+		resetMediaViewerAdjustments();
 	}
 	if (isHidden() || isMinimized()) {
 		// Count top notch on macOS before counting geometry.
@@ -6476,6 +6475,14 @@ float64 OverlayWidget::mediaViewerBrightnessFactor() const {
 	}
 	const auto percent = std::clamp(_mediaViewerBrightness, 10, 100);
 	return percent / 100.;
+}
+
+void OverlayWidget::resetMediaViewerAdjustments() {
+	_mediaViewerBrightness = 100;
+	if (GetEnhancedBool("media_viewer_wheel_control_enabled")) {
+		_lastPositiveVolume = 1.;
+		playbackControlsVolumeChanged(1.);
+	}
 }
 
 void OverlayWidget::adjustMediaViewerBrightness(int deltaPercent) {
