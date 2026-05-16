@@ -1939,6 +1939,7 @@ void SessionController::setupShortcuts() {
 			const auto close = [this, raw = _chatSwitchProcess.get()] {
 				if (_chatSwitchProcess.get() == raw) {
 					base::take(_chatSwitchProcess);
+					Shortcuts::ResetChatSwitchState();
 				}
 			};
 

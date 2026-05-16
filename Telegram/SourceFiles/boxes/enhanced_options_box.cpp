@@ -19,6 +19,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/enhanced_settings.h"
 #include "settings/settings_enhanced.h"
 
+#include <QKeySequence>
+
 NetBoostBox::NetBoostBox(QWidget *parent) {
 }
 
@@ -324,6 +326,67 @@ void FloodPremiumWaitBox::save() {
 		}
 	}
 	SetEnhancedValue("flood_premium_wait_override_ms", value);
+	EnhancedSettings::Write();
+	closeBox();
+}
+
+ChatSwitchShortcutBox::ChatSwitchShortcutBox(QWidget *parent)
+	: _shortcut(
+		this,
+		st::defaultInputField,
+		tr::lng_settings_chat_switch_shortcut_placeholder()) {
+}
+
+QString ChatSwitchShortcutBox::ShortcutLabel(const QString &value) {
+	const auto trimmed = value.trimmed();
+	if (trimmed.isEmpty()) {
+		return tr::lng_settings_chat_switch_shortcut_disabled(tr::now);
+	}
+	const auto sequence = QKeySequence(trimmed, QKeySequence::PortableText);
+	return sequence.isEmpty()
+		? trimmed
+		: sequence.toString(QKeySequence::NativeText);
+}
+
+void ChatSwitchShortcutBox::prepare() {
+	setTitle(tr::lng_settings_chat_switch_shortcut_title());
+
+	addButton(tr::lng_settings_save(), [=] { save(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+
+	_shortcut->setText(GetEnhancedString("chat_switch_persistent_shortcut"));
+	_shortcut->setMaxLength(64);
+
+	setDimensions(st::boxWidth, _shortcut->height());
+}
+
+void ChatSwitchShortcutBox::setInnerFocus() {
+	_shortcut->setFocusFast();
+}
+
+void ChatSwitchShortcutBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+
+	const auto width = st::boxWidth
+		- st::boxPadding.left()
+		- st::boxPadding.right();
+	_shortcut->resize(width, _shortcut->height());
+	_shortcut->moveToLeft(st::boxPadding.left(), 0);
+}
+
+void ChatSwitchShortcutBox::save() {
+	const auto value = _shortcut->getLastText().trimmed();
+	auto stored = QString();
+	if (!value.isEmpty()) {
+		const auto sequence = QKeySequence(value, QKeySequence::PortableText);
+		if (sequence.isEmpty()) {
+			Ui::Toast::Show(
+				tr::lng_settings_chat_switch_shortcut_invalid(tr::now));
+			return;
+		}
+		stored = sequence.toString(QKeySequence::PortableText).toLower();
+	}
+	SetEnhancedValue("chat_switch_persistent_shortcut", stored);
 	EnhancedSettings::Write();
 	closeBox();
 }

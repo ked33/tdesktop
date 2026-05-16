@@ -70,6 +70,7 @@ namespace EnhancedSettings {
 			ensureBool(qsl("show_message_context_reschedule"), true);
 			ensureString(qsl("mpv_path"), QString());
 			ensureString(qsl("flood_premium_wait_override_ms"), QString());
+			ensureString(qsl("chat_switch_persistent_shortcut"), QString());
 
 			ensureBool(qsl("preview_brightness_enabled"), false);
 			if (!gEnhancedOptions.contains(qsl("preview_brightness"))) {
@@ -410,6 +411,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("screenshot_mode"), false);
 		settings.insert(qsl("mpv_path"), "");
 		settings.insert(qsl("flood_premium_wait_override_ms"), "");
+		settings.insert(qsl("chat_switch_persistent_shortcut"), "");
 		settings.insert(qsl("update_url"), "");
 		settings.insert(qsl("preview_brightness_enabled"), false);
 		settings.insert(qsl("preview_brightness"), 70);
@@ -494,6 +496,9 @@ namespace EnhancedSettings {
 		settings.insert(
 			qsl("flood_premium_wait_override_ms"),
 			GetEnhancedString("flood_premium_wait_override_ms"));
+		settings.insert(
+			qsl("chat_switch_persistent_shortcut"),
+			GetEnhancedString("chat_switch_persistent_shortcut"));
 		settings.insert(qsl("update_url"), GetEnhancedString("update_url"));
 		settings.insert(
 			qsl("preview_brightness_enabled"),

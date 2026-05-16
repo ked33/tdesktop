@@ -126,6 +126,26 @@ private:
 
 };
 
+class ChatSwitchShortcutBox : public Ui::BoxContent {
+public:
+	ChatSwitchShortcutBox(QWidget *parent);
+
+	static QString ShortcutLabel(const QString &value);
+
+protected:
+	void prepare() override;
+
+	void setInnerFocus() override;
+
+	void resizeEvent(QResizeEvent *e) override;
+
+private:
+	void save();
+
+	object_ptr<Ui::InputField> _shortcut = { nullptr };
+
+};
+
 class BitrateController : public Ui::BoxContent {
 public:
 	BitrateController(QWidget *parent);
