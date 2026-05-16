@@ -434,6 +434,7 @@ private:
 	void addToggleFolder();
 	void addToggleUnreadMark();
 	void addToggleArchive();
+	void addArchiveOnly();
 	void addClearHistory();
 	void addDeleteOwnMessages();
 	void addDeleteChat();
@@ -917,6 +918,25 @@ void Filler::addToggleArchive() {
 		Data::HistoryUpdate::Flag::Folder
 	) | rpl::map(label);
 	SetActionText(archiveAction, std::move(actionText));
+}
+
+void Filler::addArchiveOnly() {
+	if (!_peer
+		|| _topic
+		|| _request.section == Section::SubsectionTabsMenu) {
+		return;
+	}
+	const auto peer = _peer;
+	const auto history = _request.key.history();
+	if (!CanArchive(history, peer) || IsArchived(history)) {
+		return;
+	}
+	_addAction(
+		tr::lng_archived_add(tr::now),
+		[=, show = _controller->uiShow()] {
+			ToggleHistoryArchived(show, history, true);
+		},
+		&st::menuIconArchive);
 }
 
 void Filler::addClearHistory() {
@@ -2040,6 +2060,7 @@ void Filler::fillContextMenuActions() {
 void Filler::fillHistoryBackgroundActions() {
 	addRandomIdMessage();
 	addFirstMessage();
+	addArchiveOnly();
 	addToggleFolder();
 	addClearHistory();
 }
