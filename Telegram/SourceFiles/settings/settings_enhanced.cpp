@@ -653,6 +653,32 @@ namespace Settings {
 		AddSkip(container);
 		AddSubsectionTitle(container, tr::lng_settings_other());
 
+		const auto currentChatSwitchShortcutLabel = [] {
+			return ChatSwitchShortcutBox::ShortcutLabel(
+				GetEnhancedString("chat_switch_persistent_shortcut"));
+		};
+		auto chatSwitchShortcutValue = rpl::single(
+			currentChatSwitchShortcutLabel()
+		) | rpl::then(
+			_ChatSwitchShortcutChanged.events()
+		) | rpl::map([=] {
+			return currentChatSwitchShortcutLabel();
+		});
+		auto chatSwitchShortcutButton = AddButtonWithLabel(
+			container,
+			tr::lng_settings_chat_switch_shortcut_title(),
+			std::move(chatSwitchShortcutValue),
+			st::settingsButtonNoIcon);
+		chatSwitchShortcutButton->events(
+		) | rpl::on_next([=](not_null<QEvent*> e) {
+			if (e->type() == QEvent::UpdateLater) {
+				_ChatSwitchShortcutChanged.fire({});
+			}
+		}, container->lifetime());
+		chatSwitchShortcutButton->addClickHandler([=] {
+			Ui::show(Box<ChatSwitchShortcutBox>());
+		});
+
 		auto hideBtn = AddButtonWithIcon(
 			container,
 			tr::lng_settings_hide_all_chats(),

@@ -36,6 +36,7 @@ namespace Settings {
 
 			rpl::event_stream<QString> _AlwaysDeleteChanged;
 			rpl::event_stream<QString> _BitrateChanged;
+			rpl::event_stream<QString> _ChatSwitchShortcutChanged;
 			rpl::event_stream<QString> _FloodPremiumWaitChanged;
 			rpl::event_stream<QString> _MpvPathChanged;
 			rpl::event_stream<QString> _PreviewBrightnessChanged;
