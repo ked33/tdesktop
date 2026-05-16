@@ -4178,6 +4178,11 @@ void OverlayWidget::show(OpenRequest request) {
 				return close();
 			}
 		}
+		_mediaViewerBrightness = 100;
+		if (GetEnhancedBool("media_viewer_wheel_control_enabled")) {
+			Core::App().settings().setVideoVolume(1.);
+			Core::App().saveSettingsDelayed();
+		}
 	}
 	if (isHidden() || isMinimized()) {
 		// Count top notch on macOS before counting geometry.
