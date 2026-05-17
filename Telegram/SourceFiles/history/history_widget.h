@@ -297,6 +297,7 @@ public:
 	void forwardSelected();
 	void forwardNoQuoteSelected();
 	void forwardSelectedToSavedMessages();
+	void quickCopySelected();
 	void confirmDeleteSelected();
 	void clearSelected();
 

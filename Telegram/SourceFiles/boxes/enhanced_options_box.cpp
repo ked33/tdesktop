@@ -330,6 +330,52 @@ void FloodPremiumWaitBox::save() {
 	closeBox();
 }
 
+QuickCopyTargetsBox::QuickCopyTargetsBox(QWidget *parent)
+	: _targets(
+		this,
+		st::defaultInputField,
+		tr::lng_settings_quick_copy_targets_placeholder()) {
+}
+
+QString QuickCopyTargetsBox::TargetsLabel(const QString &value) {
+	const auto trimmed = value.trimmed();
+	return trimmed.isEmpty()
+		? tr::lng_settings_quick_copy_targets_disabled(tr::now)
+		: trimmed;
+}
+
+void QuickCopyTargetsBox::prepare() {
+	setTitle(tr::lng_settings_quick_copy_targets_title());
+
+	addButton(tr::lng_settings_save(), [=] { save(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+
+	_targets->setText(GetEnhancedString("quick_copy_targets"));
+	_targets->setMaxLength(4096);
+
+	setDimensions(st::boxWidth, _targets->height());
+}
+
+void QuickCopyTargetsBox::setInnerFocus() {
+	_targets->setFocusFast();
+}
+
+void QuickCopyTargetsBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+
+	const auto width = st::boxWidth
+		- st::boxPadding.left()
+		- st::boxPadding.right();
+	_targets->resize(width, _targets->height());
+	_targets->moveToLeft(st::boxPadding.left(), 0);
+}
+
+void QuickCopyTargetsBox::save() {
+	SetEnhancedValue("quick_copy_targets", _targets->getLastText().trimmed());
+	EnhancedSettings::Write();
+	closeBox();
+}
+
 ChatSwitchShortcutBox::ChatSwitchShortcutBox(QWidget *parent)
 	: _shortcut(
 		this,

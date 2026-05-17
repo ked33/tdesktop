@@ -40,6 +40,7 @@ namespace Settings {
 			rpl::event_stream<QString> _FloodPremiumWaitChanged;
 			rpl::event_stream<QString> _MpvPathChanged;
 			rpl::event_stream<QString> _PreviewBrightnessChanged;
+			rpl::event_stream<QString> _QuickCopyTargetsChanged;
 
 			mtpRequestId _requestId = 0;
 		QList<int64> blockList;
