@@ -10,6 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "dialogs/ui/dialogs_quick_action_context.h"
 #include "ui/cached_round_corners.h"
 
+class QPainter;
+
 namespace style {
 struct DialogRow;
 struct VerifiedBadge;
@@ -84,6 +86,14 @@ extern const char kOptionDialogsMuteIcon[];
 [[nodiscard]] const style::icon *ChatTypeIcon(not_null<PeerData*> peer);
 
 [[nodiscard]] const style::VerifiedBadge &VerifiedStyle(
+	const PaintContext &context);
+void PaintNoForwardsUserpicBadge(
+	QPainter &p,
+	PeerData *peer,
+	int photoLeft,
+	int photoTop,
+	int outerWidth,
+	int photoSize,
 	const PaintContext &context);
 
 class RowPainter {

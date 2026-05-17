@@ -286,6 +286,14 @@ void BasicRow::paintUserpic(
 		const Ui::PaintContext &context,
 		bool hasUnreadBadgesAbove) const {
 	PaintUserpic(p, entry, peer, videoUserpic, _userpic, context);
+	Ui::PaintNoForwardsUserpicBadge(
+		p,
+		peer,
+		context.st->padding.left(),
+		context.st->padding.top(),
+		context.width,
+		context.st->photoSize,
+		context);
 }
 
 Row::Row(Key key, int index, int top) : _id(key), _top(top), _index(index) {
@@ -473,6 +481,15 @@ void Row::PaintCornerBadgeFrame(
 		}
 	}
 
+	Ui::PaintNoForwardsUserpicBadge(
+		q,
+		peer,
+		0,
+		0,
+		photoSize,
+		photoSize,
+		context);
+
 	if (subscribed) {
 		if (!hq) {
 			hq.emplace(q);
@@ -612,6 +629,8 @@ void Row::paintUserpic(
 	const auto paletteVersionReal = style::PaletteVersion();
 	const auto paletteVersion = (paletteVersionReal & ((1 << 17) - 1));
 	const auto active = context.active ? 1 : 0;
+	const auto selected = context.selected ? 1 : 0;
+	const auto noForwards = (peer && !peer->allowsForwarding()) ? 1 : 0;
 	const auto keyChanged = (_cornerBadgeUserpic->key != key)
 		|| (_cornerBadgeUserpic->paletteVersion != paletteVersion);
 	if (keyChanged) {
@@ -622,17 +641,21 @@ void Row::paintUserpic(
 	if (keyChanged
 		|| !_cornerBadgeUserpic->layersManager.isFinished()
 		|| _cornerBadgeUserpic->active != active
+		|| _cornerBadgeUserpic->selected != selected
 		|| _cornerBadgeUserpic->frameIndex != frameIndex
 		|| _cornerBadgeUserpic->storiesCount != storiesCount
 		|| _cornerBadgeUserpic->storiesUnreadCount != storiesUnreadCount
 		|| _cornerBadgeUserpic->storiesHasVideoStream != storiesHasVideoStream
+		|| _cornerBadgeUserpic->noForwards != noForwards
 		|| videoUserpic) {
 		_cornerBadgeUserpic->key = key;
 		_cornerBadgeUserpic->paletteVersion = paletteVersion;
 		_cornerBadgeUserpic->active = active;
+		_cornerBadgeUserpic->selected = selected;
 		_cornerBadgeUserpic->storiesCount = storiesCount;
 		_cornerBadgeUserpic->storiesUnreadCount = storiesUnreadCount;
 		_cornerBadgeUserpic->storiesHasVideoStream = storiesHasVideoStream;
+		_cornerBadgeUserpic->noForwards = noForwards;
 		_cornerBadgeUserpic->frameIndex = frameIndex;
 		_cornerBadgeUserpic->layersManager.markFrameShown();
 		PaintCornerBadgeFrame(
