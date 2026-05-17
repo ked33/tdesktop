@@ -1555,6 +1555,14 @@ void InnerWidget::paintPeerSearchResult(
 		context.st->padding.top(),
 		width(),
 		context.st->photoSize);
+	Ui::PaintNoForwardsUserpicBadge(
+		p,
+		userpicPeer,
+		context.st->padding.left(),
+		context.st->padding.top(),
+		width(),
+		context.st->photoSize,
+		context);
 
 	auto nameleft = context.st->nameLeft;
 	auto available = context.width - nameleft - context.st->padding.right();

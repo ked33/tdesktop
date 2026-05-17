@@ -34,6 +34,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "lottie/lottie_icon.h"
 #include "main/main_session.h"
+#include "settings.h"
 #include "storage/localstorage.h"
 #include "support/support_helper.h"
 #include "ui/empty_userpic.h"
@@ -64,6 +65,10 @@ base::options::toggle DialogsMuteIcon({
 });
 
 const auto kPsaBadgePrefix = "cloud_lng_badge_psa_";
+
+[[nodiscard]] int LeftUserpicPosition(int x, int outerWidth, int size) {
+	return rtl() ? (outerWidth - x - size) : x;
+}
 
 [[nodiscard]] bool ShowUserBotIcon(not_null<UserData*> user) {
 	return user->isBot()
@@ -494,6 +499,14 @@ void PaintRow(
 			from,
 			videoUserpic,
 			row->userpicView(),
+			context);
+		PaintNoForwardsUserpicBadge(
+			p,
+			from,
+			context.st->padding.left(),
+			context.st->padding.top(),
+			context.width,
+			context.st->photoSize,
 			context);
 	} else {
 		row->paintUserpic(
@@ -1046,6 +1059,43 @@ const style::VerifiedBadge &VerifiedStyle(const PaintContext &context) {
 		: context.selected
 		? st::dialogsVerifiedColorsOver
 		: st::dialogsVerifiedColors;
+}
+
+void PaintNoForwardsUserpicBadge(
+		QPainter &p,
+		PeerData *peer,
+		int photoLeft,
+		int photoTop,
+		int outerWidth,
+		int photoSize,
+		const PaintContext &context) {
+	if (!peer || peer->allowsForwarding()) {
+		return;
+	}
+	const auto size = st::dialogsNoForwardsBadgeSize;
+	const auto skip = st::dialogsNoForwardsBadgeSkip;
+	const auto left = LeftUserpicPosition(photoLeft, outerWidth, photoSize)
+		+ skip.x();
+	const auto top = photoTop + photoSize - skip.y() - size;
+	const auto rect = QRect(left, top, size, size);
+	const auto bg = context.active
+		? st::dialogsBgActive
+		: context.selected
+		? st::dialogsBgOver
+		: context.currentBg;
+
+	p.save();
+	p.setPen(Qt::NoPen);
+	p.setBrush(bg);
+	{
+		auto hq = PainterHighQualityEnabler(p);
+		p.drawEllipse(rect);
+	}
+	ThreeStateIcon(
+		st::dialogsNoForwardsBadgeIcon,
+		context.active,
+		context.selected).paintInCenter(p, rect);
+	p.restore();
 }
 
 void RowPainter::Paint(
