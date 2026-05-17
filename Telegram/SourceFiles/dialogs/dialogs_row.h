@@ -191,7 +191,9 @@ private:
 		uint32 storiesCount : 7 = 0;
 		uint32 storiesUnreadCount : 7 = 0;
 		uint32 storiesHasVideoStream : 1 = 0;
+		uint32 noForwards : 1 = 0;
 		uint32 active : 1 = 0;
+		uint32 selected : 1 = 0;
 	};
 
 	void setCornerBadgeShown(
