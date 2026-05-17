@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -142,6 +142,7 @@ public:
 	void repaintItem(const Element *view);
 	void repaintItem(const Element *view, QRect rect);
 
+	[[nodiscard]] bool usesGlobalSelectedMessages() const;
 	[[nodiscard]] bool canCopySelected() const;
 	[[nodiscard]] bool canDeleteSelected() const;
 
@@ -372,6 +373,17 @@ private:
 	QPoint mapPointToItem(QPoint p, const HistoryItem *item) const;
 	[[nodiscard]] HistoryView::SelectedQuote selectedQuote(
 		not_null<HistoryItem*> item) const;
+	[[nodiscard]] SelectedItems effectiveSelectedItems() const;
+	[[nodiscard]] SelectedItems globalSelectedItems() const;
+	void refreshGlobalSelectedMessages();
+	void clearSelectedLocally(bool onlyTextSelection = false);
+	[[nodiscard]] bool changesGlobalSelectedMessages(
+		const SelectedItems *items) const;
+	[[nodiscard]] int selectedItemsCount(const SelectedItems *items) const;
+	[[nodiscard]] int maxSelectedItemsFor(const SelectedItems *items) const;
+	void syncGlobalSelectedMessage(
+		not_null<HistoryItem*> item,
+		SelectAction action) const;
 
 	void showContextMenu(QContextMenuEvent *e, bool showFromTouch = false);
 	void cancelContextDownload(not_null<DocumentData*> document);

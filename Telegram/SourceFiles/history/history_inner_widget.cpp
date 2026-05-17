@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -445,6 +445,18 @@ HistoryInner::HistoryInner(
 	) | rpl::on_next(
 		[this](auto item) { itemRemoved(item); },
 		lifetime());
+	session().data().globalSelectedMessagesChanged(
+	) | rpl::on_next([this] {
+		if (usesGlobalSelectedMessages()) {
+			refreshGlobalSelectedMessages();
+		} else if (!_chooseForReportReason.has_value()
+			&& !_selected.empty()
+			&& _selected.cbegin()->second == FullSelection) {
+			_selected.clear();
+		}
+		_widget->updateTopBarSelection();
+		update();
+	}, lifetime());
 	session().data().viewRemoved(
 	) | rpl::on_next(
 		[this](auto view) { viewRemoved(view); },
@@ -521,6 +533,7 @@ HistoryInner::HistoryInner(
 		_scroll->scrollToY(_scroll->scrollTop() + d);
 	}, _scroll->lifetime());
 
+	refreshGlobalSelectedMessages();
 	setupSharingDisallowed();
 	setupSwipeReplyAndBack();
 }
@@ -588,8 +601,19 @@ void HistoryInner::setupSharingDisallowed() {
 	}
 
 	const auto clearIfRestricted = [=] {
-		if (hasSelectRestriction() && !getSelectedItems().empty()) {
-			_widget->clearSelected();
+		if (hasSelectRestriction()
+			&& !_selected.empty()
+			&& _selected.cbegin()->second == FullSelection) {
+			if (usesGlobalSelectedMessages()) {
+				const auto selected = _selected;
+				for (const auto &[item, _] : selected) {
+					session().data().removeGlobalSelectedMessage(
+						item->fullId());
+				}
+				clearSelectedLocally();
+			} else {
+				_widget->clearSelected();
+			}
 			if (_mouseAction == MouseAction::PrepareSelect) {
 				mouseActionCancel();
 			}
@@ -2456,16 +2480,14 @@ void HistoryInner::mouseActionFinish(
 		&& (button != Qt::RightButton)) {
 		auto i = _selected.find(_dragStateItem);
 		if (i != _selected.cend() && i->second == FullSelection) {
-			_selected.erase(i);
+			removeFromSelection(&_selected, _dragStateItem);
 			repaintItem(_mouseActionItem);
 		} else if ((i == _selected.cend())
 			&& !_dragStateItem->isService()
 			&& _dragStateItem->isRegular()
 			&& inSelectionMode().inSelectionMode) {
-			if (_selected.size() < MaxSelectedItems) {
-				_selected.emplace(_dragStateItem, FullSelection);
-				repaintItem(_mouseActionItem);
-			}
+			changeSelection(&_selected, _dragStateItem, SelectAction::Select);
+			repaintItem(_mouseActionItem);
 		} else if (_mouseCursorState == CursorState::Date
 			&& !hasSelectRestriction()
 			&& _dragStateItem->isRegular()
@@ -2476,8 +2498,7 @@ void HistoryInner::mouseActionFinish(
 				SelectAction::Select);
 			repaintItem(_mouseActionItem);
 		} else {
-			_selected.clear();
-			update();
+			clearSelected();
 		}
 	} else if (_mouseAction == MouseAction::Selecting) {
 		if (_dragSelFrom && _dragSelTo) {
@@ -2486,7 +2507,7 @@ void HistoryInner::mouseActionFinish(
 		} else if (!_selected.empty() && !_pressWasInactive) {
 			auto sel = _selected.cbegin()->second;
 			if (sel != FullSelection && sel.from == sel.to) {
-				_selected.clear();
+				clearSelectedLocally(true);
 				_controller->widget()->setInnerFocus();
 			}
 		}
@@ -3136,8 +3157,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				}
 				const auto start = (topToBottom ? nearestItem : toItem);
 				const auto end = (topToBottom ? toItem : nearestItem);
-				const auto left = MaxSelectedItems
-					- selectedState.count
+				const auto left = maxSelectedItemsFor(&_selected)
 					+ (topToBottom ? 0 : 1);
 				if (collectBetween(start, end, left).empty()) {
 					return;
@@ -3365,7 +3385,11 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				if (GetEnhancedBool("show_message_context_save_as")
 					&& selectedState.count > 0
 					&& !hasCopyRestrictionForSelected()) {
-					Menu::AddDownloadFilesAction(_menu, controller, _selected, this);
+					Menu::AddDownloadFilesAction(
+						_menu,
+						controller,
+						effectiveSelectedItems(),
+						this);
 				}
 				if (GetEnhancedBool("show_message_context_select")) {
 					_menu->addAction(tr::lng_context_clear_selection(tr::now), [=] {
@@ -3828,7 +3852,11 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				if (GetEnhancedBool("show_message_context_save_as")
 					&& selectedState.count > 0
 					&& !hasCopyRestrictionForSelected()) {
-					Menu::AddDownloadFilesAction(_menu, controller, _selected, this);
+					Menu::AddDownloadFilesAction(
+						_menu,
+						controller,
+						effectiveSelectedItems(),
+						this);
 				}
 				if (GetEnhancedBool("show_message_context_select")) {
 					_menu->addAction(tr::lng_context_clear_selection(tr::now), [=] {
@@ -4142,7 +4170,8 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 }
 
 bool HistoryInner::hasCopyRestriction(HistoryItem *item) const {
-	return !_peer->allowsForwarding() || (item && item->forbidsForward());
+	const auto peer = item ? item->history()->peer : _peer;
+	return !peer->allowsForwarding() || (item && item->forbidsForward());
 }
 
 bool HistoryInner::hasCopyMediaRestriction(
@@ -4154,9 +4183,10 @@ bool HistoryInner::showCopyRestriction(HistoryItem *item) {
 	if (!hasCopyRestriction(item)) {
 		return false;
 	}
-	_controller->showToast(_peer->isBroadcast()
+	const auto peer = item ? item->history()->peer : _peer;
+	_controller->showToast(peer->isBroadcast()
 		? tr::lng_error_nocopy_channel(tr::now)
-		: _peer->isUser()
+		: peer->isUser()
 		? tr::lng_error_nocopy_user(tr::now)
 		: tr::lng_error_nocopy_group(tr::now));
 	return true;
@@ -4166,20 +4196,18 @@ bool HistoryInner::showCopyMediaRestriction(not_null<HistoryItem*> item) {
 	if (!hasCopyMediaRestriction(item)) {
 		return false;
 	}
-	_controller->showToast(_peer->isBroadcast()
+	const auto peer = item->history()->peer;
+	_controller->showToast(peer->isBroadcast()
 		? tr::lng_error_nocopy_channel(tr::now)
-		: _peer->isUser()
+		: peer->isUser()
 		? tr::lng_error_nocopy_user(tr::now)
 		: tr::lng_error_nocopy_group(tr::now));
 	return true;
 }
 
 bool HistoryInner::hasCopyRestrictionForSelected() const {
-	if (hasCopyRestriction()) {
-		return true;
-	}
-	for (const auto &[item, selection] : _selected) {
-		if (item && item->forbidsForward()) {
+	for (const auto &[item, selection] : effectiveSelectedItems()) {
+		if (hasCopyRestriction(item)) {
 			return true;
 		}
 	}
@@ -4187,7 +4215,7 @@ bool HistoryInner::hasCopyRestrictionForSelected() const {
 }
 
 bool HistoryInner::showCopyRestrictionForSelected() {
-	for (const auto &[item, selection] : _selected) {
+	for (const auto &[item, selection] : effectiveSelectedItems()) {
 		if (showCopyRestriction(item)) {
 			return true;
 		}
@@ -4313,7 +4341,7 @@ void HistoryInner::resizeEvent(QResizeEvent *e) {
 }
 
 TextForMimeData HistoryInner::getSelectedText() const {
-	auto selected = _selected;
+	auto selected = effectiveSelectedItems();
 
 	if (_mouseAction == MouseAction::Selecting && _dragSelFrom && _dragSelTo) {
 		applyDragSelection(&selected);
@@ -4401,7 +4429,7 @@ void HistoryInner::keyPressEvent(QKeyEvent *e) {
 	}
 	if (e->key() == Qt::Key_Escape) {
 		_widget->escape();
-	} else if (e == QKeySequence::Copy && !_selected.empty()) {
+	} else if (e == QKeySequence::Copy && canCopySelected()) {
 		copySelectedText();
 #ifdef Q_OS_MAC
 	} else if (e->key() == Qt::Key_E
@@ -4841,7 +4869,7 @@ bool HistoryInner::focusNextPrevChild(bool next) {
 	if (_selected.empty()) {
 		return RpWidget::focusNextPrevChild(next);
 	} else {
-		clearSelected();
+		clearSelectedLocally();
 		return true;
 	}
 }
@@ -4916,13 +4944,108 @@ auto HistoryInner::nextItem(Element *view) -> Element* {
 }
 
 bool HistoryInner::canCopySelected() const {
-	return !_selected.empty();
+	return !effectiveSelectedItems().empty();
 }
 
 bool HistoryInner::canDeleteSelected() const {
 	const auto selectedState = getSelectionState();
 	return (selectedState.count > 0)
 		&& (selectedState.count == selectedState.canDeleteCount);
+}
+
+bool HistoryInner::usesGlobalSelectedMessages() const {
+	return GetEnhancedBool("keep_selected_messages_across_chats")
+		&& !_chooseForReportReason.has_value();
+}
+
+auto HistoryInner::globalSelectedItems() const -> SelectedItems {
+	auto result = SelectedItems();
+	if (!usesGlobalSelectedMessages()) {
+		return result;
+	}
+	for (const auto &id : session().data().globalSelectedMessages()) {
+		const auto item = session().data().message(id);
+		if (item && item->isRegular() && !item->isService()) {
+			result.emplace(item, FullSelection);
+		}
+	}
+	return result;
+}
+
+auto HistoryInner::effectiveSelectedItems() const -> SelectedItems {
+	if (!_selected.empty()
+		&& _selected.cbegin()->second != FullSelection) {
+		return _selected;
+	}
+	if (usesGlobalSelectedMessages()) {
+		return globalSelectedItems();
+	}
+	return _selected;
+}
+
+void HistoryInner::refreshGlobalSelectedMessages() {
+	if (!usesGlobalSelectedMessages()
+		|| (!_selected.empty()
+			&& _selected.cbegin()->second != FullSelection)) {
+		return;
+	}
+	auto selected = SelectedItems();
+	for (const auto &id : session().data().globalSelectedMessages()) {
+		const auto item = session().data().message(id);
+		if (item
+			&& item->isRegular()
+			&& !item->isService()
+			&& (item->history() == _history || item->history() == _migrated)) {
+			selected.emplace(item, FullSelection);
+		}
+	}
+	_selected = std::move(selected);
+}
+
+void HistoryInner::clearSelectedLocally(bool onlyTextSelection) {
+	if (!_selected.empty()
+		&& (!onlyTextSelection
+			|| _selected.cbegin()->second != FullSelection)) {
+		_selected.clear();
+		_widget->updateTopBarSelection();
+		_widget->update();
+	}
+}
+
+bool HistoryInner::changesGlobalSelectedMessages(
+		const SelectedItems *items) const {
+	return usesGlobalSelectedMessages() && (items == &_selected);
+}
+
+int HistoryInner::selectedItemsCount(const SelectedItems *items) const {
+	return changesGlobalSelectedMessages(items)
+		? session().data().globalSelectedMessagesCount()
+		: int(items->size());
+}
+
+int HistoryInner::maxSelectedItemsFor(const SelectedItems *items) const {
+	return MaxSelectedItems - selectedItemsCount(items);
+}
+
+void HistoryInner::syncGlobalSelectedMessage(
+		not_null<HistoryItem*> item,
+		SelectAction action) const {
+	if (!usesGlobalSelectedMessages()
+		|| !item->isRegular()
+		|| item->isService()) {
+		return;
+	}
+	const auto id = item->fullId();
+	if (action == SelectAction::Invert) {
+		action = session().data().hasGlobalSelectedMessage(id)
+			? SelectAction::Deselect
+			: SelectAction::Select;
+	}
+	if (action == SelectAction::Select) {
+		session().data().addGlobalSelectedMessage(id);
+	} else {
+		session().data().removeGlobalSelectedMessage(id);
+	}
 }
 
 HistoryView::SelectionModeResult HistoryInner::inSelectionMode() const {
@@ -5134,7 +5257,7 @@ void HistoryInner::elementStartEffect(
 auto HistoryInner::getSelectionState() const
 -> HistoryView::TopBarWidget::SelectedState {
 	auto result = HistoryView::TopBarWidget::SelectedState {};
-	for (auto &selected : _selected) {
+	for (auto &selected : effectiveSelectedItems()) {
 		if (selected.second == FullSelection) {
 			++result.count;
 			if (selected.first->canDelete()) {
@@ -5151,15 +5274,18 @@ auto HistoryInner::getSelectionState() const
 }
 
 void HistoryInner::clearSelected(bool onlyTextSelection) {
-	if (!_selected.empty() && (!onlyTextSelection || _selected.cbegin()->second != FullSelection)) {
-		_selected.clear();
-		_widget->updateTopBarSelection();
-		_widget->update();
+	if (usesGlobalSelectedMessages()
+		&& !onlyTextSelection
+		&& (_selected.empty()
+			|| _selected.cbegin()->second == FullSelection)) {
+		session().data().clearGlobalSelectedMessages();
 	}
+	clearSelectedLocally(onlyTextSelection);
 }
 
 bool HistoryInner::hasSelectedItems() const {
-	return !_selected.empty() && _selected.cbegin()->second == FullSelection;
+	const auto selected = effectiveSelectedItems();
+	return !selected.empty() && selected.cbegin()->second == FullSelection;
 }
 
 MessageIdsList HistoryInner::getSelectedItems() const {
@@ -5167,6 +5293,18 @@ MessageIdsList HistoryInner::getSelectedItems() const {
 
 	if (!hasSelectedItems()) {
 		return {};
+	}
+	if (usesGlobalSelectedMessages()
+		&& (_selected.empty()
+			|| _selected.cbegin()->second == FullSelection)) {
+		auto result = MessageIdsList();
+		for (const auto &id : session().data().globalSelectedMessages()) {
+			const auto item = session().data().message(id);
+			if (item && item->isRegular() && !item->isService()) {
+				result.push_back(id);
+			}
+		}
+		return result;
 	}
 
 	auto result = ranges::make_subrange(
@@ -5869,6 +6007,9 @@ void HistoryInner::addToSelection(
 	} else if (i->second != FullSelection) {
 		i->second = FullSelection;
 	}
+	if (changesGlobalSelectedMessages(toItems.get())) {
+		syncGlobalSelectedMessage(item, SelectAction::Select);
+	}
 }
 
 void HistoryInner::removeFromSelection(
@@ -5877,6 +6018,9 @@ void HistoryInner::removeFromSelection(
 	const auto i = toItems->find(item);
 	if (i != toItems->cend()) {
 		toItems->erase(i);
+	}
+	if (changesGlobalSelectedMessages(toItems.get())) {
+		syncGlobalSelectedMessage(item, SelectAction::Deselect);
 	}
 }
 
@@ -5889,7 +6033,7 @@ void HistoryInner::changeSelection(
 			? SelectAction::Deselect
 			: SelectAction::Select;
 	}
-	auto total = int(toItems->size());
+	auto total = selectedItemsCount(toItems.get());
 	const auto add = (action == SelectAction::Select);
 	if (add
 		&& goodForSelection(toItems, item, total)
@@ -5913,7 +6057,7 @@ void HistoryInner::changeSelectionAsGroup(
 			? SelectAction::Deselect
 			: SelectAction::Select;
 	}
-	auto total = int(toItems->size());
+	auto total = selectedItemsCount(toItems.get());
 	const auto canSelect = [&] {
 		for (const auto &other : group->items) {
 			if (!goodForSelection(toItems, other, total)) {
@@ -6086,7 +6230,7 @@ void HistoryInner::addSelectionRange(
 				auto item = block->messages[fromitem]->data();
 				changeSelectionAsGroup(toItems, item, SelectAction::Select);
 			}
-			if (toItems->size() >= MaxSelectedItems) break;
+			if (selectedItemsCount(toItems.get()) >= MaxSelectedItems) break;
 			fromitem = 0;
 		}
 	}
