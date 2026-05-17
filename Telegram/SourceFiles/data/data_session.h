@@ -494,6 +494,14 @@ public:
 	HistoryItemsList idsToItems(const MessageIdsList &ids) const;
 	MessageIdsList itemsToIds(const HistoryItemsList &items) const;
 	MessageIdsList itemOrItsGroup(not_null<HistoryItem*> item) const;
+	void setGlobalSelectedMessages(MessageIdsList ids);
+	void addGlobalSelectedMessage(FullMsgId id);
+	void removeGlobalSelectedMessage(FullMsgId id);
+	void clearGlobalSelectedMessages();
+	[[nodiscard]] bool hasGlobalSelectedMessage(FullMsgId id) const;
+	[[nodiscard]] int globalSelectedMessagesCount() const;
+	[[nodiscard]] MessageIdsList globalSelectedMessages() const;
+	[[nodiscard]] rpl::producer<> globalSelectedMessagesChanged() const;
 
 	void applyUpdate(const MTPDupdateMessagePoll &update);
 	void applyUpdate(const MTPDupdateChatParticipants &update);
@@ -1319,6 +1327,8 @@ private:
 	base::flat_map<not_null<const ChannelData*>, int> _commonStarsPerMessage;
 
 	MessageIdsList _mimeForwardIds;
+	MessageIdsList _globalSelectedMessages;
+	rpl::event_stream<> _globalSelectedMessagesChanged;
 
 	std::weak_ptr<CreditsSubsRebuilder> _creditsSubsRebuilder;
 

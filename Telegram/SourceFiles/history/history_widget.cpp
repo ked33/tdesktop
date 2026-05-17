@@ -2690,10 +2690,10 @@ void HistoryWidget::showHistory(
 				showAtMsgId = ShowAtTheEndMsgId;
 			} else if (showAtMsgId == ShowForChooseMessagesMsgId) {
 				if (_chooseForReport) {
-					clearSelected();
 					_chooseForReport->active = true;
 					_list->setChooseReportReason(
 						_chooseForReport->reportInput);
+					clearSelected();
 					updateControlsVisibility();
 					updateControlsGeometry();
 					updateTopBarChooseForReport();
