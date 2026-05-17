@@ -269,6 +269,33 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
+		const auto currentQuickCopyTargetsLabel = [] {
+			return QuickCopyTargetsBox::TargetsLabel(
+				GetEnhancedString("quick_copy_targets"));
+		};
+		auto quickCopyTargetsValue = rpl::single(
+			currentQuickCopyTargetsLabel()
+		) | rpl::then(
+			_QuickCopyTargetsChanged.events()
+		) | rpl::map([=] {
+			return currentQuickCopyTargetsLabel();
+		});
+		auto quickCopyTargetsButton = AddButtonWithLabel(
+			inner,
+			tr::lng_settings_quick_copy_targets_title(),
+			std::move(quickCopyTargetsValue),
+			st::settingsButtonNoIcon
+		);
+		quickCopyTargetsButton->events(
+		) | rpl::on_next([=](not_null<QEvent*> e) {
+			if (e->type() == QEvent::UpdateLater) {
+				_QuickCopyTargetsChanged.fire({});
+			}
+		}, container->lifetime());
+		quickCopyTargetsButton->addClickHandler([=] {
+			Ui::show(Box<QuickCopyTargetsBox>());
+		});
+
 		AddButtonWithIcon(
 				inner,
 				tr::lng_settings_disable_link_warning(),
