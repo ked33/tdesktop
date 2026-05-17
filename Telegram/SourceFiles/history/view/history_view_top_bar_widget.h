@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -108,6 +108,9 @@ public:
 	}
 	[[nodiscard]] rpl::producer<> savedMessagesSelectionRequest() const {
 		return _savedMessagesSelection.events();
+	}
+	[[nodiscard]] rpl::producer<> quickCopySelectionRequest() const {
+		return _quickCopySelection.events();
 	}
 	[[nodiscard]] rpl::producer<> sendNowSelectionRequest() const {
 		return _sendNowSelection.events();
@@ -225,7 +228,7 @@ private:
 	Ui::Animations::Simple _searchShown;
 
 	object_ptr<Ui::RoundButton> _clear;
-	object_ptr<Ui::RoundButton> _forward, _sendNow, _delete, _forwardNoQuote, _savedMessages, _oldForward;
+	object_ptr<Ui::RoundButton> _forward, _sendNow, _delete, _forwardNoQuote, _savedMessages, _quickCopy, _oldForward;
 	object_ptr<Ui::InputField> _searchField = { nullptr };
 	object_ptr<Ui::FadeWrapScaled<Ui::IconButton>> _chooseFromUser
 		= { nullptr };
@@ -274,6 +277,7 @@ private:
 	rpl::event_stream<> _forwardSelection;
 	rpl::event_stream<> _forwardNoQuoteSelection;
 	rpl::event_stream<> _savedMessagesSelection;
+	rpl::event_stream<> _quickCopySelection;
 	rpl::event_stream<> _sendNowSelection;
 	rpl::event_stream<> _deleteSelection;
 	rpl::event_stream<> _clearSelection;

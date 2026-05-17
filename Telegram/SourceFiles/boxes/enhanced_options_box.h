@@ -126,6 +126,26 @@ private:
 
 };
 
+class QuickCopyTargetsBox : public Ui::BoxContent {
+public:
+	QuickCopyTargetsBox(QWidget *parent);
+
+	static QString TargetsLabel(const QString &value);
+
+protected:
+	void prepare() override;
+
+	void setInnerFocus() override;
+
+	void resizeEvent(QResizeEvent *e) override;
+
+private:
+	void save();
+
+	object_ptr<Ui::InputField> _targets = { nullptr };
+
+};
+
 class ChatSwitchShortcutBox : public Ui::BoxContent {
 public:
 	ChatSwitchShortcutBox(QWidget *parent);

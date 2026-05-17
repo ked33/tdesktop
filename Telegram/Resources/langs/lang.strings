@@ -5123,6 +5123,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_flood_premium_wait_placeholder" = "Leave empty to keep the server wait time";
 "lng_settings_flood_premium_wait_default" = "Default";
 "lng_settings_flood_premium_wait_invalid" = "Please enter a non-negative integer in milliseconds.";
+"lng_settings_quick_copy_targets_title" = "Quick copy to...";
+"lng_settings_quick_copy_targets_placeholder" = "-1002615379741,Saved Messages";
+"lng_settings_quick_copy_targets_disabled" = "Disabled";
+"lng_quick_copy_targets_none" = "No valid quick-copy targets. Open the target chats once and check Enhanced Settings.";
+"lng_quick_copy_targets_skipped" = "Some quick-copy targets were skipped.";
 "lng_context_details" = "Details";
 "lng_context_details_views" = "Views";
 "lng_context_details_shares" = "Shares";
@@ -8334,6 +8339,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_selected_forward_text" = "F";
 "lng_selected_forward_no_quote_text" = "C";
 "lng_forward_to_saved_message_text" = "S";
+"lng_selected_quick_copy_to" = "Copy to...";
 "lng_selected_delete_text" = "D";
 
 "lng_admin_log_banned_send_stickers2" = "Send stickers";

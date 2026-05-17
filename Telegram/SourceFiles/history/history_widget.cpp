@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -224,6 +224,7 @@ constexpr auto kCommonModifiers = 0
 	| Qt::MetaModifier
 	| Qt::ControlModifier;
 const auto kPsaAboutPrefix = "cloud_lng_about_psa_";
+constexpr auto kBotApiChannelPrefix = uint64(1000000000000);
 
 [[nodiscard]] rpl::producer<PeerData*> ActivePeerValue(
 		not_null<Window::SessionController*> controller) {
@@ -244,6 +245,67 @@ const auto kPsaAboutPrefix = "cloud_lng_about_psa_";
 		}
 	}
 	return QString();
+}
+
+[[nodiscard]] PeerData *ResolveQuickCopyTarget(
+		Main::Session &session,
+		const QString &token) {
+	const auto trimmed = token.trimmed();
+	if (trimmed.compare(u"Saved Messages"_q, Qt::CaseInsensitive) == 0) {
+		return session.user().get();
+	}
+	auto ok = false;
+	auto peerId = PeerId();
+	if (trimmed.startsWith('-')) {
+		const auto absolute = trimmed.mid(1).toULongLong(&ok);
+		if (!ok || !absolute) {
+			return nullptr;
+		}
+		if (trimmed.startsWith(u"-100"_q)) {
+			if (absolute <= kBotApiChannelPrefix) {
+				return nullptr;
+			}
+			peerId = peerFromChannel(ChannelId(
+				absolute - kBotApiChannelPrefix));
+		} else {
+			peerId = peerFromChat(ChatId(absolute));
+		}
+	} else {
+		const auto userId = trimmed.toULongLong(&ok);
+		if (!ok || !userId) {
+			return nullptr;
+		}
+		peerId = peerFromUser(UserId(userId));
+	}
+	return session.data().peerLoaded(peerId);
+}
+
+[[nodiscard]] std::vector<not_null<Data::Thread*>> ResolveQuickCopyTargets(
+		Main::Session &session,
+		const QString &targets,
+		int &skipped) {
+	auto result = std::vector<not_null<Data::Thread*>>();
+	auto added = std::vector<PeerId>();
+	for (const auto &part : targets.split(QChar(','), Qt::SkipEmptyParts)) {
+		const auto peer = ResolveQuickCopyTarget(session, part);
+		if (!peer) {
+			++skipped;
+			continue;
+		}
+		auto duplicate = false;
+		for (const auto &id : added) {
+			if (id == peer->id) {
+				duplicate = true;
+				break;
+			}
+		}
+		if (duplicate) {
+			continue;
+		}
+		added.push_back(peer->id);
+		result.push_back(peer->owner().history(peer));
+	}
+	return result;
 }
 
 } // namespace
@@ -1041,6 +1103,10 @@ HistoryWidget::HistoryWidget(
 	_topBar->savedMessagesSelectionRequest(
 	) | rpl::on_next([=] {
 		forwardSelectedToSavedMessages();
+	}, _topBar->lifetime());
+	_topBar->quickCopySelectionRequest(
+	) | rpl::on_next([=] {
+		quickCopySelected();
 	}, _topBar->lifetime());
 	_topBar->deleteSelectionRequest(
 	) | rpl::on_next([=] {
@@ -9782,6 +9848,73 @@ void HistoryWidget::forwardSelectedToSavedMessages() {
 			strong->clearSelected();
 		}
 	});
+}
+
+void HistoryWidget::quickCopySelected() {
+	if (!_list) {
+		return;
+	}
+	const auto ids = getSelectedItems();
+	if (ids.empty()) {
+		return;
+	}
+	const auto first = session().data().message(ids[0]);
+	if (!first) {
+		return;
+	}
+	const auto targetsText = GetEnhancedString("quick_copy_targets").trimmed();
+	if (targetsText.isEmpty()) {
+		Ui::Toast::Show(tr::lng_quick_copy_targets_none(tr::now));
+		return;
+	}
+
+	auto skipped = 0;
+	const auto targets = ResolveQuickCopyTargets(
+		session(),
+		targetsText,
+		skipped);
+	if (targets.empty()) {
+		Ui::Toast::Show(tr::lng_quick_copy_targets_none(tr::now));
+		return;
+	}
+
+	const auto sourceHistory = first->history();
+	const auto resolved = sourceHistory->resolveForwardDraft({
+		.ids = ids,
+		.options = Data::ForwardOptions::NoSenderNames,
+	});
+	if (resolved.items.empty()) {
+		return;
+	}
+
+	auto sent = 0;
+	for (const auto &thread : targets) {
+		const auto error = GetErrorForSending(
+			thread,
+			{ .forward = &resolved.items });
+		if (error) {
+			Data::ShowSendErrorToast(controller(), thread->peer(), error);
+			++skipped;
+			continue;
+		}
+		auto action = Api::SendAction(thread);
+		action.clearDraft = false;
+		action.generateLocal = false;
+		auto copy = Data::ResolvedForwardDraft{
+			.items = resolved.items,
+			.options = resolved.options,
+		};
+		session().api().forwardMessages(std::move(copy), action);
+		++sent;
+	}
+	if (!sent) {
+		Ui::Toast::Show(tr::lng_quick_copy_targets_none(tr::now));
+		return;
+	}
+	Ui::Toast::Show(skipped
+		? tr::lng_quick_copy_targets_skipped(tr::now)
+		: tr::lng_share_done(tr::now));
+	clearSelected();
 }
 
 void HistoryWidget::confirmDeleteSelected() {

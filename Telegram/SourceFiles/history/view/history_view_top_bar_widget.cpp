@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -126,6 +126,7 @@ TopBarWidget::TopBarWidget(
 , _delete(this, GetEnhancedBool("show_emoji_button_as_text") ? tr::lng_selected_delete_text() : tr::lng_selected_delete_emoji(), st::defaultActiveButton)
 , _forwardNoQuote(this, GetEnhancedBool("show_emoji_button_as_text") ? tr::lng_selected_forward_no_quote_text() : tr::lng_selected_forward_no_quote_emoji(), st::defaultActiveButton)
 , _savedMessages(this, GetEnhancedBool("show_emoji_button_as_text") ? tr::lng_forward_to_saved_message_text() : tr::lng_forward_to_saved_message_emoji(), st::defaultActiveButton)
+, _quickCopy(this, tr::lng_selected_quick_copy_to(), st::defaultActiveButton)
 , _oldForward(this, GetEnhancedBool("show_emoji_button_as_text") ? tr::lng_selected_forward_text_classic() : tr::lng_selected_forward_emoji_classic(), st::defaultActiveButton)
 , _back(this, st::historyTopBarBack)
 , _cancelChoose(this, st::topBarCloseChoose)
@@ -158,6 +159,8 @@ TopBarWidget::TopBarWidget(
 	_forwardNoQuote->setWidthChangedCallback([=] { updateControlsGeometry(); });
 	_savedMessages->setClickedCallback([=] { _savedMessagesSelection.fire({}); });
 	_savedMessages->setWidthChangedCallback([=] { updateControlsGeometry(); });
+	_quickCopy->setClickedCallback([=] { _quickCopySelection.fire({}); });
+	_quickCopy->setWidthChangedCallback([=] { updateControlsGeometry(); });
 	_sendNow->setClickedCallback([=] { _sendNowSelection.fire({}); });
 	_sendNow->setWidthChangedCallback([=] { updateControlsGeometry(); });
 	_delete->setClickedCallback([=] { _deleteSelection.fire({}); });
@@ -1093,6 +1096,7 @@ void TopBarWidget::updateControlsGeometry() {
 	auto buttonsLeft = st::topBarActionSkip
 		+ (_controller->adaptive().isOneColumn() ? 0 : st::lineWidth);
 	auto buttonsWidth = (_forward->isHidden() ? 0 : _forward->contentWidth())
+		+ (_quickCopy->isHidden() ? 0 : _quickCopy->contentWidth())
 		+ (_sendNow->isHidden() ? 0 : _sendNow->contentWidth())
 		+ (_delete->isHidden() ? 0 : _delete->contentWidth())
 		+ _clear->width();
@@ -1109,6 +1113,7 @@ void TopBarWidget::updateControlsGeometry() {
 	_forward->setFullWidth(buttonFullWidth);
 	_forwardNoQuote->setFullWidth(buttonFullWidth);
 	_savedMessages->setFullWidth(buttonFullWidth);
+	_quickCopy->setFullWidth(buttonFullWidth);
 	_sendNow->setFullWidth(buttonFullWidth);
 	_delete->setFullWidth(buttonFullWidth);
 
@@ -1136,6 +1141,11 @@ void TopBarWidget::updateControlsGeometry() {
 		buttonsLeft += _savedMessages->width() + st::topBarActionSkip;
 	}
 
+	_quickCopy->moveToLeft(buttonsLeft, selectedButtonsTop);
+	if (!_quickCopy->isHidden()) {
+		buttonsLeft += _quickCopy->width() + st::topBarActionSkip;
+	}
+
 	_sendNow->moveToLeft(buttonsLeft, selectedButtonsTop);
 	if (!_sendNow->isHidden()) {
 		buttonsLeft += _sendNow->width() + st::topBarActionSkip;
@@ -1150,6 +1160,7 @@ void TopBarWidget::updateControlsGeometry() {
 			: st::buttonRadius;
 		const auto buttons = std::array{
 			_forward.data(),
+			_quickCopy.data(),
 			_sendNow.data(),
 			_delete.data(),
 		};
@@ -1292,6 +1303,9 @@ void TopBarWidget::updateControlsVisibility() {
 	_delete->setVisible(_canDelete && visible);
 	_forwardNoQuote->setVisible(_canForward);
 	_savedMessages->setVisible(_canForward);
+	_quickCopy->setVisible(
+		_canForward
+		&& !GetEnhancedString("quick_copy_targets").trimmed().isEmpty());
 	_forward->setVisible(_canForward && visible);
 	_sendNow->setVisible(_canSendNow && visible);
 
@@ -1530,6 +1544,7 @@ void TopBarWidget::showSelected(SelectedState state) {
 		_forward->setNumbersText(_selectedCount);
 		_forwardNoQuote->setNumbersText(_selectedCount);
 		_savedMessages->setNumbersText(_selectedCount);
+		_quickCopy->setNumbersText(_selectedCount);
 		_sendNow->setNumbersText(_selectedCount);
 		_delete->setNumbersText(_selectedCount);
 		if (!wasSelectedState) {
@@ -1539,6 +1554,7 @@ void TopBarWidget::showSelected(SelectedState state) {
 			_forward->finishNumbersAnimation();
 			_forwardNoQuote->finishNumbersAnimation();
 			_savedMessages->finishNumbersAnimation();
+			_quickCopy->finishNumbersAnimation();
 			_sendNow->finishNumbersAnimation();
 			_delete->finishNumbersAnimation();
 		}
