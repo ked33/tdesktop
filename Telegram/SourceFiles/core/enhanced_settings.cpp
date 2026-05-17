@@ -68,6 +68,7 @@ namespace EnhancedSettings {
 			ensureBool(qsl("show_message_context_report"), true);
 			ensureBool(qsl("show_message_context_select"), true);
 			ensureBool(qsl("show_message_context_reschedule"), true);
+			ensureBool(qsl("keep_selected_messages_across_chats"), false);
 			ensureString(qsl("mpv_path"), QString());
 			ensureString(qsl("flood_premium_wait_override_ms"), QString());
 			ensureString(qsl("quick_copy_targets"), qsl("-1002615379741,Saved Messages"));
@@ -405,6 +406,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("show_message_context_report"), true);
 		settings.insert(qsl("show_message_context_select"), true);
 		settings.insert(qsl("show_message_context_reschedule"), true);
+		settings.insert(qsl("keep_selected_messages_across_chats"), false);
 		settings.insert(qsl("show_json"), false);
 		settings.insert(qsl("hide_counter"), false);
 		settings.insert(qsl("translate_to_tc"), false);
@@ -489,6 +491,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("show_message_context_report"), GetEnhancedBool("show_message_context_report"));
 		settings.insert(qsl("show_message_context_select"), GetEnhancedBool("show_message_context_select"));
 		settings.insert(qsl("show_message_context_reschedule"), GetEnhancedBool("show_message_context_reschedule"));
+		settings.insert(qsl("keep_selected_messages_across_chats"), GetEnhancedBool("keep_selected_messages_across_chats"));
 		settings.insert(qsl("show_json"), GetEnhancedBool("show_json"));
 		settings.insert(qsl("hide_counter"), GetEnhancedBool("hide_counter"));
 		settings.insert(qsl("translate_to_tc"), GetEnhancedBool("translate_to_tc"));
