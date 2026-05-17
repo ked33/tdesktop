@@ -158,7 +158,9 @@ namespace Settings {
 		}).send();
 	}
 
-	void Enhanced::SetupEnhancedMessages(not_null<Ui::VerticalLayout *> container) {
+	void Enhanced::SetupEnhancedMessages(
+			not_null<Window::SessionController*> controller,
+			not_null<Ui::VerticalLayout *> container) {
 		AddDivider(container);
 		AddSkip(container);
 		AddSubsectionTitle(container, tr::lng_settings_messages());
@@ -266,6 +268,23 @@ namespace Settings {
 			return (toggled != GetEnhancedBool("hide_classic_fwd"));
 		}) | rpl::on_next([=](bool toggled) {
 			SetEnhancedValue("hide_classic_fwd", toggled);
+			EnhancedSettings::Write();
+		}, container->lifetime());
+
+		AddButtonWithIcon(
+				inner,
+				tr::lng_settings_keep_selected_messages_across_chats(),
+				st::settingsButtonNoIcon
+		)->toggleOn(
+				rpl::single(GetEnhancedBool("keep_selected_messages_across_chats"))
+		)->toggledChanges(
+		) | rpl::filter([=](bool toggled) {
+			return (toggled != GetEnhancedBool("keep_selected_messages_across_chats"));
+		}) | rpl::on_next([=](bool toggled) {
+			SetEnhancedValue("keep_selected_messages_across_chats", toggled);
+			if (!toggled) {
+				controller->session().data().clearGlobalSelectedMessages();
+			}
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
@@ -880,7 +899,7 @@ namespace Settings {
 		const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
 
 		SetupEnhancedNetwork(content);
-		SetupEnhancedMessages(content);
+		SetupEnhancedMessages(controller, content);
 		SetupEnhancedButton(content);
 		SetupEnhancedVoiceChat(content);
 		SetupEnhancedOthers(controller, content);

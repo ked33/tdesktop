@@ -13,6 +13,7 @@
     "lng_settings_repeater_reply_to_orig_msg": "回复原始消息",
     "lng_settings_disable_cloud_draft_sync": "停止从云端同步草稿",
     "lng_settings_hide_classic_forward": "隐藏经典转发",
+    "lng_settings_keep_selected_messages_across_chats": "跨对话保留选中的消息",
     "lng_settings_show_scheduled_button": "始终显示定时发送按钮",
     "lng_settings_voice_chat": "语音聊天",
     "lng_settings_stereo_mode": "启用立体声模式",

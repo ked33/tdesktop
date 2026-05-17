@@ -2472,6 +2472,62 @@ MessageIdsList Session::itemOrItsGroup(not_null<HistoryItem*> item) const {
 	return { 1, item->fullId() };
 }
 
+void Session::setGlobalSelectedMessages(MessageIdsList ids) {
+	auto unique = MessageIdsList();
+	unique.reserve(ids.size());
+	for (const auto &id : ids) {
+		if (id && !ranges::contains(unique, id)) {
+			unique.push_back(id);
+		}
+	}
+	if (_globalSelectedMessages == unique) {
+		return;
+	}
+	_globalSelectedMessages = std::move(unique);
+	_globalSelectedMessagesChanged.fire({});
+}
+
+void Session::addGlobalSelectedMessage(FullMsgId id) {
+	if (!id || ranges::contains(_globalSelectedMessages, id)) {
+		return;
+	}
+	_globalSelectedMessages.push_back(id);
+	_globalSelectedMessagesChanged.fire({});
+}
+
+void Session::removeGlobalSelectedMessage(FullMsgId id) {
+	const auto i = ranges::find(_globalSelectedMessages, id);
+	if (i == end(_globalSelectedMessages)) {
+		return;
+	}
+	_globalSelectedMessages.erase(i);
+	_globalSelectedMessagesChanged.fire({});
+}
+
+void Session::clearGlobalSelectedMessages() {
+	if (_globalSelectedMessages.empty()) {
+		return;
+	}
+	_globalSelectedMessages.clear();
+	_globalSelectedMessagesChanged.fire({});
+}
+
+bool Session::hasGlobalSelectedMessage(FullMsgId id) const {
+	return ranges::contains(_globalSelectedMessages, id);
+}
+
+int Session::globalSelectedMessagesCount() const {
+	return int(_globalSelectedMessages.size());
+}
+
+MessageIdsList Session::globalSelectedMessages() const {
+	return _globalSelectedMessages;
+}
+
+rpl::producer<> Session::globalSelectedMessagesChanged() const {
+	return _globalSelectedMessagesChanged.events();
+}
+
 void Session::setChatPinned(
 		Dialogs::Key key,
 		FilterId filterId,
@@ -3002,6 +3058,7 @@ void Session::unregisterMessage(not_null<HistoryItem*> item) {
 	const auto peerId = item->history()->peer->id;
 	const auto itemId = item->id;
 	_itemRemoved.fire_copy(item);
+	removeGlobalSelectedMessage(item->fullId());
 	if (item->hasPossibleRestrictions()) {
 		_possiblyRestricted.remove(item);
 	}
