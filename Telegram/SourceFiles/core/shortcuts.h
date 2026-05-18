@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "data/data_peer_id.h"
+
 class QKeyEvent;
 class QShortcutEvent;
 
@@ -33,6 +35,14 @@ enum class Command {
 	ChatFirst,
 	ChatLast,
 	ChatSelf,
+	ChatCustom1,
+	ChatCustom2,
+	ChatCustom3,
+	ChatCustom4,
+	ChatCustom5,
+	ChatCustom6,
+	ChatCustom7,
+	ChatCustom8,
 	ChatPinned1,
 	ChatPinned2,
 	ChatPinned3,
@@ -140,6 +150,8 @@ void Listen(not_null<QWidget*> widget);
 
 bool Launch(Command command);
 bool HandleEvent(not_null<QObject*> object, not_null<QShortcutEvent*> event);
+[[nodiscard]] PeerId CustomChatPeerId(Command command);
+[[nodiscard]] PeerId CustomChatPeerId(int index);
 
 bool HandlePossibleChatSwitch(not_null<QKeyEvent*> event);
 void ResetChatSwitchState();

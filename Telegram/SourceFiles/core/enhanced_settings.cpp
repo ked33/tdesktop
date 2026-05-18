@@ -74,6 +74,8 @@ namespace EnhancedSettings {
 			ensureString(qsl("quick_copy_targets"), qsl("-1002615379741,Saved Messages"));
 			ensureString(qsl("chat_switch_persistent_shortcut"), QString());
 			ensureString(qsl("jump_to_dialog_shortcut"), qsl("alt+e"));
+			ensureString(qsl("custom_chat_shortcuts"), QString());
+			ensureBool(qsl("double_click_copy_link"), false);
 
 			ensureBool(qsl("preview_brightness_enabled"), false);
 			if (!gEnhancedOptions.contains(qsl("preview_brightness"))) {
@@ -284,6 +286,12 @@ namespace EnhancedSettings {
 				SetEnhancedValue("radio_controller", "http://localhost:2468");
 			}
 		});
+		ReadStringOption(settings, "custom_chat_shortcuts", [&](auto v) {
+			SetEnhancedValue("custom_chat_shortcuts", v);
+		});
+		ReadBoolOption(settings, "double_click_copy_link", [&](auto v) {
+			SetEnhancedValue("double_click_copy_link", v);
+		});
 
 		ReadBoolOption(settings, "blocked_user_spoiler_mode", [&](auto v) {
 			if (v) {
@@ -418,6 +426,8 @@ namespace EnhancedSettings {
 		settings.insert(qsl("quick_copy_targets"), "-1002615379741,Saved Messages");
 		settings.insert(qsl("chat_switch_persistent_shortcut"), "");
 		settings.insert(qsl("jump_to_dialog_shortcut"), "alt+e");
+		settings.insert(qsl("custom_chat_shortcuts"), "");
+		settings.insert(qsl("double_click_copy_link"), false);
 		settings.insert(qsl("update_url"), "");
 		settings.insert(qsl("preview_brightness_enabled"), false);
 		settings.insert(qsl("preview_brightness"), 70);
@@ -512,6 +522,12 @@ namespace EnhancedSettings {
 		settings.insert(
 			qsl("jump_to_dialog_shortcut"),
 			GetEnhancedString("jump_to_dialog_shortcut"));
+		settings.insert(
+			qsl("custom_chat_shortcuts"),
+			GetEnhancedString("custom_chat_shortcuts"));
+		settings.insert(
+			qsl("double_click_copy_link"),
+			GetEnhancedBool("double_click_copy_link"));
 		settings.insert(qsl("update_url"), GetEnhancedString("update_url"));
 		settings.insert(
 			qsl("preview_brightness_enabled"),

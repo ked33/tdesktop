@@ -255,5 +255,8 @@
     "lng_jump_to_dialog": "跳转到",
     "lng_settings_jump_to_dialog_shortcut_title": "跳转到对话快捷键",
     "lng_settings_jump_to_dialog_shortcut_placeholder": "例如 Alt+E，留空则禁用",
-    "lng_settings_jump_to_dialog_shortcut_invalid": "请输入有效快捷键，例如 Alt+E。"
+    "lng_settings_jump_to_dialog_shortcut_invalid": "请输入有效快捷键，例如 Alt+E。",
+    "lng_settings_custom_chat_shortcuts_title": "自定义对话快捷键",
+    "lng_settings_custom_chat_shortcuts_placeholder": "-1002615379741,alt+a|-1001732671681,alt+d",
+    "lng_settings_double_click_copy_link": "双击搜索结果复制消息链接"
 	}

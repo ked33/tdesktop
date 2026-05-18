@@ -8274,6 +8274,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_jump_to_dialog_shortcut_title" = "Jump to dialog shortcut";
 "lng_settings_jump_to_dialog_shortcut_placeholder" = "Example: Alt+E, leave empty to disable";
 "lng_settings_jump_to_dialog_shortcut_invalid" = "Please enter a valid shortcut, for example Alt+E.";
+"lng_settings_custom_chat_shortcuts_title" = "Custom chat shortcuts";
+"lng_settings_custom_chat_shortcuts_placeholder" = "-1002615379741,alt+a|-1001732671681,alt+d";
+"lng_settings_double_click_copy_link" = "Double-click search result to copy message link";
 "lng_media_viewer_brightness_osd" = "Brightness {percent}%";
 "lng_media_viewer_volume_osd" = "Volume {percent}%";
 "lng_settings_translate_to_tc" = "使用正體中文翻譯訊息";

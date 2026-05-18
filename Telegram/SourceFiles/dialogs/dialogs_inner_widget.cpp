@@ -18,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "dialogs/dialogs_search_tags.h"
 #include "dialogs/dialogs_quick_action.h"
 #include "history/view/history_view_context_menu.h"
+#include "history/view/history_view_element.h"
 #include "history/view/history_view_subsection_tabs.h"
 #include "history/history.h"
 #include "history/history_item.h"
@@ -62,6 +63,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "lottie/lottie_icon.h"
 #include "settings/settings_common.h"
+#include "settings.h"
 #include "storage/storage_account.h"
 #include "apiwrap.h"
 #include "main/main_session.h"
@@ -305,6 +307,7 @@ InnerWidget::InnerWidget(
 , _narrowWidth(st::defaultDialogRow.padding.left()
 	+ st::defaultDialogRow.photoSize
 	+ st::defaultDialogRow.padding.left())
+, _searchResultClickTimer([=] { choosePendingSearchResultClick(); })
 , _childListShown(std::move(childListShown))
 , _freezeTimer([=] { _shownList->unfreeze(); update(); }) {
 	setAttribute(Qt::WA_OpaquePaintEvent, true);
@@ -2092,6 +2095,7 @@ void InnerWidget::processGlobalForceClick(QPoint globalPosition) {
 }
 
 void InnerWidget::mousePressEvent(QMouseEvent *e) {
+	clearPendingSearchResultClick();
 	selectByMouse(e->globalPos());
 
 	_pressButton = e->button();
@@ -2573,6 +2577,31 @@ void InnerWidget::mouseReleaseEvent(QMouseEvent *e) {
 	mousePressReleased(e->globalPos(), e->button(), e->modifiers());
 }
 
+void InnerWidget::mouseDoubleClickEvent(QMouseEvent *e) {
+	if (!GetEnhancedBool("double_click_copy_link")
+		|| e->button() != Qt::LeftButton) {
+		return RpWidget::mouseDoubleClickEvent(e);
+	}
+
+	selectByMouse(e->globalPos());
+	if (!base::in_range(_searchedSelected, 0, _searchResults.size())) {
+		return RpWidget::mouseDoubleClickEvent(e);
+	}
+
+	const auto item = _searchResults[_searchedSelected]->item();
+	if (!item || !item->hasDirectLink()) {
+		return RpWidget::mouseDoubleClickEvent(e);
+	}
+
+	HistoryView::CopyPostLink(
+		_controller,
+		item->fullId(),
+		HistoryView::Context::History);
+	clearPendingSearchResultClick();
+	_ignoreSearchResultRelease = true;
+	e->accept();
+}
+
 void InnerWidget::mousePressReleased(
 		QPoint globalPosition,
 		Qt::MouseButton button,
@@ -2638,7 +2667,9 @@ void InnerWidget::mousePressReleased(
 		}
 	}
 	updateSelectedRow();
-	if (!wasDragging && button == Qt::LeftButton) {
+	const auto ignoreSearchResultRelease = base::take(
+		_ignoreSearchResultRelease);
+	if (!wasDragging && button == Qt::LeftButton && !ignoreSearchResultRelease) {
 		if ((collapsedPressed >= 0 && collapsedPressed == _collapsedSelected)
 			|| (pressed
 				&& pressed == _selected
@@ -2670,6 +2701,9 @@ void InnerWidget::mousePressReleased(
 				}
 			} else if (pressedRightButton && peerSearchPressed >= 0) {
 				showSponsoredMenu(peerSearchPressed, globalPosition);
+			} else if (delaySearchResultClick(
+					searchedPressed,
+					modifiers)) {
 			} else {
 				chooseRow(
 					modifiers,
@@ -5056,6 +5090,48 @@ bool InnerWidget::isUserpicPressOnWide() const {
 	return isUserpicPress() && (width() > _narrowWidth);
 }
 
+void InnerWidget::clearPendingSearchResultClick() {
+	_searchResultClickTimer.cancel();
+	_pendingSearchResultClick = {};
+}
+
+bool InnerWidget::delaySearchResultClick(
+		int searchedPressed,
+		Qt::KeyboardModifiers modifiers) {
+	if (!GetEnhancedBool("double_click_copy_link")
+		|| !base::in_range(searchedPressed, 0, _searchResults.size())) {
+		return false;
+	}
+
+	const auto item = _searchResults[searchedPressed]->item();
+	if (!item || !item->hasDirectLink()) {
+		return false;
+	}
+
+	auto chosen = computeChosenRow();
+	if (!chosen.key || !chosen.message.fullId) {
+		return false;
+	}
+	if (CtrlClickChatNewWindow.value()) {
+		chosen.newWindow = (modifiers & Qt::ControlModifier);
+	}
+	chosen.userpicClick = isUserpicPressOnWide();
+	_pendingSearchResultClick = chosen;
+	_searchResultClickTimer.callOnce(QApplication::doubleClickInterval());
+	return true;
+}
+
+void InnerWidget::choosePendingSearchResultClick() {
+	const auto chosen = base::take(_pendingSearchResultClick);
+	if (!chosen.key) {
+		return;
+	}
+	if (IsServerMsgId(chosen.message.fullId.msg)) {
+		session().local().saveRecentSearchHashtags(_filter);
+	}
+	_chosenRow.fire_copy(chosen);
+}
+
 bool InnerWidget::chooseRow(
 		Qt::KeyboardModifiers modifiers,
 		MsgId pressedTopicRootId,
@@ -5482,6 +5558,32 @@ void InnerWidget::setupShortcuts() {
 				Window::SectionShow::Way::ClearStack);
 			return true;
 		});
+		const auto customChats = std::array{
+			Command::ChatCustom1,
+			Command::ChatCustom2,
+			Command::ChatCustom3,
+			Command::ChatCustom4,
+			Command::ChatCustom5,
+			Command::ChatCustom6,
+			Command::ChatCustom7,
+			Command::ChatCustom8,
+		};
+		for (const auto &[command, index] : ranges::views::zip(
+				customChats,
+				ranges::views::ints(0, ranges::unreachable))) {
+			request->check(command) && request->handle([=, index = index] {
+				const auto peerId = Shortcuts::CustomChatPeerId(index);
+				const auto peer = session().data().peerLoaded(peerId);
+				if (!peer) {
+					return false;
+				}
+				_controller->showThread(
+					session().data().history(peer),
+					ShowAtUnreadMsgId,
+					Window::SectionShow::Way::ClearStack);
+				return true;
+			});
+		}
 		request->check(Command::ShowArchive) && request->handle([=] {
 			const auto folder = session().data().folderLoaded(
 				Data::Folder::kId);
