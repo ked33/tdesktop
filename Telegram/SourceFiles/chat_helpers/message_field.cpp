@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -1457,8 +1457,9 @@ std::unique_ptr<Ui::AbstractButton> FrozenWriteRestriction(
 
 void SelectTextInFieldWithMargins(
 		not_null<Ui::InputField*> field,
-		const TextSelection &selection) {
-	if (selection.empty()) {
+		const TextSelection &selection,
+		bool allowEmptySelection) {
+	if (!allowEmptySelection && selection.empty()) {
 		return;
 	}
 	auto textCursor = field->textCursor();
@@ -1469,7 +1470,7 @@ void SelectTextInFieldWithMargins(
 	const auto selectedLines = (selection.to - selection.from)
 		/ charsCountInLine;
 	constexpr auto kMinDiff = ushort(3);
-	if ((linesCount - selectedLines) > kMinDiff) {
+	if (!selection.empty() && (linesCount - selectedLines) > kMinDiff) {
 		textCursor.setPosition(selection.from
 			- charsCountInLine * ((linesCount - 1) / 2));
 		field->setTextCursor(textCursor);

@@ -371,13 +371,17 @@ ChatWidget::ChatWidget(
 	_inner->editMessageRequested(
 	) | rpl::filter([=] {
 		return !_joinGroup;
-	}) | rpl::on_next([=](auto fullId) {
-		if (const auto item = session().data().message(fullId)) {
+	}) | rpl::on_next([=](ListWidget::EditMessageRequest request) {
+		if (const auto item = session().data().message(request.itemId)) {
 			const auto media = item->media();
 			if (!media || media->webpage() || media->allowsEditCaption()) {
+				const auto selection = request.cursor
+					? *request.cursor
+					: _inner->getSelectedTextRangeForEdit(item);
 				_composeControls->editMessage(
-					fullId,
-					_inner->getSelectedTextRangeForEdit(item));
+					request.itemId,
+					selection,
+					request.cursor.has_value());
 			} else if (media->todolist()) {
 				Window::PeerMenuEditTodoList(controller, item);
 			}

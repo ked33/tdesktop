@@ -54,6 +54,9 @@ public:
 	TextSelection selectionFromQuote(
 		const SelectedQuote &quote) const override;
 	TextSelection selectionForEditText(
+		TextSelection selection,
+		bool allowEmptySelection = false) const override;
+	std::optional<TextSelection> selectionForEditCursor(
 		TextSelection selection) const override;
 
 	bool uploading() const override;
