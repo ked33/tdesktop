@@ -8340,7 +8340,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_selected_forward_text" = "F";
 "lng_selected_forward_no_quote_text" = "C";
 "lng_forward_to_saved_message_text" = "S";
-"lng_selected_quick_copy_to" = "Copy to...";
+"lng_selected_quick_copy_to" = "一键复制";
 "lng_selected_delete_text" = "D";
 
 "lng_admin_log_banned_send_stickers2" = "Send stickers";
