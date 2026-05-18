@@ -1032,6 +1032,11 @@ topBarGroupCall: IconButton(topBarSearch) {
 	iconOver: icon {{ "top_bar_group_call", menuIconFgOver }};
 	iconPosition: point(4px, 12px);
 }
+topBarNoForwardsLock: IconButton(topBarSearch) {
+	icon: icon {{ "chat/mini_lock", menuIconFg }};
+	iconOver: icon {{ "chat/mini_lock", menuIconFgOver }};
+	iconPosition: point(7px, 14px);
+}
 topBarInfo: IconButton(topBarSearch) {
 	icon: icon {{ "top_bar_profile", menuIconFg }};
 	iconOver: icon {{ "top_bar_profile", menuIconFgOver }};

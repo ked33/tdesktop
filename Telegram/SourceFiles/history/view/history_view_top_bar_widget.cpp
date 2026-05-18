@@ -33,6 +33,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/menu/menu_add_action_callback_factory.h"
+#include "ui/toast/toast.h"
 #include "ui/effects/radial_animation.h"
 #include "ui/boxes/report_box_graphics.h" // Ui::ReportReason
 #include "ui/text/text.h"
@@ -132,6 +133,7 @@ TopBarWidget::TopBarWidget(
 , _cancelChoose(this, st::topBarCloseChoose)
 , _call(this, st::topBarCall)
 , _groupCall(this, st::topBarGroupCall)
+, _noForwardsLock(this, st::topBarNoForwardsLock)
 , _search(this, st::topBarSearch)
 , _recentActions(this, st::topBarRecentActions)
 , _admins(this, st::topBarAdmins)
@@ -174,6 +176,9 @@ TopBarWidget::TopBarWidget(
 		}
 	});
 	_groupCall->setClickedCallback([=] { groupCall(); });
+	_noForwardsLock->setClickedCallback([=] {
+		Ui::Toast::Show(tr::lng_chat_no_forwards_lock_toast(tr::now));
+	});
 	_menuToggle->addClickHandler([=](auto) { showPeerMenu(); });
 	_menuToggle->setAcceptBoth(true, true);
 	_recentActions->setClickedCallback([=] {
@@ -282,6 +287,8 @@ TopBarWidget::TopBarWidget(
 	setCursor(style::cur_pointer);
 	_call->setAccessibleName(tr::lng_profile_action_short_call(tr::now));
 	_groupCall->setAccessibleName(tr::lng_group_call_title(tr::now));
+	_noForwardsLock->setAccessibleName(
+		tr::lng_manage_peer_no_forwards_title(tr::now));
 	_search->setAccessibleName(tr::lng_shortcuts_search(tr::now));
 	_infoToggle->setAccessibleName(tr::lng_settings_section_info(tr::now));
 	_menuToggle->setAccessibleName(tr::lng_chat_menu(tr::now));
@@ -914,6 +921,38 @@ void TopBarWidget::setActiveChat(
 				updateControlsVisibility();
 				updateControlsGeometry();
 			}, _activeChatLifetime);
+			if (const auto user = peer->asUser()) {
+				Data::PeerFlagValue(
+					user,
+					UserDataFlag::NoForwardsMyEnabled
+				) | rpl::on_next([=](bool) {
+					updateControlsVisibility();
+					updateControlsGeometry();
+				}, _activeChatLifetime);
+				Data::PeerFlagValue(
+					user,
+					UserDataFlag::NoForwardsPeerEnabled
+				) | rpl::on_next([=](bool) {
+					updateControlsVisibility();
+					updateControlsGeometry();
+				}, _activeChatLifetime);
+			} else if (const auto chat = peer->asChat()) {
+				Data::PeerFlagValue(
+					chat,
+					ChatDataFlag::NoForwards
+				) | rpl::on_next([=](bool) {
+					updateControlsVisibility();
+					updateControlsGeometry();
+				}, _activeChatLifetime);
+			} else if (const auto channel = peer->asChannel()) {
+				Data::PeerFlagValue(
+					channel,
+					ChannelDataFlag::NoForwards
+				) | rpl::on_next([=](bool) {
+					updateControlsVisibility();
+					updateControlsGeometry();
+				}, _activeChatLifetime);
+			}
 
 			if (const auto channel = peer->asChannel()) {
 				if (channel->canEditStories()
@@ -1050,6 +1089,9 @@ void TopBarWidget::refreshInfoButton() {
 			QWidget::setTabOrder(_info.data(), _search.data());
 		}
 	}
+	if (_search && _noForwardsLock) {
+		QWidget::setTabOrder(_search.data(), _noForwardsLock.data());
+	}
 }
 
 void TopBarWidget::resizeEvent(QResizeEvent *e) {
@@ -1072,6 +1114,12 @@ void TopBarWidget::updateSearchVisibility() {
 		|| (_activeChat.section == Section::SavedSublist
 			&& _activeChat.key.sublist());
 	_search->setVisible(searchAllowedMode && !_chooseForReportReason);
+	_noForwardsLock->setVisible(
+		searchAllowedMode
+		&& !_chooseForReportReason
+		&& !showSelectedState()
+		&& _activeChat.key.peer()
+		&& !_activeChat.key.peer()->allowsForwarding());
 }
 
 void TopBarWidget::updateControlsGeometry() {
@@ -1272,6 +1320,10 @@ void TopBarWidget::updateControlsGeometry() {
 	_search->moveToRight(_rightTaken, otherButtonsTop);
 	if (!_search->isHidden()) {
 		_rightTaken += _search->width() + st::topBarCallSkip;
+	}
+	_noForwardsLock->moveToRight(_rightTaken, otherButtonsTop);
+	if (!_noForwardsLock->isHidden()) {
+		_rightTaken += _noForwardsLock->width() + st::topBarCallSkip;
 	}
 
 	updateMembersShowArea();
