@@ -336,6 +336,8 @@ public:
 	[[nodiscard]] SelectedItems getSelectedItems() const;
 	[[nodiscard]] TextSelection getSelectedTextRange(
 		not_null<HistoryItem*> item) const;
+	[[nodiscard]] TextSelection getSelectedTextRangeForEdit(
+		not_null<HistoryItem*> item) const;
 	void cancelSelection();
 	void selectItem(not_null<HistoryItem*> item);
 	void selectItemAsGroup(not_null<HistoryItem*> item);

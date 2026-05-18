@@ -545,6 +545,8 @@ public:
 		TextSelection selection) const = 0;
 	virtual TextSelection selectionFromQuote(
 		const SelectedQuote &quote) const = 0;
+	virtual TextSelection selectionForEditText(
+		TextSelection selection) const;
 	[[nodiscard]] virtual TextSelection adjustSelection(
 		TextSelection selection,
 		TextSelectType type) const;
@@ -556,6 +558,10 @@ public:
 	[[nodiscard]] static TextSelection FindSelectionFromQuote(
 		const Ui::Text::String &text,
 		const SelectedQuote &quote);
+	[[nodiscard]] static TextSelection FindSelectionInOriginalText(
+		const Ui::Text::String &text,
+		TextSelection selection,
+		int originalLength);
 
 	[[nodiscard]] virtual auto reactionButtonParameters(
 		QPoint position,

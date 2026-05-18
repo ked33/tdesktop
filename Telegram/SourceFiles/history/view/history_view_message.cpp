@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -3880,6 +3880,34 @@ TextSelection Message::selectionFromQuote(
 	} else if (const auto media = this->media()) {
 		if (media->isDisplayed() || isHiddenByGroup()) {
 			return media->selectionFromQuote(quote);
+		}
+	}
+	return {};
+}
+
+TextSelection Message::selectionForEditText(TextSelection selection) const {
+	const auto textItem = this->textItem();
+	const auto item = textItem ? textItem : data().get();
+	const auto &translated = item->translatedText();
+	const auto &original = item->originalText();
+	if (&translated != &original
+		|| selection.empty()
+		|| selection == FullSelection) {
+		return {};
+	} else if (hasVisibleText()) {
+		const auto media = this->media();
+		const auto mediaDisplayed = media && media->isDisplayed();
+		const auto mediaBefore = mediaDisplayed && invertMedia();
+		const auto textSelection = mediaBefore
+			? media->skipSelection(selection)
+			: selection;
+		return FindSelectionInOriginalText(
+			text(),
+			textSelection,
+			original.text.size());
+	} else if (const auto media = this->media()) {
+		if (media->isDisplayed() || isHiddenByGroup()) {
+			return media->selectionForEditText(selection);
 		}
 	}
 	return {};

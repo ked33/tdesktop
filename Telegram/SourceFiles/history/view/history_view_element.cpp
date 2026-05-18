@@ -2721,10 +2721,14 @@ TextSelection Element::adjustSelection(
 	return selection;
 }
 
-SelectedQuote Element::FindSelectedQuote(
+TextSelection Element::selectionForEditText(TextSelection selection) const {
+	return selection;
+}
+
+TextSelection Element::FindSelectionInOriginalText(
 		const Ui::Text::String &text,
 		TextSelection selection,
-		not_null<HistoryItem*> item) {
+		int originalLength) {
 	if (selection.to > text.length()) {
 		return {};
 	}
@@ -2751,8 +2755,21 @@ SelectedQuote Element::FindSelectedQuote(
 				int(modified.to) - int(modification.added)));
 		}
 	}
+	return (modified.empty() || modified.to > originalLength)
+		? TextSelection()
+		: modified;
+}
+
+SelectedQuote Element::FindSelectedQuote(
+		const Ui::Text::String &text,
+		TextSelection selection,
+		not_null<HistoryItem*> item) {
 	auto result = item->originalText();
-	if (modified.empty() || modified.to > result.text.size()) {
+	auto modified = FindSelectionInOriginalText(
+		text,
+		selection,
+		result.text.size());
+	if (modified.empty()) {
 		return {};
 	}
 	const auto session = &item->history()->session();

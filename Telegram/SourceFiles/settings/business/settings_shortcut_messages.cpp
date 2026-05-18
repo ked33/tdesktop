@@ -396,7 +396,7 @@ ShortcutMessages::ShortcutMessages(
 			if (!media || media->webpage() || media->allowsEditCaption()) {
 				_composeControls->editMessage(
 					fullId,
-					_inner->getSelectedTextRange(item));
+					_inner->getSelectedTextRangeForEdit(item));
 			} else if (media->todolist()) {
 				Window::PeerMenuEditTodoList(_controller, item);
 			}

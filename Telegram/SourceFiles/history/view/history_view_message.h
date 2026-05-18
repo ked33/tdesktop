@@ -149,6 +149,8 @@ public:
 	SelectedQuote selectedQuote(TextSelection selection) const override;
 	TextSelection selectionFromQuote(
 		const SelectedQuote &quote) const override;
+	TextSelection selectionForEditText(
+		TextSelection selection) const override;
 	TextSelection adjustSelection(
 		TextSelection selection,
 		TextSelectType type) const override;
