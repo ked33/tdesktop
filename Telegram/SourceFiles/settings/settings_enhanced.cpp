@@ -315,6 +315,46 @@ namespace Settings {
 			Ui::show(Box<QuickCopyTargetsBox>());
 		});
 
+		const auto currentCustomChatShortcutsLabel = [] {
+			return CustomChatShortcutsBox::ShortcutsLabel(
+				GetEnhancedString("custom_chat_shortcuts"));
+		};
+		auto customChatShortcutsValue = rpl::single(
+			currentCustomChatShortcutsLabel()
+		) | rpl::then(
+			_CustomChatShortcutsChanged.events()
+		) | rpl::map([=] {
+			return currentCustomChatShortcutsLabel();
+		});
+		auto customChatShortcutsButton = AddButtonWithLabel(
+			inner,
+			tr::lng_settings_custom_chat_shortcuts_title(),
+			std::move(customChatShortcutsValue),
+			st::settingsButtonNoIcon);
+		customChatShortcutsButton->events(
+		) | rpl::on_next([=](not_null<QEvent*> e) {
+			if (e->type() == QEvent::UpdateLater) {
+				_CustomChatShortcutsChanged.fire({});
+			}
+		}, container->lifetime());
+		customChatShortcutsButton->addClickHandler([=] {
+			Ui::show(Box<CustomChatShortcutsBox>());
+		});
+
+		AddButtonWithIcon(
+			inner,
+			tr::lng_settings_double_click_copy_link(),
+			st::settingsButtonNoIcon
+		)->toggleOn(
+			rpl::single(GetEnhancedBool("double_click_copy_link"))
+		)->toggledChanges(
+		) | rpl::filter([=](bool toggled) {
+			return (toggled != GetEnhancedBool("double_click_copy_link"));
+		}) | rpl::on_next([=](bool toggled) {
+			SetEnhancedValue("double_click_copy_link", toggled);
+			EnhancedSettings::Write();
+		}, container->lifetime());
+
 		AddButtonWithIcon(
 				inner,
 				tr::lng_settings_disable_link_warning(),
