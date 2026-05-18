@@ -248,6 +248,7 @@ private:
 
 	object_ptr<Ui::IconButton> _call;
 	object_ptr<Ui::IconButton> _groupCall;
+	object_ptr<Ui::IconButton> _noForwardsLock;
 	object_ptr<Ui::IconButton> _search;
 	object_ptr<Ui::IconButton> _recentActions;
 	object_ptr<Ui::IconButton> _admins;
