@@ -437,7 +437,7 @@ dialogsLockIcon: ThreeStateIcon {
 }
 dialogsNoForwardsBadgeIcon: ThreeStateIcon {
 	icon: icon {{ "emoji/premium_lock", dialogsUnreadBgMuted, point(4px, 0px) }};
-	over: icon {{ "emoji/premium_lock", dialogsUnreadBgMutedOver, point(4px, 0px) }};
+	over: icon {{ "emoji/premium_lock", dialogsUnreadBgMuted, point(4px, 0px) }};
 	active: icon {{ "emoji/premium_lock", dialogsUnreadBgMutedActive, point(4px, 0px) }};
 }
 

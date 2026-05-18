@@ -1078,19 +1078,8 @@ void PaintNoForwardsUserpicBadge(
 		+ skip.x();
 	const auto top = photoTop + photoSize - skip.y() - size;
 	const auto rect = QRect(left, top, size, size);
-	const auto bg = context.active
-		? st::dialogsBgActive
-		: context.selected
-		? st::dialogsBgOver
-		: context.currentBg;
 
 	p.save();
-	p.setPen(Qt::NoPen);
-	p.setBrush(bg);
-	{
-		auto hq = PainterHighQualityEnabler(p);
-		p.drawEllipse(rect);
-	}
 	ThreeStateIcon(
 		st::dialogsNoForwardsBadgeIcon,
 		context.active,
