@@ -1033,9 +1033,9 @@ topBarGroupCall: IconButton(topBarSearch) {
 	iconPosition: point(4px, 12px);
 }
 topBarNoForwardsLock: IconButton(topBarSearch) {
-	icon: icon {{ "chat/mini_lock", menuIconFg }};
-	iconOver: icon {{ "chat/mini_lock", menuIconFgOver }};
-	iconPosition: point(7px, 14px);
+	icon: icon {{ "menu/lock", menuIconFg }};
+	iconOver: icon {{ "menu/lock", menuIconFgOver }};
+	iconPosition: point(8px, 15px);
 }
 topBarInfo: IconButton(topBarSearch) {
 	icon: icon {{ "top_bar_profile", menuIconFg }};
