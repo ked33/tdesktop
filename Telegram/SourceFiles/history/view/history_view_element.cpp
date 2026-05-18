@@ -467,6 +467,41 @@ int KeyboardStyle::minButtonWidth(
 	return result;
 }
 
+[[nodiscard]] std::optional<TextSelection> FindInOriginalText(
+		const Ui::Text::String &text,
+		TextSelection selection,
+		int originalLength) {
+	if (selection.to > text.length()) {
+		return std::nullopt;
+	}
+	auto modified = selection;
+	for (const auto &modification : text.modifications()) {
+		if (modification.position >= selection.to) {
+			break;
+		} else if (modification.position < selection.from) {
+			modified.from += modification.skipped;
+			if (modification.added) {
+				modified.from = uint16(std::max(
+					0,
+					int(modified.from) - int(modification.added)));
+			}
+		} else if (modification.position == selection.from) {
+			if (!modification.added) {
+				modified.from += modification.skipped;
+			}
+		}
+		modified.to += modification.skipped;
+		if (modification.added && modified.to > modified.from) {
+			modified.to = uint16(std::max(
+				int(modified.from),
+				int(modified.to) - int(modification.added)));
+		}
+	}
+	return (modified.to > originalLength)
+		? std::nullopt
+		: std::make_optional(modified);
+}
+
 } // namespace
 
 std::unique_ptr<Ui::PathShiftGradient> MakePathShiftGradient(
@@ -2721,43 +2756,39 @@ TextSelection Element::adjustSelection(
 	return selection;
 }
 
-TextSelection Element::selectionForEditText(TextSelection selection) const {
+TextSelection Element::selectionForEditText(
+		TextSelection selection,
+		bool allowEmptySelection) const {
+	return selection;
+}
+
+std::optional<TextSelection> Element::selectionForEditCursor(
+		TextSelection selection) const {
 	return selection;
 }
 
 TextSelection Element::FindSelectionInOriginalText(
 		const Ui::Text::String &text,
 		TextSelection selection,
-		int originalLength) {
-	if (selection.to > text.length()) {
-		return {};
-	}
-	auto modified = selection;
-	for (const auto &modification : text.modifications()) {
-		if (modification.position >= selection.to) {
-			break;
-		} else if (modification.position < selection.from) {
-			modified.from += modification.skipped;
-			if (modification.added) {
-				modified.from = uint16(std::max(
-					0,
-					int(modified.from) - int(modification.added)));
-			}
-		} else if (modification.position == selection.from) {
-			if (!modification.added) {
-				modified.from += modification.skipped;
-			}
-		}
-		modified.to += modification.skipped;
-		if (modification.added && modified.to > modified.from) {
-			modified.to = uint16(std::max(
-				int(modified.from),
-				int(modified.to) - int(modification.added)));
-		}
-	}
-	return (modified.empty() || modified.to > originalLength)
+		int originalLength,
+		bool allowEmptySelection) {
+	const auto modified = FindInOriginalText(
+		text,
+		selection,
+		originalLength);
+	return (!modified || (!allowEmptySelection && modified->empty()))
 		? TextSelection()
-		: modified;
+		: *modified;
+}
+
+std::optional<TextSelection> Element::FindEditCursorInOriginalText(
+		const Ui::Text::String &text,
+		TextSelection selection,
+		int originalLength) {
+	return FindInOriginalText(
+		text,
+		selection,
+		originalLength);
 }
 
 SelectedQuote Element::FindSelectedQuote(

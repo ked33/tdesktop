@@ -546,6 +546,9 @@ public:
 	virtual TextSelection selectionFromQuote(
 		const SelectedQuote &quote) const = 0;
 	virtual TextSelection selectionForEditText(
+		TextSelection selection,
+		bool allowEmptySelection = false) const;
+	virtual std::optional<TextSelection> selectionForEditCursor(
 		TextSelection selection) const;
 	[[nodiscard]] virtual TextSelection adjustSelection(
 		TextSelection selection,
@@ -559,6 +562,11 @@ public:
 		const Ui::Text::String &text,
 		const SelectedQuote &quote);
 	[[nodiscard]] static TextSelection FindSelectionInOriginalText(
+		const Ui::Text::String &text,
+		TextSelection selection,
+		int originalLength,
+		bool allowEmptySelection = false);
+	[[nodiscard]] static std::optional<TextSelection> FindEditCursorInOriginalText(
 		const Ui::Text::String &text,
 		TextSelection selection,
 		int originalLength);

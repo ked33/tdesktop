@@ -4048,10 +4048,11 @@ void ComposeControls::updateHeight() {
 
 void ComposeControls::editMessage(
 		FullMsgId id,
-		const TextSelection &selection) {
+		const TextSelection &selection,
+		bool allowEmptySelection) {
 	if (const auto item = session().data().message(id)) {
 		editMessage(item);
-		SelectTextInFieldWithMargins(_field, selection);
+		SelectTextInFieldWithMargins(_field, selection, allowEmptySelection);
 	}
 }
 

@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -1622,7 +1622,9 @@ bool AddEditMessageAction(
 		if (!item) {
 			return;
 		}
-		list->editMessageRequestNotify(item->fullId());
+		list->editMessageRequestNotify(
+			item->fullId(),
+			request.editCursor);
 	}, &st::menuIconEdit);
 	return true;
 }
