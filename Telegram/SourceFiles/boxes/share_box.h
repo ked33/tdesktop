@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -82,6 +82,9 @@ void FastShareMessage(
 	not_null<Window::SessionController*> controller,
 	not_null<HistoryItem*> item,
 	ShareBoxStyleOverrides st = {});
+void FastJumpToDialog(
+	not_null<Window::SessionController*> controller,
+	ShareBoxStyleOverrides st = {});
 void FastShareLink(
 	not_null<Window::SessionController*> controller,
 	const QString &url,
@@ -107,6 +110,11 @@ public:
 		Data::ForwardOptions)>;
 	using FilterCallback = Fn<bool(not_null<Data::Thread*>)>;
 
+	enum class Mode {
+		Share,
+		JumpToDialog,
+	};
+
 	[[nodiscard]] static auto DefaultForwardCountMessages(
 		not_null<History*> history,
 		MessageIdsList msgIds) -> CountMessagesCallback;
@@ -125,6 +133,7 @@ public:
 		SubmitCallback submitCallback;
 		FilterCallback filterCallback;
 		object_ptr<Ui::RpWidget> bottomWidget = { nullptr };
+		Mode mode = Mode::Share;
 		rpl::producer<QString> copyLinkText;
 		rpl::producer<QString> titleOverride;
 		ShareBoxStyleOverrides st;

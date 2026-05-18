@@ -149,6 +149,12 @@ private:
 class ChatSwitchShortcutBox : public Ui::BoxContent {
 public:
 	ChatSwitchShortcutBox(QWidget *parent);
+	ChatSwitchShortcutBox(
+		QWidget*,
+		QString key,
+		rpl::producer<QString> title,
+		rpl::producer<QString> placeholder,
+		Fn<QString()> invalidToast);
 
 	static QString ShortcutLabel(const QString &value);
 
@@ -163,6 +169,9 @@ private:
 	void save();
 
 	object_ptr<Ui::InputField> _shortcut = { nullptr };
+	QString _key;
+	rpl::producer<QString> _title;
+	Fn<QString()> _invalidToast;
 
 };
 
