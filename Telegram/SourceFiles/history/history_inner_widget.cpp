@@ -4977,6 +4977,9 @@ auto HistoryInner::effectiveSelectedItems() const -> SelectedItems {
 		&& _selected.cbegin()->second != FullSelection) {
 		return _selected;
 	}
+	if (hasSelectRestriction()) {
+		return _selected;
+	}
 	if (usesGlobalSelectedMessages()) {
 		return globalSelectedItems();
 	}
@@ -4987,6 +4990,10 @@ void HistoryInner::refreshGlobalSelectedMessages() {
 	if (!usesGlobalSelectedMessages()
 		|| (!_selected.empty()
 			&& _selected.cbegin()->second != FullSelection)) {
+		return;
+	}
+	if (hasSelectRestriction()) {
+		clearSelectedLocally();
 		return;
 	}
 	auto selected = SelectedItems();
