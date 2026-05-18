@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/event_filter.h"
 #include "base/parse_helper.h"
 #include "core/application.h"
+#include "data/data_peer_id.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
 #include "window/window_controller.h"
@@ -45,6 +46,7 @@ QObject *ChatSwitchFilter/* = nullptr*/;
 rpl::event_stream<ChatSwitchRequest> ChatSwitchStream;
 rpl::event_stream<> JumpToDialogStream;
 std::array<Qt::Key, kChatSwitchSpecialKeys.size()> ChatSwitchKeyPressHandled;
+std::array<PeerId, 8> CustomChatPeerIds;
 
 const auto AutoRepeatCommands = base::flat_set<Command>{
 	Command::MediaPrevious,
@@ -166,6 +168,17 @@ const base::flat_map<Command, QString> &CommandNames() {
 	Command::RecordRound,
 };
 
+constexpr auto kCustomChatCommands = std::array{
+	Command::ChatCustom1,
+	Command::ChatCustom2,
+	Command::ChatCustom3,
+	Command::ChatCustom4,
+	Command::ChatCustom5,
+	Command::ChatCustom6,
+	Command::ChatCustom7,
+	Command::ChatCustom8,
+};
+
 class Manager {
 public:
 	void fill();
@@ -194,6 +207,7 @@ public:
 
 private:
 	void fillDefaults();
+	void fillCustomChatShortcuts();
 	void writeDefaultFile();
 	void writeCustomFile();
 	bool readCustomFile();
@@ -290,6 +304,7 @@ void Manager::fill() {
 	if (!readCustomFile()) {
 		WriteDefaultCustomFile();
 	}
+	fillCustomChatShortcuts();
 }
 
 void Manager::clear() {
@@ -541,6 +556,49 @@ void Manager::fillDefaults() {
 	set(u"alt+c"_q, Command::FastCopy);
 	
 	_defaults = keysCurrents();
+}
+
+void Manager::fillCustomChatShortcuts() {
+	CustomChatPeerIds.fill(PeerId());
+
+	const auto config = GetEnhancedString("custom_chat_shortcuts").trimmed();
+	if (config.isEmpty()) {
+		return;
+	}
+
+	auto index = 0;
+	for (const auto &entry : config.split('|', Qt::SkipEmptyParts)) {
+		if (index >= int(kCustomChatCommands.size())) {
+			break;
+		}
+		const auto parts = entry.split(',', Qt::SkipEmptyParts);
+		if (parts.size() != 2) {
+			continue;
+		}
+
+		auto ok = false;
+		const auto chatId = parts[0].trimmed().toLongLong(&ok);
+		if (!ok) {
+			continue;
+		}
+		const auto peerId = peerFromBotApiChatId(chatId);
+		if (!peerId) {
+			continue;
+		}
+
+		const auto keys = parts[1].trimmed().toLower();
+		if (keys.isEmpty()) {
+			continue;
+		}
+		const auto sequence = QKeySequence(keys, QKeySequence::PortableText);
+		if (sequence.isEmpty()) {
+			continue;
+		}
+
+		CustomChatPeerIds[index] = peerId;
+		set(sequence, kCustomChatCommands[index], true);
+		++index;
+	}
 }
 
 void Manager::writeDefaultFile() {
@@ -805,6 +863,19 @@ bool Launch(std::vector<Command> commands) {
 		return handler();
 	}
 	return false;
+}
+
+PeerId CustomChatPeerId(Command command) {
+	const auto i = ranges::find(kCustomChatCommands, command);
+	return (i == end(kCustomChatCommands))
+		? PeerId()
+		: CustomChatPeerIds[i - begin(kCustomChatCommands)];
+}
+
+PeerId CustomChatPeerId(int index) {
+	return (index >= 0 && index < int(CustomChatPeerIds.size()))
+		? CustomChatPeerIds[index]
+		: PeerId();
 }
 
 rpl::producer<not_null<Request*>> Requests() {

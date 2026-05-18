@@ -200,6 +200,22 @@ bool operator>=(PeerIdZero, PeerId) = delete;
 	return channelId;
 }
 
+[[nodiscard]] inline constexpr PeerId peerFromBotApiChatId(
+		int64 chatId) noexcept {
+	constexpr auto kBotApiChannelPrefix = int64(1000000000000);
+	if (chatId > 0) {
+		return peerFromUser(UserId(BareId(chatId)));
+	} else if (chatId <= -kBotApiChannelPrefix) {
+		const auto bare = -(chatId + kBotApiChannelPrefix);
+		return bare
+			? peerFromChannel(ChannelId(BareId(bare)))
+			: PeerId();
+	} else if (chatId < 0) {
+		return peerFromChat(ChatId(BareId(-chatId)));
+	}
+	return PeerId();
+}
+
 [[nodiscard]] inline constexpr PeerId peerFromUser(MTPlong userId) noexcept {
 	return peerFromUser(userId.v);
 }
