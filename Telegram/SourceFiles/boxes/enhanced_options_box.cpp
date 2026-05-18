@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/boxes/confirm_box.h"
 #include "core/application.h"
 #include "core/enhanced_settings.h"
+#include "core/shortcuts.h"
 #include "settings/settings_enhanced.h"
 
 #include <QKeySequence>
@@ -420,6 +421,7 @@ void CustomChatShortcutsBox::save() {
 	SetEnhancedValue(
 		"custom_chat_shortcuts",
 		_shortcuts->getLastText().trimmed());
+	Shortcuts::ReloadCustomChatShortcuts();
 	EnhancedSettings::Write();
 	closeBox();
 }

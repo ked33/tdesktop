@@ -24,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item.h"
 #include "core/application.h"
 #include "core/click_handler_types.h"
+#include "core/local_url_handlers.h"
 #include "core/shortcuts.h"
 #include "core/ui_integration.h"
 #include "ui/widgets/buttons.h"
@@ -72,6 +73,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/notifications_manager.h"
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
+#include "window/window_session_controller_link_info.h"
 #include "window/window_peer_menu.h"
 #include "ui/chat/chats_filter_tag.h"
 #include "ui/effects/ripple_animation.h"
@@ -114,6 +116,95 @@ base::options::toggle CtrlClickChatNewWindow({
 	.description = "Open chat in a new window by Ctrl+Click "
 	"(Cmd+Click on macOS).",
 });
+
+[[nodiscard]] bool IsUsernameLike(QStringView value) {
+	if (value.isEmpty()) {
+		return false;
+	}
+	for (const auto ch : value) {
+		if (!ch.isLetterOrNumber() && ch != '.' && ch != '_') {
+			return false;
+		}
+	}
+	return true;
+}
+
+[[nodiscard]] QVariant CustomChatShortcutContext(
+		not_null<Window::SessionController*> controller) {
+	return QVariant::fromValue(ClickHandlerContext{
+		.sessionWindow = base::make_weak(controller),
+	});
+}
+
+[[nodiscard]] bool OpenLocalCustomChatShortcutTarget(
+		not_null<Window::SessionController*> controller,
+		const QString &target) {
+	const auto context = CustomChatShortcutContext(controller);
+	if (target.startsWith(u"internal:"_q, Qt::CaseInsensitive)) {
+		controller->window().activate();
+		return Core::App().openInternalUrl(target, context);
+	}
+	const auto local = Core::TryConvertUrlToLocal(target);
+	if (local.startsWith(u"internal:"_q, Qt::CaseInsensitive)) {
+		controller->window().activate();
+		return Core::App().openInternalUrl(local, context);
+	} else if (local.startsWith(u"tg://"_q, Qt::CaseInsensitive)) {
+		controller->window().activate();
+		return Core::App().openLocalUrl(local, context);
+	}
+	return false;
+}
+
+[[nodiscard]] bool OpenCustomChatShortcutTarget(
+		not_null<Window::SessionController*> controller,
+		QString target) {
+	target = target.trimmed();
+	if (target.isEmpty()) {
+		return false;
+	}
+	if (OpenLocalCustomChatShortcutTarget(controller, target)) {
+		return true;
+	}
+	if (target.startsWith(u"@"_q)) {
+		const auto username = target.mid(1).trimmed();
+		if (username.isEmpty()) {
+			return false;
+		}
+		controller->window().activate();
+		controller->showPeerByLink(Window::PeerByLinkInfo{
+			.usernameOrId = username,
+		});
+		return true;
+	}
+	auto ok = false;
+	const auto chatId = target.toLongLong(&ok);
+	if (ok) {
+		const auto peerId = peerFromBotApiChatId(chatId);
+		if (!peerId) {
+			return false;
+		}
+		controller->window().activate();
+		if (peerId.is<ChannelId>()) {
+			controller->showPeerByLink(Window::PeerByLinkInfo{
+				.usernameOrId = peerId.to<ChannelId>(),
+			});
+		} else {
+			controller->showPeerHistory(
+				peerId,
+				Window::SectionShow::Way::ClearStack,
+				ShowAtUnreadMsgId);
+		}
+		return true;
+	}
+	if (!IsUsernameLike(target)) {
+		return false;
+	}
+	controller->window().activate();
+	controller->showPeerByLink(Window::PeerByLinkInfo{
+		.usernameOrId = target,
+	});
+	return true;
+}
 
 
 [[nodiscard]] InnerWidget::ChatsFilterTagsKey SerializeFilterTagsKey(
@@ -5558,32 +5649,6 @@ void InnerWidget::setupShortcuts() {
 				Window::SectionShow::Way::ClearStack);
 			return true;
 		});
-		const auto customChats = std::array{
-			Command::ChatCustom1,
-			Command::ChatCustom2,
-			Command::ChatCustom3,
-			Command::ChatCustom4,
-			Command::ChatCustom5,
-			Command::ChatCustom6,
-			Command::ChatCustom7,
-			Command::ChatCustom8,
-		};
-		for (const auto &[command, index] : ranges::views::zip(
-				customChats,
-				ranges::views::ints(0, ranges::unreachable))) {
-			request->check(command) && request->handle([=, index = index] {
-				const auto peerId = Shortcuts::CustomChatPeerId(index);
-				const auto peer = session().data().peerLoaded(peerId);
-				if (!peer) {
-					return false;
-				}
-				_controller->showThread(
-					session().data().history(peer),
-					ShowAtUnreadMsgId,
-					Window::SectionShow::Way::ClearStack);
-				return true;
-			});
-		}
 		request->check(Command::ShowArchive) && request->handle([=] {
 			const auto folder = session().data().folderLoaded(
 				Data::Folder::kId);
@@ -5700,6 +5765,19 @@ void InnerWidget::setupShortcuts() {
 				scrollToEntry(row);
 				return true;
 			});
+		}
+	}, lifetime());
+	Shortcuts::CustomChatJumpRequests(
+	) | rpl::filter([=] {
+		return isActiveWindow()
+			&& !_controller->isLayerShown()
+			&& !_controller->window().locked()
+			&& !_childListShown.current().shown
+			&& !_chatPreviewRow.key;
+	}) | rpl::on_next([=](const QString &target) {
+		if (!OpenCustomChatShortcutTarget(_controller, target)) {
+			LOG(("Shortcut Warning: could not resolve custom chat shortcut target '%1'.")
+				.arg(target));
 		}
 	}, lifetime());
 }

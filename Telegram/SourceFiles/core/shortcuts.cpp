@@ -45,8 +45,8 @@ bool ChatSwitchStarted/* = false*/;
 QObject *ChatSwitchFilter/* = nullptr*/;
 rpl::event_stream<ChatSwitchRequest> ChatSwitchStream;
 rpl::event_stream<> JumpToDialogStream;
+rpl::event_stream<QString> CustomChatJumpStream;
 std::array<Qt::Key, kChatSwitchSpecialKeys.size()> ChatSwitchKeyPressHandled;
-std::array<PeerId, 8> CustomChatPeerIds;
 
 const auto AutoRepeatCommands = base::flat_set<Command>{
 	Command::MediaPrevious,
@@ -168,21 +168,11 @@ const base::flat_map<Command, QString> &CommandNames() {
 	Command::RecordRound,
 };
 
-constexpr auto kCustomChatCommands = std::array{
-	Command::ChatCustom1,
-	Command::ChatCustom2,
-	Command::ChatCustom3,
-	Command::ChatCustom4,
-	Command::ChatCustom5,
-	Command::ChatCustom6,
-	Command::ChatCustom7,
-	Command::ChatCustom8,
-};
-
 class Manager {
 public:
 	void fill();
 	void clear();
+	void reloadCustomChatShortcuts();
 
 	[[nodiscard]] std::vector<Command> lookup(
 		not_null<QObject*> object) const;
@@ -208,24 +198,32 @@ public:
 private:
 	void fillDefaults();
 	void fillCustomChatShortcuts();
+	void clearCustomChatShortcuts();
 	void writeDefaultFile();
 	void writeCustomFile();
 	bool readCustomFile();
 
 	void set(const QString &keys, Command command, bool replace = false);
 	void set(const QKeySequence &result, Command command, bool replace);
+	void setCustomChatShortcut(const QKeySequence &keys, QString target);
 	void remove(const QString &keys);
 	void remove(const QKeySequence &keys);
 	void remove(const QKeySequence &keys, Command command);
 	void unregister(base::unique_qptr<QAction> shortcut);
 
 	void pruneListened();
+	void setBaseShortcutSuppressed(
+		const QKeySequence &keys,
+		bool suppressed);
+	void syncCustomChatShortcutSuppression();
 
 	QStringList _errors;
 
 	base::flat_map<QKeySequence, base::unique_qptr<QAction>> _shortcuts;
+	base::flat_map<QKeySequence, base::unique_qptr<QAction>> _customChatShortcuts;
 	base::flat_multi_map<not_null<QObject*>, Command> _commandByObject;
 	std::vector<QPointer<QWidget>> _listened;
+	base::flat_set<QKeySequence> _suppressedDefaultShortcuts;
 
 	base::flat_map<QKeySequence, base::flat_set<Command>> _defaults;
 
@@ -307,8 +305,13 @@ void Manager::fill() {
 	fillCustomChatShortcuts();
 }
 
+void Manager::reloadCustomChatShortcuts() {
+	fillCustomChatShortcuts();
+}
+
 void Manager::clear() {
 	_errors.clear();
+	clearCustomChatShortcuts();
 	_shortcuts.clear();
 	_commandByObject.clear();
 	_mediaShortcuts.clear();
@@ -352,6 +355,7 @@ void Manager::change(
 		Assert(!was.isEmpty());
 		set(was, *restore, true);
 	}
+	syncCustomChatShortcutSuppression();
 	writeCustomFile();
 }
 
@@ -364,6 +368,7 @@ void Manager::resetToDefaults() {
 			set(sequence, command, false);
 		}
 	}
+	syncCustomChatShortcutSuppression();
 	writeCustomFile();
 }
 
@@ -393,12 +398,18 @@ void Manager::listen(not_null<QWidget*> widget) {
 	pruneListened();
 	_listened.push_back(widget.get());
 	for (const auto &[keys, shortcut] : _shortcuts) {
+		if (!_suppressedDefaultShortcuts.contains(keys)) {
+			widget->addAction(shortcut.get());
+		}
+	}
+	for (const auto &[keys, shortcut] : _customChatShortcuts) {
 		widget->addAction(shortcut.get());
 	}
 }
 
 bool Manager::handles(const QKeySequence &sequence) const {
-	return _shortcuts.contains(sequence);
+	return _shortcuts.contains(sequence)
+		|| _customChatShortcuts.contains(sequence);
 }
 
 void Manager::pruneListened() {
@@ -409,6 +420,43 @@ void Manager::pruneListened() {
 			i = _listened.erase(i);
 		}
 	}
+}
+
+void Manager::setBaseShortcutSuppressed(
+		const QKeySequence &keys,
+		bool suppressed) {
+	const auto i = _shortcuts.find(keys);
+	if (i == end(_shortcuts)) {
+		return;
+	}
+	pruneListened();
+	for (const auto &widget : _listened) {
+		if (suppressed) {
+			widget->removeAction(i->second.get());
+		} else if (!widget->actions().contains(i->second.get())) {
+			widget->addAction(i->second.get());
+		}
+	}
+}
+
+void Manager::syncCustomChatShortcutSuppression() {
+	auto desired = base::flat_set<QKeySequence>();
+	for (const auto &[keys, shortcut] : _customChatShortcuts) {
+		if (_shortcuts.contains(keys)) {
+			desired.emplace(keys);
+		}
+	}
+	for (const auto &keys : _suppressedDefaultShortcuts) {
+		if (!desired.contains(keys)) {
+			setBaseShortcutSuppressed(keys, false);
+		}
+	}
+	for (const auto &keys : desired) {
+		if (!_suppressedDefaultShortcuts.contains(keys)) {
+			setBaseShortcutSuppressed(keys, true);
+		}
+	}
+	_suppressedDefaultShortcuts = std::move(desired);
 }
 
 bool Manager::readCustomFile() {
@@ -559,34 +607,27 @@ void Manager::fillDefaults() {
 }
 
 void Manager::fillCustomChatShortcuts() {
-	CustomChatPeerIds.fill(PeerId());
+	clearCustomChatShortcuts();
 
 	const auto config = GetEnhancedString("custom_chat_shortcuts").trimmed();
 	if (config.isEmpty()) {
 		return;
 	}
 
-	auto index = 0;
+	auto limit = kCountLimit;
 	for (const auto &entry : config.split('|', Qt::SkipEmptyParts)) {
-		if (index >= int(kCustomChatCommands.size())) {
+		if (!limit--) {
 			break;
 		}
-		const auto parts = entry.split(',', Qt::SkipEmptyParts);
-		if (parts.size() != 2) {
+		const auto separator = entry.indexOf(',');
+		if (separator <= 0 || separator >= (entry.size() - 1)) {
 			continue;
 		}
-
-		auto ok = false;
-		const auto chatId = parts[0].trimmed().toLongLong(&ok);
-		if (!ok) {
+		const auto target = entry.left(separator).trimmed();
+		if (target.isEmpty()) {
 			continue;
 		}
-		const auto peerId = peerFromBotApiChatId(chatId);
-		if (!peerId) {
-			continue;
-		}
-
-		const auto keys = parts[1].trimmed().toLower();
+		const auto keys = entry.mid(separator + 1).trimmed().toLower();
 		if (keys.isEmpty()) {
 			continue;
 		}
@@ -594,11 +635,13 @@ void Manager::fillCustomChatShortcuts() {
 		if (sequence.isEmpty()) {
 			continue;
 		}
-
-		CustomChatPeerIds[index] = peerId;
-		set(sequence, kCustomChatCommands[index], true);
-		++index;
+		setCustomChatShortcut(sequence, target);
 	}
+}
+
+void Manager::clearCustomChatShortcuts() {
+	_customChatShortcuts.clear();
+	syncCustomChatShortcutSuppression();
 }
 
 void Manager::writeDefaultFile() {
@@ -777,6 +820,35 @@ void Manager::set(
 	}
 }
 
+void Manager::setCustomChatShortcut(const QKeySequence &keys, QString target) {
+	auto shortcut = base::make_unique_q<QAction>();
+	shortcut->setShortcut(keys);
+	shortcut->setShortcutContext(Qt::ApplicationShortcut);
+	shortcut->setAutoRepeat(false);
+	QObject::connect(
+		shortcut.get(),
+		&QAction::triggered,
+		shortcut.get(),
+		[target = std::move(target)] {
+			CustomChatJumpStream.fire_copy(target);
+		});
+
+	auto i = _customChatShortcuts.find(keys);
+	if (i == end(_customChatShortcuts)) {
+		i = _customChatShortcuts.emplace(keys, std::move(shortcut)).first;
+	} else {
+		i->second = std::move(shortcut);
+	}
+
+	pruneListened();
+	for (const auto &widget : _listened) {
+		if (!widget->actions().contains(i->second.get())) {
+			widget->addAction(i->second.get());
+		}
+	}
+	syncCustomChatShortcutSuppression();
+}
+
 void Manager::remove(const QString &keys) {
 	if (keys.isEmpty()) {
 		return;
@@ -865,25 +937,20 @@ bool Launch(std::vector<Command> commands) {
 	return false;
 }
 
-PeerId CustomChatPeerId(Command command) {
-	const auto i = ranges::find(kCustomChatCommands, command);
-	return (i == end(kCustomChatCommands))
-		? PeerId()
-		: CustomChatPeerIds[i - begin(kCustomChatCommands)];
-}
-
-PeerId CustomChatPeerId(int index) {
-	return (index >= 0 && index < int(CustomChatPeerIds.size()))
-		? CustomChatPeerIds[index]
-		: PeerId();
-}
-
 rpl::producer<not_null<Request*>> Requests() {
 	return RequestsStream.events();
 }
 
 void Start() {
 	Data.fill();
+}
+
+void ReloadCustomChatShortcuts() {
+	Data.reloadCustomChatShortcuts();
+}
+
+rpl::producer<QString> CustomChatJumpRequests() {
+	return CustomChatJumpStream.events();
 }
 
 const QStringList &Errors() {
