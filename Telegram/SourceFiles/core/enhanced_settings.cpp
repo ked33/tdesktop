@@ -73,6 +73,7 @@ namespace EnhancedSettings {
 			ensureString(qsl("flood_premium_wait_override_ms"), QString());
 			ensureString(qsl("quick_copy_targets"), qsl("-1002615379741,Saved Messages"));
 			ensureString(qsl("chat_switch_persistent_shortcut"), QString());
+			ensureString(qsl("jump_to_dialog_shortcut"), qsl("alt+e"));
 
 			ensureBool(qsl("preview_brightness_enabled"), false);
 			if (!gEnhancedOptions.contains(qsl("preview_brightness"))) {
@@ -416,6 +417,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("flood_premium_wait_override_ms"), "");
 		settings.insert(qsl("quick_copy_targets"), "-1002615379741,Saved Messages");
 		settings.insert(qsl("chat_switch_persistent_shortcut"), "");
+		settings.insert(qsl("jump_to_dialog_shortcut"), "alt+e");
 		settings.insert(qsl("update_url"), "");
 		settings.insert(qsl("preview_brightness_enabled"), false);
 		settings.insert(qsl("preview_brightness"), 70);
@@ -507,6 +509,9 @@ namespace EnhancedSettings {
 		settings.insert(
 			qsl("chat_switch_persistent_shortcut"),
 			GetEnhancedString("chat_switch_persistent_shortcut"));
+		settings.insert(
+			qsl("jump_to_dialog_shortcut"),
+			GetEnhancedString("jump_to_dialog_shortcut"));
 		settings.insert(qsl("update_url"), GetEnhancedString("update_url"));
 		settings.insert(
 			qsl("preview_brightness_enabled"),

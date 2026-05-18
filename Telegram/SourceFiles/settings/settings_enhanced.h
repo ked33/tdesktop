@@ -40,6 +40,7 @@ namespace Settings {
 			rpl::event_stream<QString> _BitrateChanged;
 			rpl::event_stream<QString> _ChatSwitchShortcutChanged;
 			rpl::event_stream<QString> _FloodPremiumWaitChanged;
+			rpl::event_stream<QString> _JumpToDialogShortcutChanged;
 			rpl::event_stream<QString> _MpvPathChanged;
 			rpl::event_stream<QString> _PreviewBrightnessChanged;
 			rpl::event_stream<QString> _QuickCopyTargetsChanged;
