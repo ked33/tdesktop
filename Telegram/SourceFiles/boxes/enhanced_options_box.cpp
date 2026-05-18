@@ -426,6 +426,55 @@ void CustomChatShortcutsBox::save() {
 	closeBox();
 }
 
+NoForwardsBadgeColorBox::NoForwardsBadgeColorBox(QWidget *parent)
+	: _color(
+		this,
+		st::defaultInputField,
+		tr::lng_settings_no_forwards_badge_color_placeholder()) {
+}
+
+QString NoForwardsBadgeColorBox::ColorLabel(const QString &value) {
+	const auto trimmed = value.trimmed();
+	return trimmed.isEmpty() ? QString("#ecbb71") : trimmed;
+}
+
+void NoForwardsBadgeColorBox::prepare() {
+	setTitle(tr::lng_settings_no_forwards_badge_color());
+
+	addButton(tr::lng_settings_save(), [=] { save(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+
+	_color->setText(GetEnhancedString("no_forwards_badge_color"));
+	_color->setMaxLength(7);
+
+	setDimensions(st::boxWidth, _color->height());
+}
+
+void NoForwardsBadgeColorBox::setInnerFocus() {
+	_color->setFocusFast();
+}
+
+void NoForwardsBadgeColorBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+
+	const auto width = st::boxWidth
+		- st::boxPadding.left()
+		- st::boxPadding.right();
+	_color->resize(width, _color->height());
+	_color->moveToLeft(st::boxPadding.left(), 0);
+}
+
+void NoForwardsBadgeColorBox::save() {
+	const auto colorText = _color->getLastText().trimmed();
+	if (!colorText.isEmpty() && !QColor::isValidColor(colorText)) {
+		Ui::Toast::Show(tr::lng_settings_no_forwards_badge_color_invalid(tr::now));
+		return;
+	}
+	SetEnhancedValue("no_forwards_badge_color", colorText.isEmpty() ? QString("#ecbb71") : colorText);
+	EnhancedSettings::Write();
+	closeBox();
+}
+
 ChatSwitchShortcutBox::ChatSwitchShortcutBox(QWidget *parent)
 : ChatSwitchShortcutBox(
 	parent,
