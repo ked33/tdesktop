@@ -3885,13 +3885,15 @@ TextSelection Message::selectionFromQuote(
 	return {};
 }
 
-TextSelection Message::selectionForEditText(TextSelection selection) const {
+TextSelection Message::selectionForEditText(
+		TextSelection selection,
+		bool allowEmptySelection) const {
 	const auto textItem = this->textItem();
 	const auto item = textItem ? textItem : data().get();
 	const auto &translated = item->translatedText();
 	const auto &original = item->originalText();
 	if (&translated != &original
-		|| selection.empty()
+		|| (!allowEmptySelection && selection.empty())
 		|| selection == FullSelection) {
 		return {};
 	} else if (hasVisibleText()) {
@@ -3904,13 +3906,43 @@ TextSelection Message::selectionForEditText(TextSelection selection) const {
 		return FindSelectionInOriginalText(
 			text(),
 			textSelection,
-			original.text.size());
+			original.text.size(),
+			allowEmptySelection);
 	} else if (const auto media = this->media()) {
 		if (media->isDisplayed() || isHiddenByGroup()) {
-			return media->selectionForEditText(selection);
+			return media->selectionForEditText(
+				selection,
+				allowEmptySelection);
 		}
 	}
 	return {};
+}
+
+std::optional<TextSelection> Message::selectionForEditCursor(
+		TextSelection selection) const {
+	const auto textItem = this->textItem();
+	const auto item = textItem ? textItem : data().get();
+	const auto &translated = item->translatedText();
+	const auto &original = item->originalText();
+	if (&translated != &original || selection == FullSelection) {
+		return std::nullopt;
+	} else if (hasVisibleText()) {
+		const auto media = this->media();
+		const auto mediaDisplayed = media && media->isDisplayed();
+		const auto mediaBefore = mediaDisplayed && invertMedia();
+		const auto textSelection = mediaBefore
+			? media->skipSelection(selection)
+			: selection;
+		return FindEditCursorInOriginalText(
+			text(),
+			textSelection,
+			original.text.size());
+	} else if (const auto media = this->media()) {
+		if (media->isDisplayed() || isHiddenByGroup()) {
+			return media->selectionForEditCursor(selection);
+		}
+	}
+	return std::nullopt;
 }
 
 TextSelection Message::adjustSelection(
