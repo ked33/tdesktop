@@ -227,5 +227,9 @@
     "lng_settings_chat_switch_shortcut_title": "Persistent recent chats shortcut",
     "lng_settings_chat_switch_shortcut_placeholder": "Example: Ctrl+Alt+P, leave empty to disable",
     "lng_settings_chat_switch_shortcut_disabled": "Disabled",
-    "lng_settings_chat_switch_shortcut_invalid": "Please enter a valid shortcut, for example Ctrl+Alt+P."
+    "lng_settings_chat_switch_shortcut_invalid": "Please enter a valid shortcut, for example Ctrl+Alt+P.",
+    "lng_jump_to_dialog": "Jump to",
+    "lng_settings_jump_to_dialog_shortcut_title": "Jump to dialog shortcut",
+    "lng_settings_jump_to_dialog_shortcut_placeholder": "Example: Alt+E, leave empty to disable",
+    "lng_settings_jump_to_dialog_shortcut_invalid": "Please enter a valid shortcut, for example Alt+E."
 	}

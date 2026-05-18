@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "api/api_cloud_password.h"
 #include "api/api_text_entities.h"
+#include "boxes/share_box.h"
 #include "boxes/peers/add_bot_to_chat_box.h"
 #include "boxes/peers/edit_peer_info_box.h"
 #include "boxes/peers/replace_boost_box.h"
@@ -1959,6 +1960,14 @@ void SessionController::setupShortcuts() {
 			) | rpl::on_next(close, _chatSwitchProcess->lifetime());
 		}
 		_chatSwitchProcess->process(request);
+	}, _lifetime);
+
+	JumpToDialogRequests(
+	) | rpl::filter([=] {
+		return !window().locked()
+			&& (Core::App().activeWindow() == &window());
+	}) | rpl::on_next([=] {
+		FastJumpToDialog(this);
 	}, _lifetime);
 
 	Requests(

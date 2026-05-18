@@ -43,6 +43,7 @@ Qt::Key ChatSwitchModifier/* = Qt::Key()*/;
 bool ChatSwitchStarted/* = false*/;
 QObject *ChatSwitchFilter/* = nullptr*/;
 rpl::event_stream<ChatSwitchRequest> ChatSwitchStream;
+rpl::event_stream<> JumpToDialogStream;
 std::array<Qt::Key, kChatSwitchSpecialKeys.size()> ChatSwitchKeyPressHandled;
 
 const auto AutoRepeatCommands = base::flat_set<Command>{
@@ -853,12 +854,13 @@ bool CancelChatSwitch(Qt::Key result) {
 	return true;
 }
 
-bool MatchesPersistentChatSwitch(not_null<QKeyEvent*> event) {
+bool MatchesEnhancedShortcut(
+		not_null<QKeyEvent*> event,
+		const QString &settingKey) {
 	if (event->isAutoRepeat()) {
 		return false;
 	}
-	const auto configured = GetEnhancedString(
-		u"chat_switch_persistent_shortcut"_q).trimmed();
+	const auto configured = GetEnhancedString(settingKey).trimmed();
 	if (configured.isEmpty()) {
 		return false;
 	}
@@ -884,6 +886,12 @@ bool MatchesPersistentChatSwitch(not_null<QKeyEvent*> event) {
 	return (expected.matches(current) == QKeySequence::ExactMatch);
 }
 
+bool MatchesPersistentChatSwitch(not_null<QKeyEvent*> event) {
+	return MatchesEnhancedShortcut(
+		event,
+		u"chat_switch_persistent_shortcut"_q);
+}
+
 bool StartPersistentChatSwitch(not_null<QKeyEvent*> event) {
 	if (!MatchesPersistentChatSwitch(event)) {
 		return false;
@@ -893,6 +901,15 @@ bool StartPersistentChatSwitch(not_null<QKeyEvent*> event) {
 		.action = Qt::Key(),
 		.started = true,
 	});
+	return true;
+}
+
+bool StartJumpToDialog(not_null<QKeyEvent*> event) {
+	if (!MatchesEnhancedShortcut(event, u"jump_to_dialog_shortcut"_q)) {
+		return false;
+	}
+	CancelChatSwitch(Qt::Key_Escape);
+	JumpToDialogStream.fire({});
 	return true;
 }
 
@@ -944,6 +961,10 @@ bool HandleEvent(
 
 rpl::producer<ChatSwitchRequest> ChatSwitchRequests() {
 	return ChatSwitchStream.events();
+}
+
+rpl::producer<> JumpToDialogRequests() {
+	return JumpToDialogStream.events();
 }
 
 void ResetChatSwitchState() {
@@ -1022,6 +1043,9 @@ bool HandlePossibleChatSwitch(not_null<QKeyEvent*> event) {
 			}
 		}
 	} else if (type == QEvent::KeyPress) {
+		if (StartJumpToDialog(event)) {
+			return true;
+		}
 		if (StartPersistentChatSwitch(event)) {
 			return true;
 		}
