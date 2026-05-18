@@ -2899,9 +2899,11 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				_menu->addAction(tr::lng_context_edit_msg(tr::now), [=] {
 					if (const auto item = session->data().message(editItemId)) {
 						auto it = _selected.find(item);
-						const auto selection = ((it != _selected.end())
+						const auto view = viewByItem(item);
+						const auto selection = (view
+								&& (it != _selected.end())
 								&& (it->second != FullSelection))
-							? it->second
+							? view->selectionForEditText(it->second)
 							: TextSelection();
 						if (!selection.empty()) {
 							clearSelected(true);

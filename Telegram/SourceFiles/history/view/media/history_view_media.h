@@ -105,6 +105,10 @@ public:
 			const SelectedQuote &quote) const {
 		return {};
 	}
+	[[nodiscard]] virtual TextSelection selectionForEditText(
+			TextSelection selection) const {
+		return {};
+	}
 
 	[[nodiscard]] virtual bool isDisplayed() const {
 		return true;
