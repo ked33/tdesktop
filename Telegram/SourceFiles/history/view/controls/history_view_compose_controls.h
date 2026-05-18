@@ -243,7 +243,10 @@ public:
 	void showFinished();
 	void raisePanels();
 
-	void editMessage(FullMsgId id, const TextSelection &selection);
+	void editMessage(
+		FullMsgId id,
+		const TextSelection &selection,
+		bool allowEmptySelection = false);
 	void cancelEditMessage();
 	void maybeCancelEditMessage(); // Confirm if changed and cancel.
 

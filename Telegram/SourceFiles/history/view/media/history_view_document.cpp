@@ -1478,7 +1478,9 @@ TextSelection Document::selectionFromQuote(
 	return {};
 }
 
-TextSelection Document::selectionForEditText(TextSelection selection) const {
+TextSelection Document::selectionForEditText(
+		TextSelection selection,
+		bool allowEmptySelection) const {
 	if (const auto voice = Get<HistoryDocumentVoice>()) {
 		const auto length = voice->transcribeText.length();
 		if (selection.from < length) {
@@ -1492,9 +1494,30 @@ TextSelection Document::selectionForEditText(TextSelection selection) const {
 		return Element::FindSelectionInOriginalText(
 			captioned->caption,
 			selection,
-			_realParent->originalText().text.size());
+			_realParent->originalText().text.size(),
+			allowEmptySelection);
 	}
 	return {};
+}
+
+std::optional<TextSelection> Document::selectionForEditCursor(
+		TextSelection selection) const {
+	if (const auto voice = Get<HistoryDocumentVoice>()) {
+		const auto length = voice->transcribeText.length();
+		if (selection.from < length) {
+			return std::nullopt;
+		}
+		selection = HistoryView::UnshiftItemSelection(
+			selection,
+			voice->transcribeText);
+	}
+	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
+		return Element::FindEditCursorInOriginalText(
+			captioned->caption,
+			selection,
+			_realParent->originalText().text.size());
+	}
+	return std::nullopt;
 }
 
 bool Document::uploading() const {
