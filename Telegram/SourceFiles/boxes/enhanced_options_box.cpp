@@ -376,6 +376,54 @@ void QuickCopyTargetsBox::save() {
 	closeBox();
 }
 
+CustomChatShortcutsBox::CustomChatShortcutsBox(QWidget *parent)
+	: _shortcuts(
+		this,
+		st::defaultInputField,
+		tr::lng_settings_custom_chat_shortcuts_placeholder()) {
+}
+
+QString CustomChatShortcutsBox::ShortcutsLabel(const QString &value) {
+	const auto trimmed = value.trimmed();
+	return trimmed.isEmpty()
+		? tr::lng_settings_chat_switch_shortcut_disabled(tr::now)
+		: trimmed;
+}
+
+void CustomChatShortcutsBox::prepare() {
+	setTitle(tr::lng_settings_custom_chat_shortcuts_title());
+
+	addButton(tr::lng_settings_save(), [=] { save(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+
+	_shortcuts->setText(GetEnhancedString("custom_chat_shortcuts"));
+	_shortcuts->setMaxLength(4096);
+
+	setDimensions(st::boxWidth, _shortcuts->height());
+}
+
+void CustomChatShortcutsBox::setInnerFocus() {
+	_shortcuts->setFocusFast();
+}
+
+void CustomChatShortcutsBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+
+	const auto width = st::boxWidth
+		- st::boxPadding.left()
+		- st::boxPadding.right();
+	_shortcuts->resize(width, _shortcuts->height());
+	_shortcuts->moveToLeft(st::boxPadding.left(), 0);
+}
+
+void CustomChatShortcutsBox::save() {
+	SetEnhancedValue(
+		"custom_chat_shortcuts",
+		_shortcuts->getLastText().trimmed());
+	EnhancedSettings::Write();
+	closeBox();
+}
+
 ChatSwitchShortcutBox::ChatSwitchShortcutBox(QWidget *parent)
 : ChatSwitchShortcutBox(
 	parent,

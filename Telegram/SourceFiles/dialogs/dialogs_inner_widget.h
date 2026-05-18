@@ -263,6 +263,7 @@ protected:
 	void mouseMoveEvent(QMouseEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
 	void mouseReleaseEvent(QMouseEvent *e) override;
+	void mouseDoubleClickEvent(QMouseEvent *e) override;
 	void resizeEvent(QResizeEvent *e) override;
 	void enterEventHook(QEnterEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
@@ -344,6 +345,11 @@ private:
 	void preloadRowsData();
 	void scrollToItem(int top, int height);
 	void scrollToDefaultSelected();
+	void clearPendingSearchResultClick();
+	bool delaySearchResultClick(
+		int searchedPressed,
+		Qt::KeyboardModifiers modifiers);
+	void choosePendingSearchResultClick();
 	void setCollapsedPressed(int pressed);
 	void setPressed(
 		Row *pressed,
@@ -643,6 +649,9 @@ private:
 	int _searchedMigratedCount = 0;
 	int _searchedSelected = -1;
 	int _searchedPressed = -1;
+	ChosenRow _pendingSearchResultClick;
+	base::Timer _searchResultClickTimer;
+	bool _ignoreSearchResultRelease = false;
 
 	WidgetState _state = WidgetState::Default;
 
