@@ -355,6 +355,34 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
+		// 添加锁图标颜色设置
+		const auto currentNoForwardsBadgeColorLabel = [] {
+			const auto color = GetEnhancedString("no_forwards_badge_color");
+			return color.isEmpty() ? QString("#ecbb71") : color;
+		};
+		auto noForwardsBadgeColorValue = rpl::single(
+			currentNoForwardsBadgeColorLabel()
+		) | rpl::then(
+			_NoForwardsBadgeColorChanged.events()
+		) | rpl::map([=] {
+			return currentNoForwardsBadgeColorLabel();
+		});
+		auto noForwardsBadgeColorButton = AddButtonWithLabel(
+			inner,
+			tr::lng_settings_no_forwards_badge_color(),
+			std::move(noForwardsBadgeColorValue),
+			st::settingsButtonNoIcon
+		);
+		noForwardsBadgeColorButton->events(
+		) | rpl::on_next([=](not_null<QEvent*> e) {
+			if (e->type() == QEvent::UpdateLater) {
+				_NoForwardsBadgeColorChanged.fire({});
+			}
+		}, container->lifetime());
+		noForwardsBadgeColorButton->addClickHandler([=] {
+			Ui::show(Box<NoForwardsBadgeColorBox>());
+		});
+
 		AddButtonWithIcon(
 				inner,
 				tr::lng_settings_disable_link_warning(),

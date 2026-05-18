@@ -1079,11 +1079,18 @@ void PaintNoForwardsUserpicBadge(
 	const auto top = photoTop + photoSize - skip.y() - size;
 	const auto rect = QRect(left, top, size, size);
 
+	// 使用自定义颜色而不是主题变量
+	const auto colorStr = GetEnhancedString("no_forwards_badge_color");
+	const auto color = QColor(colorStr.isEmpty() ? "#ecbb71" : colorStr);
+
 	p.save();
-	ThreeStateIcon(
-		st::dialogsNoForwardsBadgeIcon,
-		context.active,
-		context.selected).paintInCenter(p, rect);
+	p.setPen(Qt::NoPen);
+	p.setBrush(color);
+
+	// 绘制锁图标
+	const auto icon = st::dialogsNoForwardsBadgeIcon.icon;
+	icon.paint(p, rect.topLeft(), rect.width(), color);
+
 	p.restore();
 }
 
