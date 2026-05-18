@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -2786,6 +2786,17 @@ SelectedItems ListWidget::getSelectedItems() const {
 TextSelection ListWidget::getSelectedTextRange(
 		not_null<HistoryItem*> item) const {
 	return (_selectedTextItem == item) ? _selectedTextRange : TextSelection();
+}
+
+TextSelection ListWidget::getSelectedTextRangeForEdit(
+		not_null<HistoryItem*> item) const {
+	if (_selectedTextItem != item) {
+		return {};
+	}
+	if (const auto view = viewForItem(item)) {
+		return view->selectionForEditText(_selectedTextRange);
+	}
+	return {};
 }
 
 int ListWidget::findItemIndexByY(int y) const {
