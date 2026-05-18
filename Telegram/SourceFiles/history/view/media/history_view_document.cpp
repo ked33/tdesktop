@@ -1478,6 +1478,25 @@ TextSelection Document::selectionFromQuote(
 	return {};
 }
 
+TextSelection Document::selectionForEditText(TextSelection selection) const {
+	if (const auto voice = Get<HistoryDocumentVoice>()) {
+		const auto length = voice->transcribeText.length();
+		if (selection.from < length) {
+			return {};
+		}
+		selection = HistoryView::UnshiftItemSelection(
+			selection,
+			voice->transcribeText);
+	}
+	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
+		return Element::FindSelectionInOriginalText(
+			captioned->caption,
+			selection,
+			_realParent->originalText().text.size());
+	}
+	return {};
+}
+
 bool Document::uploading() const {
 	return _data->uploading();
 }
