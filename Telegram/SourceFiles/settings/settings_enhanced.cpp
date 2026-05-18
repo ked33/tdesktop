@@ -725,6 +725,39 @@ namespace Settings {
 			Ui::show(Box<ChatSwitchShortcutBox>());
 		});
 
+		const auto currentJumpToDialogShortcutLabel = [] {
+			return ChatSwitchShortcutBox::ShortcutLabel(
+				GetEnhancedString("jump_to_dialog_shortcut"));
+		};
+		auto jumpToDialogShortcutValue = rpl::single(
+			currentJumpToDialogShortcutLabel()
+		) | rpl::then(
+			_JumpToDialogShortcutChanged.events()
+		) | rpl::map([=] {
+			return currentJumpToDialogShortcutLabel();
+		});
+		auto jumpToDialogShortcutButton = AddButtonWithLabel(
+			container,
+			tr::lng_settings_jump_to_dialog_shortcut_title(),
+			std::move(jumpToDialogShortcutValue),
+			st::settingsButtonNoIcon);
+		jumpToDialogShortcutButton->events(
+		) | rpl::on_next([=](not_null<QEvent*> e) {
+			if (e->type() == QEvent::UpdateLater) {
+				_JumpToDialogShortcutChanged.fire({});
+			}
+		}, container->lifetime());
+		jumpToDialogShortcutButton->addClickHandler([=] {
+			Ui::show(Box<ChatSwitchShortcutBox>(
+				u"jump_to_dialog_shortcut"_q,
+				tr::lng_settings_jump_to_dialog_shortcut_title(),
+				tr::lng_settings_jump_to_dialog_shortcut_placeholder(),
+				[] {
+					return tr::lng_settings_jump_to_dialog_shortcut_invalid(
+						tr::now);
+				}));
+		});
+
 		auto hideBtn = AddButtonWithIcon(
 			container,
 			tr::lng_settings_hide_all_chats(),

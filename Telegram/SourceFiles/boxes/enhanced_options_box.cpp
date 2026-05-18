@@ -377,10 +377,27 @@ void QuickCopyTargetsBox::save() {
 }
 
 ChatSwitchShortcutBox::ChatSwitchShortcutBox(QWidget *parent)
-	: _shortcut(
+: ChatSwitchShortcutBox(
+	parent,
+	u"chat_switch_persistent_shortcut"_q,
+	tr::lng_settings_chat_switch_shortcut_title(),
+	tr::lng_settings_chat_switch_shortcut_placeholder(),
+	[] { return tr::lng_settings_chat_switch_shortcut_invalid(tr::now); }) {
+}
+
+ChatSwitchShortcutBox::ChatSwitchShortcutBox(
+	QWidget*,
+	QString key,
+	rpl::producer<QString> title,
+	rpl::producer<QString> placeholder,
+	Fn<QString()> invalidToast)
+: _shortcut(
 		this,
 		st::defaultInputField,
-		tr::lng_settings_chat_switch_shortcut_placeholder()) {
+		std::move(placeholder))
+, _key(std::move(key))
+, _title(std::move(title))
+, _invalidToast(std::move(invalidToast)) {
 }
 
 QString ChatSwitchShortcutBox::ShortcutLabel(const QString &value) {
@@ -395,12 +412,12 @@ QString ChatSwitchShortcutBox::ShortcutLabel(const QString &value) {
 }
 
 void ChatSwitchShortcutBox::prepare() {
-	setTitle(tr::lng_settings_chat_switch_shortcut_title());
+	setTitle(std::move(_title));
 
 	addButton(tr::lng_settings_save(), [=] { save(); });
 	addButton(tr::lng_cancel(), [=] { closeBox(); });
 
-	_shortcut->setText(GetEnhancedString("chat_switch_persistent_shortcut"));
+	_shortcut->setText(GetEnhancedString(_key));
 	_shortcut->setMaxLength(64);
 
 	setDimensions(st::boxWidth, _shortcut->height());
@@ -426,13 +443,12 @@ void ChatSwitchShortcutBox::save() {
 	if (!value.isEmpty()) {
 		const auto sequence = QKeySequence(value, QKeySequence::PortableText);
 		if (sequence.isEmpty()) {
-			Ui::Toast::Show(
-				tr::lng_settings_chat_switch_shortcut_invalid(tr::now));
+			Ui::Toast::Show(_invalidToast());
 			return;
 		}
 		stored = sequence.toString(QKeySequence::PortableText).toLower();
 	}
-	SetEnhancedValue("chat_switch_persistent_shortcut", stored);
+	SetEnhancedValue(_key, stored);
 	EnhancedSettings::Write();
 	closeBox();
 }

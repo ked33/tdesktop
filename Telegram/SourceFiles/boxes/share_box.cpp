@@ -28,6 +28,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/message_field.h"
 #include "menu/menu_check_item.h"
 #include "menu/menu_send.h"
+#include "window/window_controller.h"
+#include "window/window_separate_id.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/history_item_helpers.h"
@@ -199,6 +201,21 @@ private:
 
 };
 
+[[nodiscard]] bool IsJumpToDialogMode(const ShareBox::Descriptor &descriptor) {
+	return (descriptor.mode == ShareBox::Mode::JumpToDialog);
+}
+
+void JumpToDialog(
+		not_null<Window::SessionController*> controller,
+		not_null<Data::Thread*> thread) {
+	const auto id = Window::SeparateId(thread);
+	if (const auto window = Core::App().separateWindowFor(id)) {
+		window->activate();
+		return;
+	}
+	controller->jumpToChatListEntry({ Dialogs::Key(thread), FullMsgId() });
+}
+
 ShareBox::ShareBox(QWidget*, Descriptor &&descriptor)
 : _descriptor(std::move(descriptor))
 , _api(&_descriptor.session->mtp())
@@ -228,11 +245,16 @@ ShareBox::ShareBox(QWidget*, Descriptor &&descriptor)
 		_bottomWidget->resizeToWidth(st::boxWideWidth);
 		_bottomWidget->show();
 	}
-	header = _descriptor.title;
+	header = _descriptor.titleOverride
+		? std::move(_descriptor.titleOverride)
+		: std::move(_descriptor.title);
 }
 
 void ShareBox::prepareCommentField() {
 	_comment->hide(anim::type::instant);
+	if (IsJumpToDialogMode(_descriptor)) {
+		return;
+	}
 
 	rpl::combine(
 		heightValue(),
@@ -311,6 +333,10 @@ void ShareBox::prepare() {
 	});
 	_select->setResizedCallback([=] { updateScrollSkips(); });
 	_select->setSubmittedCallback([=](Qt::KeyboardModifiers modifiers) {
+		if (IsJumpToDialogMode(_descriptor)) {
+			_inner->selectActive();
+			return;
+		}
 		if (modifiers.testFlag(Qt::ControlModifier)
 			|| modifiers.testFlag(Qt::MetaModifier)) {
 			submit({});
@@ -340,6 +366,10 @@ void ShareBox::prepare() {
 	_inner->setPeerSelectedChangedCallback([=](
 			not_null<Data::Thread*> thread,
 			bool checked) {
+		if (IsJumpToDialogMode(_descriptor)) {
+			submit({});
+			return;
+		}
 		innerSelectedChanged(thread, checked);
 		if (checked) {
 			setCloseByOutsideClick(false);
@@ -349,11 +379,13 @@ void ShareBox::prepare() {
 		}
 	});
 
-	Ui::Emoji::SuggestionsController::Init(
-		getDelegate()->outerContainer(),
-		_comment->entity(),
-		_descriptor.session,
-		{ .suggestCustomEmoji = true });
+	if (!IsJumpToDialogMode(_descriptor)) {
+		Ui::Emoji::SuggestionsController::Init(
+			getDelegate()->outerContainer(),
+			_comment->entity(),
+			_descriptor.session,
+			{ .suggestCustomEmoji = true });
+	}
 
 	_select->raise();
 
@@ -608,6 +640,10 @@ void ShareBox::showMenu(not_null<Ui::RpWidget*> parent) {
 
 void ShareBox::createButtons() {
 	clearButtons();
+	if (IsJumpToDialogMode(_descriptor)) {
+		addButton(tr::lng_cancel(), [=] { closeBox(); });
+		return;
+	}
 	if (_hasSelected) {
 		const auto send = addButton(tr::lng_share_confirm(), [=] {
 			submit({});
@@ -676,6 +712,20 @@ void ShareBox::submit(Api::SendOptions options) {
 	_submitLifetime.destroy();
 
 	auto threads = _inner->selected();
+	if (IsJumpToDialogMode(_descriptor)) {
+		if (threads.empty()) {
+			return;
+		}
+		if (const auto onstack = _descriptor.submitCallback) {
+			onstack(
+				std::move(threads),
+				[] { return true; },
+				TextWithTags(),
+				options,
+				Data::ForwardOptions::PreserveInfo);
+		}
+		return;
+	}
 	const auto weak = base::make_weak(this);
 	const auto field = _comment->entity();
 	auto comment = field->getTextWithAppliedMarkdown();
@@ -1366,7 +1416,9 @@ void ShareBox::Inner::changeCheckState(Chat *chat) {
 	const auto checked = chat->checkbox.checked();
 	const auto forum = chat->peer->forum();
 	const auto monoforum = chat->peer->monoforum();
-	if (checked || (!forum && !monoforum)) {
+	if (checked
+		|| IsJumpToDialogMode(_descriptor)
+		|| (!forum && !monoforum)) {
 		changePeerCheckState(chat, !checked);
 	} else if (forum) {
 		chooseForumTopic(forum);
@@ -2069,6 +2121,40 @@ void FastShareMessage(
 		not_null<HistoryItem*> item,
 		ShareBoxStyleOverrides st) {
 	FastShareMessage(controller->uiShow(), item, st);
+}
+
+void FastJumpToDialog(
+		not_null<Window::SessionController*> controller,
+		ShareBoxStyleOverrides st) {
+	const auto weak = base::make_weak(controller);
+	const auto box = std::make_shared<base::weak_qptr<Ui::BoxContent>>();
+	*box = controller->show(
+		Box<ShareBox>(ShareBox::Descriptor{
+			.session = &controller->session(),
+			.submitCallback = [=](
+					std::vector<not_null<Data::Thread*>> &&threads,
+					Fn<bool()>,
+					TextWithTags &&,
+					Api::SendOptions,
+					Data::ForwardOptions) {
+				if (threads.empty()) {
+					return;
+				}
+				if (const auto strong = *box) {
+					strong->closeBox();
+				}
+				if (const auto strong = weak.get()) {
+					JumpToDialog(strong, threads.front());
+				}
+			},
+			.filterCallback = [](not_null<Data::Thread*>) {
+				return true;
+			},
+			.mode = ShareBox::Mode::JumpToDialog,
+			.st = st,
+			.title = tr::lng_jump_to_dialog(),
+		}),
+		Ui::LayerOption::CloseOther);
 }
 
 void FastShareLink(
