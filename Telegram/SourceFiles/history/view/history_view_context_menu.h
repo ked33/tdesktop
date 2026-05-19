@@ -50,7 +50,6 @@ struct ContextMenuRequest {
 	SelectedItems selectedItems;
 	TextForMimeData selectedText;
 	SelectedQuote quote;
-	std::optional<TextSelection> editCursor;
 	bool overSelection = false;
 	bool showSpecialMpv = false;
 	PointState pointState = PointState();
