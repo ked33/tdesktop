@@ -3903,11 +3903,11 @@ TextSelection Message::selectionForEditText(
 		const auto textSelection = mediaBefore
 			? media->skipSelection(selection)
 			: selection;
-		return FindSelectionInOriginalText(
-			text(),
-			textSelection,
-			original.text.size(),
-			allowEmptySelection);
+		if (textSelection.to > text().length()
+			|| (!allowEmptySelection && textSelection.empty())) {
+			return {};
+		}
+		return textSelection;
 	} else if (const auto media = this->media()) {
 		if (media->isDisplayed() || isHiddenByGroup()) {
 			return media->selectionForEditText(
@@ -3933,10 +3933,10 @@ std::optional<TextSelection> Message::selectionForEditCursor(
 		const auto textSelection = mediaBefore
 			? media->skipSelection(selection)
 			: selection;
-		return FindEditCursorInOriginalText(
-			text(),
-			textSelection,
-			original.text.size());
+		if (textSelection.to > text().length()) {
+			return std::nullopt;
+		}
+		return textSelection;
 	} else if (const auto media = this->media()) {
 		if (media->isDisplayed() || isHiddenByGroup()) {
 			return media->selectionForEditCursor(selection);
