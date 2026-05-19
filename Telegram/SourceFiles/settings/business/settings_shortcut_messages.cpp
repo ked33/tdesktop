@@ -390,17 +390,13 @@ ShortcutMessages::ShortcutMessages(
 	}, lifetime());
 
 	_inner->editMessageRequested(
-	) | rpl::on_next([=](ListWidget::EditMessageRequest request) {
-		if (const auto item = _session->data().message(request.itemId)) {
+	) | rpl::on_next([=](auto fullId) {
+		if (const auto item = _session->data().message(fullId)) {
 			const auto media = item->media();
 			if (!media || media->webpage() || media->allowsEditCaption()) {
-				const auto selection = request.cursor
-					? *request.cursor
-					: _inner->getSelectedTextRangeForEdit(item);
 				_composeControls->editMessage(
-					request.itemId,
-					selection,
-					request.cursor.has_value());
+					fullId,
+					_inner->getSelectedTextRangeForEdit(item));
 			} else if (media->todolist()) {
 				Window::PeerMenuEditTodoList(_controller, item);
 			}
