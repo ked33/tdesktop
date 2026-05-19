@@ -982,6 +982,24 @@ namespace Settings {
 			container,
 			tr::lng_settings_media_wheel_control_desc());
 
+		AddButtonWithIcon(
+				container,
+				tr::lng_settings_edit_offset_debug_logs(),
+				st::settingsButtonNoIcon
+		)->toggleOn(
+				rpl::single(GetEnhancedBool("edit_offset_debug_logs"))
+		)->toggledChanges(
+		) | rpl::filter([=](bool toggled) {
+			return (toggled != GetEnhancedBool("edit_offset_debug_logs"));
+		}) | rpl::on_next([=](bool toggled) {
+			SetEnhancedValue("edit_offset_debug_logs", toggled);
+			EnhancedSettings::Write();
+		}, container->lifetime());
+
+		AddDividerText(
+			container,
+			tr::lng_settings_edit_offset_debug_logs_desc());
+
 		AddSkip(container);
 	}
 
