@@ -1461,7 +1461,7 @@ void SelectTextInFieldWithMargins(
 		not_null<Ui::InputField*> field,
 		const TextSelection &selection) {
 	const auto plain = field->getTextWithTags().text;
-	const auto inner = field->toPlainText();
+	const auto inner = field->document()->toPlainText();
 	const auto docChars = field->document()->characterCount();
 	const auto fieldPos = [&](int externalPos) {
 		const auto extData = plain.constData();
@@ -1490,7 +1490,6 @@ void SelectTextInFieldWithMargins(
 				++in;
 			}
 		}
-		// Handle remaining external chars (when in already exhausted).
 		if ((ext - extData) < target) {
 			in += target - int(ext - extData);
 		}
