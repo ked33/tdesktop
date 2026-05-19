@@ -245,8 +245,7 @@ public:
 
 	void editMessage(
 		FullMsgId id,
-		const TextSelection &selection,
-		bool allowEmptySelection = false);
+		const TextSelection &selection);
 	void cancelEditMessage();
 	void maybeCancelEditMessage(); // Confirm if changed and cancel.
 

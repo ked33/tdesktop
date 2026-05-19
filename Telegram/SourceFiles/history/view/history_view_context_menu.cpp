@@ -1622,9 +1622,7 @@ bool AddEditMessageAction(
 		if (!item) {
 			return;
 		}
-		list->editMessageRequestNotify(
-			item->fullId(),
-			request.editCursor);
+		list->editMessageRequestNotify(item->fullId());
 	}, &st::menuIconEdit);
 	return true;
 }

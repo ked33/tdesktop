@@ -1459,8 +1459,7 @@ std::unique_ptr<Ui::AbstractButton> FrozenWriteRestriction(
 
 void SelectTextInFieldWithMargins(
 		not_null<Ui::InputField*> field,
-		const TextSelection &selection,
-		bool allowEmptySelection) {
+		const TextSelection &selection) {
 	const auto plain = field->getTextWithTags().text;
 	const auto docChars = field->document()->characterCount();
 	const auto fieldPos = [&](int externalPos) {
@@ -1492,18 +1491,17 @@ void SelectTextInFieldWithMargins(
 	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
 	if (debug) {
 		LOG(("[EDIT_OFFSET] SelectTextInFieldWithMargins selection=(%1,%2) "
-			"allowEmpty=%3 plainLen=%4 docChars=%5 surrogatePairs=%6 "
-			"fieldMapped=(%7,%8)"
+			"plainLen=%3 docChars=%4 surrogatePairs=%5 "
+			"fieldMapped=(%6,%7)"
 			).arg(selection.from
 			).arg(selection.to
-			).arg(allowEmptySelection ? "true" : "false"
 			).arg(plain.size()
 			).arg(docChars
 			).arg(surrogatePairs
 			).arg(fieldFrom
 			).arg(fieldTo));
 	}
-	if (!allowEmptySelection && fieldFrom == fieldTo) {
+	if (fieldFrom == fieldTo) {
 		if (debug) {
 			LOG(("[EDIT_OFFSET]   -> skip (empty after mapping)"));
 		}
@@ -1516,7 +1514,7 @@ void SelectTextInFieldWithMargins(
 	const auto linesCount = field->height() / field->st().style.font->height;
 	const auto selectedLines = (fieldTo - fieldFrom) / charsCountInLine;
 	constexpr auto kMinDiff = ushort(3);
-	if (fieldFrom != fieldTo && (linesCount - selectedLines) > kMinDiff) {
+	if ((linesCount - selectedLines) > kMinDiff) {
 		textCursor.setPosition(fieldFrom
 			- charsCountInLine * ((linesCount - 1) / 2));
 		field->setTextCursor(textCursor);
