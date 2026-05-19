@@ -106,13 +106,8 @@ public:
 		return {};
 	}
 	[[nodiscard]] virtual TextSelection selectionForEditText(
-			TextSelection selection,
-			bool allowEmptySelection = false) const {
-		return {};
-	}
-	[[nodiscard]] virtual std::optional<TextSelection> selectionForEditCursor(
 			TextSelection selection) const {
-		return std::nullopt;
+		return {};
 	}
 
 	[[nodiscard]] virtual bool isDisplayed() const {

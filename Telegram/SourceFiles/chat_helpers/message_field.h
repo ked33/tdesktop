@@ -207,8 +207,7 @@ enum class FrozenWriteRestrictionType {
 
 void SelectTextInFieldWithMargins(
 	not_null<Ui::InputField*> field,
-	const TextSelection &selection,
-	bool allowEmptySelection = false);
+	const TextSelection &selection);
 
 [[nodiscard]] TextWithEntities PaidSendButtonText(tr::now_t, int stars);
 [[nodiscard]] rpl::producer<TextWithEntities> PaidSendButtonText(

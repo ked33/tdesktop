@@ -383,14 +383,8 @@ public:
 		FullReplyTo to;
 		bool forceAnotherChat = false;
 	};
-	struct EditMessageRequest {
-		FullMsgId itemId;
-		std::optional<TextSelection> cursor;
-	};
-	[[nodiscard]] rpl::producer<EditMessageRequest> editMessageRequested() const;
-	void editMessageRequestNotify(
-		FullMsgId item,
-		std::optional<TextSelection> cursor = std::nullopt) const;
+	[[nodiscard]] rpl::producer<FullMsgId> editMessageRequested() const;
+	void editMessageRequestNotify(FullMsgId item) const;
 	[[nodiscard]] bool lastMessageEditRequestNotify() const;
 	[[nodiscard]] auto replyToMessageRequested() const
 		-> rpl::producer<ReplyToMessageRequest>;
@@ -612,7 +606,6 @@ private:
 	QPoint mapPointToItem(QPoint point, const Element *view) const;
 
 	void showContextMenu(QContextMenuEvent *e, bool showFromTouch = false);
-	[[nodiscard]] std::optional<TextSelection> editCursorFromPoint() const;
 	void reactionChosen(ChosenReaction reaction);
 
 	void touchResetSpeed();
@@ -911,7 +904,7 @@ private:
 	base::Timer _touchScrollTimer;
 	Ui::MiddleClickAutoscroll _middleClickAutoscroll;
 
-	rpl::event_stream<EditMessageRequest> _requestedToEditMessage;
+	rpl::event_stream<FullMsgId> _requestedToEditMessage;
 	rpl::event_stream<ReplyToMessageRequest> _requestedToReplyToMessage;
 	rpl::event_stream<FullMsgId> _requestedToReadMessage;
 	rpl::event_stream<FullMsgId> _requestedToShowMessage;

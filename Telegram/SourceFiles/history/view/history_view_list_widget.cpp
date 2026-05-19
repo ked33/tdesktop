@@ -3094,9 +3094,6 @@ void ListWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				_overElement,
 				_overItemExact ? _overItemExact : _overElement->data().get(),
 				_overState));
-	if (!hasSelection) {
-		request.editCursor = editCursorFromPoint();
-	}
 
 	_menu = FillContextMenu(this, request);
 	if (_menu->empty()) {
@@ -4566,35 +4563,12 @@ QPoint ListWidget::mapPointToItem(
 	return point - QPoint(0, itemTop(view));
 }
 
-std::optional<TextSelection> ListWidget::editCursorFromPoint() const {
-	if (!_overElement
-		|| _overState.pointState == PointState::Outside
-		|| _mouseCursorState != CursorState::Text) {
-		return std::nullopt;
-	}
-	auto request = StateRequest();
-	request.flags = Ui::Text::StateRequest::Flag::LookupSymbol;
-	auto state = _overElement->textState(_overState.point, request);
-	if (state.cursor != CursorState::Text) {
-		return std::nullopt;
-	}
-	auto symbol = state.symbol;
-	if (state.afterSymbol) {
-		++symbol;
-	}
-	return _overElement->selectionForEditCursor(
-		TextSelection{ symbol, symbol });
-}
-
-rpl::producer<ListWidget::EditMessageRequest>
-ListWidget::editMessageRequested() const {
+rpl::producer<FullMsgId> ListWidget::editMessageRequested() const {
 	return _requestedToEditMessage.events();
 }
 
-void ListWidget::editMessageRequestNotify(
-		FullMsgId item,
-		std::optional<TextSelection> cursor) const {
-	_requestedToEditMessage.fire({ std::move(item), cursor });
+void ListWidget::editMessageRequestNotify(FullMsgId item) const {
+	_requestedToEditMessage.fire(std::move(item));
 }
 
 bool ListWidget::lastMessageEditRequestNotify() const {

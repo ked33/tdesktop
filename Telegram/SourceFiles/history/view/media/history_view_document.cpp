@@ -1479,9 +1479,7 @@ TextSelection Document::selectionFromQuote(
 	return {};
 }
 
-TextSelection Document::selectionForEditText(
-		TextSelection selection,
-		bool allowEmptySelection) const {
+TextSelection Document::selectionForEditText(TextSelection selection) const {
 	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
 	if (debug) {
 		LOG(("[EDIT_OFFSET] Document::selectionForEditText input=(%1,%2)"
@@ -1508,8 +1506,7 @@ TextSelection Document::selectionForEditText(
 			LOG(("[EDIT_OFFSET]   captionLen=%1 adjusted=(%2,%3)"
 				).arg(capLen).arg(selection.from).arg(selection.to));
 		}
-		if (selection.to > capLen
-			|| (!allowEmptySelection && selection.empty())) {
+		if (selection.to > capLen || selection.empty()) {
 			if (debug) {
 				LOG(("[EDIT_OFFSET]   -> empty (out of caption or empty)"));
 			}
@@ -1521,26 +1518,6 @@ TextSelection Document::selectionForEditText(
 		LOG(("[EDIT_OFFSET]   -> empty (no caption)"));
 	}
 	return {};
-}
-
-std::optional<TextSelection> Document::selectionForEditCursor(
-		TextSelection selection) const {
-	if (const auto voice = Get<HistoryDocumentVoice>()) {
-		const auto length = voice->transcribeText.length();
-		if (selection.from < length) {
-			return std::nullopt;
-		}
-		selection = HistoryView::UnshiftItemSelection(
-			selection,
-			voice->transcribeText);
-	}
-	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
-		if (selection.to > captioned->caption.length()) {
-			return std::nullopt;
-		}
-		return selection;
-	}
-	return std::nullopt;
 }
 
 bool Document::uploading() const {
