@@ -1491,11 +1491,11 @@ TextSelection Document::selectionForEditText(
 			voice->transcribeText);
 	}
 	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
-		return Element::FindSelectionInOriginalText(
-			captioned->caption,
-			selection,
-			_realParent->originalText().text.size(),
-			allowEmptySelection);
+		if (selection.to > captioned->caption.length()
+			|| (!allowEmptySelection && selection.empty())) {
+			return {};
+		}
+		return selection;
 	}
 	return {};
 }
@@ -1512,10 +1512,10 @@ std::optional<TextSelection> Document::selectionForEditCursor(
 			voice->transcribeText);
 	}
 	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
-		return Element::FindEditCursorInOriginalText(
-			captioned->caption,
-			selection,
-			_realParent->originalText().text.size());
+		if (selection.to > captioned->caption.length()) {
+			return std::nullopt;
+		}
+		return selection;
 	}
 	return std::nullopt;
 }
