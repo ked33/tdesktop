@@ -1469,16 +1469,21 @@ void SelectTextInFieldWithMargins(
 			++i;
 		}
 	}
-	LOG(("[EDIT_OFFSET] SelectTextInFieldWithMargins selection=(%1,%2) "
-		"allowEmpty=%3 plainLen=%4 docChars=%5 surrogatePairs=%6"
-		).arg(selection.from
-		).arg(selection.to
-		).arg(allowEmptySelection ? "true" : "false"
-		).arg(plain.size()
-		).arg(docChars
-		).arg(surrogatePairs));
+	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
+	if (debug) {
+		LOG(("[EDIT_OFFSET] SelectTextInFieldWithMargins selection=(%1,%2) "
+			"allowEmpty=%3 plainLen=%4 docChars=%5 surrogatePairs=%6"
+			).arg(selection.from
+			).arg(selection.to
+			).arg(allowEmptySelection ? "true" : "false"
+			).arg(plain.size()
+			).arg(docChars
+			).arg(surrogatePairs));
+	}
 	if (!allowEmptySelection && selection.empty()) {
-		LOG(("[EDIT_OFFSET]   -> skip (empty selection)"));
+		if (debug) {
+			LOG(("[EDIT_OFFSET]   -> skip (empty selection)"));
+		}
 		return;
 	}
 	auto textCursor = field->textCursor();
@@ -1499,9 +1504,11 @@ void SelectTextInFieldWithMargins(
 	textCursor.setPosition(selection.to, QTextCursor::KeepAnchor);
 	field->setTextCursor(textCursor);
 	const auto finalCursor = field->textCursor();
-	LOG(("[EDIT_OFFSET]   -> after setPosition pos=%1 anchor=%2"
-		).arg(finalCursor.position()
-		).arg(finalCursor.anchor()));
+	if (debug) {
+		LOG(("[EDIT_OFFSET]   -> after setPosition pos=%1 anchor=%2"
+			).arg(finalCursor.position()
+			).arg(finalCursor.anchor()));
+	}
 }
 
 TextWithEntities PaidSendButtonText(tr::now_t, int stars) {

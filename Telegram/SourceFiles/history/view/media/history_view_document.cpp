@@ -1482,13 +1482,20 @@ TextSelection Document::selectionFromQuote(
 TextSelection Document::selectionForEditText(
 		TextSelection selection,
 		bool allowEmptySelection) const {
-	LOG(("[EDIT_OFFSET] Document::selectionForEditText input=(%1,%2)"
-		).arg(selection.from).arg(selection.to));
+	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
+	if (debug) {
+		LOG(("[EDIT_OFFSET] Document::selectionForEditText input=(%1,%2)"
+			).arg(selection.from).arg(selection.to));
+	}
 	if (const auto voice = Get<HistoryDocumentVoice>()) {
 		const auto length = voice->transcribeText.length();
-		LOG(("[EDIT_OFFSET]   voice transcribeLen=%1").arg(length));
+		if (debug) {
+			LOG(("[EDIT_OFFSET]   voice transcribeLen=%1").arg(length));
+		}
 		if (selection.from < length) {
-			LOG(("[EDIT_OFFSET]   -> empty (in transcribe range)"));
+			if (debug) {
+				LOG(("[EDIT_OFFSET]   -> empty (in transcribe range)"));
+			}
 			return {};
 		}
 		selection = HistoryView::UnshiftItemSelection(
@@ -1497,16 +1504,22 @@ TextSelection Document::selectionForEditText(
 	}
 	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
 		const auto capLen = captioned->caption.length();
-		LOG(("[EDIT_OFFSET]   captionLen=%1 adjusted=(%2,%3)"
-			).arg(capLen).arg(selection.from).arg(selection.to));
+		if (debug) {
+			LOG(("[EDIT_OFFSET]   captionLen=%1 adjusted=(%2,%3)"
+				).arg(capLen).arg(selection.from).arg(selection.to));
+		}
 		if (selection.to > capLen
 			|| (!allowEmptySelection && selection.empty())) {
-			LOG(("[EDIT_OFFSET]   -> empty (out of caption or empty)"));
+			if (debug) {
+				LOG(("[EDIT_OFFSET]   -> empty (out of caption or empty)"));
+			}
 			return {};
 		}
 		return selection;
 	}
-	LOG(("[EDIT_OFFSET]   -> empty (no caption)"));
+	if (debug) {
+		LOG(("[EDIT_OFFSET]   -> empty (no caption)"));
+	}
 	return {};
 }
 
