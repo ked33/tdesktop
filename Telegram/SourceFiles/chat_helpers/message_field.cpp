@@ -42,6 +42,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_document.h"
 #include "data/stickers/data_custom_emoji.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
+#include "ui/emoji_config.h"
 #include "history/view/controls/compose_controls_common.h"
 #include "window/window_session_controller.h"
 #include "lang/lang_keys.h"
@@ -1462,6 +1463,25 @@ void SelectTextInFieldWithMargins(
 		bool allowEmptySelection) {
 	const auto plain = field->getTextWithTags().text;
 	const auto docChars = field->document()->characterCount();
+	const auto fieldPos = [&](int externalPos) {
+		const auto clamped = std::clamp(externalPos, 0, int(plain.size()));
+		const auto data = plain.constData();
+		const auto end = data + clamped;
+		auto ch = data;
+		auto compressed = 0;
+		while (ch < end) {
+			auto emojiLength = 0;
+			if (Ui::Emoji::Find(ch, end, &emojiLength)) {
+				ch += emojiLength;
+				compressed += emojiLength - 1;
+			} else {
+				++ch;
+			}
+		}
+		return clamped - compressed;
+	};
+	const auto fieldFrom = fieldPos(selection.from);
+	const auto fieldTo = fieldPos(selection.to);
 	auto surrogatePairs = 0;
 	for (int i = 0, n = plain.size(); i + 1 < n; ++i) {
 		if (plain[i].isHighSurrogate() && plain[i + 1].isLowSurrogate()) {
@@ -1472,17 +1492,20 @@ void SelectTextInFieldWithMargins(
 	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
 	if (debug) {
 		LOG(("[EDIT_OFFSET] SelectTextInFieldWithMargins selection=(%1,%2) "
-			"allowEmpty=%3 plainLen=%4 docChars=%5 surrogatePairs=%6"
+			"allowEmpty=%3 plainLen=%4 docChars=%5 surrogatePairs=%6 "
+			"fieldMapped=(%7,%8)"
 			).arg(selection.from
 			).arg(selection.to
 			).arg(allowEmptySelection ? "true" : "false"
 			).arg(plain.size()
 			).arg(docChars
-			).arg(surrogatePairs));
+			).arg(surrogatePairs
+			).arg(fieldFrom
+			).arg(fieldTo));
 	}
-	if (!allowEmptySelection && selection.empty()) {
+	if (!allowEmptySelection && fieldFrom == fieldTo) {
 		if (debug) {
-			LOG(("[EDIT_OFFSET]   -> skip (empty selection)"));
+			LOG(("[EDIT_OFFSET]   -> skip (empty after mapping)"));
 		}
 		return;
 	}
@@ -1491,17 +1514,16 @@ void SelectTextInFieldWithMargins(
 	const auto charsCountInLine = field->width()
 		/ field->st().style.font->width('W');
 	const auto linesCount = field->height() / field->st().style.font->height;
-	const auto selectedLines = (selection.to - selection.from)
-		/ charsCountInLine;
+	const auto selectedLines = (fieldTo - fieldFrom) / charsCountInLine;
 	constexpr auto kMinDiff = ushort(3);
-	if (!selection.empty() && (linesCount - selectedLines) > kMinDiff) {
-		textCursor.setPosition(selection.from
+	if (fieldFrom != fieldTo && (linesCount - selectedLines) > kMinDiff) {
+		textCursor.setPosition(fieldFrom
 			- charsCountInLine * ((linesCount - 1) / 2));
 		field->setTextCursor(textCursor);
 	}
-	textCursor.setPosition(selection.from);
+	textCursor.setPosition(fieldFrom);
 	field->setTextCursor(textCursor);
-	textCursor.setPosition(selection.to, QTextCursor::KeepAnchor);
+	textCursor.setPosition(fieldTo, QTextCursor::KeepAnchor);
 	field->setTextCursor(textCursor);
 	const auto finalCursor = field->textCursor();
 	if (debug) {
