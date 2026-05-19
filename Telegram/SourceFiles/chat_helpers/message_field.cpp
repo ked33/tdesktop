@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/qthelp_regex.h"
 #include "base/qthelp_url.h"
 #include "base/event_filter.h"
+#include "base/debug_log.h"
 #include "ui/chat/chat_style.h"
 #include "ui/layers/generic_box.h"
 #include "ui/boxes/calendar_box.h"
@@ -1459,7 +1460,25 @@ void SelectTextInFieldWithMargins(
 		not_null<Ui::InputField*> field,
 		const TextSelection &selection,
 		bool allowEmptySelection) {
+	const auto plain = field->getTextWithTags().text;
+	const auto docChars = field->document()->characterCount();
+	auto surrogatePairs = 0;
+	for (int i = 0, n = plain.size(); i + 1 < n; ++i) {
+		if (plain[i].isHighSurrogate() && plain[i + 1].isLowSurrogate()) {
+			++surrogatePairs;
+			++i;
+		}
+	}
+	LOG(("[EDIT_OFFSET] SelectTextInFieldWithMargins selection=(%1,%2) "
+		"allowEmpty=%3 plainLen=%4 docChars=%5 surrogatePairs=%6"
+		).arg(selection.from
+		).arg(selection.to
+		).arg(allowEmptySelection ? "true" : "false"
+		).arg(plain.size()
+		).arg(docChars
+		).arg(surrogatePairs));
 	if (!allowEmptySelection && selection.empty()) {
+		LOG(("[EDIT_OFFSET]   -> skip (empty selection)"));
 		return;
 	}
 	auto textCursor = field->textCursor();
@@ -1479,6 +1498,10 @@ void SelectTextInFieldWithMargins(
 	field->setTextCursor(textCursor);
 	textCursor.setPosition(selection.to, QTextCursor::KeepAnchor);
 	field->setTextCursor(textCursor);
+	const auto finalCursor = field->textCursor();
+	LOG(("[EDIT_OFFSET]   -> after setPosition pos=%1 anchor=%2"
+		).arg(finalCursor.position()
+		).arg(finalCursor.anchor()));
 }
 
 TextWithEntities PaidSendButtonText(tr::now_t, int stars) {

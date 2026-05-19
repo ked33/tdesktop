@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_transcribes.h"
 #include "base/qt/qt_key_modifiers.h"
 #include "base/unixtime.h"
+#include "base/debug_log.h"
 #include "core/click_handler_types.h" // ClickHandlerContext
 #include "core/ui_integration.h"
 #include "history/view/history_view_cursor_state.h"
@@ -3892,9 +3893,21 @@ TextSelection Message::selectionForEditText(
 	const auto item = textItem ? textItem : data().get();
 	const auto &translated = item->translatedText();
 	const auto &original = item->originalText();
+	const auto &textRef = text();
+	LOG(("[EDIT_OFFSET] Message::selectionForEditText input=(%1,%2) "
+		"allowEmpty=%3 textLen=%4 originalLen=%5 translatedEq=%6 "
+		"hasVisibleText=%7"
+		).arg(selection.from
+		).arg(selection.to
+		).arg(allowEmptySelection ? "true" : "false"
+		).arg(textRef.length()
+		).arg(original.text.size()
+		).arg((&translated == &original) ? "true" : "false"
+		).arg(hasVisibleText() ? "true" : "false"));
 	if (&translated != &original
 		|| (!allowEmptySelection && selection.empty())
 		|| selection == FullSelection) {
+		LOG(("[EDIT_OFFSET]   -> empty (guard)"));
 		return {};
 	} else if (hasVisibleText()) {
 		const auto media = this->media();
@@ -3905,16 +3918,23 @@ TextSelection Message::selectionForEditText(
 			: selection;
 		if (textSelection.to > text().length()
 			|| (!allowEmptySelection && textSelection.empty())) {
+			LOG(("[EDIT_OFFSET]   -> empty (out of range or empty)"));
 			return {};
 		}
+		LOG(("[EDIT_OFFSET]   -> result=(%1,%2) mediaBefore=%3"
+			).arg(textSelection.from
+			).arg(textSelection.to
+			).arg(mediaBefore ? "true" : "false"));
 		return textSelection;
 	} else if (const auto media = this->media()) {
 		if (media->isDisplayed() || isHiddenByGroup()) {
+			LOG(("[EDIT_OFFSET]   -> delegate to media"));
 			return media->selectionForEditText(
 				selection,
 				allowEmptySelection);
 		}
 	}
+	LOG(("[EDIT_OFFSET]   -> empty (no path matched)"));
 	return {};
 }
 
