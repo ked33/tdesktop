@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/media/history_view_document.h"
 
 #include "base/random.h"
+#include "base/debug_log.h"
 #include "lang/lang_keys.h"
 #include "lottie/lottie_icon.h"
 #include "storage/localstorage.h"
@@ -1481,9 +1482,13 @@ TextSelection Document::selectionFromQuote(
 TextSelection Document::selectionForEditText(
 		TextSelection selection,
 		bool allowEmptySelection) const {
+	LOG(("[EDIT_OFFSET] Document::selectionForEditText input=(%1,%2)"
+		).arg(selection.from).arg(selection.to));
 	if (const auto voice = Get<HistoryDocumentVoice>()) {
 		const auto length = voice->transcribeText.length();
+		LOG(("[EDIT_OFFSET]   voice transcribeLen=%1").arg(length));
 		if (selection.from < length) {
+			LOG(("[EDIT_OFFSET]   -> empty (in transcribe range)"));
 			return {};
 		}
 		selection = HistoryView::UnshiftItemSelection(
@@ -1491,12 +1496,17 @@ TextSelection Document::selectionForEditText(
 			voice->transcribeText);
 	}
 	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
-		if (selection.to > captioned->caption.length()
+		const auto capLen = captioned->caption.length();
+		LOG(("[EDIT_OFFSET]   captionLen=%1 adjusted=(%2,%3)"
+			).arg(capLen).arg(selection.from).arg(selection.to));
+		if (selection.to > capLen
 			|| (!allowEmptySelection && selection.empty())) {
+			LOG(("[EDIT_OFFSET]   -> empty (out of caption or empty)"));
 			return {};
 		}
 		return selection;
 	}
+	LOG(("[EDIT_OFFSET]   -> empty (no caption)"));
 	return {};
 }
 
