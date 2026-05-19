@@ -1461,23 +1461,40 @@ void SelectTextInFieldWithMargins(
 		not_null<Ui::InputField*> field,
 		const TextSelection &selection) {
 	const auto plain = field->getTextWithTags().text;
+	const auto inner = field->toPlainText();
 	const auto docChars = field->document()->characterCount();
 	const auto fieldPos = [&](int externalPos) {
-		const auto clamped = std::clamp(externalPos, 0, int(plain.size()));
-		const auto data = plain.constData();
-		const auto end = data + clamped;
-		auto ch = data;
-		auto compressed = 0;
-		while (ch < end) {
-			auto emojiLength = 0;
-			if (Ui::Emoji::Find(ch, end, &emojiLength)) {
-				ch += emojiLength;
-				compressed += emojiLength - 1;
+		const auto extData = plain.constData();
+		const auto extEnd = extData + plain.size();
+		const auto inData = inner.constData();
+		const auto inLen = inner.size();
+		auto ext = extData;
+		auto in = 0;
+		const auto target = std::clamp(externalPos, 0, int(plain.size()));
+		while ((ext - extData) < target && in < inLen) {
+			if (inData[in] == QChar::ObjectReplacementCharacter) {
+				auto emojiLength = 0;
+				if (Ui::Emoji::Find(ext, extEnd, &emojiLength)
+					&& emojiLength > 0) {
+					ext += emojiLength;
+				} else if (ext->isHighSurrogate()
+					&& ext + 1 < extEnd
+					&& (ext + 1)->isLowSurrogate()) {
+					ext += 2;
+				} else {
+					++ext;
+				}
+				++in;
 			} else {
-				++ch;
+				++ext;
+				++in;
 			}
 		}
-		return clamped - compressed;
+		// Handle remaining external chars (when in already exhausted).
+		if ((ext - extData) < target) {
+			in += target - int(ext - extData);
+		}
+		return in;
 	};
 	const auto fieldFrom = fieldPos(selection.from);
 	const auto fieldTo = fieldPos(selection.to);
@@ -1491,11 +1508,12 @@ void SelectTextInFieldWithMargins(
 	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
 	if (debug) {
 		LOG(("[EDIT_OFFSET] SelectTextInFieldWithMargins selection=(%1,%2) "
-			"plainLen=%3 docChars=%4 surrogatePairs=%5 "
-			"fieldMapped=(%6,%7)"
+			"plainLen=%3 innerLen=%4 docChars=%5 surrogatePairs=%6 "
+			"fieldMapped=(%7,%8)"
 			).arg(selection.from
 			).arg(selection.to
 			).arg(plain.size()
+			).arg(inner.size()
 			).arg(docChars
 			).arg(surrogatePairs
 			).arg(fieldFrom
