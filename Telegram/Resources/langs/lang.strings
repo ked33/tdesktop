@@ -8267,6 +8267,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_preview_brightness_percent" = "{percent}%";
 "lng_settings_media_wheel_control" = "Enhanced media viewer wheel control";
 "lng_settings_media_wheel_control_desc" = "Divides the viewer into 3 columns. Top-left scroll adjusts brightness, bottom-left adjusts volume, middle switches media, right seeks the video.";
+"lng_settings_edit_offset_debug_logs" = "Write edit cursor offset debug logs to log.txt";
+"lng_settings_edit_offset_debug_logs_desc" = "Master switch for all [EDIT_OFFSET] debug log entries written to log.txt.";
 "lng_settings_chat_switch_shortcut_title" = "Persistent recent chats shortcut";
 "lng_settings_chat_switch_shortcut_placeholder" = "Example: Ctrl+Alt+P, leave empty to disable";
 "lng_settings_chat_switch_shortcut_disabled" = "Disabled";
