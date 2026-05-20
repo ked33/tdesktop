@@ -1568,6 +1568,69 @@ void SelectTextInFieldWithMargins(
 	}
 }
 
+bool ExpandCollapsedQuotesForSelection(
+		not_null<Ui::InputField*> field,
+		const TextSelection &selection) {
+	if (selection.empty()) {
+		return false;
+	}
+	auto textWithTags = field->getTextWithTags();
+	if (textWithTags.tags.empty()) {
+		return false;
+	}
+	// Tag.id is a "\\"-separated list of single tags (see kTagSeparator
+	// in text_entity.cpp). Replace `kTagBlockquoteCollapsed` (`>^`) with
+	// `kTagBlockquote` (`>`) for any tag whose range intersects the
+	// selection — that quote will be reloaded as inline text, so the
+	// field can address positions inside it precisely.
+	const QChar separator = QLatin1Char('\\');
+	const auto &collapsedTag = Ui::InputField::kTagBlockquoteCollapsed;
+	const auto &expandedTag = Ui::InputField::kTagBlockquote;
+	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
+	auto changed = false;
+	for (auto &tag : textWithTags.tags) {
+		auto parts = tag.id.split(separator, Qt::SkipEmptyParts);
+		auto hadCollapsed = false;
+		for (auto &p : parts) {
+			if (p == collapsedTag) {
+				hadCollapsed = true;
+				break;
+			}
+		}
+		if (!hadCollapsed) {
+			continue;
+		}
+		const auto tagFrom = tag.offset;
+		const auto tagTo = tag.offset + tag.length;
+		if (int(selection.from) >= tagTo
+			|| int(selection.to) <= tagFrom) {
+			continue;
+		}
+		for (auto &p : parts) {
+			if (p == collapsedTag) {
+				p = expandedTag;
+			}
+		}
+		tag.id = parts.join(separator);
+		changed = true;
+		if (debug) {
+			LOG(("[EDIT_OFFSET] ExpandCollapsedQuote: tag at "
+				"[%1,%2) intersected selection [%3,%4) -> expanded"
+				).arg(tagFrom
+				).arg(tagTo
+				).arg(selection.from
+				).arg(selection.to));
+		}
+	}
+	if (!changed) {
+		return false;
+	}
+	field->setTextWithTags(
+		textWithTags,
+		Ui::InputField::HistoryAction::MergeEntry);
+	return true;
+}
+
 TextWithEntities PaidSendButtonText(tr::now_t, int stars) {
 	return Ui::Text::IconEmoji(&st::starIconEmoji).append(
 		Lang::FormatCountToShort(stars).string);
