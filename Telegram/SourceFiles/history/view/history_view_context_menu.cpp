@@ -1601,6 +1601,26 @@ bool AddViewRepliesAction(
 	return true;
 }
 
+} // namespace
+
+TextSelection ResolveEditSelectionByClickingEntity(
+		Element *view,
+		HistoryItem *item,
+		QPoint point,
+		const ClickHandlerPtr &link) {
+	if (!view || !item || !link) {
+		return {};
+	} else if (view->data().get() != item) {
+		const auto state = view->textState(point, StateRequest());
+		if (state.itemId != item->fullId() || state.link != link) {
+			return {};
+		}
+	}
+	return view->selectionForEditTextByClickHandler(link);
+}
+
+namespace {
+
 bool AddEditMessageAction(
 			not_null<Ui::PopupMenu*> menu,
 			const ContextMenuRequest &request,
@@ -1622,7 +1642,9 @@ bool AddEditMessageAction(
 		if (!item) {
 			return;
 		}
-		list->editMessageRequestNotify(item->fullId());
+		list->editMessageRequestNotify(
+			item->fullId(),
+			request.editSelection);
 	}, &st::menuIconEdit);
 	return true;
 }

@@ -55,6 +55,8 @@ public:
 		const SelectedQuote &quote) const override;
 	TextSelection selectionForEditText(
 		TextSelection selection) const override;
+	TextSelection selectionForEditTextByClickHandler(
+		const ClickHandlerPtr &handler) const override;
 
 	bool uploading() const override;
 

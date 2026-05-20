@@ -109,6 +109,10 @@ public:
 			TextSelection selection) const {
 		return {};
 	}
+	[[nodiscard]] virtual TextSelection selectionForEditTextByClickHandler(
+			const ClickHandlerPtr &handler) const {
+		return {};
+	}
 
 	[[nodiscard]] virtual bool isDisplayed() const {
 		return true;
