@@ -1464,7 +1464,7 @@ void SelectTextInFieldWithMargins(
 	const auto inner = field->document()->toPlainText();
 	const auto docChars = field->document()->characterCount();
 	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
-	const auto fieldPos = [&](int externalPos) {
+	const auto fieldPos = [&](int externalPos, bool snapToEnd) {
 		const auto extData = plain.constData();
 		const auto extEnd = extData + plain.size();
 		const auto inData = inner.constData();
@@ -1483,17 +1483,26 @@ void SelectTextInFieldWithMargins(
 				auto step = expanded.isEmpty() ? 1 : int(expanded.size());
 				if (debug) {
 					LOG(("[EDIT_OFFSET]     orc in=%1 ext=%2 step=%3 "
-						"target=%4 expandedLen=%5"
+						"target=%4 expandedLen=%5 snapToEnd=%6"
 						).arg(in
 						).arg(int(ext - extData)
 						).arg(step
 						).arg(target
-						).arg(expanded.size()));
+						).arg(expanded.size()
+						).arg(snapToEnd ? "true" : "false"));
 				}
 				if ((ext - extData) + step > target) {
-					// Target falls inside this object; can't represent it,
-					// stop at the object start in the field.
-					break;
+					// Target falls strictly inside this object. The field
+					// has no addressable position mid-object (one char in
+					// inner for the whole expansion in plain), so snap to
+					// the nearest boundary. Use the caller's role: keep
+					// `from` at the object start, push `to` past the
+					// object end, so a selection that lands inside the
+					// object covers the whole object in the field.
+					if (snapToEnd) {
+						++in;
+					}
+					return in;
 				}
 				ext += step;
 				++in;
@@ -1507,8 +1516,8 @@ void SelectTextInFieldWithMargins(
 		}
 		return in;
 	};
-	const auto fieldFrom = fieldPos(selection.from);
-	const auto fieldTo = fieldPos(selection.to);
+	const auto fieldFrom = fieldPos(selection.from, false);
+	const auto fieldTo = fieldPos(selection.to, true);
 	auto surrogatePairs = 0;
 	for (int i = 0, n = plain.size(); i + 1 < n; ++i) {
 		if (plain[i].isHighSurrogate() && plain[i + 1].isLowSurrogate()) {
