@@ -61,6 +61,10 @@ public:
 	SelectedQuote selectedQuote(TextSelection selection) const override;
 	TextSelection selectionFromQuote(
 		const SelectedQuote &quote) const override;
+	TextSelection selectionForEditText(
+		TextSelection selection) const override;
+	TextSelection selectionForEditTextByClickHandler(
+		const ClickHandlerPtr &handler) const override;
 
 	std::vector<Ui::BubbleSelectionInterval> getBubbleSelectionIntervals(
 		TextSelection selection) const override;

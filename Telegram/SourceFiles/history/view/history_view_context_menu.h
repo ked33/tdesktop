@@ -50,6 +50,7 @@ struct ContextMenuRequest {
 	SelectedItems selectedItems;
 	TextForMimeData selectedText;
 	SelectedQuote quote;
+	TextSelection editSelection;
 	bool overSelection = false;
 	bool showSpecialMpv = false;
 	PointState pointState = PointState();
@@ -58,6 +59,12 @@ struct ContextMenuRequest {
 base::unique_qptr<Ui::PopupMenu> FillContextMenu(
 	not_null<ListWidget*> list,
 	const ContextMenuRequest &request);
+
+[[nodiscard]] TextSelection ResolveEditSelectionByClickingEntity(
+	Element *view,
+	HistoryItem *item,
+	QPoint point,
+	const ClickHandlerPtr &link);
 
 void InsertPollHiddenResultsLabel(not_null<Ui::PopupMenu*> menu);
 void InsertPollVoteRestrictionsLabel(

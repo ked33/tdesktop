@@ -3082,6 +3082,20 @@ void ListWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		&& _selectedTextItem == _overElement->data())
 		? _overElement->selectedQuote(_selectedTextRange)
 		: SelectedQuote();
+	const auto insideSelection = _overElement
+		&& isInsideSelection(
+			_overElement,
+			_overItemExact ? _overItemExact : _overElement->data().get(),
+			_overState);
+	request.editSelection = (_overElement
+		&& _selectedTextItem == _overElement->data()
+		&& insideSelection)
+		? _overElement->selectionForEditText(_selectedTextRange)
+		: ResolveEditSelectionByClickingEntity(
+			_overElement,
+			overItem,
+			_overState.point,
+			link);
 	request.selectedText = _selectedText;
 	request.selectedItems = collectSelectedItems();
 	request.showSpecialMpv = (e->reason() == QContextMenuEvent::Mouse)
@@ -3089,11 +3103,7 @@ void ListWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 	const auto hasSelection = !request.selectedItems.empty()
 		|| !request.selectedText.empty();
 	request.overSelection = (showFromTouch && hasSelection)
-		|| (_overElement
-			&& isInsideSelection(
-				_overElement,
-				_overItemExact ? _overItemExact : _overElement->data().get(),
-				_overState));
+		|| insideSelection;
 
 	_menu = FillContextMenu(this, request);
 	if (_menu->empty()) {
@@ -4563,12 +4573,15 @@ QPoint ListWidget::mapPointToItem(
 	return point - QPoint(0, itemTop(view));
 }
 
-rpl::producer<FullMsgId> ListWidget::editMessageRequested() const {
+rpl::producer<ListWidget::EditMessageRequest>
+ListWidget::editMessageRequested() const {
 	return _requestedToEditMessage.events();
 }
 
-void ListWidget::editMessageRequestNotify(FullMsgId item) const {
-	_requestedToEditMessage.fire(std::move(item));
+void ListWidget::editMessageRequestNotify(
+		FullMsgId item,
+		TextSelection selection) const {
+	_requestedToEditMessage.fire({ std::move(item), selection });
 }
 
 bool ListWidget::lastMessageEditRequestNotify() const {

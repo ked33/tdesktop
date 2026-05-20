@@ -2725,6 +2725,11 @@ TextSelection Element::selectionForEditText(TextSelection selection) const {
 	return selection;
 }
 
+TextSelection Element::selectionForEditTextByClickHandler(
+		const ClickHandlerPtr &handler) const {
+	return {};
+}
+
 TextSelection Element::FindSelectionInOriginalText(
 		const Ui::Text::String &text,
 		TextSelection selection,

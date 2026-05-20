@@ -1520,6 +1520,27 @@ TextSelection Document::selectionForEditText(TextSelection selection) const {
 	return {};
 }
 
+TextSelection Document::selectionForEditTextByClickHandler(
+		const ClickHandlerPtr &handler) const {
+	if (!handler) {
+		return {};
+	} else if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
+		const auto range = captioned->caption.linkRangeFor(handler);
+		if (!range.empty()) {
+			const auto selection = [&] {
+				if (const auto voice = Get<HistoryDocumentVoice>()) {
+					return HistoryView::ShiftItemSelection(
+						range,
+						voice->transcribeText);
+				}
+				return range;
+			}();
+			return selectionForEditText(selection);
+		}
+	}
+	return {};
+}
+
 bool Document::uploading() const {
 	return _data->uploading();
 }
