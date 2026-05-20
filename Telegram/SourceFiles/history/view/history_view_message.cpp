@@ -3944,6 +3944,29 @@ TextSelection Message::selectionForEditText(TextSelection selection) const {
 	return {};
 }
 
+TextSelection Message::selectionForEditTextByClickHandler(
+		const ClickHandlerPtr &handler) const {
+	if (!handler) {
+		return {};
+	} else if (hasVisibleText() && IsRippleLink(handler)) {
+		const auto range = text().linkRangeFor(handler);
+		if (!range.empty()) {
+			const auto media = this->media();
+			const auto mediaBefore = media
+				&& media->isDisplayed()
+				&& invertMedia();
+			return selectionForEditText(
+				mediaBefore ? media->unskipSelection(range) : range);
+		}
+	}
+	if (const auto media = this->media()) {
+		if (media->isDisplayed() || isHiddenByGroup()) {
+			return media->selectionForEditTextByClickHandler(handler);
+		}
+	}
+	return {};
+}
+
 TextSelection Message::adjustSelection(
 		TextSelection selection,
 		TextSelectType type) const {
