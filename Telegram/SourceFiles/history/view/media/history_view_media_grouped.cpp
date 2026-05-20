@@ -697,6 +697,38 @@ TextSelection GroupedMedia::selectionFromQuote(
 	return result;
 }
 
+TextSelection GroupedMedia::selectionForEditText(
+		TextSelection selection) const {
+	if (_mode != Mode::Column) {
+		return {};
+	}
+	for (const auto &part : _parts) {
+		const auto next = part.content->skipSelection(selection);
+		if (next.to - next.from != selection.to - selection.from) {
+			return next.empty()
+				? part.content->selectionForEditText(selection)
+				: TextSelection();
+		}
+		selection = next;
+	}
+	return {};
+}
+
+TextSelection GroupedMedia::selectionForEditTextByClickHandler(
+		const ClickHandlerPtr &handler) const {
+	if (_mode != Mode::Column) {
+		return {};
+	}
+	for (const auto &part : _parts) {
+		const auto result = part.content->selectionForEditTextByClickHandler(
+			handler);
+		if (!result.empty()) {
+			return result;
+		}
+	}
+	return {};
+}
+
 auto GroupedMedia::getBubbleSelectionIntervals(
 	TextSelection selection) const
 -> std::vector<Ui::BubbleSelectionInterval> {

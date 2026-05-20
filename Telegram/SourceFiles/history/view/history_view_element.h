@@ -547,6 +547,8 @@ public:
 		const SelectedQuote &quote) const = 0;
 	virtual TextSelection selectionForEditText(
 		TextSelection selection) const;
+	virtual TextSelection selectionForEditTextByClickHandler(
+		const ClickHandlerPtr &handler) const;
 	[[nodiscard]] virtual TextSelection adjustSelection(
 		TextSelection selection,
 		TextSelectType type) const;
