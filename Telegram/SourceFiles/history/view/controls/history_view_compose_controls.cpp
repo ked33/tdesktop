@@ -4051,6 +4051,7 @@ void ComposeControls::editMessage(
 		const TextSelection &selection) {
 	if (const auto item = session().data().message(id)) {
 		editMessage(item);
+		ExpandCollapsedQuotesForSelection(_field, selection);
 		SelectTextInFieldWithMargins(_field, selection);
 	}
 }

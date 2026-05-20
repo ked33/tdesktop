@@ -209,6 +209,13 @@ void SelectTextInFieldWithMargins(
 	not_null<Ui::InputField*> field,
 	const TextSelection &selection);
 
+// Expand any collapsed blockquote in the field that intersects `selection`,
+// so that the field can address positions inside it precisely.
+// Returns true if any tag was changed (and the field was reloaded).
+bool ExpandCollapsedQuotesForSelection(
+	not_null<Ui::InputField*> field,
+	const TextSelection &selection);
+
 [[nodiscard]] TextWithEntities PaidSendButtonText(tr::now_t, int stars);
 [[nodiscard]] rpl::producer<TextWithEntities> PaidSendButtonText(
 	rpl::producer<int> stars,
