@@ -1463,6 +1463,7 @@ void SelectTextInFieldWithMargins(
 	const auto plain = field->getTextWithTags().text;
 	const auto inner = field->document()->toPlainText();
 	const auto docChars = field->document()->characterCount();
+	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
 	const auto fieldPos = [&](int externalPos) {
 		const auto extData = plain.constData();
 		const auto extEnd = extData + plain.size();
@@ -1473,17 +1474,28 @@ void SelectTextInFieldWithMargins(
 		const auto target = std::clamp(externalPos, 0, int(plain.size()));
 		while ((ext - extData) < target && in < inLen) {
 			if (inData[in] == QChar::ObjectReplacementCharacter) {
-				auto emojiLength = 0;
-				if (Ui::Emoji::Find(ext, extEnd, &emojiLength)
-					&& emojiLength > 0) {
-					ext += emojiLength;
-				} else if (ext->isHighSurrogate()
-					&& ext + 1 < extEnd
-					&& (ext + 1)->isLowSurrogate()) {
-					ext += 2;
-				} else {
-					++ext;
+				// Ask the field for the exact plain-text expansion of this
+				// object (emoji, custom emoji, collapsed quote, ...).
+				// Using getTextWithTagsPart guarantees the same mapping as
+				// getTextWithTags(), which produced `plain` above.
+				const auto expanded = field->getTextWithTagsPart(
+					in, in + 1).text;
+				auto step = expanded.isEmpty() ? 1 : int(expanded.size());
+				if (debug) {
+					LOG(("[EDIT_OFFSET]     orc in=%1 ext=%2 step=%3 "
+						"target=%4 expandedLen=%5"
+						).arg(in
+						).arg(int(ext - extData)
+						).arg(step
+						).arg(target
+						).arg(expanded.size()));
 				}
+				if ((ext - extData) + step > target) {
+					// Target falls inside this object; can't represent it,
+					// stop at the object start in the field.
+					break;
+				}
+				ext += step;
 				++in;
 			} else {
 				++ext;
@@ -1504,7 +1516,6 @@ void SelectTextInFieldWithMargins(
 			++i;
 		}
 	}
-	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
 	if (debug) {
 		LOG(("[EDIT_OFFSET] SelectTextInFieldWithMargins selection=(%1,%2) "
 			"plainLen=%3 innerLen=%4 docChars=%5 surrogatePairs=%6 "
