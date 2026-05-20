@@ -3923,13 +3923,26 @@ TextSelection Message::selectionForEditText(TextSelection selection) const {
 			}
 			return {};
 		}
-		if (debug) {
-			LOG(("[EDIT_OFFSET]   -> result=(%1,%2) mediaBefore=%3"
-				).arg(textSelection.from
-				).arg(textSelection.to
-				).arg(mediaBefore ? "true" : "false"));
+		const auto originalSelection = FindSelectionInOriginalText(
+			textRef,
+			textSelection,
+			int(original.text.size()));
+		if (originalSelection.empty()) {
+			if (debug) {
+				LOG(("[EDIT_OFFSET]   -> empty (after modifications)"));
+			}
+			return {};
 		}
-		return textSelection;
+		if (debug) {
+			LOG(("[EDIT_OFFSET]   -> result=(%1,%2) mediaBefore=%3 "
+				"text=(%4,%5)"
+				).arg(originalSelection.from
+				).arg(originalSelection.to
+				).arg(mediaBefore ? "true" : "false"
+				).arg(textSelection.from
+				).arg(textSelection.to));
+		}
+		return originalSelection;
 	} else if (const auto media = this->media()) {
 		if (media->isDisplayed() || isHiddenByGroup()) {
 			if (debug) {
