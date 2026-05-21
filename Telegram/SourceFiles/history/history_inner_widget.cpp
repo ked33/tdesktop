@@ -85,8 +85,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/platform/base_platform_info.h"
 #include "base/qt/qt_common_adapters.h"
 #include "base/qt/qt_key_modifiers.h"
-#include "base/unixtime.h"
 #include "base/call_delayed.h"
+#include "base/debug_log.h"
+#include "base/unixtime.h"
 #include "main/main_app_config.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
@@ -2739,6 +2740,54 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		return item;
 	};
 	const auto leaderOrSelf = groupLeaderOrSelf(_dragStateItem);
+	const auto editSelectionByContext = [&](HistoryItem *item) {
+		if (!item) {
+			return TextSelection();
+		}
+		const auto view = [&] {
+			const auto hovered = Element::Hovered();
+			if (hovered
+				&& (hovered->data().get() == item
+					|| hovered->data().get() == groupLeaderOrSelf(item))) {
+				return hovered;
+			}
+			return viewByItem(item);
+		}();
+		if (view) {
+			const auto it = _selected.find(item);
+			if (it != _selected.end() && it->second != FullSelection) {
+				const auto result = view->selectionForEditText(it->second);
+				if (GetEnhancedBool("edit_offset_debug_logs")) {
+					LOG(("[EDIT_OFFSET] HistoryInner::edit context "
+						"source=selected selection=(%1,%2) raw=(%3,%4)"
+						).arg(result.from
+						).arg(result.to
+						).arg(it->second.from
+						).arg(it->second.to));
+				}
+				return result;
+			}
+		}
+		const auto point = view
+			? mapPointToItem(mapFromGlobal(e->globalPos()), view)
+			: QPoint();
+		const auto result = HistoryView::ResolveEditSelectionByClickingEntity(
+			view,
+			item,
+			point,
+			link);
+		if (GetEnhancedBool("edit_offset_debug_logs")) {
+			LOG(("[EDIT_OFFSET] HistoryInner::edit context source=entity "
+				"selection=(%1,%2) hasView=%3 hasLink=%4 point=(%5,%6)"
+				).arg(result.from
+				).arg(result.to
+				).arg(view ? "true" : "false"
+				).arg(link ? "true" : "false"
+				).arg(point.x()
+				).arg(point.y()));
+		}
+		return result;
+	};
 	using namespace HistoryView::Reactions;
 	const auto clickedReaction = ReactionIdOfLink(link);
 	const auto linkPhoneNumber = link
@@ -2896,15 +2945,10 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				: nullptr;
 			if (editItem && GetEnhancedBool("show_message_context_edit")) {
 				const auto editItemId = editItem->fullId();
+				const auto editSelection = editSelectionByContext(editItem);
 				_menu->addAction(tr::lng_context_edit_msg(tr::now), [=] {
 					if (const auto item = session->data().message(editItemId)) {
-						auto it = _selected.find(item);
-						const auto view = viewByItem(item);
-						const auto selection = (view
-								&& (it != _selected.end())
-								&& (it->second != FullSelection))
-							? view->selectionForEditText(it->second)
-							: TextSelection();
+						const auto selection = editSelection;
 						if (!selection.empty()) {
 							clearSelected(true);
 						}

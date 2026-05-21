@@ -19,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_who_reacted.h"
 #include "api/api_stickers_creator.h"
 #include "api/api_toggling_media.h" // Api::ToggleFavedSticker
+#include "base/debug_log.h"
 #include "base/qt/qt_key_modifiers.h"
 #include "base/unixtime.h"
 #include "history/view/history_view_list_widget.h"
@@ -1608,15 +1609,44 @@ TextSelection ResolveEditSelectionByClickingEntity(
 		HistoryItem *item,
 		QPoint point,
 		const ClickHandlerPtr &link) {
+	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
 	if (!view || !item || !link) {
+		if (debug) {
+			LOG(("[EDIT_OFFSET] ResolveEditSelectionByClickingEntity "
+				"guard hasView=%1 hasItem=%2 hasLink=%3"
+				).arg(view ? "true" : "false"
+				).arg(item ? "true" : "false"
+				).arg(link ? "true" : "false"));
+		}
 		return {};
 	} else if (view->data().get() != item) {
 		const auto state = view->textState(point, StateRequest());
 		if (state.itemId != item->fullId() || state.link != link) {
+			if (debug) {
+				LOG(("[EDIT_OFFSET] ResolveEditSelectionByClickingEntity "
+					"mismatch sameItem=%1 sameLink=%2 symbol=%3 point=(%4,%5)"
+					).arg((state.itemId == item->fullId())
+						? "true"
+						: "false"
+					).arg((state.link == link) ? "true" : "false"
+					).arg(state.symbol
+					).arg(point.x()
+					).arg(point.y()));
+			}
 			return {};
 		}
 	}
-	return view->selectionForEditTextByClickHandler(link);
+	const auto result = view->selectionForEditTextByClickHandler(link);
+	if (debug) {
+		LOG(("[EDIT_OFFSET] ResolveEditSelectionByClickingEntity "
+			"result=(%1,%2) linkType=%3 point=(%4,%5)"
+			).arg(result.from
+			).arg(result.to
+			).arg(int(link->getTextEntity().type)
+			).arg(point.x()
+			).arg(point.y()));
+	}
+	return result;
 }
 
 namespace {

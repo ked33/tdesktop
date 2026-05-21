@@ -1522,10 +1522,23 @@ TextSelection Document::selectionForEditText(TextSelection selection) const {
 
 TextSelection Document::selectionForEditTextByClickHandler(
 		const ClickHandlerPtr &handler) const {
+	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
 	if (!handler) {
+		if (debug) {
+			LOG(("[EDIT_OFFSET] Document::selectionForEditTextByClickHandler "
+				"guard (no handler)"));
+		}
 		return {};
 	} else if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
 		const auto range = captioned->caption.linkRangeFor(handler);
+		if (debug) {
+			LOG(("[EDIT_OFFSET] Document::selectionForEditTextByClickHandler "
+				"captionRange=(%1,%2) captionLen=%3 linkType=%4"
+				).arg(range.from
+				).arg(range.to
+				).arg(captioned->caption.length()
+				).arg(int(handler->getTextEntity().type)));
+		}
 		if (!range.empty()) {
 			const auto selection = [&] {
 				if (const auto voice = Get<HistoryDocumentVoice>()) {
