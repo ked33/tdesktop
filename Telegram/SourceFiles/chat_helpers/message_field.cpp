@@ -1571,16 +1571,30 @@ void SelectTextInFieldWithMargins(
 bool ExpandCollapsedQuotesForSelection(
 		not_null<Ui::InputField*> field,
 		const TextSelection &selection) {
+	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
+	if (debug) {
+		LOG(("[EDIT_OFFSET] ExpandCollapsedQuote: called with "
+			"selection=(%1,%2)"
+			).arg(selection.from
+			).arg(selection.to));
+	}
 	if (selection.empty()) {
+		if (debug) {
+			LOG(("[EDIT_OFFSET] ExpandCollapsedQuote: skip (empty selection)"));
+		}
 		return false;
 	}
 	auto textWithTags = field->getTextWithTags();
 	if (textWithTags.tags.empty()) {
+		if (debug) {
+			LOG(("[EDIT_OFFSET] ExpandCollapsedQuote: skip (no tags) "
+				"plainLen=%1"
+				).arg(textWithTags.text.size()));
+		}
 		return false;
 	}
 	const auto plain = textWithTags.text;
 	const auto inner = field->document()->toPlainText();
-	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
 	const auto plainToInner = [&](int plainPos, bool snapToEnd) {
 		const auto plainData = plain.constData();
 		const auto innerData = inner.constData();
@@ -1618,6 +1632,19 @@ bool ExpandCollapsedQuotesForSelection(
 		if (tag.id.contains(collapsedTag)) {
 			hasCollapsedQuote = true;
 			break;
+		}
+	}
+	if (debug) {
+		LOG(("[EDIT_OFFSET] ExpandCollapsedQuote: tags=%1 "
+			"hasCollapsedQuote=%2"
+			).arg(textWithTags.tags.size()
+			).arg(hasCollapsedQuote ? "true" : "false"));
+		for (const auto &tag : textWithTags.tags) {
+			LOG(("[EDIT_OFFSET] ExpandCollapsedQuote:   tag offset=%1 "
+				"length=%2 id=%3"
+				).arg(tag.offset
+				).arg(tag.length
+				).arg(tag.id));
 		}
 	}
 	if (!hasCollapsedQuote) {
