@@ -1593,41 +1593,10 @@ bool ExpandCollapsedQuotesForSelection(
 		}
 		return false;
 	}
-	const auto plain = textWithTags.text;
-	const auto inner = field->document()->toPlainText();
-	const auto plainToInner = [&](int plainPos, bool snapToEnd) {
-		const auto plainData = plain.constData();
-		const auto innerData = inner.constData();
-		const auto innerLen = inner.size();
-		auto plainIdx = 0;
-		auto innerIdx = 0;
-		const auto target = std::clamp(plainPos, 0, int(plain.size()));
-		while (plainIdx < target && innerIdx < innerLen) {
-			if (innerData[innerIdx] == QChar::ObjectReplacementCharacter) {
-				const auto expanded = field->getTextWithTagsPart(
-					innerIdx, innerIdx + 1).text;
-				const auto step = expanded.isEmpty() ? 1 : int(expanded.size());
-				if (plainIdx + step > target) {
-					if (snapToEnd) {
-						++innerIdx;
-					}
-					return innerIdx;
-				}
-				plainIdx += step;
-				++innerIdx;
-			} else {
-				++plainIdx;
-				++innerIdx;
-			}
-		}
-		if (plainIdx < target) {
-			innerIdx += target - plainIdx;
-		}
-		return innerIdx;
-	};
-	auto hasCollapsedQuote = false;
 	const QChar separator = QLatin1Char('\\');
 	const auto &collapsedTag = Ui::InputField::kTagBlockquoteCollapsed;
+	const auto &expandedTag = Ui::InputField::kTagBlockquote;
+	auto hasCollapsedQuote = false;
 	for (const auto &tag : textWithTags.tags) {
 		if (tag.id.contains(collapsedTag)) {
 			hasCollapsedQuote = true;
@@ -1650,9 +1619,6 @@ bool ExpandCollapsedQuotesForSelection(
 	if (!hasCollapsedQuote) {
 		return false;
 	}
-	const auto innerFrom = plainToInner(selection.from, false);
-	const auto innerTo = plainToInner(selection.to, true);
-	const auto &expandedTag = Ui::InputField::kTagBlockquote;
 	auto changed = false;
 	for (auto &tag : textWithTags.tags) {
 		auto parts = tag.id.split(separator, Qt::SkipEmptyParts);
@@ -1668,7 +1634,8 @@ bool ExpandCollapsedQuotesForSelection(
 		}
 		const auto tagFrom = tag.offset;
 		const auto tagTo = tag.offset + tag.length;
-		if (innerFrom >= tagTo || innerTo <= tagFrom) {
+		if (int(selection.from) >= tagTo
+			|| int(selection.to) <= tagFrom) {
 			continue;
 		}
 		for (auto &p : parts) {
@@ -1680,17 +1647,17 @@ bool ExpandCollapsedQuotesForSelection(
 		changed = true;
 		if (debug) {
 			LOG(("[EDIT_OFFSET] ExpandCollapsedQuote: tag at "
-				"[%1,%2) intersected innerSelection [%3,%4) "
-				"(plainSelection [%5,%6)) -> expanded"
+				"[%1,%2) intersected selection [%3,%4) -> expanded"
 				).arg(tagFrom
 				).arg(tagTo
-				).arg(innerFrom
-				).arg(innerTo
 				).arg(selection.from
 				).arg(selection.to));
 		}
 	}
 	if (!changed) {
+		if (debug) {
+			LOG(("[EDIT_OFFSET] ExpandCollapsedQuote: no tags changed"));
+		}
 		return false;
 	}
 	field->setTextWithTags(
