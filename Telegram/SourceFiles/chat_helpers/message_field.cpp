@@ -15,7 +15,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/qthelp_regex.h"
 #include "base/qthelp_url.h"
 #include "base/event_filter.h"
-#include "base/debug_log.h"
 #include "ui/chat/chat_style.h"
 #include "ui/layers/generic_box.h"
 #include "ui/boxes/calendar_box.h"
@@ -48,7 +47,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
 #include "main/main_session.h"
-#include "settings/settings_common.h"
 #include "settings/sections/settings_premium.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
@@ -1462,8 +1460,6 @@ void SelectTextInFieldWithMargins(
 		const TextSelection &selection) {
 	const auto plain = field->getTextWithTags().text;
 	const auto inner = field->document()->toPlainText();
-	const auto docChars = field->document()->characterCount();
-	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
 	const auto fieldPos = [&](int externalPos, bool snapToEnd) {
 		const auto extData = plain.constData();
 		const auto extEnd = extData + plain.size();
@@ -1481,16 +1477,6 @@ void SelectTextInFieldWithMargins(
 				const auto expanded = field->getTextWithTagsPart(
 					in, in + 1).text;
 				auto step = expanded.isEmpty() ? 1 : int(expanded.size());
-				if (debug) {
-					LOG(("[EDIT_OFFSET]     orc in=%1 ext=%2 step=%3 "
-						"target=%4 expandedLen=%5 snapToEnd=%6"
-						).arg(in
-						).arg(int(ext - extData)
-						).arg(step
-						).arg(target
-						).arg(expanded.size()
-						).arg(snapToEnd ? "true" : "false"));
-				}
 				if ((ext - extData) + step > target) {
 					// Target falls strictly inside this object. The field
 					// has no addressable position mid-object (one char in
@@ -1518,30 +1504,7 @@ void SelectTextInFieldWithMargins(
 	};
 	const auto fieldFrom = fieldPos(selection.from, false);
 	const auto fieldTo = fieldPos(selection.to, true);
-	auto surrogatePairs = 0;
-	for (int i = 0, n = plain.size(); i + 1 < n; ++i) {
-		if (plain[i].isHighSurrogate() && plain[i + 1].isLowSurrogate()) {
-			++surrogatePairs;
-			++i;
-		}
-	}
-	if (debug) {
-		LOG(("[EDIT_OFFSET] SelectTextInFieldWithMargins selection=(%1,%2) "
-			"plainLen=%3 innerLen=%4 docChars=%5 surrogatePairs=%6 "
-			"fieldMapped=(%7,%8)"
-			).arg(selection.from
-			).arg(selection.to
-			).arg(plain.size()
-			).arg(inner.size()
-			).arg(docChars
-			).arg(surrogatePairs
-			).arg(fieldFrom
-			).arg(fieldTo));
-	}
 	if (fieldFrom == fieldTo) {
-		if (debug) {
-			LOG(("[EDIT_OFFSET]   -> skip (empty after mapping)"));
-		}
 		return;
 	}
 	auto textCursor = field->textCursor();
@@ -1560,37 +1523,16 @@ void SelectTextInFieldWithMargins(
 	field->setTextCursor(textCursor);
 	textCursor.setPosition(fieldTo, QTextCursor::KeepAnchor);
 	field->setTextCursor(textCursor);
-	const auto finalCursor = field->textCursor();
-	if (debug) {
-		LOG(("[EDIT_OFFSET]   -> after setPosition pos=%1 anchor=%2"
-			).arg(finalCursor.position()
-			).arg(finalCursor.anchor()));
-	}
 }
 
 bool ExpandCollapsedQuotesForSelection(
 		not_null<Ui::InputField*> field,
 		const TextSelection &selection) {
-	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
-	if (debug) {
-		LOG(("[EDIT_OFFSET] ExpandCollapsedQuote: called with "
-			"selection=(%1,%2)"
-			).arg(selection.from
-			).arg(selection.to));
-	}
 	if (selection.empty()) {
-		if (debug) {
-			LOG(("[EDIT_OFFSET] ExpandCollapsedQuote: skip (empty selection)"));
-		}
 		return false;
 	}
 	auto textWithTags = field->getTextWithTags();
 	if (textWithTags.tags.empty()) {
-		if (debug) {
-			LOG(("[EDIT_OFFSET] ExpandCollapsedQuote: skip (no tags) "
-				"plainLen=%1"
-				).arg(textWithTags.text.size()));
-		}
 		return false;
 	}
 	const QChar separator = QLatin1Char('\\');
@@ -1601,19 +1543,6 @@ bool ExpandCollapsedQuotesForSelection(
 		if (tag.id.contains(collapsedTag)) {
 			hasCollapsedQuote = true;
 			break;
-		}
-	}
-	if (debug) {
-		LOG(("[EDIT_OFFSET] ExpandCollapsedQuote: tags=%1 "
-			"hasCollapsedQuote=%2"
-			).arg(textWithTags.tags.size()
-			).arg(hasCollapsedQuote ? "true" : "false"));
-		for (const auto &tag : textWithTags.tags) {
-			LOG(("[EDIT_OFFSET] ExpandCollapsedQuote:   tag offset=%1 "
-				"length=%2 id=%3"
-				).arg(tag.offset
-				).arg(tag.length
-				).arg(tag.id));
 		}
 	}
 	if (!hasCollapsedQuote) {
@@ -1645,19 +1574,8 @@ bool ExpandCollapsedQuotesForSelection(
 		}
 		tag.id = parts.join(separator);
 		changed = true;
-		if (debug) {
-			LOG(("[EDIT_OFFSET] ExpandCollapsedQuote: tag at "
-				"[%1,%2) intersected selection [%3,%4) -> expanded"
-				).arg(tagFrom
-				).arg(tagTo
-				).arg(selection.from
-				).arg(selection.to));
-		}
 	}
 	if (!changed) {
-		if (debug) {
-			LOG(("[EDIT_OFFSET] ExpandCollapsedQuote: no tags changed"));
-		}
 		return false;
 	}
 	field->setTextWithTags(

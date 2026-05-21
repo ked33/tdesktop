@@ -9469,11 +9469,6 @@ void HistoryWidget::editMessage(
 	updateReplyToName();
 	updateControlsGeometry();
 	updateField();
-	if (GetEnhancedBool("edit_offset_debug_logs")) {
-		LOG(("[EDIT_OFFSET] HistoryWidget::editMessage selection=(%1,%2)"
-			).arg(selection.from
-			).arg(selection.to));
-	}
 	ExpandCollapsedQuotesForSelection(_field, selection);
 	SelectTextInFieldWithMargins(_field, selection);
 

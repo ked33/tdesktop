@@ -2757,14 +2757,6 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			const auto it = _selected.find(item);
 			if (it != _selected.end() && it->second != FullSelection) {
 				const auto result = view->selectionForEditText(it->second);
-				if (GetEnhancedBool("edit_offset_debug_logs")) {
-					LOG(("[EDIT_OFFSET] HistoryInner::edit context "
-						"source=selected selection=(%1,%2) raw=(%3,%4)"
-						).arg(result.from
-						).arg(result.to
-						).arg(it->second.from
-						).arg(it->second.to));
-				}
 				return result;
 			}
 		}
@@ -2776,16 +2768,6 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			item,
 			point,
 			link);
-		if (GetEnhancedBool("edit_offset_debug_logs")) {
-			LOG(("[EDIT_OFFSET] HistoryInner::edit context source=entity "
-				"selection=(%1,%2) hasView=%3 hasLink=%4 point=(%5,%6)"
-				).arg(result.from
-				).arg(result.to
-				).arg(view ? "true" : "false"
-				).arg(link ? "true" : "false"
-				).arg(point.x()
-				).arg(point.y()));
-		}
 		return result;
 	};
 	using namespace HistoryView::Reactions;

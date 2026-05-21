@@ -8,7 +8,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/media/history_view_document.h"
 
 #include "base/random.h"
-#include "base/debug_log.h"
 #include "lang/lang_keys.h"
 #include "lottie/lottie_icon.h"
 #include "storage/localstorage.h"
@@ -1480,20 +1479,9 @@ TextSelection Document::selectionFromQuote(
 }
 
 TextSelection Document::selectionForEditText(TextSelection selection) const {
-	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
-	if (debug) {
-		LOG(("[EDIT_OFFSET] Document::selectionForEditText input=(%1,%2)"
-			).arg(selection.from).arg(selection.to));
-	}
 	if (const auto voice = Get<HistoryDocumentVoice>()) {
 		const auto length = voice->transcribeText.length();
-		if (debug) {
-			LOG(("[EDIT_OFFSET]   voice transcribeLen=%1").arg(length));
-		}
 		if (selection.from < length) {
-			if (debug) {
-				LOG(("[EDIT_OFFSET]   -> empty (in transcribe range)"));
-			}
 			return {};
 		}
 		selection = HistoryView::UnshiftItemSelection(
@@ -1502,43 +1490,20 @@ TextSelection Document::selectionForEditText(TextSelection selection) const {
 	}
 	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
 		const auto capLen = captioned->caption.length();
-		if (debug) {
-			LOG(("[EDIT_OFFSET]   captionLen=%1 adjusted=(%2,%3)"
-				).arg(capLen).arg(selection.from).arg(selection.to));
-		}
 		if (selection.to > capLen || selection.empty()) {
-			if (debug) {
-				LOG(("[EDIT_OFFSET]   -> empty (out of caption or empty)"));
-			}
 			return {};
 		}
 		return selection;
-	}
-	if (debug) {
-		LOG(("[EDIT_OFFSET]   -> empty (no caption)"));
 	}
 	return {};
 }
 
 TextSelection Document::selectionForEditTextByClickHandler(
 		const ClickHandlerPtr &handler) const {
-	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
 	if (!handler) {
-		if (debug) {
-			LOG(("[EDIT_OFFSET] Document::selectionForEditTextByClickHandler "
-				"guard (no handler)"));
-		}
 		return {};
 	} else if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
 		const auto range = captioned->caption.linkRangeFor(handler);
-		if (debug) {
-			LOG(("[EDIT_OFFSET] Document::selectionForEditTextByClickHandler "
-				"captionRange=(%1,%2) captionLen=%3 linkType=%4"
-				).arg(range.from
-				).arg(range.to
-				).arg(captioned->caption.length()
-				).arg(int(handler->getTextEntity().type)));
-		}
 		if (!range.empty()) {
 			const auto selection = [&] {
 				if (const auto voice = Get<HistoryDocumentVoice>()) {
