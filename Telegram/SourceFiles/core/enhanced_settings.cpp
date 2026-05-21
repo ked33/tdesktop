@@ -54,7 +54,6 @@ namespace EnhancedSettings {
 					qsl("show_message_context_stream_in_mpv_special"));
 				ensureBool(qsl("show_message_context_stream_in_mpv_special"), true);
 				ensureBool(qsl("mpv_streaming_debug_logs"), false);
-				ensureBool(qsl("edit_offset_debug_logs"), false);
 				ensureBool(qsl("show_message_context_show_messages_from"), true);
 			ensureBool(qsl("show_message_context_forward"), true);
 			ensureBool(qsl("show_message_context_repeater"), true);
@@ -403,7 +402,6 @@ namespace EnhancedSettings {
 			settings.insert(qsl("show_message_context_stream_in_mpv"), true);
 			settings.insert(qsl("show_message_context_stream_in_mpv_special"), true);
 			settings.insert(qsl("mpv_streaming_debug_logs"), false);
-			settings.insert(qsl("edit_offset_debug_logs"), false);
 			settings.insert(qsl("show_message_context_show_messages_from"), true);
 		settings.insert(qsl("show_message_context_forward"), true);
 		settings.insert(qsl("show_message_context_repeater"), true);
@@ -493,7 +491,6 @@ namespace EnhancedSettings {
 			settings.insert(qsl("show_message_context_stream_in_mpv"), GetEnhancedBool("show_message_context_stream_in_mpv"));
 			settings.insert(qsl("show_message_context_stream_in_mpv_special"), GetEnhancedBool("show_message_context_stream_in_mpv_special"));
 			settings.insert(qsl("mpv_streaming_debug_logs"), GetEnhancedBool("mpv_streaming_debug_logs"));
-			settings.insert(qsl("edit_offset_debug_logs"), GetEnhancedBool("edit_offset_debug_logs"));
 			settings.insert(qsl("show_message_context_show_messages_from"), GetEnhancedBool("show_message_context_show_messages_from"));
 		settings.insert(qsl("show_message_context_forward"), GetEnhancedBool("show_message_context_forward"));
 		settings.insert(qsl("show_message_context_repeater"), GetEnhancedBool("show_message_context_repeater"));
