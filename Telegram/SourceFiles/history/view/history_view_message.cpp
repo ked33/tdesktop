@@ -11,7 +11,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_transcribes.h"
 #include "base/qt/qt_key_modifiers.h"
 #include "base/unixtime.h"
-#include "base/debug_log.h"
 #include "core/click_handler_types.h" // ClickHandlerContext
 #include "core/ui_integration.h"
 #include "history/view/history_view_cursor_state.h"
@@ -3892,23 +3891,9 @@ TextSelection Message::selectionForEditText(TextSelection selection) const {
 	const auto &translated = item->translatedText();
 	const auto &original = item->originalText();
 	const auto &textRef = text();
-	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
-	if (debug) {
-		LOG(("[EDIT_OFFSET] Message::selectionForEditText input=(%1,%2) "
-			"textLen=%3 originalLen=%4 translatedEq=%5 hasVisibleText=%6"
-			).arg(selection.from
-			).arg(selection.to
-			).arg(textRef.length()
-			).arg(original.text.size()
-			).arg((&translated == &original) ? "true" : "false"
-			).arg(hasVisibleText() ? "true" : "false"));
-	}
 	if (&translated != &original
 		|| selection.empty()
 		|| selection == FullSelection) {
-		if (debug) {
-			LOG(("[EDIT_OFFSET]   -> empty (guard)"));
-		}
 		return {};
 	} else if (hasVisibleText()) {
 		const auto media = this->media();
@@ -3918,9 +3903,6 @@ TextSelection Message::selectionForEditText(TextSelection selection) const {
 			? media->skipSelection(selection)
 			: selection;
 		if (textSelection.to > text().length() || textSelection.empty()) {
-			if (debug) {
-				LOG(("[EDIT_OFFSET]   -> empty (out of range or empty)"));
-			}
 			return {};
 		}
 		const auto originalSelection = FindSelectionInOriginalText(
@@ -3928,54 +3910,23 @@ TextSelection Message::selectionForEditText(TextSelection selection) const {
 			textSelection,
 			int(original.text.size()));
 		if (originalSelection.empty()) {
-			if (debug) {
-				LOG(("[EDIT_OFFSET]   -> empty (after modifications)"));
-			}
 			return {};
-		}
-		if (debug) {
-			LOG(("[EDIT_OFFSET]   -> result=(%1,%2) mediaBefore=%3 "
-				"text=(%4,%5)"
-				).arg(originalSelection.from
-				).arg(originalSelection.to
-				).arg(mediaBefore ? "true" : "false"
-				).arg(textSelection.from
-				).arg(textSelection.to));
 		}
 		return originalSelection;
 	} else if (const auto media = this->media()) {
 		if (media->isDisplayed() || isHiddenByGroup()) {
-			if (debug) {
-				LOG(("[EDIT_OFFSET]   -> delegate to media"));
-			}
 			return media->selectionForEditText(selection);
 		}
-	}
-	if (debug) {
-		LOG(("[EDIT_OFFSET]   -> empty (no path matched)"));
 	}
 	return {};
 }
 
 TextSelection Message::selectionForEditTextByClickHandler(
 		const ClickHandlerPtr &handler) const {
-	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
 	if (!handler) {
-		if (debug) {
-			LOG(("[EDIT_OFFSET] Message::selectionForEditTextByClickHandler "
-				"guard (no handler)"));
-		}
 		return {};
 	} else if (hasVisibleText() && IsRippleLink(handler)) {
 		const auto range = text().linkRangeFor(handler);
-		if (debug) {
-			LOG(("[EDIT_OFFSET] Message::selectionForEditTextByClickHandler "
-				"range=(%1,%2) textLen=%3 linkType=%4"
-				).arg(range.from
-				).arg(range.to
-				).arg(text().length()
-				).arg(int(handler->getTextEntity().type)));
-		}
 		if (!range.empty()) {
 			const auto media = this->media();
 			const auto mediaBefore = media
