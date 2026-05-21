@@ -3959,10 +3959,23 @@ TextSelection Message::selectionForEditText(TextSelection selection) const {
 
 TextSelection Message::selectionForEditTextByClickHandler(
 		const ClickHandlerPtr &handler) const {
+	const auto debug = GetEnhancedBool("edit_offset_debug_logs");
 	if (!handler) {
+		if (debug) {
+			LOG(("[EDIT_OFFSET] Message::selectionForEditTextByClickHandler "
+				"guard (no handler)"));
+		}
 		return {};
 	} else if (hasVisibleText() && IsRippleLink(handler)) {
 		const auto range = text().linkRangeFor(handler);
+		if (debug) {
+			LOG(("[EDIT_OFFSET] Message::selectionForEditTextByClickHandler "
+				"range=(%1,%2) textLen=%3 linkType=%4"
+				).arg(range.from
+				).arg(range.to
+				).arg(text().length()
+				).arg(int(handler->getTextEntity().type)));
+		}
 		if (!range.empty()) {
 			const auto media = this->media();
 			const auto mediaBefore = media
