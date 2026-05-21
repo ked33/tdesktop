@@ -774,7 +774,7 @@ const MessageStyle &ChatStyle::messageStyle(bool outbg, bool selected) const {
 	}
 
 	const auto preBgOverride = [&] {
-		return _dark ? QColor(0, 0, 0, 192) : std::optional<QColor>();
+		return _dark ? QColor(0x49, 0x5a, 0x7b) : std::optional<QColor>();
 	};
 	EnsurePreCache(
 		result.preCache,
