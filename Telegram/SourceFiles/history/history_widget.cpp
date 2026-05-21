@@ -9469,6 +9469,7 @@ void HistoryWidget::editMessage(
 	updateReplyToName();
 	updateControlsGeometry();
 	updateField();
+	ExpandCollapsedQuotesForSelection(_field, selection);
 	SelectTextInFieldWithMargins(_field, selection);
 
 	saveDraftWithTextNow();
