@@ -234,5 +234,11 @@
     "lng_settings_jump_to_dialog_shortcut_invalid": "Please enter a valid shortcut, for example Alt+E.",
     "lng_settings_custom_chat_shortcuts_title": "Custom chat shortcuts",
     "lng_settings_custom_chat_shortcuts_placeholder": "@username,alt+a|https://t.me/durov,alt+d|-1001732671681,alt+f",
-    "lng_settings_double_click_copy_link": "Double-click search result to copy message link"
+    "lng_settings_double_click_copy_link": "Double-click search result to copy message link",
+    "lng_settings_no_forwards_badge_color": "No-forwards badge color",
+    "lng_settings_no_forwards_badge_color_placeholder": "#ecbb71",
+    "lng_settings_no_forwards_badge_color_invalid": "Please enter a valid color code, for example #ecbb71.",
+    "lng_settings_code_block_bg_color": "Code block background color",
+    "lng_settings_code_block_bg_color_placeholder": "#495a7b",
+    "lng_settings_code_block_bg_color_invalid": "Please enter a valid color code, for example #495a7b."
 	}
