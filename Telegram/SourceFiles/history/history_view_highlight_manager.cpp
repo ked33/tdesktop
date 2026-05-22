@@ -67,6 +67,7 @@ Ui::ChatPaintHighlight ElementHighlighter::state(
 		result.range = _highlighted.part;
 		result.todoItemId = _highlighted.todoListId;
 		result.pollOption = _highlighted.pollOption;
+		result.searchQuery = _highlighted.searchQuery;
 		return result;
 	}
 	return {};
@@ -78,6 +79,8 @@ ElementHighlighter::Highlight ElementHighlighter::computeHighlight(
 
 	const auto item = not_null(quote.item);
 	const auto owner = &item->history()->owner();
+	const auto searchQuery = !quote.highlight.quote.empty()
+		&& (quote.highlight.quoteOffset == kSearchQueryOffsetHint);
 	if (const auto group = owner->groups().find(item)) {
 		const auto leader = group->items.front();
 		const auto leaderId = leader->fullId();
@@ -85,13 +88,20 @@ ElementHighlighter::Highlight ElementHighlighter::computeHighlight(
 		if (i != end(group->items)) {
 			const auto index = int(i - begin(group->items));
 			if (quote.highlight.empty()) {
-				return { leaderId, AddGroupItemSelection({}, index) };
+				return {
+					leaderId,
+					AddGroupItemSelection({}, index),
+					quote.highlight.todoItemId,
+					quote.highlight.pollOption,
+					searchQuery,
+				};
 			} else if (const auto leaderView = _viewForItem(leader)) {
 				return {
 					leaderId,
 					leaderView->selectionFromQuote(quote),
 					quote.highlight.todoItemId,
 					quote.highlight.pollOption,
+					searchQuery,
 				};
 			}
 		}
@@ -100,6 +110,7 @@ ElementHighlighter::Highlight ElementHighlighter::computeHighlight(
 			{},
 			quote.highlight.todoItemId,
 			quote.highlight.pollOption,
+			searchQuery,
 		};
 	} else if (quote.highlight.quote.empty()) {
 		return {
@@ -107,6 +118,7 @@ ElementHighlighter::Highlight ElementHighlighter::computeHighlight(
 			{},
 			quote.highlight.todoItemId,
 			quote.highlight.pollOption,
+			false,
 		};
 	} else if (const auto view = _viewForItem(item)) {
 		return {
@@ -114,6 +126,7 @@ ElementHighlighter::Highlight ElementHighlighter::computeHighlight(
 			view->selectionFromQuote(quote),
 			quote.highlight.todoItemId,
 			quote.highlight.pollOption,
+			searchQuery,
 		};
 	}
 	return {
@@ -121,6 +134,7 @@ ElementHighlighter::Highlight ElementHighlighter::computeHighlight(
 		{},
 		quote.highlight.todoItemId,
 		quote.highlight.pollOption,
+		searchQuery,
 	};
 }
 

@@ -264,5 +264,8 @@
     "lng_settings_no_forwards_badge_color_invalid": "请输入有效的颜色代码，例如 #ecbb71。",
     "lng_settings_code_block_bg_color": "代码块背景色",
     "lng_settings_code_block_bg_color_placeholder": "#495a7b",
-    "lng_settings_code_block_bg_color_invalid": "请输入有效的颜色代码，例如 #495a7b。"
+    "lng_settings_code_block_bg_color_invalid": "请输入有效的颜色代码，例如 #495a7b。",
+    "lng_settings_search_message_highlight_bg_color": "搜索跳转消息关键词高亮背景色",
+    "lng_settings_search_message_highlight_bg_color_placeholder": "#3482d555",
+    "lng_settings_search_message_highlight_bg_color_invalid": "请输入有效的颜色代码，例如 #3482d555。"
 	}
