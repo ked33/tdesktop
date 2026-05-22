@@ -199,7 +199,8 @@
     "lng_copy_profile_id": "ID copied to clipboard.",
 
     "lng_group_requests_ban": "Ban",
-    "lng_sure_delete_own_messages": "Are you sure you want to delete all messages you sent in this chat?\n\nThis action cannot be undone.",
+    "lng_sure_delete_own_messages#one": "Are you sure you want to delete {count} message you sent in this chat?\n\nThis action cannot be undone.",
+    "lng_sure_delete_own_messages#other": "Are you sure you want to delete {count} messages you sent in this chat?\n\nThis action cannot be undone.",
 
     "lng_blocked_user_hint": "[Blocked User Message]\n",
 
