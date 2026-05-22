@@ -284,6 +284,10 @@ private:
 	crl::time _consumptionLastTime = 0;
 	int64 _consumptionLastOffset = -1;
 	double _consumptionBytesPerSec = 0.0;
+	std::atomic<int> _seekCancelGeneration = 0;
+	int _seekCancelObservedGeneration = 0;
+	int64 _seekCancelLastOffset = -1;
+	bool _seekCancelEnabledLastFill = false;
 
 	PriorityQueue _loadingOffsets;
 	base::flat_set<int64> _pinnedTailOffsets;
