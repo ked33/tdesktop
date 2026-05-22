@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -249,12 +249,14 @@ void MarkAsReadChatList(not_null<Dialogs::MainList*> list) {
 	ranges::for_each(mark, MarkAsReadThread);
 }
 
-void DeleteOwnMessagesAfterConfirm(not_null<PeerData*> peer) {
+void DeleteOwnMessagesAfterConfirm(
+		not_null<PeerData*> peer,
+		std::vector<MsgId> messageIds) {
 	const auto session = &peer->session();
 	const auto channel = peer->asChannel();
-	const auto collected = std::make_shared<std::vector<MsgId>>();
+	const auto collected = std::make_shared<std::vector<MsgId>>(
+		std::move(messageIds));
 	const auto removeNext = std::make_shared<Fn<void(int)>>();
-	const auto requestNext = std::make_shared<Fn<void(MsgId)>>();
 
 	*removeNext = [=](int index) {
 		if (index >= int(collected->size())) {
@@ -299,6 +301,16 @@ void DeleteOwnMessagesAfterConfirm(not_null<PeerData*> peer) {
 		}
 	};
 
+	(*removeNext)(0);
+}
+
+void CollectOwnMessages(
+		not_null<PeerData*> peer,
+		Fn<void(std::vector<MsgId>)> done) {
+	const auto session = &peer->session();
+	const auto collected = std::make_shared<std::vector<MsgId>>();
+	const auto requestNext = std::make_shared<Fn<void(MsgId)>>();
+
 	*requestNext = [=](MsgId from) {
 		using Flag = MTPmessages_Search::Flag;
 		session->api().request(MTPmessages_Search(
@@ -335,7 +347,7 @@ void DeleteOwnMessagesAfterConfirm(not_null<PeerData*> peer) {
 				&& minId) {
 				(*requestNext)(minId - MsgId(1));
 			} else {
-				(*removeNext)(0);
+				done(std::move(*collected));
 			}
 		}).fail([=](const MTP::Error &) {
 		}).send();
@@ -351,16 +363,31 @@ Fn<void()> DeleteOwnMessagesHandler(
 		if (controller->showFrozenError()) {
 			return;
 		}
-		controller->show(Ui::MakeConfirmBox({
-			.text = tr::lng_sure_delete_own_messages(),
-			.confirmed = [=](Fn<void()> &&close) {
-				DeleteOwnMessagesAfterConfirm(peer);
-				close();
-			},
-			.confirmText = tr::lng_box_delete(),
-			.cancelText = tr::lng_cancel(),
-			.confirmStyle = &st::attentionBoxButton,
-		}));
+		const auto weak = base::make_weak(controller);
+		CollectOwnMessages(peer, [=](std::vector<MsgId> messageIds) {
+			const auto strong = weak.get();
+			if (!strong) {
+				return;
+			}
+			const auto count = int(messageIds.size());
+			const auto collected = std::make_shared<std::vector<MsgId>>(
+				std::move(messageIds));
+			strong->show(Ui::MakeConfirmBox({
+				.text = tr::lng_sure_delete_own_messages(
+					tr::now,
+					lt_count,
+					count),
+				.confirmed = [=](Fn<void()> &&close) {
+					DeleteOwnMessagesAfterConfirm(
+						peer,
+						std::move(*collected));
+					close();
+				},
+				.confirmText = tr::lng_box_delete(),
+				.cancelText = tr::lng_cancel(),
+				.confirmStyle = &st::attentionBoxButton,
+			}));
+		});
 	};
 }
 

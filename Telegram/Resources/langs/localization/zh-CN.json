@@ -207,7 +207,8 @@
     "lng_copy_profile_id": "ID 已复制到剪贴板。",
 
     "lng_group_requests_ban": "封禁",
-    "lng_sure_delete_own_messages": "你确定要删除你在此聊天中发送的所有消息吗？\n\n此操作无法撤销。",
+    "lng_sure_delete_own_messages#one": "你确定要删除你在此聊天中发送的 {count} 条消息吗？\n\n此操作无法撤销。",
+    "lng_sure_delete_own_messages#other": "你确定要删除你在此聊天中发送的 {count} 条消息吗？\n\n此操作无法撤销。",
 
     "lng_blocked_user_hint": "[被拉黑用户的消息]\n",
 
