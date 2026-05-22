@@ -53,6 +53,14 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 	return (DownloadBoostLevel() > 0);
 }
 
+[[nodiscard]] int64 StreamingSeekCancelJumpBytes() {
+	return int64(kInSlice / 2);
+}
+
+[[nodiscard]] int64 StreamingSeekCancelGuardBytes() {
+	return int64(kPartSize * 4);
+}
+
 [[nodiscard]] bool StreamingTailPrefetchEnabled() {
 	return (DownloadBoostLevel() > 0);
 }
@@ -1097,6 +1105,7 @@ void Reader::requestTailPrefetch(int64 bytes) {
 }
 
 void Reader::startStreaming() {
+	_seekCancelGeneration.fetch_add(1, std::memory_order_release);
 	_streamingActive = true;
 	refreshLoaderPriority();
 }
@@ -1114,6 +1123,7 @@ void Reader::stopStreaming(bool stillActive) {
 		cancelStreamingLoads();
 	}
 	if (!stillActive) {
+		_seekCancelGeneration.fetch_add(1, std::memory_order_release);
 		_streamingActive = false;
 		refreshLoaderPriority();
 		_loadingOffsets.clear();
@@ -1430,6 +1440,49 @@ Reader::FillState Reader::fill(
 		not_null<crl::semaphore*> notify) {
 	Expects(offset + buffer.size() <= size());
 	Expects(offset >= 0 && size() <= std::numeric_limits<uint32>::max());
+
+	const auto seekCancelEnabled = StreamingSeekCancelEnabled();
+	if (seekCancelEnabled) {
+		const auto generation = _seekCancelGeneration.load(
+			std::memory_order_acquire);
+		if (_seekCancelObservedGeneration != generation
+			|| !_seekCancelEnabledLastFill) {
+			_seekCancelObservedGeneration = generation;
+			_seekCancelLastOffset = -1;
+		}
+		_seekCancelEnabledLastFill = true;
+		const auto previous = _seekCancelLastOffset;
+		_seekCancelLastOffset = offset;
+		if (previous >= 0 && !_loadingOffsets.empty()) {
+			const auto delta = (offset >= previous)
+				? (offset - previous)
+				: (previous - offset);
+			if (delta >= StreamingSeekCancelJumpBytes()) {
+				const auto guard = StreamingSeekCancelGuardBytes();
+				const auto fileSize = size();
+				const auto start = std::max<int64>(0, offset - guard);
+				const auto till = std::min<int64>(
+					fileSize,
+					offset + buffer.size() + guard);
+				if (start < till) {
+					VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader seek jump cancel previous=%1 offset=%2 delta=%3 windowStart=%4 windowTill=%5 loadingActive=%6 boost=%7.")
+						.arg(qlonglong(previous))
+						.arg(qlonglong(offset))
+						.arg(qlonglong(delta))
+						.arg(qlonglong(start))
+						.arg(qlonglong(till))
+						.arg(_loadingOffsets.empty() ? 0 : 1)
+						.arg(DownloadBoostLevel()));
+					cancelLoadOutsideWindow(
+						uint32(start),
+						uint32(till));
+				}
+			}
+		}
+	} else if (_seekCancelEnabledLastFill) {
+		_seekCancelEnabledLastFill = false;
+		_seekCancelLastOffset = -1;
+	}
 
 	// Sample forward-consumption rate (bytes of video consumed per second of
 	// wall time). FFmpeg/AVIO drive fill() in bursts, so we accumulate over
