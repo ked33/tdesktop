@@ -50,6 +50,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "main/main_session.h"
 #include "settings/sections/settings_premium.h"
+#include "settings.h"
 #include "ui/text/text_options.h"
 #include "ui/painter.h"
 #include "window/themes/window_theme.h" // IsNightMode.
@@ -73,6 +74,34 @@ constexpr auto kFullLineAppearFinalDuration = crl::time(120);
 constexpr auto kLineHeightAppearDuration = crl::time(100);
 constexpr auto kLineHeightAppearFinalDuration = crl::time(60);
 constexpr auto kMinWidthAppearDuration = crl::time(160);
+
+[[nodiscard]] QColor SearchMessageHighlightBgColor() {
+	const auto fallback = QColor(0x34, 0x82, 0xd5, 0x55);
+	const auto value = GetEnhancedString(
+		"search_message_highlight_bg_color").trimmed();
+	if (value.size() != 7 && value.size() != 9) {
+		return fallback;
+	}
+	if (!value.startsWith('#')) {
+		return fallback;
+	}
+	auto ok = false;
+	const auto rgba = value.mid(1).toUInt(&ok, 16);
+	if (!ok) {
+		return fallback;
+	}
+	if (value.size() == 7) {
+		return QColor(
+			(rgba >> 16) & 0xff,
+			(rgba >> 8) & 0xff,
+			rgba & 0xff);
+	}
+	return QColor(
+		(rgba >> 24) & 0xff,
+		(rgba >> 16) & 0xff,
+		(rgba >> 8) & 0xff,
+		rgba & 0xff);
+}
 
 void ApplyRevealGradient(
 		not_null<const TextAppearing*> appearing,
@@ -1526,14 +1555,18 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 
 	if (context.highlightPathCache
 		&& !context.highlightPathCache->isEmpty()) {
-		const auto alpha = int(0.25
-			* context.highlight.collapsion
-			* context.highlight.opacity
-			* 255);
-		if (alpha > 0) {
+		auto color = context.highlight.searchQuery
+			? SearchMessageHighlightBgColor()
+			: context.messageStyle()->textPalette.linkFg->c;
+		const auto opacity = context.highlight.collapsion
+			* context.highlight.opacity;
+		if (context.highlight.searchQuery) {
+			color.setAlphaF(color.alphaF() * opacity);
+		} else {
+			color.setAlpha(int(0.25 * opacity * 255));
+		}
+		if (color.alpha() > 0) {
 			context.highlightPathCache->setFillRule(Qt::WindingFill);
-			auto color = context.messageStyle()->textPalette.linkFg->c;
-			color.setAlpha(alpha);
 			p.fillPath(*context.highlightPathCache, color);
 		}
 	}

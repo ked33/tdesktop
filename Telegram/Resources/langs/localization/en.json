@@ -240,5 +240,8 @@
     "lng_settings_no_forwards_badge_color_invalid": "Please enter a valid color code, for example #ecbb71.",
     "lng_settings_code_block_bg_color": "Code block background color",
     "lng_settings_code_block_bg_color_placeholder": "#495a7b",
-    "lng_settings_code_block_bg_color_invalid": "Please enter a valid color code, for example #495a7b."
+    "lng_settings_code_block_bg_color_invalid": "Please enter a valid color code, for example #495a7b.",
+    "lng_settings_search_message_highlight_bg_color": "Search result message highlight color",
+    "lng_settings_search_message_highlight_bg_color_placeholder": "#3482d555",
+    "lng_settings_search_message_highlight_bg_color_invalid": "Please enter a valid color code, for example #3482d555."
 	}
