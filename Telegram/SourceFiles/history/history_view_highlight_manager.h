@@ -67,6 +67,7 @@ private:
 		TextSelection part;
 		int todoListId = 0;
 		QByteArray pollOption;
+		bool searchQuery = false;
 
 		explicit operator bool() const {
 			return itemId.operator bool();
