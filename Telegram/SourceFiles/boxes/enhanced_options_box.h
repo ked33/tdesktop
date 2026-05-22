@@ -186,6 +186,26 @@ private:
 
 };
 
+class CodeBlockBgColorBox : public Ui::BoxContent {
+public:
+	CodeBlockBgColorBox(QWidget *parent);
+
+	static QString ColorLabel(const QString &value);
+
+protected:
+	void prepare() override;
+
+	void setInnerFocus() override;
+
+	void resizeEvent(QResizeEvent *e) override;
+
+private:
+	void save();
+
+	object_ptr<Ui::InputField> _color = { nullptr };
+
+};
+
 class ChatSwitchShortcutBox : public Ui::BoxContent {
 public:
 	ChatSwitchShortcutBox(QWidget *parent);

@@ -77,6 +77,7 @@ namespace EnhancedSettings {
 			ensureString(qsl("custom_chat_shortcuts"), QString());
 			ensureBool(qsl("double_click_copy_link"), false);
 			ensureString(qsl("no_forwards_badge_color"), qsl("#ecbb71"));
+			ensureString(qsl("code_block_bg_color"), qsl("#495a7b"));
 
 			ensureBool(qsl("preview_brightness_enabled"), false);
 			if (!gEnhancedOptions.contains(qsl("preview_brightness"))) {
@@ -430,6 +431,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("custom_chat_shortcuts"), "");
 		settings.insert(qsl("double_click_copy_link"), false);
 		settings.insert(qsl("no_forwards_badge_color"), "#ecbb71");
+		settings.insert(qsl("code_block_bg_color"), "#495a7b");
 		settings.insert(qsl("update_url"), "");
 		settings.insert(qsl("preview_brightness_enabled"), false);
 		settings.insert(qsl("preview_brightness"), 70);
@@ -533,6 +535,9 @@ namespace EnhancedSettings {
 		settings.insert(
 			qsl("no_forwards_badge_color"),
 			GetEnhancedString("no_forwards_badge_color"));
+		settings.insert(
+			qsl("code_block_bg_color"),
+			GetEnhancedString("code_block_bg_color"));
 		settings.insert(qsl("update_url"), GetEnhancedString("update_url"));
 		settings.insert(
 			qsl("preview_brightness_enabled"),
