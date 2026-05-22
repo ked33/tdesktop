@@ -18,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_polls.h"
 #include "styles/style_widgets.h"
 #include "base/options.h"
+#include "settings.h"
 
 namespace Ui {
 namespace {
@@ -29,6 +30,16 @@ base::options::toggle UncoloredQuote({
 	.defaultValue = false,
 	.restartRequired = true,
 });
+
+[[nodiscard]] QColor CodeBlockBgColor() {
+	const auto fallback = QColor(0x49, 0x5a, 0x7b);
+	const auto value = GetEnhancedString("code_block_bg_color").trimmed();
+	if (value.isEmpty()) {
+		return fallback;
+	}
+	const auto result = QColor(value);
+	return result.isValid() ? result : fallback;
+}
 
 void EnsureCorners(
 		CornersPixmaps &corners,
@@ -774,7 +785,7 @@ const MessageStyle &ChatStyle::messageStyle(bool outbg, bool selected) const {
 	}
 
 	const auto preBgOverride = [&] {
-		return _dark ? QColor(0x49, 0x5a, 0x7b) : std::optional<QColor>();
+		return _dark ? CodeBlockBgColor() : std::optional<QColor>();
 	};
 	EnsurePreCache(
 		result.preCache,
