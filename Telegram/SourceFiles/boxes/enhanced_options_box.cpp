@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/fields/input_field.h"
 #include "ui/widgets/labels.h"
+#include "ui/style/style_core.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 #include "ui/boxes/confirm_box.h"
@@ -472,6 +473,56 @@ void NoForwardsBadgeColorBox::save() {
 	}
 	SetEnhancedValue("no_forwards_badge_color", colorText.isEmpty() ? QString("#ecbb71") : colorText);
 	EnhancedSettings::Write();
+	closeBox();
+}
+
+CodeBlockBgColorBox::CodeBlockBgColorBox(QWidget *parent)
+	: _color(
+		this,
+		st::defaultInputField,
+		tr::lng_settings_code_block_bg_color_placeholder()) {
+}
+
+QString CodeBlockBgColorBox::ColorLabel(const QString &value) {
+	const auto trimmed = value.trimmed();
+	return trimmed.isEmpty() ? QString("#495a7b") : trimmed;
+}
+
+void CodeBlockBgColorBox::prepare() {
+	setTitle(tr::lng_settings_code_block_bg_color());
+
+	addButton(tr::lng_settings_save(), [=] { save(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+
+	_color->setText(GetEnhancedString("code_block_bg_color"));
+	_color->setMaxLength(7);
+
+	setDimensions(st::boxWidth, _color->height());
+}
+
+void CodeBlockBgColorBox::setInnerFocus() {
+	_color->setFocusFast();
+}
+
+void CodeBlockBgColorBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+
+	const auto width = st::boxWidth
+		- st::boxPadding.left()
+		- st::boxPadding.right();
+	_color->resize(width, _color->height());
+	_color->moveToLeft(st::boxPadding.left(), 0);
+}
+
+void CodeBlockBgColorBox::save() {
+	const auto colorText = _color->getLastText().trimmed();
+	if (!colorText.isEmpty() && !QColor::isValidColor(colorText)) {
+		Ui::Toast::Show(tr::lng_settings_code_block_bg_color_invalid(tr::now));
+		return;
+	}
+	SetEnhancedValue("code_block_bg_color", ColorLabel(colorText));
+	EnhancedSettings::Write();
+	style::NotifyPaletteChanged();
 	closeBox();
 }
 

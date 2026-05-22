@@ -355,7 +355,6 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
-		// 添加锁图标颜色设置
 		const auto currentNoForwardsBadgeColorLabel = [] {
 			const auto color = GetEnhancedString("no_forwards_badge_color");
 			return color.isEmpty() ? QString("#ecbb71") : color;
@@ -381,6 +380,33 @@ namespace Settings {
 		}, container->lifetime());
 		noForwardsBadgeColorButton->addClickHandler([=] {
 			Ui::show(Box<NoForwardsBadgeColorBox>());
+		});
+
+		const auto currentCodeBlockBgColorLabel = [] {
+			return CodeBlockBgColorBox::ColorLabel(
+				GetEnhancedString("code_block_bg_color"));
+		};
+		auto codeBlockBgColorValue = rpl::single(
+			currentCodeBlockBgColorLabel()
+		) | rpl::then(
+			_CodeBlockBgColorChanged.events()
+		) | rpl::map([=] {
+			return currentCodeBlockBgColorLabel();
+		});
+		auto codeBlockBgColorButton = AddButtonWithLabel(
+			inner,
+			tr::lng_settings_code_block_bg_color(),
+			std::move(codeBlockBgColorValue),
+			st::settingsButtonNoIcon
+		);
+		codeBlockBgColorButton->events(
+		) | rpl::on_next([=](not_null<QEvent*> e) {
+			if (e->type() == QEvent::UpdateLater) {
+				_CodeBlockBgColorChanged.fire({});
+			}
+		}, container->lifetime());
+		codeBlockBgColorButton->addClickHandler([=] {
+			Ui::show(Box<CodeBlockBgColorBox>());
 		});
 
 		AddButtonWithIcon(
