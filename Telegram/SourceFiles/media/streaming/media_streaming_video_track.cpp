@@ -458,7 +458,7 @@ bool VideoTrackObject::requireARGB32() const {
 			return false;
 		}
 	}
-	return true;
+	return !_requests.empty();
 }
 
 void VideoTrackObject::rasterizeFrame(not_null<Frame*> frame) {
