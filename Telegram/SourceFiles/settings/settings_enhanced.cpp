@@ -409,6 +409,33 @@ namespace Settings {
 			Ui::show(Box<CodeBlockBgColorBox>());
 		});
 
+		const auto currentSearchMessageHighlightBgColorLabel = [] {
+			return SearchMessageHighlightBgColorBox::ColorLabel(
+				GetEnhancedString("search_message_highlight_bg_color"));
+		};
+		auto searchMessageHighlightBgColorValue = rpl::single(
+			currentSearchMessageHighlightBgColorLabel()
+		) | rpl::then(
+			_SearchMessageHighlightBgColorChanged.events()
+		) | rpl::map([=] {
+			return currentSearchMessageHighlightBgColorLabel();
+		});
+		auto searchMessageHighlightBgColorButton = AddButtonWithLabel(
+			inner,
+			tr::lng_settings_search_message_highlight_bg_color(),
+			std::move(searchMessageHighlightBgColorValue),
+			st::settingsButtonNoIcon
+		);
+		searchMessageHighlightBgColorButton->events(
+		) | rpl::on_next([=](not_null<QEvent*> e) {
+			if (e->type() == QEvent::UpdateLater) {
+				_SearchMessageHighlightBgColorChanged.fire({});
+			}
+		}, container->lifetime());
+		searchMessageHighlightBgColorButton->addClickHandler([=] {
+			Ui::show(Box<SearchMessageHighlightBgColorBox>());
+		});
+
 		AddButtonWithIcon(
 				inner,
 				tr::lng_settings_disable_link_warning(),

@@ -187,6 +187,7 @@ struct ChatPaintHighlight {
 	TextSelection range;
 	int todoItemId = 0;
 	QByteArray pollOption;
+	bool searchQuery = false;
 };
 
 struct ChatPaintContext {

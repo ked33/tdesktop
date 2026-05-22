@@ -526,6 +526,68 @@ void CodeBlockBgColorBox::save() {
 	closeBox();
 }
 
+SearchMessageHighlightBgColorBox::SearchMessageHighlightBgColorBox(
+		QWidget *parent)
+: _color(
+	this,
+	st::defaultInputField,
+	tr::lng_settings_search_message_highlight_bg_color_placeholder()) {
+}
+
+QString SearchMessageHighlightBgColorBox::ColorLabel(const QString &value) {
+	const auto trimmed = value.trimmed();
+	return trimmed.isEmpty() ? QString("#3482d555") : trimmed;
+}
+
+void SearchMessageHighlightBgColorBox::prepare() {
+	setTitle(tr::lng_settings_search_message_highlight_bg_color());
+
+	addButton(tr::lng_settings_save(), [=] { save(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+
+	_color->setText(GetEnhancedString("search_message_highlight_bg_color"));
+	_color->setMaxLength(9);
+
+	setDimensions(st::boxWidth, _color->height());
+}
+
+void SearchMessageHighlightBgColorBox::setInnerFocus() {
+	_color->setFocusFast();
+}
+
+void SearchMessageHighlightBgColorBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+
+	const auto width = st::boxWidth
+		- st::boxPadding.left()
+		- st::boxPadding.right();
+	_color->resize(width, _color->height());
+	_color->moveToLeft(st::boxPadding.left(), 0);
+}
+
+void SearchMessageHighlightBgColorBox::save() {
+	const auto colorText = _color->getLastText().trimmed();
+	const auto validLength = (colorText.size() == 7 || colorText.size() == 9);
+	auto ok = false;
+	if (!colorText.isEmpty() && colorText.startsWith('#') && validLength) {
+		colorText.mid(1).toUInt(&ok, 16);
+	}
+	if (!colorText.isEmpty()
+		&& (!colorText.startsWith('#')
+		|| !validLength
+		|| !ok)) {
+		Ui::Toast::Show(
+			tr::lng_settings_search_message_highlight_bg_color_invalid(
+				tr::now));
+		return;
+	}
+	SetEnhancedValue(
+		"search_message_highlight_bg_color",
+		ColorLabel(colorText));
+	EnhancedSettings::Write();
+	closeBox();
+}
+
 ChatSwitchShortcutBox::ChatSwitchShortcutBox(QWidget *parent)
 : ChatSwitchShortcutBox(
 	parent,
