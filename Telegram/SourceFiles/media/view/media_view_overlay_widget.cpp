@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -4964,9 +4964,7 @@ void OverlayWidget::handleStreamingError(Streaming::Error &&error) {
 	Expects(_document || _photo);
 
 	if (error == Streaming::Error::NotStreamable) {
-		if (_document) {
-			_document->setNotSupportsStreaming();
-		} else {
+		if (_photo) {
 			_photo->setVideoPlaybackFailed();
 		}
 	} else if (error == Streaming::Error::OpenFailed) {
