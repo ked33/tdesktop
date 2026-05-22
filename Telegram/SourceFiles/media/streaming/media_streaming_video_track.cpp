@@ -176,6 +176,7 @@ private:
 	Fn<void(Error)> _error;
 	crl::time _pausedTime = kTimeUnknown;
 	crl::time _resumedTime = kTimeUnknown;
+	FrameFormat _lastLoggedFrameFormat = FrameFormat::None;
 	int _frameIndex = 0;
 	int _durationByLastPacket = 0;
 	mutable TimePoint _syncTimePoint;
@@ -484,8 +485,9 @@ void VideoTrackObject::rasterizeFrame(not_null<Frame*> frame) {
 	const auto frameWithData = frame->transferred
 		? frame->transferred.get()
 		: frame->decoded.get();
+	const auto requiredArgb = requireARGB32();
 	if ((frameWithData->format == AV_PIX_FMT_YUV420P
-		|| frameWithData->format == AV_PIX_FMT_NV12) && !requireARGB32()) {
+		|| frameWithData->format == AV_PIX_FMT_NV12) && !requiredArgb) {
 		const auto nv12 = (frameWithData->format == AV_PIX_FMT_NV12);
 		frame->alpha = false;
 		frame->yuv = ExtractYUV(_stream, frameWithData);
@@ -524,6 +526,18 @@ void VideoTrackObject::rasterizeFrame(not_null<Frame*> frame) {
 			return;
 		}
 		frame->format = FrameFormat::ARGB32;
+	}
+	if (_lastLoggedFrameFormat != frame->format) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: VideoTrack frame format changed position=%1 format=%2 decodedFormat=%3 sourceFormat=%4 requiredArgb=%5 preparedRequests=%6 size=%7x%8.")
+			.arg(qlonglong(frame->position))
+			.arg(PlaybackFrameFormatDebugString(frame->format))
+			.arg(int(frame->decoded->format))
+			.arg(int(frameWithData->format))
+			.arg(requiredArgb ? 1 : 0)
+			.arg(int(frame->prepared.size()))
+			.arg(frameWithData->width)
+			.arg(frameWithData->height));
+		_lastLoggedFrameFormat = frame->format;
 	}
 
 	VideoTrack::PrepareFrameByRequests(
@@ -690,6 +704,11 @@ bool VideoTrackObject::processFirstFrame() {
 	if (!valid) {
 		return false;
 	} else if (decodedFrame->hw_frames_ctx) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: VideoTrack first frame hardware transfer sourceFormat=%1 position=%2 size=%3x%4.")
+			.arg(int(decodedFrame->format))
+			.arg(qlonglong(_syncTimePoint.trackTime))
+			.arg(decodedFrame->width)
+			.arg(decodedFrame->height));
 		if (!_stream.transferredFrame) {
 			_stream.transferredFrame = FFmpeg::MakeFramePointer();
 		}
@@ -702,6 +721,10 @@ bool VideoTrackObject::processFirstFrame() {
 				).arg(int(decodedFrame->format)));
 			return false;
 		}
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: VideoTrack first frame hardware transfer done sourceFormat=%1 targetFormat=%2 position=%3.")
+			.arg(int(decodedFrame->format))
+			.arg(int(_stream.transferredFrame->format))
+			.arg(qlonglong(_syncTimePoint.trackTime)));
 		DEBUG_LOG(("Video Info: "
 			"Using accelerated decoding from format %1 to format %2."
 			).arg(int(decodedFrame->format)
