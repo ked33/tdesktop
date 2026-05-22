@@ -291,11 +291,16 @@ Mode Player::fileOpenMode() {
 
 bool Player::fileReady(int headerSize, Stream &&video, Stream &&audio) {
 	_waitingForData = false;
-	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player fileReady header=%1 incomingVideo=%2 incomingAudio=%3 mode=%4.")
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player fileReady header=%1 incomingVideo=%2 incomingAudio=%3 mode=%4 seekable=%5 sequential=%6 hw=%7 remote=%8 boost=%9.")
 		.arg(headerSize)
 		.arg(video.codec ? 1 : 0)
 		.arg(audio.codec ? 1 : 0)
-		.arg(int(_options.mode)));
+		.arg(PlaybackModeDebugString(_options.mode))
+		.arg(_options.seekable ? 1 : 0)
+		.arg(_options.sequentialOpen ? 1 : 0)
+		.arg(_options.hwAllowed ? 1 : 0)
+		.arg(_remoteLoader ? 1 : 0)
+		.arg(PlaybackDebugBoostLevel()));
 
 	const auto weak = base::make_weak(&_sessionGuard);
 	const auto ready = [=](const Information &data) {
@@ -404,10 +409,15 @@ void Player::fileWaitingForData() {
 		return;
 	}
 	_waitingForData = true;
-	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player fileWaitingForData stage=%1 hasAudio=%2 hasVideo=%3.")
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player fileWaitingForData stage=%1 hasAudio=%2 hasVideo=%3 remote=%4 boost=%5 waitBuffer=%6 audioState=%7 videoState=%8.")
 		.arg(int(_stage))
 		.arg(_audio ? 1 : 0)
-		.arg(_video ? 1 : 0));
+		.arg(_video ? 1 : 0)
+		.arg(_remoteLoader ? 1 : 0)
+		.arg(PlaybackDebugBoostLevel())
+		.arg(qlonglong(WaitingForDataBuffer(_remoteLoader)))
+		.arg(PlaybackTrackStateDebugString(_information.audio.state))
+		.arg(PlaybackTrackStateDebugString(_information.video.state)));
 	if (_audio) {
 		_audio->waitForData();
 	}
@@ -512,11 +522,13 @@ bool Player::fileReadMore() {
 }
 
 void Player::streamReady(Information &&information) {
-	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player streamReady header=%1 videoDuration=%2 audioDuration=%3 stage=%4.")
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player streamReady header=%1 videoDuration=%2 audioDuration=%3 stage=%4 audioState=%5 videoState=%6.")
 		.arg(information.headerSize)
 		.arg(qlonglong(information.video.state.duration))
 		.arg(qlonglong(information.audio.state.duration))
-		.arg(int(_stage)));
+		.arg(int(_stage))
+		.arg(PlaybackTrackStateDebugString(information.audio.state))
+		.arg(PlaybackTrackStateDebugString(information.video.state)));
 	SaveValidStartInformation(_information, std::move(information));
 	provideStartInformation();
 }
@@ -618,6 +630,20 @@ void Player::play(const PlaybackOptions &options) {
 		_options.position = 0;
 	}
 	_stage = Stage::Initializing;
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player play mode=%1 position=%2 previousReceived=%3 durationOverride=%4 seekable=%5 sequential=%6 hwRequested=%7 hwUsed=%8 speed=%9 remote=%10 boost=%11 loadAhead=%12 waitBuffer=%13.")
+		.arg(PlaybackModeDebugString(_options.mode))
+		.arg(qlonglong(_options.position))
+		.arg(qlonglong(_previousReceivedTill))
+		.arg(qlonglong(_options.durationOverride))
+		.arg(_options.seekable ? 1 : 0)
+		.arg(_options.sequentialOpen ? 1 : 0)
+		.arg(_options.hwAllowed ? 1 : 0)
+		.arg((_options.sequentialOpen ? false : _options.hwAllowed) ? 1 : 0)
+		.arg(_options.speed, 0, 'f', 2)
+		.arg(_remoteLoader ? 1 : 0)
+		.arg(PlaybackDebugBoostLevel())
+		.arg(qlonglong(loadInAdvanceFor()))
+		.arg(qlonglong(WaitingForDataBuffer(_remoteLoader))));
 	_file->start(delegate(), {
 		.position = _options.position,
 		.durationOverride = options.durationOverride,
