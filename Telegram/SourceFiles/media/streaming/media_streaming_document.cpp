@@ -298,9 +298,7 @@ void Document::handleError(Error &&error) {
 			.arg(_document->inappPlaybackFailed()));
 	}
 	if (_document) {
-		if (error == Error::NotStreamable) {
-			_document->setNotSupportsStreaming();
-		} else if (error == Error::OpenFailed) {
+		if (error == Error::OpenFailed) {
 			_document->setInappPlaybackFailed();
 		}
 	} else if (_photo) {
