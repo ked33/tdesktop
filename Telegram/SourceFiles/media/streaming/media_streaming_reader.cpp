@@ -1501,6 +1501,7 @@ Reader::FillState Reader::fill(
 Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	using namespace rpl::mappers;
 
+	const auto boost = DownloadBoostLevel();
 	const auto preloadBase = PreloadPartsAhead();
 	const auto limitBase = StreamingRequestsLimit();
 	auto preloadParts = std::clamp(
@@ -1512,7 +1513,7 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	// avoid preloading past roughly the next N seconds of playback. This
 	// keeps Burst mode from spending bandwidth on parts the user will not
 	// reach within the already-banked buffer horizon.
-	if (DownloadBoostLevel() > 0 && _consumptionBytesPerSec > 0.0) {
+	if (boost > 0 && _consumptionBytesPerSec > 0.0) {
 		constexpr auto kTargetSecondsAhead = 30.0;
 		const auto neededBytes = _consumptionBytesPerSec
 			* kTargetSecondsAhead;
@@ -1530,11 +1531,37 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		limitBase,
 		int(kLoadFromRemoteMax));
 	auto result = _slices.fill(offset, buffer, preloadParts, requestsLimit);
+	if (result.state != FillState::Success) {
+		auto remoteRequests = 0;
+		for (const auto requestOffset : result.offsetsFromLoader.values()) {
+			(void)requestOffset;
+			++remoteRequests;
+		}
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader fill waiting offset=%1 buffer=%2 state=%3 boost=%4 preloadBase=%5 preload=%6 limitBase=%7 limit=%8 adaptivePreload=%9 adaptiveLimit=%10 consumptionBps=%11 remoteRequests=%12 loadingActive=%13 headerBytes=%14 size=%15.")
+			.arg(qulonglong(offset))
+			.arg(qlonglong(buffer.size()))
+			.arg(int(result.state))
+			.arg(boost)
+			.arg(preloadBase)
+			.arg(preloadParts)
+			.arg(limitBase)
+			.arg(requestsLimit)
+			.arg(_adaptivePreloadPercent.load(std::memory_order_relaxed))
+			.arg(_adaptiveLimitPercent.load(std::memory_order_relaxed))
+			.arg(_consumptionBytesPerSec, 0, 'f', 0)
+			.arg(remoteRequests)
+			.arg(_loadingOffsets.empty() ? 0 : 1)
+			.arg(_slices.headerSize())
+			.arg(qlonglong(size())));
+	}
 	if (result.state != FillState::Success && _slices.headerWontBeFilled()) {
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader header limit hit at offset=%1 size=%2 headerBytes=%3.")
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader header limit hit at offset=%1 size=%2 headerBytes=%3 boost=%4 preload=%5 limit=%6.")
 			.arg(qulonglong(offset))
 			.arg(qlonglong(size()))
-			.arg(_slices.headerSize()));
+			.arg(_slices.headerSize())
+			.arg(boost)
+			.arg(preloadParts)
+			.arg(requestsLimit));
 		_streamingError = Error::NotStreamable;
 		return FillState::Failed;
 	}
@@ -1614,17 +1641,25 @@ void Reader::cancelLoadOutsideWindow(uint32 windowStart, uint32 windowTill) {
 	// re-queuing just re-submits to the back of the queue, making things
 	// worse. Skip far-seek cancellation until bandwidth recovers.
 	if (_speedIsThrottled.load(std::memory_order_relaxed)) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader cancel outside window skipped by throttle start=%1 till=%2 boost=%3.")
+			.arg(qulonglong(windowStart))
+			.arg(qulonglong(windowTill))
+			.arg(DownloadBoostLevel()));
 		return;
 	}
 
+	auto cancelled = 0;
+	auto pinned = 0;
 	const auto cancelOne = [&](int64 offset) {
 		if (_pinnedTailOffsets.contains(offset)) {
 			// Keep speculative moov-tail requests alive across far seeks.
 			_loadingOffsets.add(offset);
+			++pinned;
 			return;
 		}
 		if (!_downloaderOffsetsRequested.contains(uint32(offset))) {
 			_loader->cancel(offset);
+			++cancelled;
 		}
 	};
 	if (windowStart > 0) {
@@ -1637,6 +1672,14 @@ void Reader::cancelLoadOutsideWindow(uint32 windowStart, uint32 windowTill) {
 		for (const auto off : _loadingOffsets.takeInRange(windowTill, kMax)) {
 			cancelOne(off);
 		}
+	}
+	if (cancelled || pinned) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader cancel outside window start=%1 till=%2 cancelled=%3 pinned=%4 boost=%5.")
+			.arg(qulonglong(windowStart))
+			.arg(qulonglong(windowTill))
+			.arg(cancelled)
+			.arg(pinned)
+			.arg(DownloadBoostLevel()));
 	}
 }
 
@@ -1656,9 +1699,19 @@ void Reader::consumePendingTailPrefetch() {
 	const auto clamped = std::min(tail, fileSize);
 	const auto tailStart = fileSize - clamped;
 	const auto alignedStart = (tailStart / kPartSize) * kPartSize;
+	auto requested = 0;
 	for (auto off = alignedStart; off < fileSize; off += kPartSize) {
 		_pinnedTailOffsets.emplace(off);
 		loadAtOffset(uint32(off));
+		++requested;
+	}
+	if (requested) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader tail prefetch start=%1 bytes=%2 requested=%3 size=%4 boost=%5.")
+			.arg(qlonglong(alignedStart))
+			.arg(qlonglong(clamped))
+			.arg(requested)
+			.arg(qlonglong(fileSize))
+			.arg(DownloadBoostLevel()));
 	}
 }
 
