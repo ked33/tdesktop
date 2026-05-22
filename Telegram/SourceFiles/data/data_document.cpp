@@ -1860,11 +1860,6 @@ bool DocumentData::supportsStreaming() const {
 	return (_flags & kStreamingSupportedMask) == kStreamingSupportedMaybeYes;
 }
 
-void DocumentData::setNotSupportsStreaming() {
-	_flags &= ~kStreamingSupportedMask;
-	_flags |= kStreamingSupportedNo;
-}
-
 void DocumentData::setMaybeSupportsStreaming(bool supports) {
 	if ((_flags & kStreamingSupportedMask) == kStreamingSupportedNo) {
 		return;
