@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/media/history_view_custom_emoji.h"
 
+#include "history/view/media/history_view_preview_brightness.h"
 #include "history/view/media/history_view_sticker.h"
 #include "history/view/history_view_element.h"
 #include "history/history.h"
@@ -271,7 +272,10 @@ void CustomEmoji::paintCustom(
 	//const auto preview = context.imageStyle()->msgServiceBg->c;
 	auto &textst = context.st->messageStyle(false, false);
 	const auto paused = context.paused || On(PowerSaving::kEmojiChat);
-	if (context.selected()) {
+	const auto color = PreviewBrightnessColor(context.selected()
+		? context.st->msgStickerOverlay()->c
+		: QColor(0, 0, 0, 0));
+	if (color.alpha()) {
 		const auto factor = style::DevicePixelRatio();
 		const auto size = QSize(_singleSize, _singleSize) * factor;
 		if (_selectedFrame.size() != size) {
@@ -291,7 +295,7 @@ void CustomEmoji::paintCustom(
 
 		_selectedFrame = Images::Colored(
 			std::move(_selectedFrame),
-			context.st->msgStickerOverlay()->c);
+			color);
 		p.drawImage(x, y, _selectedFrame);
 	} else {
 		emoji->paint(p, {

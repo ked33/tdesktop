@@ -10,6 +10,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/media/history_view_media_unwrapped.h"
 #include "ui/text/text_isolated_emoji.h"
 
+#include <QtCore/QSize>
+#include <QtGui/QColor>
+#include <QtGui/QPixmap>
+
+class Image;
+
 namespace Stickers {
 struct LargeEmojiImage;
 } // namespace Stickers
@@ -49,6 +55,12 @@ public:
 	void unloadHeavyPart() override;
 
 private:
+	[[nodiscard]] const QPixmap &preparedImage(
+		int index,
+		not_null<const Image*> image,
+		QSize size,
+		QColor color) const;
+
 	void paintCustom(
 		QPainter &p,
 		int x,
@@ -58,6 +70,10 @@ private:
 
 	const not_null<Element*> _parent;
 	const std::array<LargeEmojiMedia, Ui::Text::kIsolatedEmojiLimit> _images;
+	mutable std::array<QPixmap, Ui::Text::kIsolatedEmojiLimit> _imageCache;
+	mutable std::array<QSize, Ui::Text::kIsolatedEmojiLimit> _imageCacheSize;
+	mutable std::array<const Image*, Ui::Text::kIsolatedEmojiLimit> _imageCacheSource = {};
+	mutable std::array<uint32, Ui::Text::kIsolatedEmojiLimit> _imageCacheColor = {};
 	QImage _selectedFrame;
 	QSize _size;
 	bool _hasHeavyPart = false;

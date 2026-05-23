@@ -8,6 +8,7 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #pragma once
 
 class QImage;
+class QColor;
 
 namespace HistoryView {
 
@@ -17,5 +18,6 @@ namespace HistoryView {
 [[nodiscard]] int PreviewBrightnessKey();
 
 void ApplyPreviewBrightness(QImage &image);
+[[nodiscard]] QColor PreviewBrightnessColor(QColor color);
 
 } // namespace HistoryView

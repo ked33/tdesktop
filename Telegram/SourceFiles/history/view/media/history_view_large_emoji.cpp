@@ -12,9 +12,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element.h"
 #include "history/history_item.h"
 #include "history/history.h"
+#include "history/view/media/history_view_preview_brightness.h"
 #include "ui/image/image.h"
 #include "ui/chat/chat_style.h"
 #include "ui/painter.h"
+#include "ui/ui_utility.h"
 #include "data/data_session.h"
 #include "data/data_file_origin.h"
 #include "data/stickers/data_custom_emoji.h"
@@ -101,15 +103,16 @@ void LargeEmoji::draw(
 		_selectedFrame = QImage();
 	}
 	for (const auto &media : _images) {
+		const auto index = int(&media - _images.data());
 		if (const auto image = std::get_if<ImagePtr>(&media)) {
 			if (const auto &prepared = (*image)->image) {
-				const auto colored = selected
-					? &context.st->msgStickerOverlay()
-					: nullptr;
+				const auto color = PreviewBrightnessColor(selected
+					? context.st->msgStickerOverlay()->c
+					: QColor(0, 0, 0, 0));
 				p.drawPixmap(
 					x,
 					y,
-					prepared->pix(size, { .colored = colored }));
+					preparedImage(index, &*prepared, size, color));
 			} else if ((*image)->load) {
 				(*image)->load();
 			}
@@ -120,6 +123,34 @@ void LargeEmoji::draw(
 		}
 		x += size.width() + skip;
 	}
+}
+
+const QPixmap &LargeEmoji::preparedImage(
+		int index,
+		not_null<const Image*> image,
+		QSize size,
+		QColor color) const {
+	if (!color.alpha()) {
+		return image->pix(size);
+	}
+	const auto colorKey = uint32(color.rgba());
+	if (!_imageCache[index].isNull()
+		&& _imageCacheSize[index] == size
+		&& _imageCacheSource[index] == image
+		&& _imageCacheColor[index] == colorKey) {
+		return _imageCache[index];
+	}
+
+	auto prepared = Images::Prepare(
+		image->original(),
+		size * style::DevicePixelRatio(),
+		{});
+	prepared = Images::Colored(std::move(prepared), color);
+	_imageCache[index] = Ui::PixmapFromImage(std::move(prepared));
+	_imageCacheSize[index] = size;
+	_imageCacheSource[index] = image;
+	_imageCacheColor[index] = colorKey;
+	return _imageCache[index];
 }
 
 void LargeEmoji::paintCustom(
@@ -137,7 +168,10 @@ void LargeEmoji::paintCustom(
 	const auto skip = (inner - outer) / 2;
 	//const auto preview = context.imageStyle()->msgServiceBg->c;
 	auto &textst = context.st->messageStyle(false, false);
-	if (context.selected()) {
+	const auto color = PreviewBrightnessColor(context.selected()
+		? context.st->msgStickerOverlay()->c
+		: QColor(0, 0, 0, 0));
+	if (color.alpha()) {
 		const auto factor = style::DevicePixelRatio();
 		const auto size = QSize(outer, outer) * factor;
 		if (_selectedFrame.size() != size) {
@@ -157,7 +191,7 @@ void LargeEmoji::paintCustom(
 
 		_selectedFrame = Images::Colored(
 			std::move(_selectedFrame),
-			context.st->msgStickerOverlay()->c);
+			color);
 		p.drawImage(x + skip, y + skip, _selectedFrame);
 	} else {
 		emoji->paint(p, {

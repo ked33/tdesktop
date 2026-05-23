@@ -86,6 +86,8 @@ public:
 
 private:
 	QImage _frame;
+	QImage _coloredFrame;
+	uint32 _coloredFrameKey = 0;
 
 };
 
