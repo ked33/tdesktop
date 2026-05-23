@@ -99,7 +99,7 @@ void LargeEmoji::draw(
 	const auto skip = st::largeEmojiSkip - 2 * st::largeEmojiOutline;
 	const auto size = LargeEmojiImage::Size() / style::DevicePixelRatio();
 	const auto selected = context.selected();
-	if (!selected) {
+	if (!selected && PreviewBrightnessKey() < 0) {
 		_selectedFrame = QImage();
 	}
 	for (const auto &media : _images) {
