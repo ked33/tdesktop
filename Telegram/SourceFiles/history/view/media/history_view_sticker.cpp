@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element.h"
 #include "history/view/history_view_cursor_state.h"
 #include "history/view/media/history_view_media_common.h"
+#include "history/view/media/history_view_preview_brightness.h"
 #include "history/view/media/history_view_sticker_player.h"
 #include "lang/lang_keys.h"
 #include "main/main_session.h"
@@ -25,6 +26,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/emoji_config.h"
 #include "ui/painter.h"
 #include "ui/power_saving.h"
+#include "ui/ui_utility.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "core/click_handler_types.h"
@@ -67,10 +69,12 @@ base::options::option<int> OptionStickerSize({
 	return image;
 }
 
-[[nodiscard]] QColor ComputeEmojiTextColor(const PaintContext &context) {
+[[nodiscard]] QColor ComputeEmojiTextColor(
+		const PaintContext &context,
+		bool selectedColorAllowed) {
 	const auto st = context.st;
 	const auto result = st->messageStyle(false, false).historyTextFg->c;
-	if (!context.selected()) {
+	if (!context.selected() || !selectedColorAllowed) {
 		return result;
 	}
 	const auto &add = st->msgStickerOverlay()->c;
@@ -82,6 +86,39 @@ base::options::option<int> OptionStickerSize({
 	const auto green = (result.green() * ra + add.green() * aa) >> 8;
 	const auto blue = (result.blue() * ra + add.blue() * aa) >> 8;
 	return QColor(red, green, blue, result.alpha());
+}
+
+[[nodiscard]] QColor ComputeStickerBaseColor(
+		const PaintContext &context,
+		not_null<DocumentData*> data,
+		bool customEmojiPart,
+		bool selectedColorAllowed) {
+	return (customEmojiPart && data->emojiUsesTextColor())
+		? ComputeEmojiTextColor(context, selectedColorAllowed)
+		: (context.selected() && selectedColorAllowed)
+		? context.st->msgStickerOverlay()->c
+		: QColor(0, 0, 0, 0);
+}
+
+[[nodiscard]] QColor ComputeStickerPaintColor(
+		const PaintContext &context,
+		not_null<DocumentData*> data,
+		bool customEmojiPart,
+		bool selectedColorAllowed) {
+	return PreviewBrightnessColor(ComputeStickerBaseColor(
+		context,
+		data,
+		customEmojiPart,
+		selectedColorAllowed));
+}
+
+[[nodiscard]] QColor ComputeStickerOverlayPaintColor(
+		const PaintContext &context,
+		bool selectedColorAllowed) {
+	return PreviewBrightnessColor(
+		(context.selected() && selectedColorAllowed)
+			? context.st->msgStickerOverlay()->c
+			: QColor(0, 0, 0, 0));
 }
 
 } // namespace
@@ -324,11 +361,17 @@ void Sticker::paintAnimationFrame(
 		Painter &p,
 		const PaintContext &context,
 		const QRect &r) {
-	const auto colored = (customEmojiPart() && _data->emojiUsesTextColor())
-		? ComputeEmojiTextColor(context)
-		: (context.selected() && !_nextLastFrame)
-		? context.st->msgStickerOverlay()->c
-		: QColor(0, 0, 0, 0);
+	const auto colored = _nextLastFrame
+		? ComputeStickerBaseColor(
+			context,
+			_data,
+			customEmojiPart(),
+			false)
+		: ComputeStickerPaintColor(
+			context,
+			_data,
+			customEmojiPart(),
+			true);
 	const auto powerSavingFlag = emojiSticker()
 		? PowerSaving::kEmojiChat
 		: PowerSaving::kStickersChat;
@@ -351,10 +394,12 @@ void Sticker::paintAnimationFrame(
 	const auto &image = _lastFrameCached.isNull()
 		? frame.image
 		: _lastFrameCached;
-	const auto prepared = (!_lastFrameCached.isNull() && context.selected())
+	const auto cachedColor = ComputeStickerOverlayPaintColor(context, true);
+	const auto prepared = (!_lastFrameCached.isNull()
+			&& cachedColor.alpha())
 		? Images::Colored(
 			base::duplicate(image),
-			context.st->msgStickerOverlay()->c)
+			cachedColor)
 		: image;
 	const auto size = prepared.size() / style::DevicePixelRatio();
 	p.drawImage(
@@ -431,7 +476,7 @@ void Sticker::paintPath(
 	auto helper = std::optional<style::owned_color>();
 	if (customEmojiPart() && _data->emojiUsesTextColor()) {
 		helper.emplace(Ui::CustomEmoji::PreviewColorFromTextColor(
-			ComputeEmojiTextColor(context)));
+			ComputeEmojiTextColor(context, true)));
 		pathGradient->overrideColors(helper->color(), helper->color());
 	} else if (webpagePart()) {
 		pathGradient->overrideColors(st::shadowFg, st::shadowFg);
@@ -455,7 +500,6 @@ void Sticker::paintPath(
 }
 
 QPixmap Sticker::paintedPixmap(const PaintContext &context) const {
-	auto helper = std::optional<style::owned_color>();
 	const auto sticker = _data->sticker();
 	const auto ratio = style::DevicePixelRatio();
 	const auto adjust = [&](int side) {
@@ -464,19 +508,24 @@ QPixmap Sticker::paintedPixmap(const PaintContext &context) const {
 	const auto useSize = (sticker && sticker->type == StickerType::Tgs)
 		? QSize(adjust(_size.width()), adjust(_size.height()))
 		: _size;
-	const auto colored = (customEmojiPart() && _data->emojiUsesTextColor())
-		? &helper.emplace(ComputeEmojiTextColor(context)).color()
-		: context.selected()
-		? &context.st->msgStickerOverlay()
-		: nullptr;
+	const auto color = ComputeStickerPaintColor(
+		context,
+		_data,
+		customEmojiPart(),
+		true);
 	const auto good = _sensitiveBlurred
 		? nullptr
 		: _dataMedia->goodThumbnail();
 	const auto image = _sensitiveBlurred
 		? nullptr
 		: _dataMedia->getStickerLarge();
+	const auto thumbnail = _dataMedia->thumbnail();
+	auto source = (Image*)nullptr;
+	auto sourceKey = 0;
+	auto options = Images::Options();
 	if (image) {
-		return image->pix(useSize, { .colored = colored });
+		source = image;
+		sourceKey = 1;
 	//
 	// Inline thumbnails can't have alpha channel.
 	//
@@ -485,13 +534,44 @@ QPixmap Sticker::paintedPixmap(const PaintContext &context) const {
 	//		useSize,
 	//		{ .colored = colored, .options = Images::Option::Blur });
 	} else if (good) {
-		return good->pix(useSize, { .colored = colored });
-	} else if (const auto thumbnail = _dataMedia->thumbnail()) {
-		return thumbnail->pix(
-			useSize,
-			{ .colored = colored, .options = Images::Option::Blur });
+		source = good;
+		sourceKey = 2;
+	} else if (thumbnail) {
+		source = thumbnail;
+		sourceKey = 3;
+		options = Images::Option::Blur;
 	}
-	return QPixmap();
+	if (!source) {
+		return QPixmap();
+	}
+	if (!color.alpha()) {
+		return source->pix(useSize, { .options = options });
+	}
+
+	const auto colorKey = uint32(color.rgba());
+	const auto optionsKey = int(uint64(options));
+	if (!_paintedPixmapCache.isNull()
+		&& _paintedPixmapCacheSource == sourceKey
+		&& _paintedPixmapCacheOptions == optionsKey
+		&& _paintedPixmapCacheColor == colorKey
+		&& _paintedPixmapCacheImage == source
+		&& _paintedPixmapCacheSize == useSize
+		&& _paintedPixmapCache.size() == (useSize * ratio)) {
+		return _paintedPixmapCache;
+	}
+
+	auto prepared = Images::Prepare(
+		source->original(),
+		useSize * ratio,
+		{ .options = options });
+	prepared = Images::Colored(std::move(prepared), color);
+	_paintedPixmapCache = Ui::PixmapFromImage(std::move(prepared));
+	_paintedPixmapCacheSource = sourceKey;
+	_paintedPixmapCacheOptions = optionsKey;
+	_paintedPixmapCacheColor = colorKey;
+	_paintedPixmapCacheImage = source;
+	_paintedPixmapCacheSize = useSize;
+	return _paintedPixmapCache;
 }
 
 bool Sticker::mirrorHorizontal() const {
