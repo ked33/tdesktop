@@ -158,7 +158,18 @@ StaticStickerPlayer::FrameInfo StaticStickerPlayer::frame(
 		bool mirrorHorizontal,
 		crl::time now,
 		bool paused) {
-	return { _frame };
+	if (!colored.alpha()) {
+		return { _frame };
+	}
+	const auto colorKey = uint32(colored.rgba());
+	if (_coloredFrame.isNull()
+		|| _coloredFrameKey != colorKey
+		|| _coloredFrame.size() != _frame.size()) {
+		auto frame = _frame;
+		_coloredFrame = Images::Colored(std::move(frame), colored);
+		_coloredFrameKey = colorKey;
+	}
+	return { _coloredFrame };
 }
 
 bool StaticStickerPlayer::markFrameShown() {

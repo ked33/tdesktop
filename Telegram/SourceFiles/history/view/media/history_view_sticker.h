@@ -11,6 +11,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/media/history_view_sticker_player_abstract.h"
 #include "base/weak_ptr.h"
 
+#include <QtGui/QPixmap>
+
+class Image;
+
 namespace Main {
 class Session;
 } // namespace Main
@@ -135,10 +139,16 @@ private:
 	ClickHandlerPtr _link;
 	QSize _size;
 	QImage _lastFrameCached;
+	mutable QPixmap _paintedPixmapCache;
 	QString _diceEmoji;
 	int _diceIndex = -1;
 	mutable int _frameIndex = -1;
 	mutable int _framesCount = -1;
+	mutable int _paintedPixmapCacheSource = 0;
+	mutable int _paintedPixmapCacheOptions = 0;
+	mutable uint32 _paintedPixmapCacheColor = 0;
+	mutable const Image *_paintedPixmapCacheImage = nullptr;
+	mutable QSize _paintedPixmapCacheSize;
 	ChatHelpers::StickerLottieSize _cachingTag = {};
 	mutable bool _oncePlayed : 1 = false;
 	mutable bool _premiumEffectPlayed : 1 = false;
