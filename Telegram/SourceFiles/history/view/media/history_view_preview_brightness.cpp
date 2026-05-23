@@ -9,6 +9,7 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 
 #include "settings.h"
 
+#include <QtGui/QColor>
 #include <QtGui/QImage>
 
 #include <algorithm>
@@ -75,6 +76,39 @@ void ApplyPreviewBrightness(QImage &image) {
 				qAlpha(c));
 		}
 	}
+}
+
+QColor PreviewBrightnessColor(QColor color) {
+	const auto key = PreviewBrightnessKey();
+	if (key == kDisabledKey) {
+		return color;
+	}
+	const auto brightnessAlpha = std::clamp(
+		((kMaxPercent - key) * 256 + 50) / 100,
+		0,
+		255);
+	if (!color.alpha()) {
+		return QColor(0, 0, 0, brightnessAlpha);
+	}
+	const auto colorAlpha = color.alpha();
+	const auto kept = ((256 - brightnessAlpha) * (256 - colorAlpha)
+		+ 128) / 256;
+	const auto combinedAlpha = std::clamp(256 - kept, 0, 255);
+	if (!combinedAlpha) {
+		return QColor(0, 0, 0, 0);
+	}
+	const auto scale = [&](int value) {
+		return std::clamp(
+			(value * key * colorAlpha + 50 * combinedAlpha)
+				/ (kMaxPercent * combinedAlpha),
+			0,
+			255);
+	};
+	return QColor(
+		scale(color.red()),
+		scale(color.green()),
+		scale(color.blue()),
+		combinedAlpha);
 }
 
 } // namespace HistoryView
