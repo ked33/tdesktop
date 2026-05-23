@@ -390,25 +390,37 @@ void Sticker::paintAnimationFrame(
 		_lastFrameCached = (_diceIndex > 0)
 			? CacheDiceImage(_diceEmoji, _diceIndex, frame.image)
 			: frame.image;
+		_lastFramePaintedCache = QImage();
+		_lastFramePaintedCacheColor = 0;
 	}
 	const auto &image = _lastFrameCached.isNull()
 		? frame.image
 		: _lastFrameCached;
 	const auto cachedColor = ComputeStickerOverlayPaintColor(context, true);
-	const auto prepared = (!_lastFrameCached.isNull()
-			&& cachedColor.alpha())
-		? Images::Colored(
-			base::duplicate(image),
-			cachedColor)
-		: image;
-	const auto size = prepared.size() / style::DevicePixelRatio();
+	auto prepared = &image;
+	if (!_lastFrameCached.isNull() && cachedColor.alpha()) {
+		const auto cachedColorKey = uint32(cachedColor.rgba());
+		if (_lastFramePaintedCache.isNull()
+			|| _lastFramePaintedCacheColor != cachedColorKey
+			|| _lastFramePaintedCache.size() != image.size()) {
+			_lastFramePaintedCache = Images::Colored(
+				base::duplicate(image),
+				cachedColor);
+			_lastFramePaintedCacheColor = cachedColorKey;
+		}
+		prepared = &_lastFramePaintedCache;
+	} else if (!_lastFramePaintedCache.isNull()) {
+		_lastFramePaintedCache = QImage();
+		_lastFramePaintedCacheColor = 0;
+	}
+	const auto size = prepared->size() / style::DevicePixelRatio();
 	p.drawImage(
 		QRect(
 			QPoint(
 				r.x() + (r.width() - size.width()) / 2,
 				r.y() + (r.height() - size.height()) / 2),
 			size),
-		prepared);
+		*prepared);
 	if (!_lastFrameCached.isNull()) {
 		return;
 	}

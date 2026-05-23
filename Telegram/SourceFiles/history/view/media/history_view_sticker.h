@@ -139,6 +139,7 @@ private:
 	ClickHandlerPtr _link;
 	QSize _size;
 	QImage _lastFrameCached;
+	QImage _lastFramePaintedCache;
 	mutable QPixmap _paintedPixmapCache;
 	QString _diceEmoji;
 	int _diceIndex = -1;
@@ -147,6 +148,7 @@ private:
 	mutable int _paintedPixmapCacheSource = 0;
 	mutable int _paintedPixmapCacheOptions = 0;
 	mutable uint32 _paintedPixmapCacheColor = 0;
+	uint32 _lastFramePaintedCacheColor = 0;
 	mutable const Image *_paintedPixmapCacheImage = nullptr;
 	mutable QSize _paintedPixmapCacheSize;
 	ChatHelpers::StickerLottieSize _cachingTag = {};
