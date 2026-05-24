@@ -1307,13 +1307,33 @@ void Widget::setupShortcuts(not_null<Window::SessionController *> controller) {
 		return false;
 	};
 
+	const auto triggerGlobalSearchShortcut = [=] {
+		if (controller->adaptive().isOneColumn()) {
+			controller->clearSectionStack();
+			controller->showBackFromStack();
+		}
+		if (_openedFolder) {
+			controller->closeFolder();
+		}
+		if (_searchState.inChat
+			|| _searchState.fromPeer
+			|| !_searchState.tags.empty()
+			|| !_searchState.query.isEmpty()) {
+			cancelSearch({ .forceFullCancel = true });
+		}
+		if (_search->isVisible()) {
+			_search->setFocus();
+		}
+		return true;
+	};
+
 	Shortcuts::GlobalSearchShortcutRequests(
 	) | rpl::filter([=] {
 		return isActiveWindow()
 		       && !controller->isLayerShown()
 		       && !controller->window().locked();
 	}) | rpl::on_next([=] {
-		triggerGlobalSearch();
+		triggerGlobalSearchShortcut();
 	}, lifetime());
 
 	Shortcuts::Requests(
