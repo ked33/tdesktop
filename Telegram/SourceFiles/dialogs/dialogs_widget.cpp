@@ -1290,6 +1290,32 @@ void Widget::setupDownloadBar() {
 }
 
 void Widget::setupShortcuts(not_null<Window::SessionController *> controller) {
+	const auto triggerGlobalSearch = [=] {
+		if (_openedFolder) {
+			controller->closeFolder();
+			setInnerFocus();
+			return true;
+		} else {
+			if (controller->adaptive().isOneColumn()) {
+				controller->clearSectionStack();
+				controller->showBackFromStack();
+			} else {
+				setInnerFocus();
+			}
+			return true;
+		}
+		return false;
+	};
+
+	Shortcuts::GlobalSearchShortcutRequests(
+	) | rpl::filter([=] {
+		return isActiveWindow()
+		       && !controller->isLayerShown()
+		       && !controller->window().locked();
+	}) | rpl::on_next([=] {
+		triggerGlobalSearch();
+	}, lifetime());
+
 	Shortcuts::Requests(
 	) | rpl::filter([=] {
 		return isActiveWindow()
@@ -1299,20 +1325,7 @@ void Widget::setupShortcuts(not_null<Window::SessionController *> controller) {
 		using Command = Shortcuts::Command;
 
 		request->check(Command::GlobalSearch) && request->handle([=] {
-			if (_openedFolder) {
-				controller->closeFolder();
-				setInnerFocus();
-				return true;
-			} else {
-				if (controller->adaptive().isOneColumn()) {
-					controller->clearSectionStack();
-					controller->showBackFromStack();
-				} else {
-					setInnerFocus();
-				}
-				return true;
-			}
-			return false;
+			return triggerGlobalSearch();
 		});
 	}, lifetime());
 }

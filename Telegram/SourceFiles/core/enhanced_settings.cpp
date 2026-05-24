@@ -74,6 +74,7 @@ namespace EnhancedSettings {
 			ensureString(qsl("quick_copy_targets"), qsl("-1002615379741,Saved Messages"));
 			ensureString(qsl("chat_switch_persistent_shortcut"), QString());
 			ensureString(qsl("jump_to_dialog_shortcut"), qsl("alt+e"));
+			ensureString(qsl("global_search_shortcut"), qsl("ctrl+alt+f"));
 			ensureString(qsl("custom_chat_shortcuts"), QString());
 			ensureBool(qsl("double_click_copy_link"), false);
 			ensureString(qsl("no_forwards_badge_color"), qsl("#ecbb71"));
@@ -429,6 +430,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("quick_copy_targets"), "-1002615379741,Saved Messages");
 		settings.insert(qsl("chat_switch_persistent_shortcut"), "");
 		settings.insert(qsl("jump_to_dialog_shortcut"), "alt+e");
+		settings.insert(qsl("global_search_shortcut"), "ctrl+alt+f");
 		settings.insert(qsl("custom_chat_shortcuts"), "");
 		settings.insert(qsl("double_click_copy_link"), false);
 		settings.insert(qsl("no_forwards_badge_color"), "#ecbb71");
@@ -528,6 +530,9 @@ namespace EnhancedSettings {
 		settings.insert(
 			qsl("jump_to_dialog_shortcut"),
 			GetEnhancedString("jump_to_dialog_shortcut"));
+		settings.insert(
+			qsl("global_search_shortcut"),
+			GetEnhancedString("global_search_shortcut"));
 		settings.insert(
 			qsl("custom_chat_shortcuts"),
 			GetEnhancedString("custom_chat_shortcuts"));
