@@ -879,6 +879,39 @@ namespace Settings {
 				}));
 		});
 
+		const auto currentGlobalSearchShortcutLabel = [] {
+			return ChatSwitchShortcutBox::ShortcutLabel(
+				GetEnhancedString("global_search_shortcut"));
+		};
+		auto globalSearchShortcutValue = rpl::single(
+			currentGlobalSearchShortcutLabel()
+		) | rpl::then(
+			_GlobalSearchShortcutChanged.events()
+		) | rpl::map([=] {
+			return currentGlobalSearchShortcutLabel();
+		});
+		auto globalSearchShortcutButton = AddButtonWithLabel(
+			container,
+			tr::lng_settings_global_search_shortcut_title(),
+			std::move(globalSearchShortcutValue),
+			st::settingsButtonNoIcon);
+		globalSearchShortcutButton->events(
+		) | rpl::on_next([=](not_null<QEvent*> e) {
+			if (e->type() == QEvent::UpdateLater) {
+				_GlobalSearchShortcutChanged.fire({});
+			}
+		}, container->lifetime());
+		globalSearchShortcutButton->addClickHandler([=] {
+			Ui::show(Box<ChatSwitchShortcutBox>(
+				u"global_search_shortcut"_q,
+				tr::lng_settings_global_search_shortcut_title(),
+				tr::lng_settings_global_search_shortcut_placeholder(),
+				[] {
+					return tr::lng_settings_global_search_shortcut_invalid(
+						tr::now);
+				}));
+		});
+
 		auto hideBtn = AddButtonWithIcon(
 			container,
 			tr::lng_settings_hide_all_chats(),
