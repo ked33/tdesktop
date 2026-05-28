@@ -189,6 +189,8 @@ public:
 		->rpl::producer<Data::AllowedReactions> override;
 	void listShowPremiumToast(not_null<DocumentData*> document) override;
 	bool handleDrawToReplyRequest(Data::DrawToReplyRequest request);
+	[[nodiscard]] bool toggleMessageSelection(
+		not_null<HistoryItem*> item);
 	void listOpenPhoto(
 		not_null<PhotoData*> photo,
 		FullMsgId context) override;

@@ -4981,6 +4981,24 @@ bool HistoryInner::canDeleteSelected() const {
 		&& (selectedState.count == selectedState.canDeleteCount);
 }
 
+bool HistoryInner::toggleItemSelectionAsGroup(
+		not_null<HistoryItem*> item) {
+	if (hasSelectRestriction()
+		|| !viewByItem(item)
+		|| !item->isRegular()
+		|| item->isService()) {
+		return false;
+	}
+	clearSelectedLocally(true);
+	changeSelectionAsGroup(
+		&_selected,
+		item,
+		SelectAction::Invert);
+	_widget->updateTopBarSelection();
+	_widget->update();
+	return true;
+}
+
 bool HistoryInner::usesGlobalSelectedMessages() const {
 	return GetEnhancedBool("keep_selected_messages_across_chats")
 		&& !_chooseForReportReason.has_value();

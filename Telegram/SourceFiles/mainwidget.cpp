@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -1569,6 +1569,18 @@ void MainWidget::showHistory(
 	floatPlayerCheckVisibility();
 
 	controller()->dropSubsectionTabs();
+}
+
+bool MainWidget::toggleMessageSelection(
+		not_null<HistoryItem*> item) {
+	if (_mainSection) {
+		if (const auto chat = dynamic_cast<HistoryView::ChatWidget*>(
+				_mainSection.data())) {
+			return chat->toggleMessageSelection(item);
+		}
+		return false;
+	}
+	return _history->toggleMessageSelection(item);
 }
 
 bool MainWidget::handleDrawToReplyRequest(Data::DrawToReplyRequest request) {

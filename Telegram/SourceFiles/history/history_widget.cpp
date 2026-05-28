@@ -10005,6 +10005,11 @@ MessageIdsList HistoryWidget::getSelectedItems() const {
 	return _list ? _list->getSelectedItems() : MessageIdsList();
 }
 
+bool HistoryWidget::toggleMessageSelection(
+		not_null<HistoryItem*> item) {
+	return _list && _list->toggleItemSelectionAsGroup(item);
+}
+
 void HistoryWidget::updateTopBarChooseForReport() {
 	if (_chooseForReport && _chooseForReport->active) {
 		_topBar->showChooseMessagesForReport(

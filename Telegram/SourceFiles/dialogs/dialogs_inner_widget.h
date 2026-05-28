@@ -350,6 +350,10 @@ private:
 		int searchedPressed,
 		Qt::KeyboardModifiers modifiers);
 	void choosePendingSearchResultClick();
+	bool searchResultCanToggleSelection(
+		not_null<HistoryItem*> item) const;
+	bool toggleSearchResultSelection(
+		not_null<HistoryItem*> item);
 	void setCollapsedPressed(int pressed);
 	void setPressed(
 		Row *pressed,

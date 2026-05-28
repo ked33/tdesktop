@@ -1587,6 +1587,23 @@ void ListWidget::selectItemAsGroup(not_null<HistoryItem*> item) {
 	}
 }
 
+bool ListWidget::toggleItemSelectionAsGroup(
+		not_null<HistoryItem*> item) {
+	if (hasSelectRestriction()
+		|| !viewForItem(item)
+		|| !_delegate->listIsItemGoodForSelection(item)) {
+		return false;
+	}
+	clearTextSelection();
+	changeSelectionAsGroup(
+		_selected,
+		item,
+		SelectAction::Invert);
+	pushSelectedItems();
+	update();
+	return true;
+}
+
 void ListWidget::clearSelected() {
 	if (_selected.empty()) {
 		return;

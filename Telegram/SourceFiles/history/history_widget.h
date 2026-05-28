@@ -212,6 +212,8 @@ public:
 		not_null<const HistoryItem*> item) const;
 
 	MessageIdsList getSelectedItems() const;
+	[[nodiscard]] bool toggleMessageSelection(
+		not_null<HistoryItem*> item);
 	void itemEdited(not_null<HistoryItem*> item);
 
 	void replyToMessage(FullReplyTo id);

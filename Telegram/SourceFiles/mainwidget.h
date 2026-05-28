@@ -205,6 +205,8 @@ public:
 		PeerId peer,
 		const SectionShow &params,
 		MsgId msgId);
+	[[nodiscard]] bool toggleMessageSelection(
+		not_null<HistoryItem*> item);
 	bool handleDrawToReplyRequest(Data::DrawToReplyRequest request);
 	void showMessage(
 		not_null<const HistoryItem*> item,
