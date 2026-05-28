@@ -19,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "dialogs/dialogs_quick_action.h"
 #include "history/view/history_view_context_menu.h"
 #include "history/view/history_view_element.h"
+#include "history/view/history_view_list_widget.h"
 #include "history/view/history_view_subsection_tabs.h"
 #include "history/history.h"
 #include "history/history_item.h"
@@ -69,6 +70,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
+#include "mainwidget.h"
 #include "menu/menu_sponsored.h"
 #include "window/notifications_manager.h"
 #include "window/window_controller.h"
@@ -2680,10 +2682,19 @@ void InnerWidget::mouseDoubleClickEvent(QMouseEvent *e) {
 	}
 
 	const auto item = _searchResults[_searchedSelected]->item();
-	if (!item || !item->hasDirectLink()) {
+	if (!item) {
 		return RpWidget::mouseDoubleClickEvent(e);
 	}
+	const auto itemNotNull = not_null<HistoryItem*>(item);
 
+	if (toggleSearchResultSelection(itemNotNull)) {
+		clearPendingSearchResultClick();
+		_ignoreSearchResultRelease = true;
+		e->accept();
+		return;
+	} else if (!item->hasDirectLink()) {
+		return RpWidget::mouseDoubleClickEvent(e);
+	}
 	HistoryView::CopyPostLink(
 		_controller,
 		item->fullId(),
@@ -5195,7 +5206,9 @@ bool InnerWidget::delaySearchResultClick(
 	}
 
 	const auto item = _searchResults[searchedPressed]->item();
-	if (!item || !item->hasDirectLink()) {
+	if (!item
+		|| searchResultCanToggleSelection(not_null<HistoryItem*>(item))
+		|| !item->hasDirectLink()) {
 		return false;
 	}
 
@@ -5221,6 +5234,43 @@ void InnerWidget::choosePendingSearchResultClick() {
 		session().local().saveRecentSearchHashtags(_filter);
 	}
 	_chosenRow.fire_copy(chosen);
+}
+
+bool InnerWidget::searchResultCanToggleSelection(
+		not_null<HistoryItem*> item) const {
+	return !session().frozen()
+		&& item->isRegular()
+		&& !item->isService()
+		&& (HistoryView::SelectRestrictionTypeFor(item->history()->peer)
+			== HistoryView::CopyRestrictionType::None);
+}
+
+bool InnerWidget::toggleSearchResultSelection(
+		not_null<HistoryItem*> item) {
+	if (!searchResultCanToggleSelection(item)) {
+		return false;
+	}
+
+	if (_controller->widget()->toggleMessageSelection(item)) {
+		return true;
+	}
+
+	const auto chosen = computeChosenRow();
+	if (!chosen.key || !chosen.message.fullId) {
+		return false;
+	}
+	if (IsServerMsgId(chosen.message.fullId.msg)) {
+		session().local().saveRecentSearchHashtags(_filter);
+	}
+	const auto itemId = item->fullId();
+	_chosenRow.fire_copy(chosen);
+	crl::on_main(this, [=] {
+		if (const auto item = session().data().message(itemId)) {
+			_controller->widget()->toggleMessageSelection(
+				not_null<HistoryItem*>(item));
+		}
+	});
+	return true;
 }
 
 bool InnerWidget::chooseRow(

@@ -3497,6 +3497,11 @@ void ChatWidget::clearSelected() {
 	_inner->cancelSelection();
 }
 
+bool ChatWidget::toggleMessageSelection(
+		not_null<HistoryItem*> item) {
+	return _inner && _inner->toggleItemSelectionAsGroup(item);
+}
+
 void ChatWidget::setupDragArea() {
 	const auto filter = [=](const auto &d) {
 		if (!_history || _composeControls->isRecording()) {
