@@ -148,6 +148,8 @@ public:
 
 	[[nodiscard]] auto getSelectionState() const
 		-> HistoryView::TopBarWidget::SelectedState;
+	[[nodiscard]] bool toggleItemSelectionAsGroup(
+		not_null<HistoryItem*> item);
 	void clearSelected(bool onlyTextSelection = false);
 	[[nodiscard]] MessageIdsList getSelectedItems() const;
 	[[nodiscard]] bool hasSelectedItems() const;
