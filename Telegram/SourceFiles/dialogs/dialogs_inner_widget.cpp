@@ -5251,7 +5251,7 @@ bool InnerWidget::toggleSearchResultSelection(
 		return false;
 	}
 
-	if (_controller->widget()->toggleMessageSelection(item)) {
+	if (_controller->content()->toggleMessageSelection(item)) {
 		return true;
 	}
 
@@ -5266,7 +5266,7 @@ bool InnerWidget::toggleSearchResultSelection(
 	_chosenRow.fire_copy(chosen);
 	crl::on_main(this, [=] {
 		if (const auto item = session().data().message(itemId)) {
-			_controller->widget()->toggleMessageSelection(
+			_controller->content()->toggleMessageSelection(
 				not_null<HistoryItem*>(item));
 		}
 	});
