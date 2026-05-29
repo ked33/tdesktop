@@ -24,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings.h"
 
 #include <QtCore/QFileInfo>
+#include <QtCore/QObject>
 #include <QtCore/QProcess>
 #include <QtCore/QProcessEnvironment>
 #include <QtCore/QStringList>
@@ -40,6 +41,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -63,6 +65,7 @@ constexpr auto kCompatibilitySeekWaitTimeout = 4000;
 constexpr auto kCompatibilitySeekWaitStep = 10;
 constexpr auto kCleanupInterval = 60 * crl::time(1000);
 constexpr auto kTokenLifetime = 5 * 60 * crl::time(1000);
+constexpr auto kPlayerStartTimeout = 5000;
 constexpr auto kMpvLoaderPriority = 2;
 
 [[nodiscard]] bool MpvDebugLogsEnabled() {
@@ -170,6 +173,7 @@ struct Entry {
 	int64 size = 0;
 	std::atomic<int> activeRequests = 0;
 	std::atomic<crl::time> lastActivity = 0;
+	std::atomic<bool> removeWhenIdle = false;
 	std::atomic<bool> headerFinalized = false;
 	std::atomic<int> mp4Layout = 0;
 	std::atomic<std::uint64_t> latestSeekGeneration = 0;
@@ -386,17 +390,6 @@ void NoteCompatibilityBootstrapProgress(
 	result.insert(QStringLiteral("NO_PROXY"), noProxy);
 	result.insert(QStringLiteral("no_proxy"), noProxy);
 	return result;
-}
-
-[[nodiscard]] bool StartDetachedPlayer(
-		const QString &program,
-		const QString &target) {
-	auto process = QProcess();
-	process.setProgram(program);
-	process.setArguments(LaunchArguments(target));
-	process.setWorkingDirectory(QFileInfo(program).absolutePath());
-	process.setProcessEnvironment(LaunchEnvironment());
-	return process.startDetached();
 }
 
 [[nodiscard]] QByteArray ReadHeaders(QTcpSocket &socket) {
@@ -724,7 +717,10 @@ public:
 		{
 			const auto guard = std::lock_guard(_entriesMutex);
 			const auto i = _entries.find(token);
-			if (i == end(_entries) || i->second->activeRequests.load() > 0) {
+			if (i == end(_entries)) {
+				return;
+			} else if (i->second->activeRequests.load() > 0) {
+				i->second->removeWhenIdle = true;
 				return;
 			}
 			removed = i->second;
@@ -752,15 +748,22 @@ private:
 		const auto i = _entries.find(token);
 		if (i == end(_entries)) {
 			return nullptr;
+		} else if (i->second->removeWhenIdle.load()) {
+			return nullptr;
 		}
 		i->second->activeRequests.fetch_add(1);
 		i->second->lastActivity = crl::now();
 		return i->second;
 	}
 
-	void release(const std::shared_ptr<Entry> &entry) {
+	void release(const QString &token, const std::shared_ptr<Entry> &entry) {
 		entry->lastActivity = crl::now();
-		entry->activeRequests.fetch_sub(1);
+		const auto active = entry->activeRequests.fetch_sub(1) - 1;
+		if (!active && entry->removeWhenIdle.load()) {
+			crl::on_main([token] {
+				Server::instance().remove(token);
+			});
+		}
 	}
 
 	void scheduleCleanup() {
@@ -835,7 +838,9 @@ private:
 				});
 				return;
 			}
-			const auto releaseGuard = gsl::finally([&] { release(entry); });
+			const auto releaseGuard = gsl::finally([&] {
+				release(request.token, entry);
+			});
 			const auto range = ParseRange(request.rangeHeader, entry->size);
 				if (!range.valid) {
 					MPV_STREAMING_LOG(("MPV Streaming (Special): Invalid range '%1' for size %2.")
@@ -1195,86 +1200,118 @@ private:
 	base::Timer _cleanupTimer;
 };
 
+[[nodiscard]] bool StartManagedPlayer(
+		const QString &program,
+		const QString &target,
+		const QString &token) {
+	auto process = std::make_unique<QProcess>();
+	const auto raw = process.get();
+	raw->setProgram(program);
+	raw->setArguments(LaunchArguments(target));
+	raw->setWorkingDirectory(QFileInfo(program).absolutePath());
+	raw->setProcessEnvironment(LaunchEnvironment());
+	raw->setStandardOutputFile(QProcess::nullDevice());
+	raw->setStandardErrorFile(QProcess::nullDevice());
+	QObject::connect(
+		raw,
+		QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+		raw,
+		[token, raw](int exitCode, QProcess::ExitStatus exitStatus) {
+			MPV_STREAMING_LOG(("MPV Streaming (Special): Player exited token=%1 code=%2 status=%3.")
+				.arg(token)
+				.arg(exitCode)
+				.arg(int(exitStatus)));
+			Server::instance().remove(token);
+			raw->deleteLater();
+		});
+	raw->start();
+	if (!raw->waitForStarted(kPlayerStartTimeout)) {
+		return false;
+	}
+	process.release();
+	return true;
+}
+
 } // namespace
 
-	bool CanOpenVideoMessageInMpvSpecial(HistoryItem *item, DocumentData *document) {
-	#ifndef Q_OS_WIN
+bool CanOpenVideoMessageInMpvSpecial(HistoryItem *item, DocumentData *document) {
+#ifndef Q_OS_WIN
+	return false;
+#else
+	if (!item || !document) {
 		return false;
-	#else
-		if (!item || !document) {
-			return false;
-		}
-		const auto media = item->media();
-		return media
-			&& (media->ttlSeconds() <= 0)
-			&& document->size > 0
-			&& document->useStreamingLoader()
-			&& (document->isVideoFile() || document->isVideoMessage());
-	#endif
 	}
+	const auto media = item->media();
+	return media
+		&& (media->ttlSeconds() <= 0)
+		&& document->size > 0
+		&& document->useStreamingLoader()
+		&& (document->isVideoFile() || document->isVideoMessage());
+#endif
+}
 
-	OpenResult OpenVideoMessageInMpvSpecial(HistoryItem *item, DocumentData *document) {
-		const auto media = item ? item->media() : nullptr;
-		const auto mediaDocument = media ? media->document() : nullptr;
-		MPV_STREAMING_LOG(("MPV Streaming (Special): Open request passedDocument=%1 mediaDocument=%2 same=%3 passedSize=%4 mediaSize=%5 passedSupports=%6 mediaSupports=%7 passedLoader=%8 mediaLoader=%9 hasQualities=%10.")
-			.arg(qulonglong(document ? document->id : 0))
-			.arg(qulonglong(mediaDocument ? mediaDocument->id : 0))
-			.arg((document == mediaDocument) ? 1 : 0)
-			.arg(document ? document->size : 0)
-			.arg(mediaDocument ? mediaDocument->size : 0)
-			.arg(document ? document->supportsStreaming() : 0)
-			.arg(mediaDocument ? mediaDocument->supportsStreaming() : 0)
-			.arg(document ? document->useStreamingLoader() : 0)
-			.arg(mediaDocument ? mediaDocument->useStreamingLoader() : 0)
-			.arg(media ? media->hasQualitiesList() : 0));
-		if (!CanOpenVideoMessageInMpvSpecial(item, document)) {
-			return OpenResult::Unsupported;
-		}
-		const auto program = ResolveProgram();
-		if (program.isEmpty()) {
-			MPV_STREAMING_LOG(("MPV Streaming (Special): Player not found."));
-			return OpenResult::PlayerNotFound;
-		}
-		const auto origin = Data::FileOrigin(item->fullId());
-		const auto preferCompatibilityForLargeFrontMoov = media
-			? !media->hasQualitiesList()
-			: true;
-		const auto allowCompatibilityLateSeekGate = true;
-		MPV_STREAMING_LOG(("MPV Streaming (Special): Bridge strategy preferCompatibilityForLargeFrontMoov=%1 allowCompatibilityLateSeekGate=%2 hasQualities=%3.")
-			.arg(preferCompatibilityForLargeFrontMoov ? 1 : 0)
-			.arg(allowCompatibilityLateSeekGate ? 1 : 0)
-			.arg(media ? media->hasQualitiesList() : 0));
-		const auto reader = CreateDedicatedReader(document, origin);
-			if (!reader) {
-				MPV_STREAMING_LOG(("MPV Streaming (Special): Failed to create dedicated reader for document %1.")
-					.arg(qulonglong(document->id)));
-			return OpenResult::Failed;
-		}
-		const auto launch = Server::instance().add(
-			document,
-			origin,
-			reader,
-			preferCompatibilityForLargeFrontMoov,
-			allowCompatibilityLateSeekGate);
-			if (launch.url.isEmpty()) {
-				MPV_STREAMING_LOG(("MPV Streaming (Special): Failed to create launch URL for document %1.")
-					.arg(qulonglong(document->id)));
-			reader->stopStreaming(false);
-			return OpenResult::Failed;
-		}
-		MPV_STREAMING_LOG(("MPV Streaming (Special): Launching '%1' with URL %2.")
-			.arg(program)
-			.arg(launch.url));
-		MPV_STREAMING_LOG(("MPV Streaming (Special): Launch arguments: %1.")
-			.arg(LaunchArguments(launch.url).join(QStringLiteral(" "))));
-		if (!StartDetachedPlayer(program, launch.url)) {
-			MPV_STREAMING_LOG(("MPV Streaming (Special): Failed to start player '%1'.").arg(program));
-			Server::instance().remove(launch.token);
-			return OpenResult::Failed;
-		}
-		return OpenResult::Success;
+OpenResult OpenVideoMessageInMpvSpecial(HistoryItem *item, DocumentData *document) {
+	const auto media = item ? item->media() : nullptr;
+	const auto mediaDocument = media ? media->document() : nullptr;
+	MPV_STREAMING_LOG(("MPV Streaming (Special): Open request passedDocument=%1 mediaDocument=%2 same=%3 passedSize=%4 mediaSize=%5 passedSupports=%6 mediaSupports=%7 passedLoader=%8 mediaLoader=%9 hasQualities=%10.")
+		.arg(qulonglong(document ? document->id : 0))
+		.arg(qulonglong(mediaDocument ? mediaDocument->id : 0))
+		.arg((document == mediaDocument) ? 1 : 0)
+		.arg(document ? document->size : 0)
+		.arg(mediaDocument ? mediaDocument->size : 0)
+		.arg(document ? document->supportsStreaming() : 0)
+		.arg(mediaDocument ? mediaDocument->supportsStreaming() : 0)
+		.arg(document ? document->useStreamingLoader() : 0)
+		.arg(mediaDocument ? mediaDocument->useStreamingLoader() : 0)
+		.arg(media ? media->hasQualitiesList() : 0));
+	if (!CanOpenVideoMessageInMpvSpecial(item, document)) {
+		return OpenResult::Unsupported;
 	}
+	const auto program = ResolveProgram();
+	if (program.isEmpty()) {
+		MPV_STREAMING_LOG(("MPV Streaming (Special): Player not found."));
+		return OpenResult::PlayerNotFound;
+	}
+	const auto origin = Data::FileOrigin(item->fullId());
+	const auto preferCompatibilityForLargeFrontMoov = media
+		? !media->hasQualitiesList()
+		: true;
+	const auto allowCompatibilityLateSeekGate = true;
+	MPV_STREAMING_LOG(("MPV Streaming (Special): Bridge strategy preferCompatibilityForLargeFrontMoov=%1 allowCompatibilityLateSeekGate=%2 hasQualities=%3.")
+		.arg(preferCompatibilityForLargeFrontMoov ? 1 : 0)
+		.arg(allowCompatibilityLateSeekGate ? 1 : 0)
+		.arg(media ? media->hasQualitiesList() : 0));
+	const auto reader = CreateDedicatedReader(document, origin);
+	if (!reader) {
+		MPV_STREAMING_LOG(("MPV Streaming (Special): Failed to create dedicated reader for document %1.")
+			.arg(qulonglong(document->id)));
+		return OpenResult::Failed;
+	}
+	const auto launch = Server::instance().add(
+		document,
+		origin,
+		reader,
+		preferCompatibilityForLargeFrontMoov,
+		allowCompatibilityLateSeekGate);
+	if (launch.url.isEmpty()) {
+		MPV_STREAMING_LOG(("MPV Streaming (Special): Failed to create launch URL for document %1.")
+			.arg(qulonglong(document->id)));
+		reader->stopStreaming(false);
+		return OpenResult::Failed;
+	}
+	MPV_STREAMING_LOG(("MPV Streaming (Special): Launching '%1' with URL %2.")
+		.arg(program)
+		.arg(launch.url));
+	MPV_STREAMING_LOG(("MPV Streaming (Special): Launch arguments: %1.")
+		.arg(LaunchArguments(launch.url).join(QStringLiteral(" "))));
+	if (!StartManagedPlayer(program, launch.url, launch.token)) {
+		MPV_STREAMING_LOG(("MPV Streaming (Special): Failed to start player '%1'.").arg(program));
+		Server::instance().remove(launch.token);
+		return OpenResult::Failed;
+	}
+	return OpenResult::Success;
+}
 
-	#undef MPV_STREAMING_LOG
+#undef MPV_STREAMING_LOG
 
 } // namespace Media::Streaming::MpvSpecial
