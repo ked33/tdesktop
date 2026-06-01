@@ -894,12 +894,6 @@ void Player::stop(bool stillActive) {
 		.arg(_video ? 1 : 0)
 		.arg(_lastFailure.has_value() ? 1 : 0));
 
-	// Explicitly clear video frame cache before destroying the video track
-	// to release large memory objects (QImage, FFmpeg frames) immediately.
-	if (_video) {
-		_video->clearFrameCache();
-	}
-
 	_file->stop(stillActive);
 	_sessionLifetime = rpl::lifetime();
 	_stage = Stage::Uninitialized;
