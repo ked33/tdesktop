@@ -123,7 +123,6 @@ public:
 		const Instance *instance,
 		const FrameRequest &request);
 	void removeFrameRequest(const Instance *instance);
-	void clearAllFrames();
 
 	void rasterizeFrame(not_null<Frame*> frame);
 	[[nodiscard]] bool requireARGB32() const;
@@ -654,14 +653,6 @@ void VideoTrackObject::removeFrameRequest(const Instance *instance) {
 	_requests.remove(instance);
 }
 
-void VideoTrackObject::clearAllFrames() {
-	if (!_shared) {
-		return;
-	}
-	_shared->clearAllFrames();
-	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: VideoTrack frame cache cleared."));
-}
-
 bool VideoTrackObject::tryReadFirstFrame(FFmpeg::Packet &&packet) {
 	if (ProcessPacket(_stream, std::move(packet)).failed()) {
 		return false;
@@ -1137,23 +1128,6 @@ VideoTrack::FrameWithIndex VideoTrack::Shared::frameForPaintWithIndex() {
 	};
 }
 
-void VideoTrack::Shared::clearAllFrames() {
-	for (auto i = 0; i != kFramesCount; ++i) {
-		const auto frame = getFrame(i);
-		frame->decoded.reset();
-		frame->transferred.reset();
-		frame->original = QImage();
-		frame->yuv = FrameYUV();
-		frame->prepared.clear();
-		frame->position = kTimeUnknown;
-		frame->displayed = kTimeUnknown;
-		frame->display = kTimeUnknown;
-		frame->format = FrameFormat::None;
-		frame->index = 0;
-		frame->alpha = false;
-	}
-}
-
 VideoTrack::VideoTrack(
 	const PlaybackOptions &options,
 	Stream &&stream,
@@ -1358,12 +1332,6 @@ QImage VideoTrack::currentFrameImage() {
 void VideoTrack::unregisterInstance(not_null<const Instance*> instance) {
 	_wrapped.with([=](Implementation &unwrapped) {
 		unwrapped.removeFrameRequest(instance);
-	});
-}
-
-void VideoTrack::clearFrameCache() {
-	_wrapped.with([](Implementation &unwrapped) {
-		unwrapped.clearAllFrames();
 	});
 }
 

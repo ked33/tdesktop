@@ -68,10 +68,6 @@ public:
 	[[nodiscard]] rpl::producer<> waitingForData() const;
 
 	// Called from the main thread.
-	// Explicitly clear frame cache to release memory immediately.
-	void clearFrameCache();
-
-	// Called from the main thread.
 	~VideoTrack();
 
 private:
@@ -141,10 +137,6 @@ private:
 		[[nodiscard]] crl::time nextFrameDisplayTime() const;
 		[[nodiscard]] not_null<Frame*> frameForPaint();
 		[[nodiscard]] FrameWithIndex frameForPaintWithIndex();
-
-		// Called from the wrapped object queue.
-		// Clear all frame cache to release memory.
-		void clearAllFrames();
 
 	private:
 		[[nodiscard]] not_null<Frame*> getFrame(int index);
