@@ -294,6 +294,7 @@ private:
 		Cancelled,
 		CopyLink,
 		StreamInMpv,
+		RangeSelect,
 	};
 	enum class SelectAction {
 		Select,
@@ -428,6 +429,7 @@ private:
 
 	void applyDragSelection();
 	void applyDragSelection(not_null<SelectedItems*> toItems) const;
+	void applyShiftRangeSelect(not_null<HistoryItem*> clicked);
 	void addSelectionRange(
 		not_null<SelectedItems*> toItems,
 		not_null<History*> history,
@@ -587,6 +589,7 @@ private:
 	FullMsgId _modifierClickItemId;
 	HistoryItem *_mouseActionItem = nullptr;
 	HistoryItem *_dragStateItem = nullptr;
+	HistoryItem *_lastSelectedAnchor = nullptr;
 	DocumentData *_modifierClickDocument = nullptr;
 	CursorState _mouseCursorState = CursorState();
 	uint16 _mouseTextSymbol = 0;
