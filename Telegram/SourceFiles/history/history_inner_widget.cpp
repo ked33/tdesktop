@@ -778,6 +778,8 @@ auto HistoryInner::resolveModifierClickAction(
 		return ModifierClickAction::CopyLink;
 	} else if (modifiers == Qt::ControlModifier) {
 		return ModifierClickAction::StreamInMpv;
+	} else if (modifiers == Qt::ShiftModifier) {
+		return ModifierClickAction::RangeSelect;
 	}
 	return ModifierClickAction::None;
 }
@@ -800,6 +802,19 @@ bool HistoryInner::startModifierClick(
 		: nullptr;
 	if (!item) {
 		return false;
+	}
+
+	if (action == ModifierClickAction::RangeSelect) {
+		if (hasSelectRestriction()
+			|| !item->isRegular()
+			|| item->isService()) {
+			return false;
+		}
+		_modifierClickAction = action;
+		_modifierClickStartPosition = screenPos;
+		_modifierClickItemId = item->fullId();
+		_modifierClickDocument = nullptr;
+		return true;
 	}
 
 	DocumentData *document = nullptr;
@@ -862,6 +877,12 @@ bool HistoryInner::finishModifierClick(
 		return true;
 	}
 
+	if (action == ModifierClickAction::RangeSelect) {
+		if (const auto clicked = session().data().message(itemId)) {
+			applyShiftRangeSelect(clicked);
+		}
+		return true;
+	}
 	if (action == ModifierClickAction::CopyLink) {
 		HistoryView::CopyPostLink(
 			_controller,
@@ -900,6 +921,93 @@ void HistoryInner::clearModifierClick() {
 	_modifierClickStartPosition = QPoint();
 	_modifierClickItemId = FullMsgId();
 	_modifierClickDocument = nullptr;
+}
+
+void HistoryInner::applyShiftRangeSelect(not_null<HistoryItem*> clicked) {
+	if (hasSelectRestriction()) {
+		return;
+	}
+	const auto leaderOrSelf = [&](not_null<HistoryItem*> item)
+			-> not_null<HistoryItem*> {
+		if (const auto group = session().data().groups().find(item)) {
+			return group->items.front();
+		}
+		return item;
+	};
+	const auto target = leaderOrSelf(clicked);
+	if (!target->isRegular() || target->isService()) {
+		return;
+	}
+	const auto selectSingle = [&] {
+		changeSelectionAsGroup(&_selected, target, SelectAction::Select);
+		_lastSelectedAnchor = target;
+		repaintItem(target);
+		update();
+		_widget->updateTopBarSelection();
+	};
+	const auto targetView = viewByItem(target);
+	const auto anchorView = _lastSelectedAnchor
+		? viewByItem(_lastSelectedAnchor)
+		: nullptr;
+	if (!targetView || !anchorView) {
+		selectSingle();
+		return;
+	}
+	const auto anchor = leaderOrSelf(_lastSelectedAnchor);
+	const auto topToBottom = (itemTop(anchorView) <= itemTop(targetView));
+	const auto from = topToBottom ? anchor : target;
+	const auto to = topToBottom ? target : anchor;
+
+	auto range = HistoryItemsList();
+	range.push_back(from);
+	auto current = from;
+	const auto toId = to->fullId();
+	while (current->fullId() != toId) {
+		const auto view = viewByItem(current);
+		const auto nextView = view ? nextItem(view) : nullptr;
+		if (!nextView) {
+			range.clear();
+			break;
+		}
+		const auto next = nextView->data();
+		if (next->fullId() == toId) {
+			range.push_back(to);
+		} else if (next->isRegular() && !next->isService()) {
+			range.push_back(next);
+		}
+		current = next;
+	}
+	if (range.empty()) {
+		selectSingle();
+		return;
+	}
+
+	auto total = selectedItemsCount(&_selected);
+	for (const auto &item : range) {
+		if (const auto group = session().data().groups().find(item)) {
+			for (const auto &member : group->items) {
+				if (!_selected.contains(member.get())) {
+					++total;
+				}
+			}
+		} else if (!_selected.contains(item.get())) {
+			++total;
+		}
+	}
+	if (total > MaxSelectedItems) {
+		_controller->showToast(tr::lng_select_messages_over_limit(
+			tr::now,
+			lt_count,
+			total));
+		return;
+	}
+
+	for (const auto &item : range) {
+		changeSelectionAsGroup(&_selected, item, SelectAction::Select);
+	}
+	_lastSelectedAnchor = target;
+	update();
+	_widget->updateTopBarSelection();
 }
 
 bool HistoryInner::hasSelectRestriction() const {
@@ -2395,6 +2503,9 @@ void HistoryInner::itemRemoved(not_null<const HistoryItem*> item) {
 	if (_dragStateItem == item) {
 		_dragStateItem = nullptr;
 	}
+	if (_lastSelectedAnchor == item) {
+		_lastSelectedAnchor = nullptr;
+	}
 
 	if ((_dragSelFrom && _dragSelFrom->data() == item)
 		|| (_dragSelTo && _dragSelTo->data() == item)) {
@@ -2475,6 +2586,11 @@ void HistoryInner::mouseActionFinish(
 			_mouseActionItem,
 			SelectAction::Invert);
 		repaintItem(_mouseActionItem);
+		if (_selected.contains(_mouseActionItem)) {
+			_lastSelectedAnchor = _mouseActionItem;
+		} else if (_lastSelectedAnchor == _mouseActionItem) {
+			_lastSelectedAnchor = nullptr;
+		}
 	} else if ((_mouseAction == MouseAction::PrepareDrag)
 		&& !_pressWasInactive
 		&& _dragStateItem
@@ -2483,12 +2599,16 @@ void HistoryInner::mouseActionFinish(
 		if (i != _selected.cend() && i->second == FullSelection) {
 			removeFromSelection(&_selected, _dragStateItem);
 			repaintItem(_mouseActionItem);
+			if (_lastSelectedAnchor == _dragStateItem) {
+				_lastSelectedAnchor = nullptr;
+			}
 		} else if ((i == _selected.cend())
 			&& !_dragStateItem->isService()
 			&& _dragStateItem->isRegular()
 			&& inSelectionMode().inSelectionMode) {
 			changeSelection(&_selected, _dragStateItem, SelectAction::Select);
 			repaintItem(_mouseActionItem);
+			_lastSelectedAnchor = _dragStateItem;
 		} else if (_mouseCursorState == CursorState::Date
 			&& !hasSelectRestriction()
 			&& _dragStateItem->isRegular()
@@ -2498,6 +2618,7 @@ void HistoryInner::mouseActionFinish(
 				_dragStateItem,
 				SelectAction::Select);
 			repaintItem(_mouseActionItem);
+			_lastSelectedAnchor = _dragStateItem;
 		} else {
 			clearSelected();
 		}
@@ -3127,6 +3248,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 							changeSelection(&_selected, item, SelectAction::Select);
 						}
 						repaintItem(item);
+						_lastSelectedAnchor = item;
 						_widget->updateTopBarSelection();
 					}
 				}
@@ -5060,6 +5182,7 @@ void HistoryInner::clearSelectedLocally(bool onlyTextSelection) {
 		&& (!onlyTextSelection
 			|| _selected.cbegin()->second != FullSelection)) {
 		_selected.clear();
+		_lastSelectedAnchor = nullptr;
 		_widget->updateTopBarSelection();
 		_widget->update();
 	}
