@@ -5310,7 +5310,11 @@ void HistoryInner::elementStartEffect(
 auto HistoryInner::getSelectionState() const
 -> HistoryView::TopBarWidget::SelectedState {
 	auto result = HistoryView::TopBarWidget::SelectedState {};
-	for (auto &selected : effectiveSelectedItems()) {
+	auto preview = effectiveSelectedItems();
+	if (_mouseAction == MouseAction::Selecting && _dragSelFrom && _dragSelTo) {
+		applyDragSelection(&preview);
+	}
+	for (auto &selected : preview) {
 		if (selected.second == FullSelection) {
 			++result.count;
 			if (selected.first->canDelete()) {
@@ -5774,6 +5778,47 @@ void HistoryInner::mouseActionUpdate() {
 					auto i = _selected.find(dragFirstAffected->data());
 					dragSelecting = (i == _selected.cend() || i->second != FullSelection);
 				}
+				// Drag selection can cover more than MaxSelectedItems
+				// messages. Count from the anchor along the drag direction
+				// (a media group counts as all its members, matching
+				// applyDragSelection) and clamp the far endpoint at the cap
+				// so the highlight and the live counter both stop growing.
+				if (dragSelecting
+					&& dragSelFrom
+					&& dragSelTo
+					&& dragSelFrom != dragSelTo) {
+					const auto limit = maxSelectedItemsFor(&_selected);
+					if (limit <= 0) {
+						dragSelFrom = dragSelTo = nullptr;
+					} else {
+						const auto countFor = [&](not_null<HistoryItem*> item) {
+							if (!item->isRegular() || item->isService()) {
+								return 0;
+							}
+							const auto group = session().data().groups().find(
+								item);
+							return group ? int(group->items.size()) : 1;
+						};
+						auto count = 0;
+						auto view = dragSelFrom;
+						auto reached = false;
+						while (view) {
+							count += countFor(view->data());
+							if (count >= limit) {
+								reached = true;
+								break;
+							} else if (view == dragSelTo) {
+								break;
+							}
+							view = selectingDown
+								? nextItem(view)
+								: prevItem(view);
+						}
+						if (reached && view != dragSelTo) {
+							dragSelTo = view;
+						}
+					}
+				}
 				updateDragSelection(dragSelFrom, dragSelTo, dragSelecting);
 			}
 		} else if (_mouseAction == MouseAction::Dragging) {
@@ -5834,6 +5879,7 @@ void HistoryInner::updateDragSelection(Element *dragSelFrom, Element *dragSelTo,
 		setFocus();
 	}
 	update();
+	_widget->updateTopBarSelection();
 }
 
 int HistoryInner::historyHeight() const {
