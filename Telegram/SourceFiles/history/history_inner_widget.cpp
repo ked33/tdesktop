@@ -5575,9 +5575,14 @@ auto HistoryInner::replyButtonParameters(
 
 void HistoryInner::mouseActionUpdate() {
 	if (hasPendingResizedItems()
-		|| (!_mouseActive && !window()->isActiveWindow())) {
+		|| (!_mouseActive && !window()->isActiveWindow())
+		|| _inMouseActionUpdate) {
 		return;
 	}
+	_inMouseActionUpdate = true;
+	const auto guard = gsl::finally([&] {
+		_inMouseActionUpdate = false;
+	});
 
 	auto mousePos = mapFromGlobal(_mousePosition);
 	auto point = _widget->clampMousePosition(mousePos);
