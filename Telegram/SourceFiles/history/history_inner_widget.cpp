@@ -532,6 +532,9 @@ HistoryInner::HistoryInner(
 	_selectScroll.scrolls(
 	) | rpl::on_next([=](int d) {
 		_scroll->scrollToY(_scroll->scrollTop() + d);
+		if (_mouseAction == MouseAction::Selecting) {
+			mouseActionUpdate();
+		}
 	}, _scroll->lifetime());
 
 	refreshGlobalSelectedMessages();
@@ -945,12 +948,17 @@ void HistoryInner::applyShiftRangeSelect(not_null<HistoryItem*> clicked) {
 		update();
 		_widget->updateTopBarSelection();
 	};
+	const auto showNotLoaded = [&] {
+		_controller->showToast(tr::lng_select_messages_not_loaded(tr::now));
+	};
 	const auto targetView = viewByItem(target);
-	const auto anchorView = _lastSelectedAnchor
-		? viewByItem(_lastSelectedAnchor)
-		: nullptr;
-	if (!targetView || !anchorView) {
+	if (!_lastSelectedAnchor || !targetView) {
 		selectSingle();
+		return;
+	}
+	const auto anchorView = viewByItem(_lastSelectedAnchor);
+	if (!anchorView) {
+		showNotLoaded();
 		return;
 	}
 	const auto anchor = leaderOrSelf(_lastSelectedAnchor);
@@ -978,7 +986,7 @@ void HistoryInner::applyShiftRangeSelect(not_null<HistoryItem*> clicked) {
 		current = next;
 	}
 	if (range.empty()) {
-		selectSingle();
+		showNotLoaded();
 		return;
 	}
 
@@ -4804,6 +4812,10 @@ void HistoryInner::visibleAreaUpdated(int top, int bottom) {
 
 	if (_overlayHost) {
 		_overlayHost->updatePosition();
+	}
+
+	if (_mouseAction == MouseAction::Selecting) {
+		mouseActionUpdate();
 	}
 }
 
