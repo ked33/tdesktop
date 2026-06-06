@@ -294,7 +294,6 @@ private:
 		Cancelled,
 		CopyLink,
 		StreamInMpv,
-		RangeSelect,
 	};
 	enum class SelectAction {
 		Select,
@@ -429,7 +428,6 @@ private:
 
 	void applyDragSelection();
 	void applyDragSelection(not_null<SelectedItems*> toItems) const;
-	void applyShiftRangeSelect(not_null<HistoryItem*> clicked);
 	void addSelectionRange(
 		not_null<SelectedItems*> toItems,
 		not_null<History*> history,
