@@ -5198,6 +5198,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_context_select_msg_bulk" = "Select up to this message";
 "lng_select_messages_over_limit#one" = "Will select {count} message, more than 100!";
 "lng_select_messages_over_limit#other" = "Will select {count} messages, more than 100!";
+"lng_select_messages_not_loaded" = "Some messages in between aren't loaded yet. Scroll to load them, then try again.";
 "lng_context_report_msg" = "Report";
 "lng_context_pin_msg" = "Pin";
 "lng_context_unpin_msg" = "Unpin";
