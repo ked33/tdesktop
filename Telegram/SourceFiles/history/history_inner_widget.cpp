@@ -2203,7 +2203,7 @@ void HistoryInner::mouseActionStart(const QPoint &screenPos, Qt::MouseButton but
 				} else if (!_pressWasInactive) {
 					if (_mouseCursorState == CursorState::Date) {
 						_mouseAction = MouseAction::PrepareDrag; // start sticker drag or by-date drag
-					} else {
+					} else if (dragState.cursor == CursorState::Text) {
 						if (dragState.afterSymbol) ++_mouseTextSymbol;
 						TextSelection selStatus = { _mouseTextSymbol, _mouseTextSymbol };
 						if (selStatus != FullSelection && (_selected.empty() || _selected.cbegin()->second != FullSelection)) {
@@ -2217,6 +2217,8 @@ void HistoryInner::mouseActionStart(const QPoint &screenPos, Qt::MouseButton but
 						} else if (!hasSelectRestriction()) {
 							_mouseAction = MouseAction::PrepareSelect;
 						}
+					} else if (!hasSelectRestriction()) {
+						_mouseAction = MouseAction::PrepareSelect;
 					}
 				}
 			} else if (!_pressWasInactive && !hasSelectRestriction()) {
