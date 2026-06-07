@@ -5563,7 +5563,8 @@ void HistoryInner::mouseActionUpdate() {
 			if (_mouseAction == MouseAction::PrepareDrag) {
 				_mouseAction = MouseAction::Dragging;
 				InvokeQueued(this, [=] { performDrag(); });
-			} else if (_mouseAction == MouseAction::PrepareSelect) {
+			} else if (_mouseAction == MouseAction::PrepareSelect
+				&& item != _mouseActionItem) {
 				_mouseAction = MouseAction::Selecting;
 			}
 		}
@@ -5810,10 +5811,12 @@ void HistoryInner::mouseActionUpdate() {
 				// (a media group counts as all its members, matching
 				// applyDragSelection) and clamp the far endpoint at the cap
 				// so the highlight and the live counter both stop growing.
-				if (dragSelecting
+				if (dragSelFrom == dragSelTo) {
+					dragSelFrom = dragSelTo = nullptr;
+					dragSelecting = false;
+				} else if (dragSelecting
 					&& dragSelFrom
-					&& dragSelTo
-					&& dragSelFrom != dragSelTo) {
+					&& dragSelTo) {
 					const auto limit = maxSelectedItemsFor(&_selected);
 					if (limit <= 0) {
 						dragSelFrom = dragSelTo = nullptr;
