@@ -1607,20 +1607,24 @@ void Widget::setupShortcuts() {
 	}) | rpl::on_next([=](not_null<Shortcuts::Request*> request) {
 		using Command = Shortcuts::Command;
 
+		request->check(Command::Search) && request->handle([=] {
+			if (const auto active = controller()->activeChatCurrent()) {
+				controller()->searchInChat(active);
+				return true;
+			} else if (const auto forum = _openedForum) {
+				const auto history = forum->history();
+				controller()->searchInChat(history);
+				return true;
+			} else if (!_openedFolder
+				&& !_childList
+				&& _search->isVisible()) {
+				_search->setFocus();
+				return true;
+			}
+			return false;
+		});
+
 		if (!controller()->activeChatCurrent()) {
-			request->check(Command::Search) && request->handle([=] {
-				if (const auto forum = _openedForum) {
-					const auto history = forum->history();
-					controller()->searchInChat(history);
-					return true;
-				} else if (!_openedFolder
-					&& !_childList
-					&& _search->isVisible()) {
-					_search->setFocus();
-					return true;
-				}
-				return false;
-			});
 			request->check(Command::ShowChatMenu, 1) && request->handle([=] {
 				if (_inner) {
 					Window::ActivateWindow(controller());
