@@ -2056,9 +2056,9 @@ void HistoryInner::mouseMoveEvent(QMouseEvent *e) {
 	}
 }
 
-void HistoryInner::mouseActionUpdate(const QPoint &screenPos) {
+void HistoryInner::mouseActionUpdate(const QPoint &screenPos, bool finishing) {
 	_mousePosition = screenPos;
-	mouseActionUpdate();
+	mouseActionUpdate(finishing);
 }
 
 void HistoryInner::touchScrollUpdated(const QPoint &screenPos) {
@@ -2432,7 +2432,7 @@ void HistoryInner::viewRemoved(not_null<const Element*> view) {
 void HistoryInner::mouseActionFinish(
 		const QPoint &screenPos,
 		Qt::MouseButton button) {
-	mouseActionUpdate(screenPos);
+	mouseActionUpdate(screenPos, true);
 
 	auto activated = ClickHandler::unpressed();
 	if (_mouseAction == MouseAction::Dragging) {
@@ -5460,7 +5460,7 @@ auto HistoryInner::replyButtonParameters(
 	return result;
 }
 
-void HistoryInner::mouseActionUpdate() {
+void HistoryInner::mouseActionUpdate(bool finishing) {
 	if (hasPendingResizedItems()
 		|| (!_mouseActive && !window()->isActiveWindow())
 		|| _inMouseActionUpdate) {
@@ -5563,7 +5563,8 @@ void HistoryInner::mouseActionUpdate() {
 			if (_mouseAction == MouseAction::PrepareDrag) {
 				_mouseAction = MouseAction::Dragging;
 				InvokeQueued(this, [=] { performDrag(); });
-			} else if (_mouseAction == MouseAction::PrepareSelect) {
+			} else if (_mouseAction == MouseAction::PrepareSelect
+				&& !finishing) {
 				_mouseAction = MouseAction::Selecting;
 			}
 		}
