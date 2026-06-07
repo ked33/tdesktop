@@ -5815,8 +5815,7 @@ void HistoryInner::mouseActionUpdate(bool finishing) {
 				// so the highlight and the live counter both stop growing.
 				if (dragSelecting
 					&& dragSelFrom
-					&& dragSelTo
-					&& dragSelFrom != dragSelTo) {
+					&& dragSelTo) {
 					const auto limit = maxSelectedItemsFor(&_selected);
 					if (limit <= 0) {
 						dragSelFrom = dragSelTo = nullptr;
@@ -5830,22 +5829,30 @@ void HistoryInner::mouseActionUpdate(bool finishing) {
 							return group ? int(group->items.size()) : 1;
 						};
 						auto count = 0;
+						auto lastAcceptedView = (Element*)nullptr;
 						auto view = dragSelFrom;
-						auto reached = false;
+						auto overflow = false;
 						while (view) {
-							count += countFor(view->data());
-							if (count >= limit) {
-								reached = true;
+							const auto nextCount = count + countFor(view->data());
+							if (nextCount > limit) {
+								overflow = true;
 								break;
-							} else if (view == dragSelTo) {
+							}
+							count = nextCount;
+							lastAcceptedView = view;
+							if (view == dragSelTo) {
 								break;
 							}
 							view = selectingDown
 								? nextItem(view)
 								: prevItem(view);
 						}
-						if (reached && view != dragSelTo) {
-							dragSelTo = view;
+						if (overflow) {
+							if (lastAcceptedView) {
+								dragSelTo = lastAcceptedView;
+							} else {
+								dragSelFrom = dragSelTo = nullptr;
+							}
 						}
 					}
 				}
