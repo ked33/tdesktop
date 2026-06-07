@@ -358,8 +358,8 @@ private:
 	void scrollDateCheckDownward();
 	bool canHaveFromUserpics() const;
 	void mouseActionStart(const QPoint &screenPos, Qt::MouseButton button);
-	void mouseActionUpdate();
-	void mouseActionUpdate(const QPoint &screenPos);
+	void mouseActionUpdate(bool finishing = false);
+	void mouseActionUpdate(const QPoint &screenPos, bool finishing = false);
 	void mouseActionFinish(const QPoint &screenPos, Qt::MouseButton button);
 	void mouseActionCancel();
 	std::unique_ptr<QMimeData> prepareDrag();
