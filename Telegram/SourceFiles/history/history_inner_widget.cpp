@@ -2132,6 +2132,7 @@ void HistoryInner::mouseActionStart(const QPoint &screenPos, Qt::MouseButton but
 
 	const auto mouseActionView = Element::Moused();
 	_mouseAction = MouseAction::None;
+	_mouseSelectingText = false;
 	_mouseActionItem = mouseActionView
 		? mouseActionView->data().get()
 		: nullptr;
@@ -2171,6 +2172,7 @@ void HistoryInner::mouseActionStart(const QPoint &screenPos, Qt::MouseButton but
 					_selected.emplace(_mouseActionItem, selStatus);
 					_mouseTextSymbol = dragState.symbol;
 					_mouseAction = MouseAction::Selecting;
+					_mouseSelectingText = true;
 					_mouseSelectType = TextSelectType::Paragraphs;
 					mouseActionUpdate(_mousePosition);
 					_trippleClickTimer.callOnce(
@@ -2211,8 +2213,8 @@ void HistoryInner::mouseActionStart(const QPoint &screenPos, Qt::MouseButton but
 								repaintItem(_selected.cbegin()->first);
 								_selected.clear();
 							}
-							_selected.emplace(_mouseActionItem, selStatus);
 							_mouseAction = MouseAction::Selecting;
+							_mouseSelectingText = true;
 						} else if (!hasSelectRestriction()) {
 							_mouseAction = MouseAction::PrepareSelect;
 						}
@@ -2237,6 +2239,7 @@ void HistoryInner::mouseActionCancel() {
 	_mouseActionItem = nullptr;
 	_dragStateItem = nullptr;
 	_mouseAction = MouseAction::None;
+	_mouseSelectingText = false;
 	_dragStartPosition = QPoint(0, 0);
 	_dragSelFrom = _dragSelTo = nullptr;
 	_dragSelectionLimited = false;
@@ -2538,6 +2541,7 @@ void HistoryInner::mouseActionFinish(
 	}
 	_mouseAction = MouseAction::None;
 	_mouseActionItem = nullptr;
+	_mouseSelectingText = false;
 	_mouseSelectType = TextSelectType::Letters;
 	_selectScroll.cancel();
 	_widget->updateTopBarSelection();
@@ -2586,8 +2590,9 @@ void HistoryInner::mouseDoubleClickEvent(QMouseEvent *e) {
 	if (_mouseSelectType == TextSelectType::Letters
 		&& mouseActionView
 		&& ((_mouseAction == MouseAction::Selecting
-			&& !_selected.empty()
-			&& _selected.cbegin()->second != FullSelection)
+			&& _mouseSelectingText
+			&& (_selected.empty()
+				|| _selected.cbegin()->second != FullSelection))
 			|| (_mouseAction == MouseAction::None
 				&& (_selected.empty()
 					|| _selected.cbegin()->second != FullSelection)))) {
@@ -2597,8 +2602,9 @@ void HistoryInner::mouseDoubleClickEvent(QMouseEvent *e) {
 		if (dragState.cursor == CursorState::Text) {
 			_mouseTextSymbol = dragState.symbol;
 			_mouseSelectType = TextSelectType::Words;
-			if (_mouseAction == MouseAction::None) {
+			if (_mouseAction == MouseAction::None || _selected.empty()) {
 				_mouseAction = MouseAction::Selecting;
+				_mouseSelectingText = true;
 				TextSelection selStatus = { dragState.symbol, dragState.symbol };
 				if (!_selected.empty()) {
 					repaintItem(_selected.cbegin()->first);
@@ -5555,8 +5561,9 @@ void HistoryInner::mouseActionUpdate(bool finishing) {
 	auto dragStateUserpic = false;
 	auto selectingText = (item == _mouseActionItem)
 		&& (view == Element::Hovered())
-		&& !_selected.empty()
-		&& (_selected.cbegin()->second != FullSelection);
+		&& _mouseSelectingText
+		&& (_selected.empty()
+			|| _selected.cbegin()->second != FullSelection);
 	const auto overReaction = reactionView && reactionState.link;
 	const auto overReplyBtn = replyBtnView && replyBtnState.link;
 	if (overReaction) {
@@ -5754,7 +5761,8 @@ void HistoryInner::mouseActionUpdate(bool finishing) {
 					// We started selecting text in web page preview.
 					ClickHandler::unpressed();
 				}
-				if (_selected[_mouseActionItem] != selState) {
+				if ((!_selected.empty() || !selState.empty())
+					&& _selected[_mouseActionItem] != selState) {
 					_selected[_mouseActionItem] = selState;
 					repaintItem(_mouseActionItem);
 				}
