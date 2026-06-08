@@ -511,6 +511,10 @@ ListWidget::ListWidget(
 	) | rpl::on_next([=](not_null<const HistoryItem*> item) {
 		itemRemoved(item);
 	}, lifetime());
+	_session->data().globalSelectedMessagesChanged(
+	) | rpl::on_next([this] {
+		refreshGlobalSelectedMessages();
+	}, lifetime());
 
 	using MessageUpdateFlag = Data::MessageUpdate::Flag;
 	_session->changes().realtimeMessageUpdates(
@@ -713,6 +717,7 @@ void ListWidget::refreshRows(const Data::MessagesSlice &old) {
 		}
 	}
 	_viewsCapacity.clear();
+	refreshGlobalSelectedMessages();
 
 	const auto markLastAsRead = (scrolledTillEnd && markingMessagesRead());
 	checkUnreadBarCreation(markLastAsRead);
@@ -1292,11 +1297,12 @@ auto ListWidget::collectSelectedItems() const -> SelectedItems {
 		return result;
 	};
 	auto items = SelectedItems();
-	if (hasSelectedItems()) {
-		items.reserve(_selected.size());
+	const auto selected = effectiveSelectedMessages();
+	if (!selected.empty()) {
+		items.reserve(selected.size());
 		std::transform(
-			_selected.begin(),
-			_selected.end(),
+			selected.begin(),
+			selected.end(),
 			std::back_inserter(items),
 			transformation);
 	}
@@ -1320,7 +1326,9 @@ void ListWidget::removeItemSelection(
 		const SelectedMap::const_iterator &i) {
 	Expects(i != _selected.cend());
 
+	const auto itemId = i->first;
 	_selected.erase(i);
+	syncGlobalSelectedMessage(itemId, SelectAction::Deselect);
 	if (_selected.empty()) {
 		update();
 	}
@@ -1332,7 +1340,7 @@ bool ListWidget::hasSelectedText() const {
 }
 
 bool ListWidget::hasSelectedItems() const {
-	return !_selected.empty();
+	return !effectiveSelectedMessages().empty();
 }
 
 SelectionModeResult ListWidget::inSelectionMode() const {
@@ -1381,6 +1389,100 @@ bool ListWidget::overSelectedItems() const {
 	return false;
 }
 
+bool ListWidget::canUseGlobalSelectedMessages() const {
+	return (_context == Context::Replies);
+}
+
+bool ListWidget::usesGlobalSelectedMessages() const {
+	return canUseGlobalSelectedMessages()
+		&& GetEnhancedBool("keep_selected_messages_across_chats")
+		&& !hasSelectRestriction();
+}
+
+SelectionData ListWidget::selectionDataForItem(
+		not_null<HistoryItem*> item) const {
+	return {
+		.canDelete = item->canDelete(),
+		.canForward = item->allowsForward(),
+		.canSendNow = item->allowsSendNow(),
+		.canReschedule = item->allowsReschedule(),
+	};
+}
+
+auto ListWidget::globalSelectedMessagesMap() const -> SelectedMap {
+	auto result = SelectedMap();
+	if (!usesGlobalSelectedMessages()) {
+		return result;
+	}
+	for (const auto &id : session().data().globalSelectedMessages()) {
+		if (const auto item = session().data().message(id);
+			item && _delegate->listIsItemGoodForSelection(item)) {
+			result.emplace(item->fullId(), selectionDataForItem(item));
+		}
+	}
+	return result;
+}
+
+auto ListWidget::effectiveSelectedMessages() const -> SelectedMap {
+	if (usesGlobalSelectedMessages()) {
+		return globalSelectedMessagesMap();
+	}
+	return _selected;
+}
+
+void ListWidget::refreshGlobalSelectedMessages() {
+	if (!canUseGlobalSelectedMessages()) {
+		return;
+	} else if (!usesGlobalSelectedMessages()) {
+		if (!_selected.empty()) {
+			_selected.clear();
+			pushSelectedItems();
+			update();
+		}
+		return;
+	}
+	auto selected = SelectedMap();
+	for (const auto &id : session().data().globalSelectedMessages()) {
+		if (const auto item = session().data().message(id);
+			item
+			&& viewForItem(item)
+			&& _delegate->listIsItemGoodForSelection(item)) {
+			selected.emplace(item->fullId(), selectionDataForItem(item));
+		}
+	}
+	if (_selected == selected) {
+		pushSelectedItems();
+		return;
+	}
+	_selected = std::move(selected);
+	pushSelectedItems();
+	update();
+}
+
+bool ListWidget::changesGlobalSelectedMessages(
+		const SelectedMap *items) const {
+	return usesGlobalSelectedMessages() && (items == &_selected);
+}
+
+int ListWidget::selectedItemsCount(const SelectedMap *items) const {
+	return changesGlobalSelectedMessages(items)
+		? session().data().globalSelectedMessagesCount()
+		: int(items->size());
+}
+
+void ListWidget::syncGlobalSelectedMessage(
+		FullMsgId itemId,
+		SelectAction action) const {
+	if (!usesGlobalSelectedMessages() || !itemId) {
+		return;
+	}
+	if (action == SelectAction::Select) {
+		session().data().addGlobalSelectedMessage(itemId);
+	} else {
+		session().data().removeGlobalSelectedMessage(itemId);
+	}
+}
+
 bool ListWidget::isSelectedGroup(
 		const SelectedMap &applyTo,
 		not_null<const Data::Group*> group) const {
@@ -1423,17 +1525,21 @@ bool ListWidget::addToSelection(
 	if (!ok) {
 		return false;
 	}
-	iterator->second.canDelete = item->canDelete();
-	iterator->second.canForward = item->allowsForward();
-	iterator->second.canSendNow = item->allowsSendNow();
-	iterator->second.canReschedule = item->allowsReschedule();
+	iterator->second = selectionDataForItem(item);
+	if (changesGlobalSelectedMessages(&applyTo)) {
+		syncGlobalSelectedMessage(itemId, SelectAction::Select);
+	}
 	return true;
 }
 
 bool ListWidget::removeFromSelection(
 		SelectedMap &applyTo,
 		FullMsgId itemId) const {
-	return applyTo.remove(itemId);
+	const auto removed = applyTo.remove(itemId);
+	if (removed && changesGlobalSelectedMessages(&applyTo)) {
+		syncGlobalSelectedMessage(itemId, SelectAction::Deselect);
+	}
+	return removed;
 }
 
 void ListWidget::changeSelection(
@@ -1447,7 +1553,7 @@ void ListWidget::changeSelection(
 			: SelectAction::Select;
 	}
 	if (action == SelectAction::Select) {
-		auto already = int(applyTo.size());
+		auto already = selectedItemsCount(&applyTo);
 		if (isGoodForSelection(applyTo, item, already)) {
 			addToSelection(applyTo, item);
 		}
@@ -1469,7 +1575,7 @@ void ListWidget::changeSelectionAsGroup(
 			? SelectAction::Deselect
 			: SelectAction::Select;
 	}
-	auto already = int(applyTo.size());
+	auto already = selectedItemsCount(&applyTo);
 	const auto canSelect = [&] {
 		for (const auto &other : group->items) {
 			if (!isGoodForSelection(applyTo, other, already)) {
@@ -1605,6 +1711,9 @@ bool ListWidget::toggleItemSelectionAsGroup(
 }
 
 void ListWidget::clearSelected() {
+	if (usesGlobalSelectedMessages()) {
+		session().data().clearGlobalSelectedMessages();
+	}
 	if (_selected.empty()) {
 		return;
 	}
@@ -1686,7 +1795,10 @@ bool ListWidget::hasCopyMediaRestriction(not_null<HistoryItem*> item) const {
 }
 
 bool ListWidget::showCopyRestriction(HistoryItem *item) {
-	const auto type = _delegate->listCopyRestrictionType(item);
+	return showCopyRestrictionType(_delegate->listCopyRestrictionType(item));
+}
+
+bool ListWidget::showCopyRestrictionType(CopyRestrictionType type) {
 	if (type == CopyRestrictionType::None) {
 		return false;
 	}
@@ -1712,17 +1824,16 @@ bool ListWidget::showCopyMediaRestriction(not_null<HistoryItem*> item) {
 }
 
 bool ListWidget::hasCopyRestrictionForSelected() const {
-	if (hasCopyRestriction()) {
-		return true;
-	}
-	if (_selected.empty()) {
+	const auto selected = effectiveSelectedMessages();
+	if (selected.empty()) {
 		if (_selectedTextItem && _selectedTextItem->forbidsForward()) {
 			return true;
 		}
 	}
-	for (const auto &[itemId, selection] : _selected) {
+	for (const auto &[itemId, selection] : selected) {
 		if (const auto item = session().data().message(itemId)) {
-			if (item->forbidsForward()) {
+			if (CopyRestrictionTypeFor(item->history()->peer, item)
+				!= CopyRestrictionType::None) {
 				return true;
 			}
 		}
@@ -1731,14 +1842,19 @@ bool ListWidget::hasCopyRestrictionForSelected() const {
 }
 
 bool ListWidget::showCopyRestrictionForSelected() {
-	if (_selected.empty()) {
+	const auto selected = effectiveSelectedMessages();
+	if (selected.empty()) {
 		if (_selectedTextItem && showCopyRestriction(_selectedTextItem)) {
 			return true;
 		}
 	}
-	for (const auto &[itemId, selection] : _selected) {
-		if (showCopyRestriction(session().data().message(itemId))) {
-			return true;
+	for (const auto &[itemId, selection] : selected) {
+		if (const auto item = session().data().message(itemId)) {
+			if (showCopyRestrictionType(CopyRestrictionTypeFor(
+					item->history()->peer,
+					item))) {
+				return true;
+			}
 		}
 	}
 	return false;
@@ -2694,12 +2810,15 @@ void ListWidget::applyDragSelection() {
 }
 
 void ListWidget::applyDragSelection(SelectedMap &applyTo) const {
+	auto total = selectedItemsCount(&applyTo);
 	if (_dragSelectAction == DragSelectAction::Selecting) {
 		for (const auto &itemId : _dragSelected) {
-			if (applyTo.size() >= MaxSelectedItems) {
-				break;
-			} else if (!applyTo.contains(itemId)) {
-				if (const auto item = session().data().message(itemId)) {
+			if (!applyTo.contains(itemId)) {
+				if (total >= MaxSelectedItems) {
+					break;
+				}
+				if (const auto item = session().data().message(itemId);
+					item && isGoodForSelection(applyTo, item, total)) {
 					addToSelection(applyTo, item);
 				}
 			}
@@ -2712,7 +2831,7 @@ void ListWidget::applyDragSelection(SelectedMap &applyTo) const {
 }
 
 TextForMimeData ListWidget::getSelectedText() const {
-	auto selected = _selected;
+	auto selected = effectiveSelectedMessages();
 
 	if (_mouseAction == MouseAction::Selecting && !_dragSelected.empty()) {
 		applyDragSelection(selected);
@@ -2725,28 +2844,29 @@ TextForMimeData ListWidget::getSelectedText() const {
 		return _selectedText;
 	}
 
+	struct Part {
+		QString name;
+		QString time;
+		TextForMimeData unwrapped;
+	};
+
 	auto groups = base::flat_set<not_null<const Data::Group*>>();
 	auto fullSize = 0;
-	auto texts = std::vector<std::pair<
-		not_null<HistoryItem*>,
-		TextForMimeData>>();
-	texts.reserve(selected.size());
+	auto texts = base::flat_map<Data::MessagePosition, Part>();
 
 	const auto wrapItem = [&](
 			not_null<HistoryItem*> item,
 			TextForMimeData &&unwrapped) {
-		auto time = QString("[%1] ").arg(
-			QLocale().toString(ItemDateTime(item), GetEnhancedBool("show_seconds") ? QLocale::system().timeFormat(QLocale::LongFormat).remove("t") : QLocale::system().timeFormat(QLocale::ShortFormat)));
-		auto part = TextForMimeData();
-		auto size = time.size()
-			+ item->author()->name().size()
+		const auto i = texts.emplace(item->position(), Part{
+			.name = item->author()->name(),
+			.time = QString("[%1] ").arg(
+				QLocale().toString(ItemDateTime(item), GetEnhancedBool("show_seconds") ? QLocale::system().timeFormat(QLocale::LongFormat).remove("t") : QLocale::system().timeFormat(QLocale::ShortFormat))),
+			.unwrapped = std::move(unwrapped),
+		}).first;
+		fullSize += i->second.time.size()
+			+ i->second.name.size()
 			+ 2
-			+ unwrapped.expanded.size();
-		part.reserve(size);
-		part.append(time).append(item->author()->name()).append(u": "_q);
-		part.append(std::move(unwrapped));
-		texts.emplace_back(std::move(item), std::move(part));
-		fullSize += size;
+			+ i->second.unwrapped.expanded.size();
 	};
 	const auto addItem = [&](not_null<HistoryItem*> item) {
 		wrapItem(item, HistoryItemText(item));
@@ -2774,17 +2894,15 @@ TextForMimeData ListWidget::getSelectedText() const {
 			}
 		}
 	}
-	ranges::sort(texts, [&](
-			const std::pair<not_null<HistoryItem*>, TextForMimeData> &a,
-			const std::pair<not_null<HistoryItem*>, TextForMimeData> &b) {
-		return _delegate->listIsLessInOrder(a.first, b.first);
-	});
-
+	if (texts.size() == 1) {
+		return texts.front().second.unwrapped;
+	}
 	auto result = TextForMimeData();
-	auto sep = u"\n"_q;
+	const auto sep = u"\n"_q;
 	result.reserve(fullSize + (texts.size() - 1) * sep.size());
 	for (auto i = begin(texts), e = end(texts); i != e;) {
-		result.append(std::move(i->second));
+		result.append(i->second.time).append(i->second.name).append(u": "_q);
+		result.append(std::move(i->second.unwrapped));
 		if (++i != e) {
 			result.append(sep);
 		}
@@ -3669,7 +3787,7 @@ void ListWidget::ensureDragSelectAction(
 	}
 	const auto start = _dragSelectDirectionUp ? (till - 1) : from;
 	const auto startId = (*start)->data()->fullId();
-	_dragSelectAction = _selected.contains(startId)
+	_dragSelectAction = effectiveSelectedMessages().contains(startId)
 		? DragSelectAction::Deselecting
 		: DragSelectAction::Selecting;
 	if (!_wasSelectedText
@@ -4262,8 +4380,9 @@ std::unique_ptr<QMimeData> ListWidget::prepareDrag() {
 			mimeData->setUrls(urls);
 		}
 		if (uponSelected && !_delegate->listAllowsDragForward()) {
+			const auto selected = effectiveSelectedMessages();
 			const auto canForwardAll = [&] {
-				for (const auto &[itemId, data] : _selected) {
+				for (const auto &[itemId, data] : selected) {
 					if (!data.canForward) {
 						return false;
 					}
