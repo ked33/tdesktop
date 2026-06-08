@@ -2239,6 +2239,8 @@ void HistoryInner::mouseActionCancel() {
 	_mouseAction = MouseAction::None;
 	_dragStartPosition = QPoint(0, 0);
 	_dragSelFrom = _dragSelTo = nullptr;
+	_dragSelectionLimited = false;
+	_dragSelectionLimit = 0;
 	_wasSelectedText = false;
 	_selectScroll.cancel();
 }
@@ -2402,6 +2404,8 @@ void HistoryInner::itemRemoved(not_null<const HistoryItem*> item) {
 	if (_lastSelectedAnchor == item) {
 		_lastSelectedAnchor = nullptr;
 	}
+	_dragSelectionLimited = false;
+	_dragSelectionLimit = 0;
 
 	if ((_dragSelFrom && _dragSelFrom->data() == item)
 		|| (_dragSelTo && _dragSelTo->data() == item)) {
@@ -2419,6 +2423,8 @@ void HistoryInner::viewRemoved(not_null<const Element*> view) {
 	if (_overlayHost) {
 		_overlayHost->viewGone(view);
 	}
+	_dragSelectionLimited = false;
+	_dragSelectionLimit = 0;
 	const auto refresh = [&](auto &saved) {
 		if (saved == view) {
 			const auto now = viewByItem(view->data());
@@ -5816,7 +5822,34 @@ void HistoryInner::mouseActionUpdate(bool finishing) {
 					&& dragSelFrom
 					&& dragSelTo) {
 					const auto limit = maxSelectedItemsFor(&_selected);
-					if (limit <= 0) {
+					auto dragSelectionLimited = false;
+					const auto reuseLimited = [&] {
+						const auto previousAnchor = selectingDown
+							? _dragSelFrom
+							: _dragSelTo;
+						const auto previousEnd = selectingDown
+							? _dragSelTo
+							: _dragSelFrom;
+						if (!_dragSelectionLimited
+							|| _dragSelectionLimit != limit
+							|| !_dragSelecting
+							|| !previousAnchor
+							|| !previousEnd
+							|| previousAnchor != dragSelFrom) {
+							return false;
+						}
+						const auto previousTop = itemTop(previousEnd);
+						const auto candidateTop = itemTop(dragSelTo);
+						return (previousTop >= 0)
+							&& (candidateTop >= 0)
+							&& (selectingDown
+								? (candidateTop >= previousTop)
+								: (candidateTop <= previousTop));
+					}();
+					if (reuseLimited) {
+						dragSelTo = selectingDown ? _dragSelTo : _dragSelFrom;
+						dragSelectionLimited = true;
+					} else if (limit <= 0) {
 						dragSelFrom = dragSelTo = nullptr;
 					} else {
 						const auto countFor = [&](not_null<HistoryItem*> item) {
@@ -5847,6 +5880,7 @@ void HistoryInner::mouseActionUpdate(bool finishing) {
 								: prevItem(view);
 						}
 						if (overflow) {
+							dragSelectionLimited = true;
 							if (lastAcceptedView) {
 								dragSelTo = lastAcceptedView;
 							} else {
@@ -5854,6 +5888,10 @@ void HistoryInner::mouseActionUpdate(bool finishing) {
 							}
 						}
 					}
+					_dragSelectionLimited = dragSelectionLimited
+						&& dragSelFrom
+						&& dragSelTo;
+					_dragSelectionLimit = _dragSelectionLimited ? limit : 0;
 				}
 				updateDragSelection(dragSelFrom, dragSelTo, dragSelecting);
 			}
@@ -5897,6 +5935,10 @@ void HistoryInner::mouseActionUpdate(bool finishing) {
 }
 
 void HistoryInner::updateDragSelection(Element *dragSelFrom, Element *dragSelTo, bool dragSelecting) {
+	if (!dragSelFrom || !dragSelTo || !dragSelecting) {
+		_dragSelectionLimited = false;
+		_dragSelectionLimit = 0;
+	}
 	if (_dragSelFrom == dragSelFrom && _dragSelTo == dragSelTo && _dragSelecting == dragSelecting) {
 		return;
 	} else if (dragSelFrom && hasSelectRestriction()) {

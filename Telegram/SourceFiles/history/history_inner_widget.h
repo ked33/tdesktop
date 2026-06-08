@@ -607,6 +607,8 @@ private:
 	Element *_dragSelFrom = nullptr;
 	Element *_dragSelTo = nullptr;
 	bool _dragSelecting = false;
+	bool _dragSelectionLimited = false;
+	int _dragSelectionLimit = 0;
 	bool _wasSelectedText = false; // was some text selected in current drag action
 
 	mutable bool _lastInSelectionMode = false;
