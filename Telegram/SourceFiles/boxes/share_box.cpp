@@ -1791,16 +1791,24 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 					: Flag(0));
 		}
 
-		auto mtpMsgIds = QVector<MTPint>();
-		mtpMsgIds.reserve(existingIds.size());
-		for (const auto &fullId : existingIds) {
-			mtpMsgIds.push_back(MTP_int(fullId.msg));
+		struct ForwardGroup final {
+			not_null<PeerData*> fromPeer;
+			QVector<MTPint> ids;
+		};
+		auto groups = std::vector<ForwardGroup>();
+		groups.reserve(items.size());
+		for (const auto item : items) {
+			const auto fromPeer = item->history()->peer;
+			if (groups.empty() || groups.back().fromPeer != fromPeer) {
+				groups.push_back({ fromPeer, QVector<MTPint>() });
+			}
+			groups.back().ids.push_back(MTP_int(item->id));
 		}
 		auto &api = history->session().api();
 		auto &histories = history->owner().histories();
 		const auto donePhraseArgs = CreateForwardedMessagePhraseArgs(
 			result,
-			msgIds);
+			existingIds);
 		const auto showRecentForwardsToSelf = result.size() == 1
 			&& result.front()->peer()->isSelf()
 			&& history->session().premium();
@@ -1833,130 +1841,133 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 			const auto sublistPeer = needNewTopic
 				? nullptr
 				: thread->maybeSublistPeer();
-			const auto fromPeer = history->peer;
-			const auto msgCount = int(existingIds.size());
-			const auto starsPaid = std::min(
-				peer->starsPerMessageChecked(),
-				options.starsApproved);
-			if (starsPaid) {
-				options.starsApproved -= starsPaid;
-			}
-			const auto sendFlags = commonSendFlags
-				| (ShouldSendSilent(peer, options)
-					? Flag::f_silent
-					: Flag(0))
-				| (options.shortcutId
-					? Flag::f_quick_reply_shortcut
-					: Flag(0))
-				| (starsPaid ? Flag::f_allow_paid_stars : Flag())
-				| (sublistPeer ? Flag::f_reply_to : Flag())
-				| (options.suggest ? Flag::f_suggested_post : Flag())
-				| (options.effectId ? Flag::f_effect : Flag());
-			auto buildMessage = [=](
-					not_null<History*> history,
-					FullReplyTo replyTo)
-				-> Data::Histories::PreparedMessage {
-				const auto kGeneralId
-					= Data::ForumTopic::kGeneralId;
-				const auto realTopMsgId
-					= (replyTo.topicRootId == kGeneralId)
-					? MsgId(0)
-					: replyTo.topicRootId;
-				auto flags = sendFlags;
-				if (realTopMsgId) {
-					flags |= Flag::f_top_msg_id;
-				} else {
-					flags &= ~Flag::f_top_msg_id;
+			for (const auto &group : groups) {
+				const auto fromPeer = group.fromPeer;
+				const auto mtpMsgIds = group.ids;
+				const auto msgCount = int(mtpMsgIds.size());
+				const auto starsPaid = std::min(
+					msgCount * peer->starsPerMessageChecked(),
+					options.starsApproved);
+				if (starsPaid) {
+					options.starsApproved -= starsPaid;
 				}
-				auto randoms = QVector<MTPlong>(msgCount);
-				for (auto &value : randoms) {
-					value = base::RandomValue<MTPlong>();
-				}
-				return MTPmessages_ForwardMessages(
-					MTP_flags(flags),
-					fromPeer->input(),
-					MTP_vector<MTPint>(mtpMsgIds),
-					MTP_vector<MTPlong>(randoms),
-					history->peer->input(),
-					MTP_int(realTopMsgId),
-					(sublistPeer
-						? MTP_inputReplyToMonoForum(
-							sublistPeer->input())
-						: MTPInputReplyTo()),
-					MTP_int(options.scheduled),
-					MTP_int(options.scheduleRepeatPeriod),
-					MTP_inputPeerEmpty(),
-					Data::ShortcutIdToMTP(
-						&history->session(),
-						options.shortcutId),
-					MTP_long(options.effectId),
-					MTP_int(videoTimestamp.value_or(0)),
-					MTP_long(starsPaid),
-					Api::SuggestToMTP(options.suggest));
-			};
-			const auto requestDone = [=](
-					const MTPUpdates &updates,
-					mtpRequestId requestKey) {
-				if (showRecentForwardsToSelf) {
-					ApiWrap::ProcessRecentSelfForwards(
-						&threadHistory->session(),
-						updates,
-						peer->id,
-						history->peer->id);
-				}
-				state->requests.remove(requestKey);
-				if (state->requests.empty()) {
-					if (show->valid()) {
-						auto phrase = rpl::variable<
-							TextWithEntities>(
-							ChatHelpers::ForwardedMessagePhrase(
-								donePhraseArgs)).current();
-						if (!phrase.empty()) {
-							show->showToast(std::move(phrase));
+				const auto sendFlags = commonSendFlags
+					| (ShouldSendSilent(peer, options)
+						? Flag::f_silent
+						: Flag(0))
+					| (options.shortcutId
+						? Flag::f_quick_reply_shortcut
+						: Flag(0))
+					| (starsPaid ? Flag::f_allow_paid_stars : Flag())
+					| (sublistPeer ? Flag::f_reply_to : Flag())
+					| (options.suggest ? Flag::f_suggested_post : Flag())
+					| (options.effectId ? Flag::f_effect : Flag());
+				auto buildMessage = [=](
+						not_null<History*> history,
+						FullReplyTo replyTo)
+					-> Data::Histories::PreparedMessage {
+					const auto kGeneralId
+						= Data::ForumTopic::kGeneralId;
+					const auto realTopMsgId
+						= (replyTo.topicRootId == kGeneralId)
+						? MsgId(0)
+						: replyTo.topicRootId;
+					auto flags = sendFlags;
+					if (realTopMsgId) {
+						flags |= Flag::f_top_msg_id;
+					} else {
+						flags &= ~Flag::f_top_msg_id;
+					}
+					auto randoms = QVector<MTPlong>(msgCount);
+					for (auto &value : randoms) {
+						value = base::RandomValue<MTPlong>();
+					}
+					return MTPmessages_ForwardMessages(
+						MTP_flags(flags),
+						fromPeer->input(),
+						MTP_vector<MTPint>(mtpMsgIds),
+						MTP_vector<MTPlong>(randoms),
+						history->peer->input(),
+						MTP_int(realTopMsgId),
+						(sublistPeer
+							? MTP_inputReplyToMonoForum(
+								sublistPeer->input())
+							: MTPInputReplyTo()),
+						MTP_int(options.scheduled),
+						MTP_int(options.scheduleRepeatPeriod),
+						MTP_inputPeerEmpty(),
+						Data::ShortcutIdToMTP(
+							&history->session(),
+							options.shortcutId),
+						MTP_long(options.effectId),
+						MTP_int(videoTimestamp.value_or(0)),
+						MTP_long(starsPaid),
+						Api::SuggestToMTP(options.suggest));
+				};
+				const auto requestDone = [=](
+						const MTPUpdates &updates,
+						mtpRequestId requestKey) {
+					if (showRecentForwardsToSelf) {
+						ApiWrap::ProcessRecentSelfForwards(
+							&threadHistory->session(),
+							updates,
+							peer->id,
+							fromPeer->id);
+					}
+					state->requests.remove(requestKey);
+					if (state->requests.empty()) {
+						if (show->valid()) {
+							auto phrase = rpl::variable<
+								TextWithEntities>(
+								ChatHelpers::ForwardedMessagePhrase(
+									donePhraseArgs)).current();
+							if (!phrase.empty()) {
+								show->showToast(std::move(phrase));
+							}
+							show->hideLayer();
 						}
-						show->hideLayer();
 					}
-				}
-			};
-			const auto requestFail = [=](
-					const MTP::Error &error,
-					mtpRequestId requestKey) {
-				const auto type = error.type();
-				if (type.startsWith(
-						u"ALLOW_PAYMENT_REQUIRED_"_q)) {
-					show->showToast(
-						u"Payment requirements changed. "
-						"Please, try again."_q);
-				} else if (type
-					== u"VOICE_MESSAGES_FORBIDDEN"_q) {
-					show->showToast(
-						tr::lng_restricted_send_voice_messages(
-							tr::now,
-							lt_user,
-							peer->name()));
-				}
-				state->requests.remove(requestKey);
-				if (state->requests.empty()) {
-					if (show->valid()) {
-						show->hideLayer();
+				};
+				const auto requestFail = [=](
+						const MTP::Error &error,
+						mtpRequestId requestKey) {
+					const auto type = error.type();
+					if (type.startsWith(
+							u"ALLOW_PAYMENT_REQUIRED_"_q)) {
+						show->showToast(
+							u"Payment requirements changed. "
+							"Please, try again."_q);
+					} else if (type
+						== u"VOICE_MESSAGES_FORBIDDEN"_q) {
+						show->showToast(
+							tr::lng_restricted_send_voice_messages(
+								tr::now,
+								lt_user,
+								peer->name()));
 					}
-				}
-			};
-			const auto requestKey = ++state->nextRequestKey;
-			state->requests.insert(requestKey);
-			histories.sendPreparedMessage(
-				threadHistory,
-				FullReplyTo{ .topicRootId = topicRootId },
-				uint64(0),
-				std::move(buildMessage),
-				[=](const MTPUpdates &updates,
-						const MTP::Response &) {
-					requestDone(updates, requestKey);
-				},
-				[=](const MTP::Error &error,
-						const MTP::Response &) {
-					requestFail(error, requestKey);
-				});
+					state->requests.remove(requestKey);
+					if (state->requests.empty()) {
+						if (show->valid()) {
+							show->hideLayer();
+						}
+					}
+				};
+				const auto requestKey = ++state->nextRequestKey;
+				state->requests.insert(requestKey);
+				histories.sendPreparedMessage(
+					threadHistory,
+					FullReplyTo{ .topicRootId = topicRootId },
+					uint64(0),
+					std::move(buildMessage),
+					[=](const MTPUpdates &updates,
+							const MTP::Response &) {
+						requestDone(updates, requestKey);
+					},
+					[=](const MTP::Error &error,
+							const MTP::Response &) {
+						requestFail(error, requestKey);
+					});
+			}
 		}
 		if (state->requests.empty()) {
 			if (show->valid()) {
