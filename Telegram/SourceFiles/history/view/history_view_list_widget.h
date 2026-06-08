@@ -248,6 +248,8 @@ struct SelectionData {
 	bool canForward = false;
 	bool canSendNow = false;
 	bool canReschedule = false;
+
+	friend inline bool operator==(SelectionData, SelectionData) = default;
 };
 
 using SelectedMap = base::flat_map<
