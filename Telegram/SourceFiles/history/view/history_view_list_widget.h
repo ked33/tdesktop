@@ -676,6 +676,18 @@ private:
 		TextSelection selection);
 	int itemMinimalHeight() const;
 
+	bool showCopyRestrictionType(CopyRestrictionType type);
+	bool canUseGlobalSelectedMessages() const;
+	bool usesGlobalSelectedMessages() const;
+	SelectionData selectionDataForItem(not_null<HistoryItem*> item) const;
+	SelectedMap globalSelectedMessagesMap() const;
+	SelectedMap effectiveSelectedMessages() const;
+	void refreshGlobalSelectedMessages();
+	bool changesGlobalSelectedMessages(const SelectedMap *items) const;
+	int selectedItemsCount(const SelectedMap *items) const;
+	void syncGlobalSelectedMessage(
+		FullMsgId itemId,
+		SelectAction action) const;
 	bool isGoodForSelection(
 		SelectedMap &applyTo,
 		not_null<HistoryItem*> item,
