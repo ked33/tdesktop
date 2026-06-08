@@ -2213,7 +2213,6 @@ void HistoryInner::mouseActionStart(const QPoint &screenPos, Qt::MouseButton but
 							}
 							_selected.emplace(_mouseActionItem, selStatus);
 							_mouseAction = MouseAction::Selecting;
-							repaintItem(_mouseActionItem);
 						} else if (!hasSelectRestriction()) {
 							_mouseAction = MouseAction::PrepareSelect;
 						}
