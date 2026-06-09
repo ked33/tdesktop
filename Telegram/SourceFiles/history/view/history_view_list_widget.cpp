@@ -1286,7 +1286,8 @@ void ListWidget::repaintScrollDateCallback() {
 	update(0, updateTop, width(), updateHeight);
 }
 
-auto ListWidget::collectSelectedItems() const -> SelectedItems {
+auto ListWidget::collectSelectedItems(
+		const SelectedMap &selected) const -> SelectedItems {
 	auto transformation = [&](const auto &item) {
 		const auto &[itemId, selection] = item;
 		auto result = SelectedItem(itemId);
@@ -1297,7 +1298,6 @@ auto ListWidget::collectSelectedItems() const -> SelectedItems {
 		return result;
 	};
 	auto items = SelectedItems();
-	const auto selected = effectiveSelectedMessages();
 	if (!selected.empty()) {
 		items.reserve(selected.size());
 		std::transform(
@@ -1307,6 +1307,18 @@ auto ListWidget::collectSelectedItems() const -> SelectedItems {
 			transformation);
 	}
 	return items;
+}
+
+auto ListWidget::collectSelectedItems() const -> SelectedItems {
+	return collectSelectedItems(effectiveSelectedMessages());
+}
+
+auto ListWidget::collectPreviewSelectedItems() const -> SelectedItems {
+	auto selected = effectiveSelectedMessages();
+	if (_mouseAction == MouseAction::Selecting && !_dragSelected.empty()) {
+		applyDragSelection(selected);
+	}
+	return collectSelectedItems(selected);
 }
 
 MessageIdsList ListWidget::collectSelectedIds() const {
@@ -1320,6 +1332,10 @@ MessageIdsList ListWidget::collectSelectedIds() const {
 
 void ListWidget::pushSelectedItems() {
 	_delegate->listSelectionChanged(collectSelectedItems());
+}
+
+void ListWidget::pushPreviewSelectedItems() {
+	_delegate->listSelectionChanged(collectPreviewSelectedItems());
 }
 
 void ListWidget::removeItemSelection(
@@ -2805,7 +2821,7 @@ void ListWidget::applyDragSelection() {
 	if (!hasSelectRestriction()) {
 		applyDragSelection(_selected);
 	}
-	clearDragSelection();
+	clearDragSelection(false);
 	pushSelectedItems();
 }
 
@@ -3737,13 +3753,14 @@ void ListWidget::updateDragSelection(
 		std::vector<not_null<Element*>>::const_iterator till) {
 	Expects(from < till);
 
+	auto changed = false;
 	const auto &groups = session().data().groups();
 	const auto changeItem = [&](not_null<HistoryItem*> item, bool add) {
 		const auto itemId = item->fullId();
 		if (add) {
-			_dragSelected.emplace(itemId);
+			changed |= _dragSelected.emplace(itemId).second;
 		} else {
-			_dragSelected.remove(itemId);
+			changed |= _dragSelected.remove(itemId);
 		}
 	};
 	const auto changeGroup = [&](not_null<HistoryItem*> item, bool add) {
@@ -3775,7 +3792,12 @@ void ListWidget::updateDragSelection(
 		changeView(*i, false);
 	}
 
+	const auto actionBefore = _dragSelectAction;
 	ensureDragSelectAction(from, till);
+	changed |= (_dragSelectAction != actionBefore);
+	if (changed) {
+		pushPreviewSelectedItems();
+	}
 	update();
 }
 
@@ -3798,11 +3820,14 @@ void ListWidget::ensureDragSelectAction(
 	}
 }
 
-void ListWidget::clearDragSelection() {
+void ListWidget::clearDragSelection(bool notify) {
 	_dragSelectAction = DragSelectAction::None;
 	if (!_dragSelected.empty()) {
 		_dragSelected.clear();
 		update();
+		if (notify) {
+			pushSelectedItems();
+		}
 	}
 }
 

@@ -662,9 +662,12 @@ private:
 	void trySwitchToWordSelection();
 	void switchToWordSelection();
 	void validateTrippleClickStartTime();
+	SelectedItems collectSelectedItems(const SelectedMap &selected) const;
 	SelectedItems collectSelectedItems() const;
+	SelectedItems collectPreviewSelectedItems() const;
 	MessageIdsList collectSelectedIds() const;
 	void pushSelectedItems();
+	void pushPreviewSelectedItems();
 	void removeItemSelection(
 		const SelectedMap::const_iterator &i);
 	bool hasSelectedText() const;
@@ -736,7 +739,7 @@ private:
 	void ensureDragSelectAction(
 		std::vector<not_null<Element*>>::const_iterator from,
 		std::vector<not_null<Element*>>::const_iterator till);
-	void clearDragSelection();
+	void clearDragSelection(bool notify = true);
 	void applyDragSelection();
 	void applyDragSelection(SelectedMap &applyTo) const;
 	TextSelection itemRenderSelection(
