@@ -3477,7 +3477,10 @@ base::weak_qptr<Ui::BoxContent> ShowForwardMessagesBox(
 					*lastFilterId = id;
 					applyFilter(box, id);
 				},
-				Window::GifPauseReason::Layer);
+				Window::GifPauseReason::Layer,
+				nullptr,
+				false,
+				true);
 			chatsFilters->lower();
 			rpl::combine(
 				chatsFilters->heightValue(),
@@ -4749,7 +4752,11 @@ void ForwardToSelf(
 					.to1 = session->user(),
 				})).current();
 				if (!phrase.empty()) {
-					show->showToast(std::move(phrase));
+					show->showToast({
+						.text = std::move(phrase),
+						.filter = ChatHelpers::ForwardedToSavedMessagesFilter(
+							session),
+					});
 				}
 			});
 	}

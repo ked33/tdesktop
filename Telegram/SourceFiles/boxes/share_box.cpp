@@ -1922,7 +1922,12 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 								ChatHelpers::ForwardedMessagePhrase(
 									donePhraseArgs)).current();
 							if (!phrase.empty()) {
-								show->showToast(std::move(phrase));
+								show->showToast({
+									.text = std::move(phrase),
+									.filter = ChatHelpers
+										::ForwardedToSavedMessagesFilter(
+											&history->session()),
+								});
 							}
 							show->hideLayer();
 						}
@@ -1975,7 +1980,11 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 					ChatHelpers::ForwardedMessagePhrase(
 						donePhraseArgs)).current();
 				if (!phrase.empty()) {
-					show->showToast(std::move(phrase));
+					show->showToast({
+						.text = std::move(phrase),
+						.filter = ChatHelpers::ForwardedToSavedMessagesFilter(
+							&history->session()),
+					});
 				}
 				show->hideLayer();
 			}

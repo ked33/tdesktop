@@ -313,6 +313,11 @@ Photo::Photo(
 			maybeClearSensitiveSpoiler();
 		})),
 		parent)
+	: _spoiler
+	? std::make_shared<LambdaClickHandler>(crl::guard(this, [=] {
+		clearSpoiler();
+		_link = makeOpenPhotoHandler();
+	}))
 	: makeOpenPhotoHandler()) {
 	if (_data->inlineThumbnailBytes().isEmpty()
 		&& (_data->hasExact(Data::PhotoSize::Small)
@@ -515,6 +520,11 @@ Video::Video(
 				setDocumentLinks(_data);
 			})),
 			parent);
+	} else if (_spoiler) {
+		_openl = std::make_shared<LambdaClickHandler>(crl::guard(this, [=] {
+			clearSpoiler();
+			setDocumentLinks(_data);
+		}));
 	}
 	if (!_videoCover) {
 		_data->loadThumbnail(parent->fullId());
@@ -1167,11 +1177,17 @@ Document::Document(
 		0);
 
 	if (withThumb()) {
-		_data->loadThumbnail(parent->fullId());
-		auto tw = style::ConvertScale(_data->thumbnailLocation().width());
-		auto th = style::ConvertScale(_data->thumbnailLocation().height());
-		if (tw > th) {
-			_thumbw = (tw * _st.fileThumbSize) / th;
+		if (_data->hasThumbnail()) {
+			_data->loadThumbnail(parent->fullId());
+			auto tw = style::ConvertScale(
+				_data->thumbnailLocation().width());
+			auto th = style::ConvertScale(
+				_data->thumbnailLocation().height());
+			if (tw > th) {
+				_thumbw = (tw * _st.fileThumbSize) / th;
+			} else {
+				_thumbw = _st.fileThumbSize;
+			}
 		} else {
 			_thumbw = _st.fileThumbSize;
 		}
@@ -1321,7 +1337,12 @@ void Document::paint(Painter &p, const QRect &clip, TextSelection selection, con
 		if (clip.intersects(rthumb)) {
 			if (wthumb) {
 				ensureDataMediaCreated();
-				const auto thumbnail = _dataMedia->thumbnail();
+				const auto good = _data->isSvgImage()
+					? _dataMedia->goodThumbnail()
+					: nullptr;
+				const auto thumbnail = good
+					? good
+					: _dataMedia->thumbnail();
 				const auto blurred = _dataMedia->thumbnailInline();
 				if (thumbnail || blurred) {
 					if (_thumb.isNull() || (thumbnail && !_thumbLoaded)) {
@@ -1617,6 +1638,10 @@ void Document::ensureDataMediaCreated() const {
 	}
 	_dataMedia = _data->createMediaView();
 	_dataMedia->thumbnailWanted(parent()->fullId());
+	if (_data->isSvgImage()) {
+		_dataMedia->goodThumbnailWanted();
+		Data::DocumentMedia::CheckGoodThumbnail(_data);
+	}
 	delegate()->registerHeavyItem(this);
 }
 
@@ -1645,7 +1670,8 @@ bool Document::iconAnimated() const {
 }
 
 bool Document::withThumb() const {
-	return !songLayout() && _data->hasThumbnail();
+	return !songLayout()
+		&& (_data->hasThumbnail() || _data->isSvgImage());
 }
 
 bool Document::updateStatusText() {
