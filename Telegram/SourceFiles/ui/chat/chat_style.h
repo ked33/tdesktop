@@ -15,6 +15,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "layout/layout_selection.h"
 #include "styles/style_basic.h"
 
+#include <vector>
+
 enum class ImageRoundRadius;
 
 namespace style {
@@ -71,6 +73,7 @@ struct MessageStyle {
 	style::icon historyRepliesIcon = { Qt::Uninitialized };
 	style::icon historyViewsIcon = { Qt::Uninitialized };
 	style::icon historyPinIcon = { Qt::Uninitialized };
+	style::icon historySilentIcon = { Qt::Uninitialized };
 	style::icon historySentIcon = { Qt::Uninitialized };
 	style::icon historyReceivedIcon = { Qt::Uninitialized };
 	style::icon historyPsaIcon = { Qt::Uninitialized };
@@ -260,6 +263,7 @@ struct ChatPaintContext {
 	};
 	SkipDrawingParts skipDrawingParts = SkipDrawingParts::None;
 
+	bool skipSelectionCheck = false;
 	bool outbg = false;
 	bool paused = false;
 
@@ -305,6 +309,8 @@ struct ColorIndexValues {
 [[nodiscard]] ColorIndexValues SimpleColorIndexValues(
 	QColor color,
 	int patternIndex);
+[[nodiscard]] std::vector<Text::SpecialColor> SyntaxHighlightColors(
+	not_null<const style::palette*> palette);
 
 class ChatStyle final : public style::palette {
 public:
@@ -423,6 +429,9 @@ public:
 	}
 	[[nodiscard]] const style::icon &historyPinInvertedIcon() const {
 		return _historyPinInvertedIcon;
+	}
+	[[nodiscard]] const style::icon &historySilentInvertedIcon() const {
+		return _historySilentInvertedIcon;
 	}
 	[[nodiscard]] const style::icon &historySendingIcon() const {
 		return _historySendingIcon;
@@ -607,6 +616,7 @@ private:
 	style::icon _historyViewsSendingIcon = { Qt::Uninitialized };
 	style::icon _historyViewsSendingInvertedIcon = { Qt::Uninitialized };
 	style::icon _historyPinInvertedIcon = { Qt::Uninitialized };
+	style::icon _historySilentInvertedIcon = { Qt::Uninitialized };
 	style::icon _historySendingIcon = { Qt::Uninitialized };
 	style::icon _historySendingInvertedIcon = { Qt::Uninitialized };
 	style::icon _historySentInvertedIcon = { Qt::Uninitialized };

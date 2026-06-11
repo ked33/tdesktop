@@ -1194,6 +1194,7 @@ void ShowEditPeerPermissionsBox(
 	}
 
 	static constexpr auto kSendRestrictions = Flag::EmbedLinks
+		| Flag::SendReactions
 		| Flag::SendGames
 		| Flag::SendGifs
 		| Flag::SendInline
