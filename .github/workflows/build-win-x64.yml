@@ -85,9 +85,7 @@ jobs:
         run: |
           set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
           if not exist "%VSWHERE%" exit /b 1
-          "%VSWHERE%" -version "[17.0,18.0)" -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath > "%TEMP%\vsinstallpath.txt"
-          set /p VSINSTALLPATH=<"%TEMP%\vsinstallpath.txt"
-          del "%TEMP%\vsinstallpath.txt"
+          for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALLPATH=%%i"
           if not defined VSINSTALLPATH exit /b 1
           call "%VSINSTALLPATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
           echo Platform=x64>>"%GITHUB_ENV%"
