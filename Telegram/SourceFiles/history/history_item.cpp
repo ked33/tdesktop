@@ -77,6 +77,7 @@ namespace {
 
 constexpr auto kNotificationTextLimit = 255;
 constexpr auto kPinnedMessageTextLimit = 16;
+constexpr auto kMinLoginCode = 5;
 
 using ItemPreview = HistoryView::ItemPreview;
 
@@ -94,9 +95,14 @@ template <typename T>
 	return PreparedServiceText{ { tr::lng_message_empty(tr::now) } };
 }
 
-[[nodiscard]] TextWithEntities SpoilerLoginCode(TextWithEntities text) {
+[[nodiscard]] TextWithEntities SpoilerLoginCode(
+		TextWithEntities text,
+		int minLength = 4) {
+	const auto innerMin = QString::number(std::max(minLength - 2, 0));
 	const auto r = QRegularExpression(
-		u"(?<![\\w\\-#])(\\d[\\d\\-]{2,6}\\d)(?!\\w\\-)"_q);
+		u"(?<![\\w\\-#])(\\d[\\d\\-]{"_q
+			+ innerMin
+			+ u",6}\\d)(?!\\w\\-)"_q);
 	const auto m = r.match(text.text);
 	if (!m.hasMatch()) {
 		return text;
@@ -1586,6 +1592,36 @@ void HistoryItem::customEmojiRepaint() {
 	}
 }
 
+void HistoryItem::setMediaForInstantView(
+		QString url,
+		DocumentData *document,
+		PhotoData *photo) {
+	AddComponents(HistoryMessageMediaForInstantView::Bit());
+	const auto data = Get<HistoryMessageMediaForInstantView>();
+	data->url = std::move(url);
+	data->documents.clear();
+	data->photos.clear();
+	if (document) {
+		data->documents.emplace(document);
+	}
+	if (photo) {
+		data->photos.emplace(photo);
+	}
+}
+
+void HistoryItem::addDocumentForInstantView(
+		not_null<DocumentData*> document) {
+	AddComponents(HistoryMessageMediaForInstantView::Bit());
+	const auto data = Get<HistoryMessageMediaForInstantView>();
+	data->documents.emplace(document);
+}
+
+void HistoryItem::addPhotoForInstantView(not_null<PhotoData*> photo) {
+	AddComponents(HistoryMessageMediaForInstantView::Bit());
+	const auto data = Get<HistoryMessageMediaForInstantView>();
+	data->photos.emplace(photo);
+}
+
 bool HistoryItem::needsUpdateForVideoQualities(const MTPMessage &data) {
 	// When video gets the converted alt-videos lists, we need to update
 	// the message data even without edit-message update.
@@ -1898,14 +1934,18 @@ ReplyMarkupFlags HistoryItem::replyKeyboardFlags() const {
 void HistoryItem::addLogEntryOriginal(
 		WebPageId localId,
 		const QString &label,
-		const TextWithEntities &content) {
+		const TextWithEntities &content,
+		PhotoData *photo,
+		DocumentData *document) {
 	Expects(isAdminLogEntry());
 
 	AddComponents(HistoryMessageLogEntryOriginal::Bit());
 	Get<HistoryMessageLogEntryOriginal>()->page = _history->owner().webpage(
 		localId,
 		label,
-		content);
+		content,
+		photo,
+		document);
 }
 
 void HistoryItem::setFactcheck(MessageFactcheck info) {
@@ -2103,10 +2143,10 @@ void HistoryItem::refreshMainView() {
 	}
 }
 
-void HistoryItem::removeMainView() {
+void HistoryItem::removeMainView(Data::ViewRemovalReason reason) {
 	if (const auto view = mainView()) {
 		_history->owner().notifyHistoryChangeDelayed(_history);
-		view->removeFromBlock();
+		view->removeFromBlock(reason);
 	}
 }
 
@@ -2130,6 +2170,9 @@ void HistoryItem::applyEdition(HistoryMessageEdition &&edition) {
 		savePreviousMedia();
 	}
 	Assert(!updatingSavedLocalEdit || !isLocalUpdateMedia());
+
+	const auto wasGrouped = !updatingSavedLocalEdit
+		&& history()->owner().groups().isGrouped(this);
 
 	if (edition.isEditHide) {
 		_flags |= MessageFlag::HideEdited;
@@ -2259,6 +2302,10 @@ void HistoryItem::applyEdition(HistoryMessageEdition &&edition) {
 		Get<HistoryMessageFromRank>()->rank = edition.fromRank;
 	} else {
 		RemoveComponents(HistoryMessageFromRank::Bit());
+	}
+
+	if (wasGrouped && !history()->owner().groups().isGrouped(this)) {
+		history()->owner().groups().unregisterMessage(this);
 	}
 
 	finishEdition(keyboardTop);
@@ -4020,6 +4067,12 @@ FullStoryId HistoryItem::replyToStory() const {
 	return {};
 }
 
+void HistoryItem::resolveAdminLogReplyTo(not_null<HistoryItem*> replyTo) {
+	if (const auto reply = Get<HistoryMessageReply>()) {
+		reply->setInLogReplyTo(this, replyTo);
+	}
+}
+
 FullReplyTo HistoryItem::replyTo() const {
 	const auto monoforumPeerId = _history->peer->amMonoforumAdmin()
 		? sublistPeerId()
@@ -4212,11 +4265,13 @@ TextWithEntities HistoryItem::notificationText(
 		}
 		return TextWithEntities();
 	}();
-	if (options.spoilerLoginCode
-		&& !out()
-		&& (history()->peer->isNotificationsUser()
-			|| history()->peer->isVerifyCodes())) {
-		result = SpoilerLoginCode(std::move(result));
+	if (options.spoilerLoginCode && !out()) {
+		const auto peer = history()->peer;
+		if (peer->isNotificationsUser()) {
+			result = SpoilerLoginCode(std::move(result), kMinLoginCode);
+		} else if (peer->isVerifyCodes()) {
+			result = SpoilerLoginCode(std::move(result));
+		}
 	}
 	if (result.text.size() <= kNotificationTextLimit) {
 		return result;
@@ -4252,11 +4307,15 @@ ItemPreview HistoryItem::toPreview(ToPreviewOptions options) const {
 		}
 		return {};
 	}();
-	if (options.spoilerLoginCode
-		&& !out()
-		&& (history()->peer->isNotificationsUser()
-			|| history()->peer->isVerifyCodes())) {
-		result.text = SpoilerLoginCode(std::move(result.text));
+	if (options.spoilerLoginCode && !out()) {
+		const auto peer = history()->peer;
+		if (peer->isNotificationsUser()) {
+			result.text = SpoilerLoginCode(
+			    std::move(result.text),
+				kMinLoginCode);
+		} else if (peer->isVerifyCodes()) {
+			result.text = SpoilerLoginCode(std::move(result.text));
+		}
 	}
 	const auto fromSender = [](not_null<PeerData*> sender) {
 		return sender->isSelf()

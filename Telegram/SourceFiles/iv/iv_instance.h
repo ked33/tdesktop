@@ -18,6 +18,10 @@ namespace Window {
 class SessionController;
 } // namespace Window
 
+namespace Iv::Markdown {
+class Controller;
+} // namespace Iv::Markdown
+
 namespace Iv {
 
 class Data;
@@ -57,6 +61,9 @@ public:
 		QVariant context = {});
 
 	void showTLViewer(int32 layer, const QString& object);
+	bool showMarkdown(
+		const QString &path,
+		QVariant context = {});
 
 	[[nodiscard]] bool hasActiveWindow(
 		not_null<Main::Session*> session) const;
@@ -108,6 +115,9 @@ private:
 	std::unique_ptr<TonSite> _tonSite;
 
 	std::unique_ptr<TLViewer> _tlv;
+	base::flat_map<
+		QString,
+		std::unique_ptr<Markdown::Controller>> _markdowns;
 
 	rpl::lifetime _lifetime;
 
