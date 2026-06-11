@@ -6,7 +6,7 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 720
 
     steps:
@@ -99,9 +99,6 @@ jobs:
 
       - name: Prepare third-party libraries
         shell: cmd
-        env:
-          GYP_MSVS_OVERRIDE_PATH: 'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\'
-          GYP_MSVS_VERSION: 2022
         run: |
           cd /d %TBUILD%
           %REPO_NAME%\Telegram\build\prepare\win.bat silent
