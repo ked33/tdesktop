@@ -228,7 +228,6 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 		stack.add(Section{
 			.widget = std::move(sharedMediaWidget),
 			.shown = raw->toggledValue(),
-			.trailing = SectionSeparator::None(),
 		});
 	}
 	if (_topic || _sublist) {
@@ -245,7 +244,6 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 		stack.add(Section{
 			.widget = std::move(manage),
 			.shown = raw->toggledValue(),
-			.trailing = SectionSeparator::None(),
 		});
 	}
 	if (auto actions = SetupActions(_controller, result.data(), _peer)) {
@@ -253,7 +251,6 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 		stack.add(Section{
 			.widget = std::move(actions),
 			.shown = rpl::single(true),
-			.trailing = SectionSeparator::None(),
 		});
 	}
 	if ((_peer->isChat() || _peer->isMegagroup())
@@ -296,7 +293,6 @@ Section InnerWidget::makeMembersSection(not_null<QWidget*> parent) {
 	return Section{
 		.widget = std::move(wrap),
 		.shown = raw->toggledValue(),
-		.trailing = SectionSeparator::None(),
 	};
 }
 
