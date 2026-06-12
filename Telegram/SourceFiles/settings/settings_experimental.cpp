@@ -134,6 +134,17 @@ namespace {
 	} else if (id == ChatHelpers::kOptionUnlimitedRecentStickers) {
 		return tr::lng_settings_experimental_unlimited_recent_stickers(
 			tr::now);
+	} else if (id == Dialogs::Ui::kOptionDialogsMuteIcon) {
+		return tr::lng_settings_experimental_dialogs_mute_icon(tr::now);
+	} else if (id == Ui::GL::kOptionUseQtRhi) {
+		return tr::lng_settings_experimental_use_qt_rhi(tr::now);
+	} else if (id == Window::kOptionExternalMediaViewer) {
+		return tr::lng_settings_experimental_external_media_viewer(tr::now);
+	} else if (id == Ui::kOptionHideAiButton) {
+		return tr::lng_settings_experimental_hide_ai_button(tr::now);
+	} else if (id == HistoryView::kOptionUnlimitedMessageWidth) {
+		return tr::lng_settings_experimental_unlimited_message_width(
+			tr::now);
 	}
 	const auto &name = option.name();
 	return name.isEmpty() ? option.id() : name;
@@ -212,6 +223,16 @@ namespace {
 			tr::now);
 	} else if (id == ChatHelpers::kOptionUnlimitedRecentStickers) {
 		return tr::lng_settings_experimental_unlimited_recent_stickers_desc(
+			tr::now);
+	} else if (id == Dialogs::Ui::kOptionDialogsMuteIcon) {
+		return tr::lng_settings_experimental_dialogs_mute_icon_desc(tr::now);
+	} else if (id == Window::kOptionExternalMediaViewer) {
+		return tr::lng_settings_experimental_external_media_viewer_desc(
+			tr::now);
+	} else if (id == Ui::kOptionHideAiButton) {
+		return tr::lng_settings_experimental_hide_ai_button_desc(tr::now);
+	} else if (id == HistoryView::kOptionUnlimitedMessageWidth) {
+		return tr::lng_settings_experimental_unlimited_message_width_desc(
 			tr::now);
 	}
 	return option.description();

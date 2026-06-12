@@ -740,6 +740,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_experimental_force_compose_search_one_column_desc" = "Force in one-column mode the embedded search in chats.";
 "lng_settings_experimental_unlimited_recent_stickers" = "Unlimited recent stickers";
 "lng_settings_experimental_unlimited_recent_stickers_desc" = "Display as much recent stickers as the server provides";
+"lng_settings_experimental_dialogs_mute_icon" = "Mute icon in dialogs";
+"lng_settings_experimental_dialogs_mute_icon_desc" = "Show a small mute icon next to the chat name for muted chats.";
+"lng_settings_experimental_use_qt_rhi" = "Use Qt RHI renderer";
+"lng_settings_experimental_external_media_viewer" = "External media viewer";
+"lng_settings_experimental_external_media_viewer_desc" = "Use system media viewer instead of the internal one.";
+"lng_settings_experimental_hide_ai_button" = "Hide AI button";
+"lng_settings_experimental_hide_ai_button_desc" = "Hide the AI Tools button in message compose fields.";
+"lng_settings_experimental_unlimited_message_width" = "Unlimited message width";
+"lng_settings_experimental_unlimited_message_width_desc" = "Allow text-only message bubbles to expand beyond the default maximum width.";
 
 "lng_settings_section_chat_settings" = "Chat Settings";
 "lng_settings_replace_emojis" = "Replace emoji automatically";
