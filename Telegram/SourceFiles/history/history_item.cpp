@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_unread_things.h"
 #include "history/history.h"
 #include "iv/iv_data.h"
+#include "iv/iv_rich_page.h"
 #include "mtproto/mtproto_config.h"
 #include "ui/text/format_values.h"
 #include "ui/text/text_isolated_emoji.h"
@@ -140,6 +141,19 @@ template <typename T>
 	return false;
 }
 
+[[nodiscard]] std::shared_ptr<const Iv::RichPage> ParsedRichPage(
+		not_null<Main::Session*> session,
+		const MTPRichMessage *richMessage) {
+	return richMessage ? Iv::ParseRichPage(session, *richMessage) : nullptr;
+}
+
+[[nodiscard]] std::shared_ptr<const Iv::RichPage> BestRichPage(
+		const HistoryMessageRichPageSource *source) {
+	return source
+		? (source->fullPage ? source->fullPage : source->page)
+		: nullptr;
+}
+
 [[nodiscard]] HistoryItemCommonFields ForwardedFields(
 		HistoryItemCommonFields fields,
 		not_null<History*> history,
@@ -159,6 +173,30 @@ template <typename T>
 			Lang::FormatCountDecimal(std::abs(amount)));
 	}
 	return { Ui::FillAmountAndCurrency(amount, currency) };
+}
+
+[[nodiscard]] bool IsNavigableForInstantViewMedia(
+		DocumentData *document) {
+	Expects(document != nullptr);
+	return !document->isVideoMessage()
+		&& (document->isVideoFile() || document->isAnimation());
+}
+
+void UpdateInstantViewMediaCaption(
+		HistoryMessageMediaForInstantView *data,
+		const HistoryMessageMediaForInstantView::Item &item,
+		TextWithEntities caption) {
+	const auto i = ranges::find(data->items, item);
+	if (i == end(data->items)) {
+		return;
+	}
+	const auto index = size_t(i - begin(data->items));
+	if (index >= data->captions.size()) {
+		data->captions.resize(index + 1);
+	}
+	if (!caption.text.isEmpty() && data->captions[index].text.isEmpty()) {
+		data->captions[index] = std::move(caption);
+	}
 }
 
 } // namespace
@@ -447,7 +485,13 @@ HistoryItem::HistoryItem(
 		_flags &= ~MessageFlag::HasPostAuthor;
 		_flags |= MessageFlag::Legacy;
 		createComponents(data, false);
-		setText(UnsupportedMessageText());
+		if (const auto richMessage = data.vrich_message()) {
+			const auto richPage = Iv::ParseRichPage(&history->session(), *richMessage);
+			setRichPage(richPage);
+			setText(Iv::FlattenRichPageSummary(richPage));
+		} else {
+			setText(UnsupportedMessageText());
+		}
 		if (!Has<HistoryMessageReplyMarkup>()) {
 			AddComponents(HistoryMessageReplyMarkup::Bit());
 		}
@@ -485,40 +529,46 @@ HistoryItem::HistoryItem(
 
 		createComponents(data, isBlocked);
 
-		auto textWithEntities = TextWithEntities();
-		
-		auto blkMsg = Lang::GetOriginalValue(tr::lng_blocked_user_hint.base);
-		auto msg = blkMsg + qs(data.vmessage());
-
-		if (GetEnhancedBool("blocked_user_spoiler_mode")) {
-			_blockMsg = TextWithEntities{
-					msg,
-					Api::EntitiesFromMTP(
-							&history->session(),
-							data.ventities().value_or_empty(),
-							blkMsg.length(), qs(data.vmessage()).length())
-			};
-
-			_originalMsg = TextWithEntities{
-					qs(data.vmessage()),
-					Api::EntitiesFromMTP(
-							&history->session(),
-							data.ventities().value_or_empty())
-			};
-		}
-
-		if ((GetEnhancedBool("blocked_user_spoiler_mode") && blockExist(peerId.value)) || (GetEnhancedBool("blocked_user_spoiler_mode") && user && user->isBlocked())) {
-			textWithEntities = _blockMsg;
+		if (const auto richMessage = data.vrich_message()) {
+			const auto richPage = Iv::ParseRichPage(&history->session(), *richMessage);
+			setRichPage(richPage);
+			setText(Iv::FlattenRichPageSummary(richPage));
 		} else {
-			textWithEntities = TextWithEntities{
-					qs(data.vmessage()),
-					Api::EntitiesFromMTP(
-							&history->session(),
-							data.ventities().value_or_empty())
-			};
-		}
+			auto textWithEntities = TextWithEntities();
 
-		setText(_media ? textWithEntities : EnsureNonEmpty(textWithEntities));
+			auto blkMsg = Lang::GetOriginalValue(tr::lng_blocked_user_hint.base);
+			auto msg = blkMsg + qs(data.vmessage());
+
+			if (GetEnhancedBool("blocked_user_spoiler_mode")) {
+				_blockMsg = TextWithEntities{
+						msg,
+						Api::EntitiesFromMTP(
+								&history->session(),
+								data.ventities().value_or_empty(),
+								blkMsg.length(), qs(data.vmessage()).length())
+				};
+
+				_originalMsg = TextWithEntities{
+						qs(data.vmessage()),
+						Api::EntitiesFromMTP(
+								&history->session(),
+								data.ventities().value_or_empty())
+				};
+			}
+
+			if ((GetEnhancedBool("blocked_user_spoiler_mode") && blockExist(peerId.value)) || (GetEnhancedBool("blocked_user_spoiler_mode") && user && user->isBlocked())) {
+				textWithEntities = _blockMsg;
+			} else {
+				textWithEntities = TextWithEntities{
+						qs(data.vmessage()),
+						Api::EntitiesFromMTP(
+								&history->session(),
+								data.ventities().value_or_empty())
+				};
+			}
+
+			setText(_media ? textWithEntities : EnsureNonEmpty(textWithEntities));
+		}
 		if (const auto groupedId = data.vgrouped_id()) {
 			setGroupId(
 				MessageGroupId::FromRaw(
@@ -711,9 +761,15 @@ HistoryItem::HistoryItem(
 	const auto dropText = fields.ignoreForwardCaptions
 		&& _media
 		&& (_media->allowsEditCaption() || _media->poll());
+	const auto forwardRichPage = dropText
+		? std::shared_ptr<const Iv::RichPage>()
+		: original->richPage();
 	const auto forwardText = [&] {
 		if (dropText) {
 			return TextWithEntities();
+		}
+		if (forwardRichPage) {
+			return Iv::FlattenRichPageSummary(forwardRichPage);
 		}
 		const auto &text = original->originalText();
 		if (!text.text.isEmpty()) {
@@ -726,6 +782,9 @@ HistoryItem::HistoryItem(
 		}
 		return TextWithEntities();
 	}();
+	if (forwardRichPage) {
+		setRichPage(forwardRichPage);
+	}
 	setText(forwardText);
 
 	if (fields.groupedId) {
@@ -1601,25 +1660,53 @@ void HistoryItem::setMediaForInstantView(
 	data->url = std::move(url);
 	data->documents.clear();
 	data->photos.clear();
+	data->items.clear();
+	data->captions.clear();
 	if (document) {
 		data->documents.emplace(document);
+		if (IsNavigableForInstantViewMedia(document)) {
+			data->items.emplace_back(document);
+			data->captions.emplace_back();
+		}
 	}
 	if (photo) {
 		data->photos.emplace(photo);
+		data->items.emplace_back(photo);
+		data->captions.emplace_back();
 	}
 }
 
 void HistoryItem::addDocumentForInstantView(
-		not_null<DocumentData*> document) {
+		not_null<DocumentData*> document,
+		TextWithEntities caption) {
 	AddComponents(HistoryMessageMediaForInstantView::Bit());
 	const auto data = Get<HistoryMessageMediaForInstantView>();
-	data->documents.emplace(document);
+	if (data->documents.emplace(document).second
+		&& IsNavigableForInstantViewMedia(document)) {
+		data->items.emplace_back(document.get());
+		data->captions.push_back(std::move(caption));
+	} else {
+		UpdateInstantViewMediaCaption(
+			data,
+			HistoryMessageMediaForInstantView::Item(document.get()),
+			std::move(caption));
+	}
 }
 
-void HistoryItem::addPhotoForInstantView(not_null<PhotoData*> photo) {
+void HistoryItem::addPhotoForInstantView(
+		not_null<PhotoData*> photo,
+		TextWithEntities caption) {
 	AddComponents(HistoryMessageMediaForInstantView::Bit());
 	const auto data = Get<HistoryMessageMediaForInstantView>();
-	data->photos.emplace(photo);
+	if (data->photos.emplace(photo).second) {
+		data->items.emplace_back(photo.get());
+		data->captions.push_back(std::move(caption));
+	} else {
+		UpdateInstantViewMediaCaption(
+			data,
+			HistoryMessageMediaForInstantView::Item(photo.get()),
+			std::move(caption));
+	}
 }
 
 bool HistoryItem::needsUpdateForVideoQualities(const MTPMessage &data) {
@@ -2231,12 +2318,21 @@ void HistoryItem::applyEdition(HistoryMessageEdition &&edition) {
 	const auto &checkedMedia = updatingSavedLocalEdit
 		? Get<HistoryMessageSavedMediaData>()->media
 		: _media;
-	auto updatedText = (mediaCheck == MediaCheckResult::Unsupported)
+	clearFullRichPage();
+	if (edition.richPage) {
+		setRichPage(edition.richPage);
+	} else {
+		clearRichPage();
+	}
+	auto updatedText = edition.richPage
+		? Iv::FlattenRichPageSummary(edition.richPage)
+		: (mediaCheck == MediaCheckResult::Unsupported)
 		? UnsupportedMessageText()
 		: checkedMedia
 		? edition.textWithEntities
 		: EnsureNonEmpty(edition.textWithEntities);
-	auto serviceText = (!checkedMedia
+	auto serviceText = (!edition.richPage
+		&& !checkedMedia
 		&& edition.textWithEntities.empty()
 		&& edition.mtpMedia)
 		? prepareServiceTextForMessage(
@@ -2433,7 +2529,7 @@ void HistoryItem::applySentMessage(const MTPDmessage &data) {
 		Api::EntitiesFromMTP(
 			&_history->session(),
 			data.ventities().value_or_empty())
-	}, data.vmedia());
+	}, data.vmedia(), data.vrich_message());
 	updateReplyMarkup(HistoryMessageMarkupData(data.vreply_markup()));
 	updateForwardedInfo(data.vfwd_from());
 	changeViewsCount(data.vviews().value_or(-1));
@@ -2482,12 +2578,18 @@ void HistoryItem::applySentMessage(
 		const QString &text,
 		const MTPDupdateShortSentMessage &data,
 		bool wasAlready) {
+	const auto existingRichPage = Get<HistoryMessageRichPageSource>();
 	updateSentContent({
 		text,
 		Api::EntitiesFromMTP(
 			&_history->session(),
 			data.ventities().value_or_empty())
-		}, data.vmedia());
+		},
+		data.vmedia(),
+		existingRichPage ? existingRichPage->page : nullptr,
+		(existingRichPage && existingRichPage->page)
+			? existingRichPage->fullPage
+			: nullptr);
 	contributeToSlowmode(data.vdate().v);
 	if (!wasAlready) {
 		addToSharedMediaIndex();
@@ -2503,7 +2605,19 @@ void HistoryItem::applySentMessage(
 
 void HistoryItem::updateSentContent(
 		const TextWithEntities &textWithEntities,
-		const MTPMessageMedia *media) {
+		const MTPMessageMedia *media,
+		const MTPRichMessage *richMessage) {
+	updateSentContent(
+		textWithEntities,
+		media,
+		ParsedRichPage(&_history->session(), richMessage));
+}
+
+void HistoryItem::updateSentContent(
+		const TextWithEntities &textWithEntities,
+		const MTPMessageMedia *media,
+		std::shared_ptr<const Iv::RichPage> richPage,
+		std::shared_ptr<const Iv::RichPage> preservedFullPage) {
 	if (isEditingMedia()) {
 		return;
 	}
@@ -2513,13 +2627,31 @@ void HistoryItem::updateSentContent(
 	if (mediaCheck == MediaCheckResult::Unsupported) {
 		_flags &= ~MessageFlag::HasPostAuthor;
 		_flags |= MessageFlag::Legacy;
-		setText(UnsupportedMessageText());
+		if (richPage) {
+			setRichPage(richPage);
+			if (preservedFullPage) {
+				setFullRichPage(std::move(preservedFullPage));
+			}
+			setText(Iv::FlattenRichPageSummary(richPage));
+		} else {
+			clearRichPage();
+			setText(UnsupportedMessageText());
+		}
 		setReplyMarkup(UnsupportedMessageMarkup());
 	} else {
 		if (_flags & MessageFlag::Legacy) {
 			_flags &= ~MessageFlag::Legacy;
 		}
-		setText(textWithEntities);
+		if (richPage) {
+			setRichPage(richPage);
+			if (preservedFullPage) {
+				setFullRichPage(std::move(preservedFullPage));
+			}
+			setText(Iv::FlattenRichPageSummary(richPage));
+		} else {
+			clearRichPage();
+			setText(textWithEntities);
+		}
 	}
 	if (mediaCheck == MediaCheckResult::Unsupported) {
 		_media = nullptr;
@@ -2912,9 +3044,12 @@ bool HistoryItem::isTooOldForEdit(TimeId now) const {
 }
 
 bool HistoryItem::allowsEdit(TimeId now) const {
+	const auto richPageSource = Get<HistoryMessageRichPageSource>();
+	const auto richPage = BestRichPage(richPageSource);
 	return !isService()
 		&& canBeEdited()
 		&& !isTooOldForEdit(now)
+		&& (!richPage || richPageSource->canEdit)
 		&& (!_media || _media->allowsEdit())
 		&& !isLegacyMessage()
 		&& !isEditingMedia()
@@ -2923,6 +3058,7 @@ bool HistoryItem::allowsEdit(TimeId now) const {
 
 bool HistoryItem::allowsEditMedia() const {
 	return !awaitingVideoProcessing()
+		&& !richPage()
 		&& (!_media || _media->allowsEditMedia() || _media->webpage());
 }
 
@@ -4119,6 +4255,93 @@ void HistoryItem::setText(TextWithEntities textWithEntities) {
 		: std::move(textWithEntities));
 }
 
+std::shared_ptr<const Iv::RichPage> HistoryItem::richPage() const {
+	const auto source = Get<HistoryMessageRichPageSource>();
+	return source ? source->page : nullptr;
+}
+
+std::shared_ptr<const Iv::RichPage> HistoryItem::fullRichPage() const {
+	const auto source = Get<HistoryMessageRichPageSource>();
+	return source ? source->fullPage : nullptr;
+}
+
+uint64 HistoryItem::fullRichPageVersion() const {
+	const auto source = Get<HistoryMessageRichPageSource>();
+	return source ? source->fullPageVersion : 0;
+}
+
+void HistoryItem::applyLocalRichPage(std::shared_ptr<const Iv::RichPage> page) {
+	const auto summary = page
+		? Iv::FlattenRichPageSummary(page)
+		: TextWithEntities();
+	applyLocalRichPage(std::move(page), summary);
+}
+
+void HistoryItem::applyLocalRichPage(
+		std::shared_ptr<const Iv::RichPage> page,
+		const TextWithEntities &summary) {
+	if (page) {
+		setRichPage(std::move(page));
+	} else {
+		clearRichPage();
+	}
+	setText(summary);
+	_history->owner().requestItemTextRefresh(this);
+	invalidateChatListEntry();
+}
+
+void HistoryItem::setRichPage(std::shared_ptr<const Iv::RichPage> page) {
+	if (page) {
+		AddComponents(HistoryMessageRichPageSource::Bit()
+			| HistoryMessageMediaForInstantView::Bit());
+		const auto source = Get<HistoryMessageRichPageSource>();
+		const auto media = Get<HistoryMessageMediaForInstantView>();
+		source->page = std::move(page);
+		if (source->fullPage) {
+			++source->fullPageVersion;
+		}
+		source->fullPage = nullptr;
+		source->canEdit = false;
+		media->url = QString();
+		media->documents.clear();
+		media->photos.clear();
+		media->items.clear();
+		media->captions.clear();
+	} else {
+		clearRichPage();
+	}
+}
+
+void HistoryItem::setFullRichPage(std::shared_ptr<const Iv::RichPage> page) {
+	if (page) {
+		AddComponents(HistoryMessageRichPageSource::Bit());
+		const auto source = Get<HistoryMessageRichPageSource>();
+		source->fullPage = std::move(page);
+		source->canEdit = false;
+	} else {
+		clearFullRichPage();
+	}
+}
+
+void HistoryItem::clearFullRichPage() {
+	const auto source = Get<HistoryMessageRichPageSource>();
+	if (!source) {
+		return;
+	}
+	++source->fullPageVersion;
+	source->fullPage = nullptr;
+	if (source->page) {
+		source->canEdit = false;
+	} else {
+		RemoveComponents(HistoryMessageRichPageSource::Bit());
+	}
+}
+
+void HistoryItem::clearRichPage() {
+	RemoveComponents(HistoryMessageRichPageSource::Bit()
+		| HistoryMessageMediaForInstantView::Bit());
+}
+
 void HistoryItem::setTextValue(TextWithEntities text, bool force) {
 	if (const auto processId = Spellchecker::TryHighlightSyntax(text)) {
 		_flags |= MessageFlag::InHighlightProcess;
@@ -4196,6 +4419,7 @@ bool HistoryItem::hasPossibleRestrictions() const {
 bool HistoryItem::isEmpty() const {
 	return _text.empty()
 		&& !_media
+		&& !Has<HistoryMessageRichPageSource>()
 		&& (!Has<HistoryMessageFactcheck>()
 			|| Get<HistoryMessageFactcheck>()->data.text.empty())
 		&& !Has<HistoryMessageLogEntryOriginal>();
@@ -6051,9 +6275,10 @@ void HistoryItem::setServiceMessageByAction(const MTPmessageAction &action) {
 
 	auto prepareTopicCreate = [&](const MTPDmessageActionTopicCreate &action) {
 		auto result = PreparedServiceText();
-		const auto topicUrl = u"internal:url:https://t.me/c/%1/%2"_q
-			.arg(peerToChannel(_history->peer->id).bare)
-			.arg(id.bare);
+		const auto topicUrl = UrlClickHandler::EncodeInternalWrappedUrl(
+			u"https://t.me/c/%1/%2"_q
+				.arg(peerToChannel(_history->peer->id).bare)
+				.arg(id.bare));
 		result.text = tr::lng_action_topic_created(
 			tr::now,
 			lt_topic,
