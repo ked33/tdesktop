@@ -455,11 +455,11 @@ if customRunCommand:
 stage('patches', """
     git clone https://github.com/desktop-app/patches.git
     cd patches
-    git checkout 99e4345c14fb57164139654d62ae483ceba49e2c
+    git checkout 2678a53ad33dba2230d11547cc038c516b66f755
 mac:
     git clone https://github.com/desktop-app/qt6_highsierra_patches.git qt6_highsierra
     cd qt6_highsierra
-    git checkout f5b536d4f2c99a4e4dc5171aa7fdb706ec5edc1a
+    git checkout 4aae812a405f47553e001faf566de572d3eccd16
 """)
 
 stage('msys64', """
@@ -1086,7 +1086,7 @@ win32:
 win64:
     SET "TOOLCHAIN=x86_64-win64-vs17"
 winarm:
-    SET "TOOLCHAIN=arm64-win64-vs17"
+    SET "TOOLCHAIN=arm64-win64-vs17-v145"
 win:
 depends:patches/build_libvpx_win.sh
     %THIRDPARTY_DIR%\\msys64\\usr\\bin\\sed.exe -i 's/-j8/-j%NUMBER_OF_PROCESSORS%/g' ../patches/build_libvpx_win.sh
@@ -1627,7 +1627,14 @@ mac:
     cmake --install .
 win:
     cd qtbase
-    for /r %%i in (..\\..\\patches\\qtbase_%QT%\\*) do git apply %%i -v
+    setlocal enabledelayedexpansion
+    for /r %%i in (..\\..\\patches\\qtbase_%QT%\\*) do (
+        git apply %%i -v
+        if errorlevel 1 (
+            echo ERROR: Applying patch %%~nxi failed!
+            exit /b 1
+        )
+    )
     cd ..
 
     SET CONFIGURATIONS=-debug

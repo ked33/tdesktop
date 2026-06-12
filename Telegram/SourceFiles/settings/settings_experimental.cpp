@@ -19,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/slide_wrap.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
+#include "ui/widgets/popup_menu.h"
 #include "ui/vertical_list.h"
 #include "ui/gl/gl_detection.h"
 #include "ui/chat/chat_style_radius.h"
@@ -33,6 +34,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "dialogs/dialogs_inner_widget.h"
 #include "dialogs/ui/dialogs_layout.h"
 #include "history/history_item_components.h"
+#include "history/view/controls/compose_controls_common.h"
 #include "history/view/history_view_message.h"
 #include "info/profile/info_profile_actions.h"
 #include "lang/lang_keys.h"
@@ -287,7 +289,8 @@ void AddOption(
 		base::options::option<bool> &option,
 		rpl::producer<> resetClicks,
 		rpl::producer<> reloadOptionsRequests,
-		rpl::producer<QString> query) {
+		rpl::producer<QString> query,
+		Fn<void(const QString&, not_null<QWidget*>)> registerHighlight) {
 	const auto name = ExperimentalOptionName(option);
 
 	const auto wrap = container->add(
@@ -314,6 +317,28 @@ void AddOption(
 			? st::settingsButtonNoIcon
 			: st::settingsOptionDisabled)
 	))->toggleOn(toggles->events_starting_with(option.value()));
+
+	if (registerHighlight) {
+		registerHighlight(u"experimental/"_q + option.id(), button);
+	}
+
+	const auto link = u"tg://settings/experimental/"_q + option.id();
+	const auto menu
+		= button->lifetime().make_state<base::unique_qptr<Ui::PopupMenu>>();
+	button->events(
+	) | rpl::filter([](not_null<QEvent*> e) {
+		return e->type() == QEvent::ContextMenu;
+	}) | rpl::on_next([=](not_null<QEvent*> e) {
+		*menu = base::make_unique_q<Ui::PopupMenu>(
+			button,
+			st::popupMenuWithIcons);
+		(*menu)->addAction(u"Copy deep link"_q, [=] {
+			TextUtilities::SetClipboardText({ link });
+			window->showToast(u"Deep link copied to clipboard."_q);
+		}, &st::menuIconCopy);
+		(*menu)->popup(QCursor::pos());
+		e->accept();
+	}, button->lifetime());
 
 	const auto restarter = (option.relevant() && option.restartRequired())
 		? button->lifetime().make_state<base::Timer>()
@@ -364,7 +389,8 @@ void SetupExperimental(
 		not_null<Window::Controller*> window,
 		not_null<Ui::VerticalLayout*> container,
 		rpl::producer<> reloadOptionsRequests,
-		rpl::producer<QString> query) {
+		rpl::producer<QString> query,
+		Fn<void(const QString&, not_null<QWidget*>)> registerHighlight) {
 	const auto headerWrap = container->add(
 		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
 			container,
@@ -418,7 +444,8 @@ void SetupExperimental(
 				? (reset->clicks() | rpl::to_empty)
 				: rpl::producer<>()),
 			rpl::duplicate(reloadOptionsRequests),
-			rpl::duplicate(query));
+			rpl::duplicate(query),
+			registerHighlight);
 	};
 
 	addToggle(ChatHelpers::kOptionTabbedPanelShowOnClick);
@@ -456,6 +483,7 @@ void SetupExperimental(
 	addToggle(ChatHelpers::kOptionUnlimitedRecentStickers);
 	addToggle(Ui::kOptionHideAiButton);
 	addToggle(HistoryView::kOptionUnlimitedMessageWidth);
+	addToggle(HistoryView::Controls::kOptionMacCmdReplyImmediately);
 }
 
 } // namespace
@@ -516,6 +544,15 @@ void Experimental::setInnerFocus() {
 	}
 }
 
+void Experimental::showFinished() {
+	AbstractSection::showFinished();
+	for (const auto &[id, widget] : _highlights) {
+		if (widget) {
+			controller()->checkHighlightControl(id, widget);
+		}
+	}
+}
+
 base::weak_qptr<Ui::RpWidget> Experimental::createPinnedToTop(
 		not_null<QWidget*> parent) {
 	_searchController = std::make_unique<Ui::SearchFieldController>(
@@ -553,7 +590,10 @@ void Experimental::setupContent() {
 		&controller()->window(),
 		content,
 		_reloadOptionsRequests.events(),
-		_query.value());
+		_query.value(),
+		[this](const QString &id, not_null<QWidget*> widget) {
+			_highlights.push_back({ id, widget.get() });
+		});
 
 	Ui::ResizeFitChild(this, content);
 }
