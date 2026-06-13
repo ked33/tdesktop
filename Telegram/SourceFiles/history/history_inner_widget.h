@@ -660,7 +660,6 @@ private:
 	CursorState _mouseCursorState = CursorState();
 	TextState _mouseTextAnchor;
 	bool _mouseActive = false;
-	bool _mouseSelectingText = false;
 	bool _inMouseActionUpdate = false;
 	bool _dragStateUserpic = false;
 	bool _pressWasInactive = false;
