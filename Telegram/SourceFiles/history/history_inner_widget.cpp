@@ -3645,10 +3645,14 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				if (GetEnhancedBool("show_message_context_save_as")
 					&& selectedState.count > 0
 					&& !hasCopyRestrictionForSelected()) {
+					const auto selectedItems = effectiveSelectedItems();
+					auto items = std::vector<not_null<HistoryItem*>>(
+						selectedItems.begin(),
+						selectedItems.end());
 					Menu::AddDownloadFilesAction(
 						_menu,
 						controller,
-						effectiveSelectedItems(),
+						items,
 						this);
 				}
 				if (GetEnhancedBool("show_message_context_select")) {
@@ -4117,10 +4121,14 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				if (GetEnhancedBool("show_message_context_save_as")
 					&& selectedState.count > 0
 					&& !hasCopyRestrictionForSelected()) {
+					const auto selectedItems = effectiveSelectedItems();
+					auto items = std::vector<not_null<HistoryItem*>>(
+						selectedItems.begin(),
+						selectedItems.end());
 					Menu::AddDownloadFilesAction(
 						_menu,
 						controller,
-						effectiveSelectedItems(),
+						items,
 						this);
 				}
 				if (GetEnhancedBool("show_message_context_select")) {

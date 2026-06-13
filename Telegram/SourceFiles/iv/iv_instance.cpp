@@ -813,12 +813,7 @@ TLViewer::TLViewer(not_null<Delegate*> delegate, QString uri)
 void TLViewer::createController() {
 	Expects(!_controller);
 
-	const auto showShareBox = [=](ShareBoxDescriptor&& descriptor) {
-		return ShareBoxResult();
-		};
-	_controller = std::make_unique<Controller>(
-		_delegate,
-		std::move(showShareBox));
+	_controller = std::make_unique<Controller>(_delegate);
 
 	_controller->events(
 	) | rpl::start_to_stream(_events, _controller->lifetime());
