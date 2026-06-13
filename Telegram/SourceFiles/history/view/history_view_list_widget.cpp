@@ -3064,7 +3064,8 @@ TextSelection ListWidget::getSelectedTextRangeForEdit(
 		return {};
 	}
 	if (const auto view = viewForItem(item)) {
-		return view->selectionForEditText(_selectedTextRange);
+		return view->selectionForEditText(
+			_selectedTextSelection.flatRangeForEdit());
 	}
 	return {};
 }
@@ -3508,7 +3509,8 @@ void ListWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 	request.editSelection = (_overElement
 		&& _selectedTextItem == _overElement->data()
 		&& insideSelection)
-		? _overElement->selectionForEditText(_selectedTextRange)
+		? _overElement->selectionForEditText(
+			_selectedTextSelection.flatRangeForEdit())
 		: ResolveEditSelectionByClickingEntity(
 			_overElement,
 			overItem,
