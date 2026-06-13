@@ -464,8 +464,7 @@ HistoryInner::HistoryInner(
 		if (usesGlobalSelectedMessages()) {
 			refreshGlobalSelectedMessages();
 		} else if (!_chooseForReportReason.has_value()
-			&& !_selected.empty()
-			&& _selected.cbegin()->second == FullSelection) {
+			&& !_selected.empty()) {
 			_selected.clear();
 		}
 		_widget->updateTopBarSelection();
@@ -620,11 +619,10 @@ void HistoryInner::setupSharingDisallowed() {
 
 	const auto clearIfRestricted = [=] {
 		if (hasSelectRestriction()
-			&& !_selected.empty()
-			&& _selected.cbegin()->second == FullSelection) {
+			&& !_selected.empty()) {
 			if (usesGlobalSelectedMessages()) {
 				const auto selected = _selected;
-				for (const auto &[item, _] : selected) {
+				for (const auto &item : selected) {
 					session().data().removeGlobalSelectedMessage(
 						item->fullId());
 				}
@@ -2346,7 +2344,6 @@ void HistoryInner::mouseActionStart(const QPoint &screenPos, Qt::MouseButton but
 
 	const auto mouseActionView = Element::Moused();
 	_mouseAction = MouseAction::None;
-	_mouseSelectingText = false;
 	_mouseActionItem = mouseActionView
 		? mouseActionView->data().get()
 		: nullptr;
@@ -2732,7 +2729,6 @@ void HistoryInner::mouseActionFinish(
 	}
 	_mouseAction = MouseAction::None;
 	_mouseActionItem = nullptr;
-	_mouseSelectingText = false;
 	_mouseSelectType = TextSelectType::Letters;
 	_mouseTextAnchor = TextState();
 	_selectScroll.cancel();
@@ -2974,10 +2970,9 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			return viewByItem(item);
 		}();
 		if (view) {
-			const auto it = _selected.find(item);
-			if (it != _selected.end() && it->second != FullSelection) {
-				const auto result = view->selectionForEditText(it->second);
-				return result;
+			const auto selection = getSelectedTextRange(item);
+			if (!selection.empty()) {
+				return selection;
 			}
 		}
 		const auto point = view
@@ -5800,9 +5795,7 @@ MessageIdsList HistoryInner::getSelectedItems() const {
 	if (!hasSelectedItems()) {
 		return {};
 	}
-	if (usesGlobalSelectedMessages()
-		&& (_selected.empty()
-			|| _selected.cbegin()->second == FullSelection)) {
+	if (usesGlobalSelectedMessages()) {
 		auto result = MessageIdsList();
 		for (const auto &id : session().data().globalSelectedMessages()) {
 			const auto item = session().data().message(id);
