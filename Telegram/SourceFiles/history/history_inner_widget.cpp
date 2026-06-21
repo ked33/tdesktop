@@ -2680,17 +2680,25 @@ void HistoryInner::mouseActionFinish(
 	}
 	if (needItemSelectionToggle) {
 		clearTextSelection();
-		if (_dragStateItem && _selected.contains(_dragStateItem)) {
-			_selected.remove(_dragStateItem);
+		const auto dragStateSelected = _dragStateItem
+			&& (usesGlobalSelectedMessages()
+				? session().data().hasGlobalSelectedMessage(
+					_dragStateItem->fullId())
+				: _selected.contains(_dragStateItem));
+		if (dragStateSelected) {
+			removeFromSelection(&_selected, _dragStateItem);
 			repaintItem(_mouseActionItem);
 		} else if (_dragStateItem
 			&& !_dragStateItem->isService()
 			&& _dragStateItem->isRegular()) {
-			if (_selected.size() < MaxSelectedItems) {
-				_selected.emplace(_dragStateItem);
+			if (selectedItemsCount(&_selected) < MaxSelectedItems) {
+				addToSelection(&_selected, _dragStateItem);
 				repaintItem(_mouseActionItem);
 			}
 		} else {
+			if (usesGlobalSelectedMessages()) {
+				session().data().clearGlobalSelectedMessages();
+			}
 			_selected.clear();
 			update();
 		}
