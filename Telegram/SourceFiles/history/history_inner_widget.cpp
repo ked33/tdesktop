@@ -5469,9 +5469,6 @@ auto HistoryInner::globalSelectedItems() const -> SelectedItems {
 }
 
 auto HistoryInner::effectiveSelectedItems() const -> SelectedItems {
-	if (!_selected.empty()) {
-		return _selected;
-	}
 	if (hasSelectRestriction()) {
 		return _selected;
 	}
@@ -5482,7 +5479,7 @@ auto HistoryInner::effectiveSelectedItems() const -> SelectedItems {
 }
 
 void HistoryInner::refreshGlobalSelectedMessages() {
-	if (!usesGlobalSelectedMessages() || !_selected.empty()) {
+	if (!usesGlobalSelectedMessages()) {
 		return;
 	}
 	if (hasSelectRestriction()) {
