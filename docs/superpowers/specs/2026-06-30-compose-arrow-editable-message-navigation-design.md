@@ -10,11 +10,14 @@ entering edit mode.
 
 Plain Up/Down navigation is active only when the compose field is empty and
 not editing, or after this feature has already filled the field from an
-editable message. Up selects an older editable message, Down selects a newer
-editable message. The selected message text is written into the compose field
-without entering edit mode. At either end of the editable-message list the
-selection stays where it is; the key is consumed and the chat list is not
-scrolled.
+editable message and the cursor is at the relevant text boundary. Up continues
+editable-message navigation only from the start of the filled text, and Down
+continues it only from the end. Other cursor positions stay with the compose
+field so multiline cursor movement keeps working. Up selects an older editable
+message, Down selects a newer editable message. The selected message text is
+written into the compose field without entering edit mode. At either end of
+the editable-message list the selection stays where it is; the key is consumed
+and the chat list is not scrolled.
 
 Alt+Up/Down uses the same editable-message ordering, but opens the selected
 message in edit mode and keeps edit mode active while moving through older or
