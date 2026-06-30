@@ -2367,7 +2367,7 @@ void ComposeControls::initKeyHandler() {
 		const auto fillText = (modifiers == Qt::NoModifier)
 			&& !isEditingMessage()
 			&& (_field->empty() || editableNavigationAtTextBoundary());
-		const auto edit = (modifiers == Qt::AltModifier);
+		const auto edit = (modifiers == (Qt::AltModifier | Qt::ShiftModifier));
 		if (!fillText && !edit) {
 			return false;
 		}
