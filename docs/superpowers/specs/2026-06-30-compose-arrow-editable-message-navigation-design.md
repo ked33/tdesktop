@@ -35,9 +35,10 @@ The implementation stays on the existing compose input path:
 - `ListWidget` owns candidate lookup, reusing the current editable predicate:
   `allowsEdit(now) && !isUploading()`, plus the existing grouped-message
   `findItemToEdit()` mapping.
-- Chat section widgets connect the request to `ListWidget`, then either write
-  `PrepareEditText(item)` into `ComposeControls` or route edit-mode navigation
-  through the existing `ListWidget::editMessageRequestNotify()` path.
+- Chat, scheduled, and shortcut-message section widgets connect the request to
+  `ListWidget`, then either write `PrepareEditText(item)` into
+  `ComposeControls` or route edit-mode navigation through the existing
+  `ListWidget::editMessageRequestNotify()` path.
 
 The feature avoids global shortcuts and does not alter message-list keyboard
 handling outside compose input requests.
