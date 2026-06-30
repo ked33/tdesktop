@@ -732,10 +732,24 @@ void ShortcutMessages::setupComposeControls() {
 		_scroll->keyPressEvent(e);
 	}, lifetime());
 
-	_composeControls->editLastMessageRequests(
-	) | rpl::on_next([=](not_null<QKeyEvent*> e) {
-		if (!_inner->lastMessageEditRequestNotify()) {
-			_scroll->keyPressEvent(e);
+	_composeControls->editableMessageNavigationRequests(
+	) | rpl::on_next([=](
+			ComposeControls::EditableMessageNavigationRequest request) {
+		using Request = ComposeControls::EditableMessageNavigationRequest;
+		const auto itemId = _inner->editableMessageIdByDirection(
+			request.currentId,
+			request.direction == Request::Direction::Newer);
+		const auto item = itemId
+			? _session->data().message(itemId)
+			: nullptr;
+		if (!item) {
+			return;
+		} else if (request.mode == Request::Mode::Edit) {
+			_inner->editMessageRequestNotify(itemId);
+		} else {
+			_composeControls->setEditableMessageNavigationText(
+				itemId,
+				PrepareEditText(item));
 		}
 	}, lifetime());
 
