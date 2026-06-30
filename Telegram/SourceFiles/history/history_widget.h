@@ -578,6 +578,14 @@ private:
 	void cancelReplyAfterMediaSend(bool lastKeyboardUsed);
 	bool replyToPreviousMessage();
 	bool replyToNextMessage();
+	bool editableMessageNavigationRequest(QKeyEvent *e);
+	HistoryItem *editableMessageByDirection(
+		FullMsgId currentId,
+		bool newer) const;
+	void setEditableMessageNavigationText(not_null<HistoryItem*> item);
+	[[nodiscard]] bool editableMessageTextNavigationAtBoundary(bool older) const;
+	[[nodiscard]] bool editableMessageTextNavigationActive() const;
+	void resetEditableMessageTextNavigation();
 	[[nodiscard]] bool showSlowmodeError();
 
 	void hideChildWidgets();
@@ -752,6 +760,8 @@ private:
 	HistoryItem *_processingReplyItem = nullptr;
 
 	MsgId _editMsgId = 0;
+	FullMsgId _editableMessageNavigationId;
+	QString _editableMessageNavigationText;
 	std::shared_ptr<Data::PhotoMedia> _photoEditMedia;
 	bool _canReplaceMedia = false;
 	bool _canAddMedia = false;

@@ -88,6 +88,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat.h"
 #include "data/data_forum.h"
 #include "data/data_forum_topic.h"
+#include "data/data_groups.h"
 #include "data/data_user.h"
 #include "data/data_chat_filters.h"
 #include "data/data_file_origin.h"
@@ -231,6 +232,11 @@ constexpr auto kCommonModifiers = 0
 	| Qt::ControlModifier;
 const auto kPsaAboutPrefix = "cloud_lng_about_psa_";
 constexpr auto kBotApiChannelPrefix = uint64(1000000000000);
+
+[[nodiscard]] bool IsEditNavigationModifiers(Qt::KeyboardModifiers modifiers) {
+	const auto mask = kCommonModifiers | Qt::AltModifier;
+	return (modifiers & mask) == (Qt::AltModifier | Qt::ShiftModifier);
+}
 
 [[nodiscard]] rpl::producer<PeerData*> ActivePeerValue(
 		not_null<Window::SessionController*> controller) {
@@ -5975,7 +5981,9 @@ void HistoryWidget::insertTextAtCursor(const QString &text) {
 bool HistoryWidget::eventFilter(QObject *obj, QEvent *e) {
 	if (e->type() == QEvent::KeyPress) {
 		const auto k = static_cast<QKeyEvent*>(e);
-		if ((k->modifiers() & kCommonModifiers) == Qt::ControlModifier) {
+		if (editableMessageNavigationRequest(k)) {
+			return true;
+		} else if ((k->modifiers() & kCommonModifiers) == Qt::ControlModifier) {
 			if (k->key() == Qt::Key_Up) {
 #ifdef Q_OS_MAC
 				// Cmd + Up is used instead of Home.
@@ -8220,6 +8228,8 @@ void HistoryWidget::keyPressEvent(QKeyEvent *e) {
 		}
 	} else if (e->key() == Qt::Key_Back) {
 		_cancelRequests.fire({});
+	} else if (editableMessageNavigationRequest(e)) {
+		return;
 	} else if (e->key() == Qt::Key_PageDown) {
 		_scroll->keyPressEvent(e);
 	} else if (e->key() == Qt::Key_PageUp) {
@@ -8391,6 +8401,115 @@ bool HistoryWidget::replyToNextMessage() {
 		}
 	}
 	return false;
+}
+
+bool HistoryWidget::editableMessageNavigationRequest(QKeyEvent *e) {
+	if (!_history) {
+		return false;
+	}
+	const auto key = e->key();
+	const auto isUp = (key == Qt::Key_Up);
+	const auto isDown = (key == Qt::Key_Down);
+	if (!isUp && !isDown) {
+		return false;
+	}
+	const auto modifiers = e->modifiers()
+		& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+	const auto fillText = (modifiers == Qt::NoModifier)
+		&& canWriteMessage()
+		&& !_editMsgId
+		&& !_replyTo
+		&& (_field->empty()
+			|| editableMessageTextNavigationAtBoundary(isUp));
+	const auto edit = IsEditNavigationModifiers(modifiers);
+	if (!fillText && !edit) {
+		return false;
+	}
+	auto requestedCurrentId = FullMsgId();
+	if (fillText) {
+		requestedCurrentId = _editableMessageNavigationId;
+	} else if (_editMsgId) {
+		requestedCurrentId = FullMsgId(_history->peer->id, _editMsgId);
+	}
+	const auto currentId = (requestedCurrentId.peer == _history->peer->id)
+		? requestedCurrentId
+		: FullMsgId();
+	const auto item = editableMessageByDirection(currentId, isDown);
+	if (!item) {
+		return true;
+	} else if (edit) {
+		editMessage(item, {});
+	} else {
+		setEditableMessageNavigationText(item);
+	}
+	return true;
+}
+
+HistoryItem *HistoryWidget::editableMessageByDirection(
+		FullMsgId currentId,
+		bool newer) const {
+	if (!_history) {
+		return nullptr;
+	}
+	const auto now = base::unixtime::now();
+	const auto editable = [&](not_null<HistoryItem*> item) {
+		const auto editItem = session().data().groups().findItemToEdit(item);
+		return (editItem->allowsEdit(now) && !editItem->isUploading())
+			? editItem.get()
+			: nullptr;
+	};
+	if (!currentId) {
+		const auto item = _history->lastEditableMessage();
+		return item ? editable(item) : nullptr;
+	}
+	const auto current = session().data().message(currentId);
+	const auto view = current ? current->mainView() : nullptr;
+	if (!view) {
+		const auto item = _history->lastEditableMessage();
+		return item ? editable(item) : nullptr;
+	}
+	auto next = newer
+		? view->nextDisplayedInBlocks()
+		: view->previousDisplayedInBlocks();
+	while (next) {
+		if (const auto item = editable(next->data())) {
+			return item;
+		}
+		next = newer
+			? next->nextDisplayedInBlocks()
+			: next->previousDisplayedInBlocks();
+	}
+	return editable(current);
+}
+
+void HistoryWidget::setEditableMessageNavigationText(
+		not_null<HistoryItem*> item) {
+	const auto text = PrepareEditText(item);
+	setFieldText(
+		text,
+		TextUpdateEvent::SaveDraft | TextUpdateEvent::SendTyping,
+		FieldHistoryAction::NewEntry);
+	_editableMessageNavigationId = item->fullId();
+	_editableMessageNavigationText = text.text;
+	setInnerFocus();
+}
+
+bool HistoryWidget::editableMessageTextNavigationAtBoundary(bool older) const {
+	if (!editableMessageTextNavigationActive()) {
+		return false;
+	}
+	const auto cursor = _field->textCursor();
+	return older ? cursor.atStart() : cursor.atEnd();
+}
+
+bool HistoryWidget::editableMessageTextNavigationActive() const {
+	return _editableMessageNavigationId
+		&& (_field->getLastText() == _editableMessageNavigationText);
+}
+
+void HistoryWidget::resetEditableMessageTextNavigation() {
+	_editableMessageNavigationId = {};
+	_editableMessageNavigationText.clear();
 }
 
 bool HistoryWidget::showSlowmodeError() {
@@ -9310,6 +9429,7 @@ void HistoryWidget::setFieldText(
 		const TextWithTags &textWithTags,
 		TextUpdateEvents events,
 		FieldHistoryAction fieldHistoryAction) {
+	resetEditableMessageTextNavigation();
 	_textUpdateEvents = events;
 	_field->setTextWithTags(textWithTags, fieldHistoryAction);
 	auto cursor = _field->textCursor();
