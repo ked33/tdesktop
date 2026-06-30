@@ -409,6 +409,9 @@ public:
 		FullMsgId item,
 		TextSelection selection = {}) const;
 	[[nodiscard]] bool lastMessageEditRequestNotify() const;
+	[[nodiscard]] FullMsgId editableMessageIdByDirection(
+		FullMsgId currentId,
+		bool newer) const;
 	[[nodiscard]] auto replyToMessageRequested() const
 		-> rpl::producer<ReplyToMessageRequest>;
 	void replyToMessageRequestNotify(

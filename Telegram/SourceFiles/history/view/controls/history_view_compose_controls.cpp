@@ -1768,9 +1768,9 @@ auto ComposeControls::scrollKeyEvents() const
 	return _scrollKeyEvents.events();
 }
 
-auto ComposeControls::editLastMessageRequests() const
--> rpl::producer<not_null<QKeyEvent*>> {
-	return _editLastMessageRequests.events();
+auto ComposeControls::editableMessageNavigationRequests() const
+-> rpl::producer<EditableMessageNavigationRequest> {
+	return _editableMessageNavigationRequests.events();
 }
 
 auto ComposeControls::replyNextRequests() const
@@ -1996,6 +1996,7 @@ TextWithTags ComposeControls::getTextWithAppliedMarkdown() const {
 }
 
 void ComposeControls::clear() {
+	resetEditableMessageTextNavigation();
 	// Otherwise cancelReplyMessage() will save the draft.
 	const auto saveTextDraft = !replyingToMessage();
 	setFieldText(
@@ -2009,7 +2010,20 @@ void ComposeControls::clear() {
 }
 
 void ComposeControls::setText(const TextWithTags &textWithTags) {
+	resetEditableMessageTextNavigation();
 	setFieldText(textWithTags);
+}
+
+void ComposeControls::setEditableMessageNavigationText(
+		FullMsgId id,
+		const TextWithTags &text) {
+	setFieldText(
+		text,
+		TextUpdateEvent::SaveDraft | TextUpdateEvent::SendTyping,
+		FieldHistoryAction::NewEntry);
+	_editableMessageNavigationId = id;
+	_editableMessageNavigationText = text.text;
+	focus();
 }
 
 void ComposeControls::setFieldText(
@@ -2054,6 +2068,7 @@ void ComposeControls::saveFieldToHistoryLocalDraft() {
 void ComposeControls::clearFieldText(
 		TextUpdateEvents events,
 		FieldHistoryAction fieldHistoryAction) {
+	resetEditableMessageTextNavigation();
 	setFieldText({}, events, fieldHistoryAction);
 }
 
@@ -2333,6 +2348,36 @@ int ComposeControls::chosenStarsForMessage() const {
 }
 
 void ComposeControls::initKeyHandler() {
+	const auto requestEditableNavigation = [=](QKeyEvent *keyEvent) {
+		const auto key = keyEvent->key();
+		const auto isUp = (key == Qt::Key_Up);
+		const auto isDown = (key == Qt::Key_Down);
+		if (!isUp && !isDown) {
+			return false;
+		}
+		const auto modifiers = keyEvent->modifiers()
+			& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+		const auto fillText = (modifiers == Qt::NoModifier)
+			&& !isEditingMessage()
+			&& (_field->empty() || editableMessageTextNavigationActive());
+		const auto edit = (modifiers == Qt::AltModifier);
+		if (!fillText && !edit) {
+			return false;
+		}
+		_editableMessageNavigationRequests.fire({
+			.mode = fillText
+				? EditableMessageNavigationRequest::Mode::FillText
+				: EditableMessageNavigationRequest::Mode::Edit,
+			.direction = isDown
+				? EditableMessageNavigationRequest::Direction::Newer
+				: EditableMessageNavigationRequest::Direction::Older,
+			.currentId = fillText
+				? _editableMessageNavigationId
+				: _header->editMsgId(),
+		});
+		return true;
+	};
+
 	_wrap->events(
 	) | rpl::filter([=](not_null<QEvent*> event) {
 		return (event->type() == QEvent::KeyPress);
@@ -2347,11 +2392,8 @@ void ComposeControls::initKeyHandler() {
 			_attachRequests.fire({});
 			return;
 		}
-		if (key == Qt::Key_Up && !hasModifiers) {
-			if (!isEditingMessage() && _field->empty()) {
-				_editLastMessageRequests.fire(std::move(keyEvent));
-				return;
-			}
+		if (requestEditableNavigation(keyEvent)) {
+			return;
 		}
 		if (!hasModifiers
 			&& ((key == Qt::Key_Up)
@@ -2369,7 +2411,9 @@ void ComposeControls::initKeyHandler() {
 		}
 		const auto k = static_cast<QKeyEvent*>(e.get());
 
-		if ((k->modifiers() & kCommonModifiers) == Qt::ControlModifier) {
+		if (requestEditableNavigation(k)) {
+			return Result::Cancel;
+		} else if ((k->modifiers() & kCommonModifiers) == Qt::ControlModifier) {
 			const auto isUp = (k->key() == Qt::Key_Up);
 			const auto isDown = (k->key() == Qt::Key_Down);
 			if (isUp || isDown) {
@@ -2394,6 +2438,16 @@ void ComposeControls::initKeyHandler() {
 		}
 		return Result::Continue;
 	});
+}
+
+bool ComposeControls::editableMessageTextNavigationActive() const {
+	return _editableMessageNavigationId
+		&& (_field->getLastText() == _editableMessageNavigationText);
+}
+
+void ComposeControls::resetEditableMessageTextNavigation() {
+	_editableMessageNavigationId = {};
+	_editableMessageNavigationText.clear();
 }
 
 void ComposeControls::initField() {
@@ -2735,6 +2789,7 @@ void ComposeControls::applyCloudDraft() {
 void ComposeControls::applyDraft(FieldHistoryAction fieldHistoryAction) {
 	Expects(_history != nullptr);
 
+	resetEditableMessageTextNavigation();
 	const auto editDraft = _history->draft(draftKey(DraftType::Edit));
 	const auto draft = editDraft
 		? editDraft
@@ -4136,6 +4191,7 @@ void ComposeControls::editMessage(not_null<HistoryItem*> item) {
 	Expects(_history != nullptr);
 	Expects(draftKeyCurrent() != Data::DraftKey::None());
 
+	resetEditableMessageTextNavigation();
 	if (item->richPage()) {
 #ifdef TDESKTOP_IV_EDITOR
 		if (_regularWindow) {
