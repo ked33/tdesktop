@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/premium_limits_box.h"
 #include "boxes/premium_preview_box.h"
 #include "boxes/send_files_box.h"
+#include "chat_helpers/message_field.h"
 #include "chat_helpers/tabbed_selector.h"
 #include "core/file_utilities.h"
 #include "core/mime_type.h"
