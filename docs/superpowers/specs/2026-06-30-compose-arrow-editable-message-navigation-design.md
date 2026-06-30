@@ -19,10 +19,11 @@ written into the compose field without entering edit mode. At either end of
 the editable-message list the selection stays where it is; the key is consumed
 and the chat list is not scrolled.
 
-Alt+Up/Down uses the same editable-message ordering, but opens the selected
-message in edit mode and keeps edit mode active while moving through older or
-newer candidates. At the ends it also stays on the current candidate and does
-not scroll the chat.
+Alt+Shift+Up/Down uses the same editable-message ordering, but opens the
+selected message in edit mode and keeps edit mode active while moving through
+older or newer candidates. At the ends it also stays on the current candidate
+and does not scroll the chat. Alt+Up/Down is intentionally not used because it
+conflicts more often with platform, menu, and input-method navigation.
 
 Ctrl+Up/Down keeps the existing reply-target navigation behavior.
 
@@ -39,6 +40,13 @@ The implementation stays on the existing compose input path:
   `ListWidget`, then either write `PrepareEditText(item)` into
   `ComposeControls` or route edit-mode navigation through the existing
   `ListWidget::editMessageRequestNotify()` path.
+- The legacy main-chat `HistoryWidget` key path mirrors the same behavior
+  directly, because it still has its own empty-field Up handling that otherwise
+  enters edit mode through `HistoryWidget::editMessage()`.
+- PR #248's `Alt+Shift+Up/Down` shortcut choice is adopted because it avoids
+  the `Alt+Up/Down` conflict, but the implementation remains integrated with
+  the existing `ComposeControls` request flow and only mirrors the behavior in
+  `HistoryWidget` for the legacy path.
 
 The feature avoids global shortcuts and does not alter message-list keyboard
 handling outside compose input requests.
