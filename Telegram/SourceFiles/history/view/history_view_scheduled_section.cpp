@@ -39,6 +39,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/call_delayed.h"
 #include "base/qt/qt_key_modifiers.h"
 #include "core/mime_type.h"
+#include "chat_helpers/message_field.h"
 #include "chat_helpers/tabbed_selector.h"
 #include "main/main_session.h"
 #include "mainwindow.h"
@@ -456,10 +457,24 @@ void ScheduledWidget::setupComposeControls() {
 		_scroll->keyPressEvent(e);
 	}, lifetime());
 
-	_composeControls->editLastMessageRequests(
-	) | rpl::on_next([=](not_null<QKeyEvent*> e) {
-		if (!_inner->lastMessageEditRequestNotify()) {
-			_scroll->keyPressEvent(e);
+	_composeControls->editableMessageNavigationRequests(
+	) | rpl::on_next([=](
+			ComposeControls::EditableMessageNavigationRequest request) {
+		using Request = ComposeControls::EditableMessageNavigationRequest;
+		const auto itemId = _inner->editableMessageIdByDirection(
+			request.currentId,
+			request.direction == Request::Direction::Newer);
+		const auto item = itemId
+			? session().data().message(itemId)
+			: nullptr;
+		if (!item) {
+			return;
+		} else if (request.mode == Request::Mode::Edit) {
+			_inner->editMessageRequestNotify(itemId);
+		} else {
+			_composeControls->setEditableMessageNavigationText(
+				itemId,
+				PrepareEditText(item));
 		}
 	}, lifetime());
 

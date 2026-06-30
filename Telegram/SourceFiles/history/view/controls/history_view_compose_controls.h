@@ -151,6 +151,21 @@ public:
 	using ToggleCommentsState = Controls::ToggleCommentsState;
 	using SendStarButtonEffect = Controls::SendStarButtonEffect;
 
+	struct EditableMessageNavigationRequest {
+		enum class Mode {
+			FillText,
+			Edit,
+		};
+		enum class Direction {
+			Older,
+			Newer,
+		};
+
+		Mode mode = Mode::FillText;
+		Direction direction = Direction::Older;
+		FullMsgId currentId;
+	};
+
 	ComposeControls(
 		not_null<Ui::RpWidget*> parent,
 		ComposeControlsDescriptor descriptor);
@@ -212,8 +227,8 @@ public:
 	[[nodiscard]] rpl::producer<> likeToggled() const;
 	[[nodiscard]] auto scrollKeyEvents() const
 	-> rpl::producer<not_null<QKeyEvent*>>;
-	[[nodiscard]] auto editLastMessageRequests() const
-	-> rpl::producer<not_null<QKeyEvent*>>;
+	[[nodiscard]] auto editableMessageNavigationRequests() const
+	-> rpl::producer<EditableMessageNavigationRequest>;
 	[[nodiscard]] auto replyNextRequests() const
 	-> rpl::producer<ReplyNextRequest>;
 	[[nodiscard]] rpl::producer<> focusRequests() const;
@@ -261,6 +276,9 @@ public:
 	[[nodiscard]] TextWithTags getTextWithAppliedMarkdown() const;
 	[[nodiscard]] Data::WebPageDraft webPageDraft() const;
 	void setText(const TextWithTags &text);
+	void setEditableMessageNavigationText(
+		FullMsgId id,
+		const TextWithTags &text);
 	void clear();
 	void hidePanelsAnimated();
 	void clearListenState();
@@ -322,6 +340,8 @@ private:
 	void initWriteRestriction();
 	void initVoiceRecordBar();
 	void initKeyHandler();
+	[[nodiscard]] bool editableMessageTextNavigationActive() const;
+	void resetEditableMessageTextNavigation();
 	void initLikeButton();
 	void initEditStarsButton();
 	void initAiButton();
@@ -511,7 +531,8 @@ private:
 	rpl::event_stream<SendActionUpdate> _sendActionUpdates;
 	rpl::event_stream<QString> _sendCommandRequests;
 	rpl::event_stream<not_null<QKeyEvent*>> _scrollKeyEvents;
-	rpl::event_stream<not_null<QKeyEvent*>> _editLastMessageRequests;
+	rpl::event_stream<EditableMessageNavigationRequest>
+		_editableMessageNavigationRequests;
 	rpl::event_stream<std::optional<bool>> _attachRequests;
 	Fn<void(std::shared_ptr<Ui::PreparedBundle>, Api::SendOptions)> _sendAsFileConfirmed;
 	rpl::event_stream<> _likeToggled;
@@ -544,6 +565,8 @@ private:
 	Webrtc::RecordAvailability _recordAvailability = {};
 
 	FullMsgId _editingId;
+	FullMsgId _editableMessageNavigationId;
+	QString _editableMessageNavigationText;
 	std::shared_ptr<Data::PhotoMedia> _photoEditMedia;
 	bool _canReplaceMedia = false;
 	bool _canAddMedia = false;
