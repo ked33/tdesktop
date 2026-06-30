@@ -95,6 +95,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtWidgets/QApplication>
 #include <QtCore/QMimeData>
 
+#include <vector>
+
 namespace HistoryView {
 namespace {
 
@@ -5085,21 +5087,43 @@ void ListWidget::editMessageRequestNotify(
 }
 
 bool ListWidget::lastMessageEditRequestNotify() const {
-	const auto now = base::unixtime::now();
-	auto proj = [&](not_null<Element*> view) {
-		return view->data()->allowsEdit(now)
-			&& !view->data()->isUploading();
-	};
-	const auto &list = ranges::views::reverse(_items);
-	const auto it = ranges::find_if(list, std::move(proj));
-	if (it == end(list)) {
-		return false;
-	} else {
-		const auto item
-			= session().data().groups().findItemToEdit((*it)->data()).get();
-		editMessageRequestNotify(item->fullId());
+	if (const auto itemId = editableMessageIdByDirection({}, false)) {
+		editMessageRequestNotify(itemId);
 		return true;
 	}
+	return false;
+}
+
+FullMsgId ListWidget::editableMessageIdByDirection(
+		FullMsgId currentId,
+		bool newer) const {
+	const auto now = base::unixtime::now();
+	auto ids = std::vector<FullMsgId>();
+	for (const auto &view : ranges::views::reverse(_items)) {
+		const auto item = view->data();
+		if (!item->allowsEdit(now) || item->isUploading()) {
+			continue;
+		}
+		const auto editItem = session().data().groups().findItemToEdit(item);
+		const auto id = editItem->fullId();
+		if (ids.empty() || ids.back() != id) {
+			ids.push_back(id);
+		}
+	}
+	if (ids.empty()) {
+		return {};
+	} else if (!currentId) {
+		return ids.front();
+	}
+	const auto i = ranges::find(ids, currentId);
+	if (i == end(ids)) {
+		return ids.front();
+	}
+	const auto index = int(i - begin(ids));
+	const auto next = newer
+		? std::max(index - 1, 0)
+		: std::min(index + 1, int(ids.size()) - 1);
+	return ids[next];
 }
 
 auto ListWidget::replyToMessageRequested() const
