@@ -2357,9 +2357,16 @@ void ComposeControls::initKeyHandler() {
 		}
 		const auto modifiers = keyEvent->modifiers()
 			& ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
+		const auto editableNavigationAtTextBoundary = [=] {
+			if (!editableMessageTextNavigationActive()) {
+				return false;
+			}
+			const auto cursor = _field->textCursor();
+			return isUp ? cursor.atStart() : cursor.atEnd();
+		};
 		const auto fillText = (modifiers == Qt::NoModifier)
 			&& !isEditingMessage()
-			&& (_field->empty() || editableMessageTextNavigationActive());
+			&& (_field->empty() || editableNavigationAtTextBoundary());
 		const auto edit = (modifiers == Qt::AltModifier);
 		if (!fillText && !edit) {
 			return false;
