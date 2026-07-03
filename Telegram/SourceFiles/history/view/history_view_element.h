@@ -130,6 +130,9 @@ public:
 	virtual void elementShowTooltip(
 		const TextWithEntities &text,
 		Fn<void()> hiddenCallback) = 0;
+	virtual void elementShowHiddenSenderTooltip(
+		FullMsgId itemId,
+		const TextWithEntities &text) = 0;
 	virtual bool elementAnimationsPaused() = 0;
 	virtual bool elementHideReply(not_null<const Element*> view) = 0;
 	virtual bool elementShownUnread(not_null<const Element*> view) = 0;
@@ -195,6 +198,9 @@ public:
 	void elementShowTooltip(
 		const TextWithEntities &text,
 		Fn<void()> hiddenCallback) override;
+	void elementShowHiddenSenderTooltip(
+		FullMsgId itemId,
+		const TextWithEntities &text) override;
 	bool elementHideReply(not_null<const Element*> view) override;
 	bool elementShownUnread(not_null<const Element*> view) override;
 	void elementSendBotCommand(
@@ -766,6 +772,7 @@ protected:
 	[[nodiscard]] int textHeightFor(int textWidth) const;
 	[[nodiscard]] int textRealWidth() const { return _textRealWidth; }
 	void validateText();
+	void invalidateTextSizeCache();
 	void validateTextSkipBlock(bool has, int width, int height);
 	void validateInlineKeyboard(HistoryMessageReplyMarkup *markup);
 
@@ -804,7 +811,6 @@ private:
 	}
 
 	void refreshMedia(Element *replacing);
-	void invalidateTextSizeCache();
 	void setTextWithLinks(
 		const TextWithEntities &text,
 		const std::vector<ClickHandlerPtr> &links = {});

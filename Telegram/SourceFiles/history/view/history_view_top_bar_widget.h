@@ -153,6 +153,9 @@ private:
 	void refreshInfoButton();
 	void refreshLang();
 	void updateSearchVisibility();
+	void updateSearchJumpToDateVisibility();
+	[[nodiscard]] bool searchJumpToDateFits() const;
+	void updateChooseFromUserGeometry();
 	void updateControlsGeometry();
 	void slideAnimationCallback();
 	void updateInfoToggleActive();
@@ -184,6 +187,7 @@ private:
 	void connectingAnimationCallback();
 
 	void paintTopBar(Painter &p);
+	[[nodiscard]] PeerData *titleNamePeer() const;
 	void paintStatus(
 		Painter &p,
 		int left,

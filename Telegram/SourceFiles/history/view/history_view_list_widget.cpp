@@ -488,6 +488,12 @@ ListWidget::ListWidget(
 	setAttribute(Qt::WA_AcceptTouchEvents);
 	setMouseTracking(true);
 	setAccessibleName(tr::lng_sr_message_list(tr::now));
+	if (const auto scroll = _delegate->listScrollArea()) {
+		scroll->lockWheelDirection();
+		scroll->setCrossAxisWheelProcess([=](QPoint delta) {
+			return consumeScrollAction(delta);
+		});
+	}
 	if (_readMetricsTracker) {
 		Core::App().inAppKeyPressed(
 		) | rpl::on_next([=] {
@@ -1930,7 +1936,6 @@ Element *ListWidget::lookupItemByY(int y) const {
 not_null<HistoryItem*> ListWidget::lookupItemByPoint(
 		QPoint point,
 		not_null<Element*> view) const {
-	point -= QPoint(SelectionViewOffset(this, view), 0);
 	return LookupItemByPoint(view, mapPointToItem(point, view));
 }
 
@@ -1940,6 +1945,19 @@ bool ListWidget::canConsumeHorizontalScroll(QPoint position, int delta) const {
 		&& view->canConsumeHorizontalScroll(
 			mapPointToItem(position, view),
 			delta);
+}
+
+bool ListWidget::consumeScrollAction(QPoint delta) {
+	const auto horizontal = (std::abs(delta.x()) > std::abs(delta.y()));
+	if (!horizontal) {
+		return false;
+	}
+	const auto position = mapFromGlobal(_mousePosition);
+	const auto view = lookupItemByY(position.y());
+	return view
+		&& view->consumeHorizontalScroll(
+			mapPointToItem(position, view),
+			delta.x());
 }
 
 auto ListWidget::findViewForPinnedTracking(int top) const
@@ -2211,6 +2229,27 @@ void ListWidget::elementShowTooltip(
 		Fn<void()> hiddenCallback) {
 	// Under the parent is supposed to be a scroll widget.
 	_topToast.show(parentWidget(), &session(), text, hiddenCallback);
+}
+
+void ListWidget::elementShowHiddenSenderTooltip(
+		FullMsgId itemId,
+		const TextWithEntities &text) {
+	const auto scroll = _delegate->listScrollArea();
+	if (!scroll) {
+		return;
+	}
+	auto area = QRect();
+	if (const auto view = viewForItem(itemId)) {
+		if (const auto tooltip = view->Get<HiddenSenderTooltip>()) {
+			const auto local = tooltip->linkRect;
+			if (!local.isEmpty()) {
+				area = QRect(
+					mapToGlobal(QPoint(local.x(), itemTop(view) + local.y())),
+					local.size());
+			}
+		}
+	}
+	_hiddenSenderTooltip.show(scroll, area, text);
 }
 
 bool ListWidget::elementAnimationsPaused() {
@@ -2972,37 +3011,22 @@ TextForMimeData ListWidget::getSelectedText() const {
 		return _selectedText;
 	}
 
-	struct Part {
-		QString name;
-		QString time;
-		TextForMimeData unwrapped;
+	const auto richContext = (selected.size() > 1);
+	struct CopyEntry {
+		not_null<HistoryItem*> item;
+		const Data::Group *group = nullptr;
 	};
-
 	auto groups = base::flat_set<not_null<const Data::Group*>>();
-	auto fullSize = 0;
-	auto texts = base::flat_map<Data::MessagePosition, Part>();
+	auto entries = std::vector<CopyEntry>();
+	entries.reserve(selected.size());
 
-	const auto wrapItem = [&](
-			not_null<HistoryItem*> item,
-			TextForMimeData &&unwrapped) {
-		const auto i = texts.emplace(item->position(), Part{
-			.name = item->author()->name(),
-			.time = QString("[%1] ").arg(
-				QLocale().toString(ItemDateTime(item), GetEnhancedBool("show_seconds") ? QLocale::system().timeFormat(QLocale::LongFormat).remove("t") : QLocale::system().timeFormat(QLocale::ShortFormat))),
-			.unwrapped = std::move(unwrapped),
-		}).first;
-		fullSize += i->second.time.size()
-			+ i->second.name.size()
-			+ 2
-			+ i->second.unwrapped.expanded.size();
-	};
 	const auto addItem = [&](not_null<HistoryItem*> item) {
-		wrapItem(item, HistoryItemText(item));
+		entries.push_back({ item, nullptr });
 	};
 	const auto addGroup = [&](not_null<const Data::Group*> group) {
 		Expects(!group->items.empty());
 
-		wrapItem(group->items.back(), HistoryGroupText(group));
+		entries.push_back({ group->items.back(), group.get() });
 	};
 
 	for (const auto &[itemId, data] : selected) {
@@ -3022,15 +3046,29 @@ TextForMimeData ListWidget::getSelectedText() const {
 			}
 		}
 	}
-	if (texts.size() == 1) {
-		return texts.front().second.unwrapped;
-	}
+	ranges::sort(entries, [&](const CopyEntry &a, const CopyEntry &b) {
+		return _delegate->listIsLessInOrder(a.item, b.item);
+	});
+
 	auto result = TextForMimeData();
-	const auto sep = u"\n"_q;
-	result.reserve(fullSize + (texts.size() - 1) * sep.size());
-	for (auto i = begin(texts), e = end(texts); i != e;) {
-		result.append(i->second.time).append(i->second.name).append(u": "_q);
-		result.append(std::move(i->second.unwrapped));
+	auto sep = u"\n"_q;
+	for (auto i = begin(entries), e = end(entries); i != e;) {
+		auto body = TextForMimeData();
+		if (i->group) {
+			const auto group = not_null<const Data::Group*>{ i->group };
+			body = richContext
+				? HistoryGroupTextForSelectedCopy(group)
+				: HistoryGroupText(group);
+		} else {
+			body = richContext
+				? HistoryItemTextForSelectedCopy(i->item)
+				: HistoryItemText(i->item);
+		}
+		auto part = HistorySelectedItemWrappedText(
+			i->item,
+			std::move(body),
+			richContext);
+		result.append(std::move(part));
 		if (++i != e) {
 			result.append(sep);
 		}
@@ -3282,6 +3320,23 @@ void ListWidget::keyPressEvent(QKeyEvent *e) {
 #endif // Q_OS_MAC
 	} else if (e == QKeySequence::Delete || key == Qt::Key_Backspace) {
 		_delegate->listDeleteRequest();
+	} else if (KeyboardTextSelection::IsExtendKey(key)
+		&& (e->modifiers() & Qt::ShiftModifier)
+		&& hasSelectedText()) {
+		const auto view = viewForItem(_selectedTextItem);
+		const auto next = view
+			? _keyboardTextSelection.extend(
+				view,
+				_selectedTextSelection,
+				key,
+				e->modifiers())
+			: std::optional<MessageSelection>();
+		if (next) {
+			setTextSelection(view, *next);
+			e->accept();
+		} else {
+			e->ignore();
+		}
 	} else if (!hasModifiers
 		&& ((key == Qt::Key_Up)
 			|| (key == Qt::Key_Down)
@@ -4411,9 +4466,6 @@ void ListWidget::mouseActionUpdate() {
 		? replyBtnView
 		: strictFindItemByY(point.y());
 	const auto item = view ? view->data().get() : nullptr;
-	if (view) {
-		point -= QPoint(SelectionViewOffset(this, view), 0);
-	}
 	const auto itemPoint = mapPointToItem(point, view);
 	_overState = MouseState(
 		item ? item->fullId() : FullMsgId(),
@@ -5072,7 +5124,8 @@ QPoint ListWidget::mapPointToItem(
 	if (!view) {
 		return QPoint();
 	}
-	return point - QPoint(0, itemTop(view));
+	return point
+		- QPoint(SelectionViewOffset(this, view), itemTop(view));
 }
 
 rpl::producer<ListWidget::EditMessageRequest>
