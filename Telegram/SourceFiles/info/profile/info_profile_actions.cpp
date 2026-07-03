@@ -103,14 +103,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 #include "styles/style_boxes.h"
 #include "styles/style_channel_earn.h" // st::channelEarnCurrencyCommonMargins
+#include "styles/style_chat_helpers.h"
 #include "styles/style_info.h"
 #include "styles/style_layers.h"
 #include "styles/style_menu_icons.h"
 #include "styles/style_settings.h" // settingsButtonRightSkip.
 #include "styles/style_window.h" // mainMenuToggleFourStrokes.
-
-#include <QtGui/QGuiApplication>
-#include <QtGui/QClipboard>
 
 namespace Info {
 namespace Profile {
@@ -209,17 +207,31 @@ base::options::toggle ShowChannelJoinedBelowAbout({
 					.sessionWindow = weak,
 				}));
 			return;
-		} else if (peer->isForum()) {
-			QGuiApplication::clipboard()->setText(link);
-			Ui::Toast::Show(tr::lng_username_copied(tr::now));
+		}
+		auto text = QString();
+		if (peer->isForum()) {
+			text = link;
 		} else if (!link.isEmpty()) {
+			if (!link.startsWith(u"https://"_q)) {
+				link = peer->session().createInternalLinkFull(peer->username())
+					+ addToLink;
+			}
 			const auto last = link.lastIndexOf('/');
-			const auto mention = '@' + link.mid(last + 1);
-			QGuiApplication::clipboard()->setText(mention);
-			Ui::Toast::Show(tr::lng_username_copied(tr::now));
+			text = '@' + link.mid(last + 1);
 		} else {
-			QGuiApplication::clipboard()->setText("@"+peer->username());
-			Ui::Toast::Show(tr::lng_username_copied(tr::now));
+			text = '@' + peer->username();
+		}
+		if (!text.isEmpty()) {
+			TextUtilities::SetClipboardText({ text });
+			if (const auto strong = weak.get()) {
+				strong->showToast({
+					.text = {
+						tr::lng_channel_public_link_copied(tr::now),
+					},
+					.iconLottie = u"toast/voip_invite"_q,
+					.iconLottieSize = st::toastLottieIconSize,
+				});
+			}
 		}
 	};
 }
@@ -1595,8 +1607,13 @@ Section DetailsFiller::makeInfo() {
 				[=] {
 					TextUtilities::SetClipboardText({ url });
 					if (const auto strong = weak.get()) {
-						strong->showToast(
-							tr::lng_channel_public_link_copied(tr::now));
+						strong->showToast({
+							.text = {
+								tr::lng_channel_public_link_copied(tr::now),
+							},
+							.iconLottie = u"toast/voip_invite"_q,
+							.iconLottieSize = st::toastLottieIconSize,
+						});
 					}
 				});
 			request.menu->addAction(
