@@ -128,7 +128,7 @@ namespace {
 		return tr::lng_settings_experimental_fast_buttons_mode(tr::now);
 	} else if (id == Window::kOptionDisableTouchbar) {
 		return tr::lng_settings_experimental_disable_touchbar(tr::now);
-	} else if (id == Info::kAlternativeScrollProcessing) {
+	} else if (id == Info::kClassicProfileScroll) {
 		return tr::lng_settings_experimental_alternative_scroll_processing(
 			tr::now);
 	} else if (id == kModerateCommonGroups) {
