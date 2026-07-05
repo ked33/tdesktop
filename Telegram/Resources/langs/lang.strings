@@ -5233,6 +5233,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_quick_copy_targets_disabled" = "Disabled";
 "lng_quick_copy_targets_none" = "No valid quick-copy targets. Open the target chats once and check Enhanced Settings.";
 "lng_quick_copy_targets_skipped" = "Some quick-copy targets were skipped.";
+"lng_quick_copy_done_deleted" = "无引用转发完成，已删除：{count} 条";
 "lng_context_details" = "Details";
 "lng_context_details_views" = "Views";
 "lng_context_details_shares" = "Shares";

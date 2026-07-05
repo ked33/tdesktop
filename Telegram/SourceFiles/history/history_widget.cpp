@@ -10733,7 +10733,7 @@ void HistoryWidget::quickCopySelected() {
 		return;
 	}
 
-	auto sent = 0;
+	auto sendTargets = std::vector<not_null<Data::Thread*>>();
 	for (const auto &thread : targets) {
 		const auto error = GetErrorForSending(
 			thread,
@@ -10743,6 +10743,34 @@ void HistoryWidget::quickCopySelected() {
 			++skipped;
 			continue;
 		}
+		sendTargets.push_back(thread);
+	}
+	if (sendTargets.empty()) {
+		Ui::Toast::Show(tr::lng_quick_copy_targets_none(tr::now));
+		return;
+	}
+
+	struct QuickCopyState {
+		int requestsLeft = 0;
+		MessageIdsList deleteIds;
+	};
+	const auto state = std::make_shared<QuickCopyState>();
+	state->requestsLeft = int(sendTargets.size());
+
+	if (!skipped
+		&& ranges::none_of(resolved.items, [](not_null<HistoryItem*> item) {
+			return item->isSavedMusicItem();
+		})) {
+		state->deleteIds.reserve(resolved.items.size());
+		for (const auto &item : resolved.items) {
+			if (item->canDelete()) {
+				state->deleteIds.push_back(item->fullId());
+			}
+		}
+	}
+
+	const auto weak = base::make_weak(this);
+	for (const auto &thread : sendTargets) {
 		auto action = Api::SendAction(thread);
 		action.clearDraft = false;
 		action.generateLocal = false;
@@ -10750,17 +10778,34 @@ void HistoryWidget::quickCopySelected() {
 			.items = resolved.items,
 			.options = resolved.options,
 		};
-		session().api().forwardMessages(std::move(copy), action);
-		++sent;
+		session().api().forwardMessages(std::move(copy), action, [=] {
+			if (--state->requestsLeft) {
+				return;
+			}
+			if (const auto strong = weak.get()) {
+				const auto deleted = int(state->deleteIds.size());
+				if (deleted) {
+					strong->session().data().histories().deleteMessages(
+						state->deleteIds,
+						true);
+					strong->session().data().sendHistoryChangeNotifications();
+				}
+				const auto text = [&] {
+					if (deleted) {
+						return tr::lng_quick_copy_done_deleted(
+							tr::now,
+							lt_count,
+							deleted);
+					} else if (skipped) {
+						return tr::lng_quick_copy_targets_skipped(tr::now);
+					}
+					return tr::lng_share_done(tr::now);
+				}();
+				Ui::Toast::Show(text);
+				strong->clearSelected();
+			}
+		});
 	}
-	if (!sent) {
-		Ui::Toast::Show(tr::lng_quick_copy_targets_none(tr::now));
-		return;
-	}
-	Ui::Toast::Show(skipped
-		? tr::lng_quick_copy_targets_skipped(tr::now)
-		: tr::lng_share_done(tr::now));
-	clearSelected();
 }
 
 void HistoryWidget::confirmDeleteSelected() {
