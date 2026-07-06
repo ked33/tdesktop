@@ -10794,8 +10794,8 @@ void HistoryWidget::quickCopySelected() {
 					if (deleted) {
 						return tr::lng_quick_copy_done_deleted(
 							tr::now,
-							lt_count,
-							deleted);
+							lt_total,
+							QString::number(deleted));
 					} else if (skipped) {
 						return tr::lng_quick_copy_targets_skipped(tr::now);
 					}
