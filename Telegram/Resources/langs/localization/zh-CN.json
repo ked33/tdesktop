@@ -257,7 +257,7 @@
     "lng_settings_quick_copy_targets_disabled": "已禁用",
     "lng_quick_copy_targets_none": "没有可用的一键复制目标。请先打开目标对话一次，并检查 Enhanced Settings。",
     "lng_quick_copy_targets_skipped": "部分一键复制目标已跳过。",
-    "lng_quick_copy_done_deleted": "无引用转发完成，已删除：{count} 条",
+    "lng_quick_copy_done_deleted": "无引用转发完成，已删除：{total} 条",
     "lng_selected_quick_copy_to": "一键复制",
     "lng_settings_chat_switch_shortcut_title": "常驻最近对话面板快捷键",
     "lng_settings_chat_switch_shortcut_placeholder": "例如 Ctrl+Alt+P，留空则禁用",
