@@ -74,6 +74,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/delete_messages_box.h"
 #include "boxes/moderate_messages_box.h"
 #include "boxes/report_messages_box.h"
+#include "data/components/ephemeral_messages.h"
+#include "styles/style_layers.h"
 #include "boxes/sticker_set_box.h"
 #include "boxes/stickers_box.h"
 #include "boxes/translate_box.h"
@@ -1481,7 +1483,8 @@ bool AddReplyToMessageAction(
 	const auto topic = item ? item->topic() : nullptr;
 	const auto peer = item ? item->history()->peer.get() : nullptr;
 	if (!item
-		|| !item->isRegular()
+		|| (!item->isRegular()
+			&& (!item->isEphemeral() || item->out()))
 		|| (context != Context::History
 			&& context != Context::Replies
 			&& context != Context::Monoforum)) {
@@ -1979,44 +1982,50 @@ void AddTopMessageActions(
 	AddPinMessageAction(menu, request, list);
 }
 
-	void AddMessageActions(
-			not_null<Ui::PopupMenu*> menu,
-			const ContextMenuRequest &request,
-			not_null<ListWidget*> list) {
-		const auto before = menu->actions().size();
-		AddPostLinkAction(menu, request);
-		const auto item = request.item;
-		const auto viewMedia = request.view ? request.view->media() : nullptr;
-		const auto viewDocument = viewMedia ? viewMedia->getDocument() : nullptr;
-		const auto linkDocument = request.link
-			? reinterpret_cast<DocumentData*>(
-				request.link->property(kDocumentLinkMediaProperty).toULongLong())
-			: nullptr;
-		const auto document = linkDocument
-			? linkDocument
-			: viewDocument
-			? viewDocument
-			: (item && item->media())
-			? item->media()->document()
-			: nullptr;
-		AddVideoPlaybackActions(
+void AddMessageActions(
+		not_null<Ui::PopupMenu*> menu,
+		const ContextMenuRequest &request,
+		not_null<ListWidget*> list) {
+	const auto before = menu->actions().size();
+	AddPostLinkAction(menu, request);
+	const auto item = request.item;
+	const auto viewMedia = request.view ? request.view->media() : nullptr;
+	const auto viewDocument = viewMedia ? viewMedia->getDocument() : nullptr;
+	const auto linkDocument = request.link
+		? reinterpret_cast<DocumentData*>(
+			request.link->property(kDocumentLinkMediaProperty).toULongLong())
+		: nullptr;
+	const auto document = linkDocument
+		? linkDocument
+		: viewDocument
+		? viewDocument
+		: (item && item->media())
+		? item->media()->document()
+		: nullptr;
+	AddVideoPlaybackActions(
+		menu,
+		item,
+		document,
+		list->controller(),
+		(menu->actions().size() > before),
+		request.showSpecialMpv);
+	AddMsgsFromUserAction(menu, request, list);
+	AddForwardAction(menu, request, list);
+	AddRepeaterAction(menu, request, list);
+	AddSendNowAction(menu, request, list);
+	AddDeleteAction(menu, request, list);
+	AddDownloadFilesAction(menu, request, list);
+	AddReportAction(menu, request, list);
+	if (request.item && request.selectedItems.empty()) {
+		AddEphemeralMessageActions(
 			menu,
-			item,
-			document,
-			list->controller(),
-			(menu->actions().size() > before),
-			request.showSpecialMpv);
-		AddMsgsFromUserAction(menu, request, list);
-		AddForwardAction(menu, request, list);
-		AddRepeaterAction(menu, request, list);
-		AddSendNowAction(menu, request, list);
-		AddDeleteAction(menu, request, list);
-		AddDownloadFilesAction(menu, request, list);
-		AddReportAction(menu, request, list);
-		AddSelectionAction(menu, request, list);
-		AddRescheduleAction(menu, request, list);
-		AddViewJSONAction(menu, request, list);
+			list->controller()->uiShow(),
+			request.item);
 	}
+	AddSelectionAction(menu, request, list);
+	AddRescheduleAction(menu, request, list);
+	AddViewJSONAction(menu, request, list);
+}
 
 void AddCopyLinkAction(
 		not_null<Ui::PopupMenu*> menu,
@@ -3715,6 +3724,49 @@ void AddStickerSetOwnerActions(
 			[=] { author(); },
 			&st::menuIconProfile);
 	}
+}
+
+void AddEphemeralMessageActions(
+		not_null<Ui::PopupMenu*> menu,
+		std::shared_ptr<Ui::Show> show,
+		not_null<HistoryItem*> item) {
+	if (!item->isEphemeral()) {
+		return;
+	}
+	const auto owner = &item->history()->owner();
+	const auto session = &item->history()->session();
+	const auto itemId = item->fullId();
+	if (!item->out()) {
+		menu->addAction(tr::lng_context_report_msg(tr::now), [=] {
+			if (const auto item = owner->message(itemId)) {
+				ShowReportEphemeralBox(show, item);
+			}
+		}, &st::menuIconReport);
+	}
+	menu->addAction(tr::lng_context_delete_msg(tr::now), [=] {
+		show->show(Ui::MakeConfirmBox({
+			.text = tr::lng_selected_delete_sure_this(),
+			.confirmed = [=](Fn<void()> &&close) {
+				close();
+				if (const auto item = owner->message(itemId)) {
+					session->ephemeralMessages().deleteMessage(item);
+				}
+			},
+			.confirmText = tr::lng_box_delete(),
+			.confirmStyle = &st::attentionBoxButton,
+		}));
+	}, &st::menuIconDelete);
+	if (!menu->empty()) {
+		menu->addSeparator();
+	}
+	auto label = base::make_unique_q<Ui::Menu::MultilineAction>(
+		menu->menu(),
+		menu->st().menu,
+		st::historyHasCustomEmoji,
+		st::historyHasCustomEmojiPosition,
+		tr::lng_ephemeral_about(tr::now, tr::rich));
+	label->setAttribute(Qt::WA_TransparentForMouseEvents);
+	menu->addAction(std::move(label));
 }
 
 TextWithEntities TransribedText(not_null<HistoryItem*> item) {
