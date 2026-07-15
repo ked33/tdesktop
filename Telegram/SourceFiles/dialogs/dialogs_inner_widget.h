@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer.h"
 #include "data/data_messages.h"
 #include "dialogs/ui/dialogs_quick_action_context.h"
+#include "dialogs/dialogs_community_rows_view.h"
 #include "dialogs/dialogs_inner_widget_accessibility.h"
 #include "dialogs/dialogs_key.h"
 #include "lang/lang_keys.h"
@@ -63,6 +64,7 @@ class ChatFilter;
 class Thread;
 class Folder;
 class Forum;
+class CommunityInfo;
 class SavedMessages;
 struct ReactionId;
 } // namespace Data
@@ -85,6 +87,7 @@ class IndexedList;
 class SearchTags;
 class SearchEmpty;
 class ChatSearchIn;
+class CommunityRequestableList;
 enum class HashOrCashtag : uchar;
 struct RightButton;
 enum class ChatTypeFilter : uchar;
@@ -151,6 +154,7 @@ public:
 
 	void changeOpenedFolder(Data::Folder *folder);
 	void changeOpenedForum(Data::Forum *forum);
+	void changeOpenedCommunity(Data::CommunityInfo *community);
 	void showSavedSublists();
 	void selectSkip(int32 direction);
 	void selectSkipPage(int32 pixels, int32 direction);
@@ -181,6 +185,7 @@ public:
 
 	[[nodiscard]] Data::Folder *shownFolder() const;
 	[[nodiscard]] Data::Forum *shownForum() const;
+	[[nodiscard]] Data::CommunityInfo *shownCommunity() const;
 
 	[[nodiscard]] WidgetState state() const;
 	[[nodiscard]] not_null<const style::DialogRow*> st() const {
@@ -395,6 +400,7 @@ private:
 			|| (_peerSearchPressed >= 0)
 			|| (_previewPressed >= 0)
 			|| (_searchedPressed >= 0)
+			|| (_communityPressed >= 0)
 			|| _pressedMorePosts
 			|| _pressedChatTypeFilter;
 	}
@@ -406,6 +412,7 @@ private:
 			|| (_peerSearchSelected >= 0)
 			|| (_previewSelected >= 0)
 			|| (_searchedSelected >= 0)
+			|| (_communitySelected >= 0)
 			|| _selectedMorePosts
 			|| _selectedChatTypeFilter;
 	}
@@ -466,9 +473,11 @@ private:
 		QRect updateRect = QRect(),
 		UpdateRowSections sections = UpdateRowSection::All);
 	void fillSupportSearchMenu(not_null<Ui::PopupMenu*> menu);
-	void fillArchiveSearchMenu(not_null<Ui::PopupMenu*> menu);
 
 	void refreshShownList();
+	void rebuildCommunitySections();
+	void updateCommunityRequestableGeometry();
+	void setCommunityPressed(int pressed);
 	[[nodiscard]] int skipTopHeight() const;
 	[[nodiscard]] int collapsedRowsOffset() const;
 	[[nodiscard]] int dialogsOffset() const;
@@ -484,6 +493,12 @@ private:
 	[[nodiscard]] int searchedOffset() const;
 	[[nodiscard]] int searchInChatSkip() const;
 	[[nodiscard]] int hashtagsOffset() const;
+	[[nodiscard]] int communityViewableTop() const;
+	[[nodiscard]] int communityRequestableTop() const;
+	[[nodiscard]] int communitySectionsBottom() const;
+	[[nodiscard]] int communityRowCount() const;
+	[[nodiscard]] Row *communityRowAt(int index) const;
+	[[nodiscard]] int communityRowAbsoluteTop(int index) const;
 
 	void paintCollapsedRows(
 		Painter &p,
@@ -530,6 +545,8 @@ private:
 	//	int top,
 	//	const style::icon *icon,
 	//	const Ui::Text::String &text) const;
+	[[nodiscard]] bool archiveSearchActive() const;
+	[[nodiscard]] bool communitySearchActive() const;
 	void updateSearchIn();
 	void repaintSearchResult(int index);
 	void repaintPreviewResult(int index);
@@ -571,6 +588,7 @@ private:
 	[[nodiscard]] int defaultChildIndexOfSelected() const;
 
 	void announceSelectedFocus();
+	void refreshFilterResults();
 	void clearSearchResults(bool alsoPeerSearchResults = true);
 	void clearPeerSearchResults();
 	void clearPreviewResults();
@@ -636,6 +654,7 @@ private:
 	Data::Folder *_openedFolder = nullptr;
 	Data::Forum *_openedForum = nullptr;
 	rpl::lifetime _openedForumLifetime;
+	Data::CommunityInfo *_openedCommunity = nullptr;
 
 	std::vector<std::unique_ptr<CollapsedRow>> _collapsedRows;
 	not_null<const style::DialogRow*> _st;
@@ -723,6 +742,14 @@ private:
 	ChosenRow _pendingSearchResultClick;
 	base::Timer _searchResultClickTimer;
 	bool _ignoreSearchResultRelease = false;
+
+	CommunityRowsView _communityViewable;
+	object_ptr<CommunityRequestableList> _communityRequestableList
+		= { nullptr };
+	int _communitySelected = -1;
+	int _communityPressed = -1;
+	int _communityRequestableCount = 0;
+	rpl::lifetime _openedCommunityLifetime;
 
 	WidgetState _state = WidgetState::Default;
 
