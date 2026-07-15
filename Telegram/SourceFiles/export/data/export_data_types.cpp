@@ -1199,6 +1199,10 @@ void ParseAttributes(
 		}, [&](const MTPDdocumentAttributeSticker &data) {
 			result.isSticker = true;
 			result.stickerEmoji = ParseString(data.valt());
+			data.vstickerset().match([&](const MTPDinputStickerSetID &data) {
+				result.stickerSetId = data.vid().v;
+			}, [](const auto &) {
+			});
 		}, [&](const MTPDdocumentAttributeCustomEmoji &data) {
 			result.isSticker = true;
 			result.stickerEmoji = ParseString(data.valt());
@@ -2737,6 +2741,7 @@ Message ParseMessage(
 				result.media.file() = File();
 				result.media.thumb().file = File();
 			}
+			result.media_group_id = data.vgrouped_id().value_or_empty();
 			context.botId = 0;
 		}
 		if (const auto replyMarkup = data.vreply_markup()) {
