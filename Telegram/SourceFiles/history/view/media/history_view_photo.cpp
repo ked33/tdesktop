@@ -59,10 +59,27 @@ using Data::PhotoSize;
 	return parent->Get<InstantViewMediaRuntime>() != nullptr;
 }
 
-[[nodiscard]] QSize HostedInstantViewForcedSize(
+[[nodiscard]] double HostedInstantViewMediaPixelScale(
 		not_null<const Element*> parent) {
 	const auto runtime = parent->Get<InstantViewMediaRuntime>();
-	return runtime ? runtime->forcedSize : QSize();
+	return runtime ? runtime->mediaPixelScale : 1.;
+}
+
+[[nodiscard]] QSize ScaledInstantViewMediaSize(QSize size, double scale) {
+	return (scale == 1.)
+		? size
+		: QSize(
+			std::max(qRound(size.width() * scale), 1),
+			std::max(qRound(size.height() * scale), 1));
+}
+
+[[nodiscard]] QSize HostedInstantViewForcedSize(
+		not_null<const Element*> parent,
+		not_null<const Media*> media) {
+	const auto runtime = parent->Get<InstantViewMediaRuntime>();
+	return (runtime && runtime->forcedFor == media)
+		? runtime->forcedSize
+		: QSize();
 }
 
 [[nodiscard]] QSize PhotoDesiredMediaSize(
@@ -216,7 +233,7 @@ QSize Photo::countOptimalSize() {
 	if (_serviceWidth > 0) {
 		return { int(_serviceWidth), int(_serviceWidth) };
 	}
-	if (const auto forced = HostedInstantViewForcedSize(_parent)
+	if (const auto forced = HostedInstantViewForcedSize(_parent, this)
 		; !forced.isEmpty()) {
 		return forced;
 	}
@@ -253,7 +270,7 @@ QSize Photo::countCurrentSize(int newWidth) {
 	if (_serviceWidth) {
 		return { int(_serviceWidth), int(_serviceWidth) };
 	}
-	if (const auto forced = HostedInstantViewForcedSize(_parent)
+	if (const auto forced = HostedInstantViewForcedSize(_parent, this)
 		; !forced.isEmpty()) {
 		return forced;
 	}
@@ -374,11 +391,11 @@ void Photo::draw(Painter &p, const PaintContext &context) const {
 		}
 		if (revealed > 0.) {
 			validateImageCache(rthumb.size(), rounding);
-			p.drawImage(rthumb.topLeft(), _imageCache);
+			p.drawImage(rthumb, _imageCache);
 		}
 		if (revealed < 1.) {
 			p.setOpacity(1. - revealed);
-			p.drawImage(rthumb.topLeft(), _spoiler->background);
+			p.drawImage(rthumb, _spoiler->background);
 			fillImageSpoiler(p, _spoiler.get(), rthumb, context);
 			p.setOpacity(1.);
 		}
@@ -535,15 +552,18 @@ void Photo::validateImageCache(
 		std::optional<Ui::BubbleRounding> rounding) const {
 	const auto large = _dataMedia->image(PhotoSize::Large);
 	const auto ratio = style::DevicePixelRatio();
+	const auto scaled = ScaledInstantViewMediaSize(
+		outer,
+		HostedInstantViewMediaPixelScale(_parent));
 	const auto blurredValue = large ? 0 : 1;
 	const auto brightnessKey = PreviewBrightnessKey();
-	if (_imageCache.size() == (outer * ratio)
+	if (_imageCache.size() == (scaled * ratio)
 		&& _imageCacheRounding == rounding
 		&& _imageCacheBlurred == blurredValue
 		&& _imageCacheBrightness == brightnessKey) {
 		return;
 	}
-	auto prepared = prepareImageCache(outer);
+	auto prepared = prepareImageCache(scaled);
 	ApplyPreviewBrightness(prepared);
 	_imageCache = Images::Round(
 		std::move(prepared),
@@ -560,12 +580,15 @@ void Photo::validateSpoilerImageCache(
 
 	const auto ratio = style::DevicePixelRatio();
 	const auto brightnessKey = PreviewBrightnessKey();
-	if (_spoiler->background.size() == (outer * ratio)
+	const auto scaled = ScaledInstantViewMediaSize(
+		outer,
+		HostedInstantViewMediaPixelScale(_parent));
+	if (_spoiler->background.size() == (scaled * ratio)
 		&& _spoiler->backgroundRounding == rounding
 		&& _spoilerCacheBrightness == brightnessKey) {
 		return;
 	}
-	auto prepared = prepareImageCacheWithLarge(outer, nullptr);
+	auto prepared = prepareImageCacheWithLarge(scaled, nullptr);
 	ApplyPreviewBrightness(prepared);
 	_spoiler->background = Images::Round(
 		std::move(prepared),
@@ -820,11 +843,11 @@ void Photo::drawGrouped(
 	}
 	if (revealed > 0.) {
 		validateGroupedCache(geometry, rounding, cacheKey, cache);
-		p.drawPixmap(geometry.topLeft(), *cache);
+		p.drawPixmap(geometry, *cache);
 	}
 	if (revealed < 1.) {
 		p.setOpacity(1. - revealed);
-		p.drawImage(geometry.topLeft(), _spoiler->background);
+		p.drawImage(geometry, _spoiler->background);
 		fillImageSpoiler(p, _spoiler.get(), geometry, context);
 		p.setOpacity(1.);
 	}
@@ -966,8 +989,11 @@ void Photo::validateGroupedCache(
 			|| _dataMedia->image(PhotoSize::Thumbnail))
 		? 1
 		: 0;
-	const auto width = geometry.width();
-	const auto height = geometry.height();
+	const auto scaled = ScaledInstantViewMediaSize(
+		geometry.size(),
+		HostedInstantViewMediaPixelScale(_parent));
+	const auto width = scaled.width();
+	const auto height = scaled.height();
 	const auto options = (loaded ? Option() : Option::Blur);
 	const auto brightnessRaw = PreviewBrightnessKey();
 	const auto brightnessSlot = (brightnessRaw < 0)
@@ -1001,13 +1027,13 @@ void Photo::validateGroupedCache(
 		: Image::BlankMedia().get();
 
 	*cacheKey = key;
-	auto scaled = Images::Prepare(
+	auto prepared = Images::Prepare(
 		image->original(),
 		pixSize * ratio,
 		{ .options = options, .outer = { width, height } });
 	ApplyPreviewBrightness(scaled);
 	auto rounded = Images::Round(
-		std::move(scaled),
+		std::move(prepared),
 		MediaRoundingMask(rounding));
 	*cache = Ui::PixmapFromImage(std::move(rounded));
 }
