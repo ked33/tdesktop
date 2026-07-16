@@ -2246,7 +2246,7 @@ void Gif::validateGroupedCache(
 		(image ? image : Image::BlankMedia().get())->original(),
 		pixSize * ratio,
 		{ .options = options, .outer = { width, height } });
-	ApplyPreviewBrightness(scaled);
+	ApplyPreviewBrightness(prepared);
 	auto rounded = Images::Round(
 		std::move(prepared),
 		MediaRoundingMask(rounding));
