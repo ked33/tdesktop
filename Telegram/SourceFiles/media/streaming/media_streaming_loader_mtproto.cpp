@@ -30,6 +30,15 @@ LoaderMtproto::LoaderMtproto(
 , _size(size)
 , _api(&api().instance())
 , _statsTimer([=] { checkStats(); }) {
+	if (location.type() == StorageFileLocation::Type::Document) {
+		const auto documentId = objectId();
+		owner->nonPremiumDelays(
+		) | rpl::filter([=](const auto &entry) {
+			return (entry.first == documentId);
+		}) | rpl::on_next([=](const auto &entry) {
+			_serverDelays.fire({ .waitMs = entry.second.appliedWaitMs });
+		}, _lifetime);
+	}
 }
 
 Storage::Cache::Key LoaderMtproto::baseCacheKey() const {
@@ -168,6 +177,10 @@ rpl::producer<LoadedPart> LoaderMtproto::parts() const {
 
 rpl::producer<SpeedEstimate> LoaderMtproto::speedEstimate() const {
 	return _speedEstimate.events();
+}
+
+rpl::producer<ServerDelay> LoaderMtproto::serverDelays() const {
+	return _serverDelays.events();
 }
 
 void LoaderMtproto::checkStats() {
