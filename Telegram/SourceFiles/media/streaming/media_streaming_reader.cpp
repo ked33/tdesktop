@@ -29,7 +29,7 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 
 [[nodiscard]] int DownloadBoostLevel() {
 	const auto boost = GetEnhancedInt("net_download_speed_boost");
-	return (boost < 0) ? 0 : (boost > 5) ? 5 : boost;
+	return (boost < 0) ? 0 : (boost > 6) ? 6 : boost;
 }
 
 [[nodiscard]] int StreamingRequestsLimit() {
@@ -44,6 +44,8 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 		return 24;
 	case 5:
 		return 32;
+	case 6:
+		return 16;
 	default:
 		return 8;
 	}
@@ -77,6 +79,8 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 		return int64(3 * kPartSize);
 	case 5:
 		return int64(4 * kPartSize);
+	case 6:
+		return int64(2 * kPartSize);
 	default:
 		return int64(0);
 	}
@@ -99,6 +103,8 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 		return 32;
 	case 5:
 		return 48;
+	case 6:
+		return 20;
 	default:
 		return 8;
 	}
@@ -1039,6 +1045,12 @@ Reader::Reader(
 					std::memory_order_relaxed);
 				break;
 			}
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: adaptive state=%1 boost=%2 preloadPercent=%3 limitPercent=%4 throttled=%5.")
+				.arg(int(next))
+				.arg(DownloadBoostLevel())
+				.arg(_adaptivePreloadPercent.load(std::memory_order_relaxed))
+				.arg(_adaptiveLimitPercent.load(std::memory_order_relaxed))
+				.arg(_speedIsThrottled.load(std::memory_order_relaxed) ? 1 : 0));
 		};
 
 		switch (_speedState) {

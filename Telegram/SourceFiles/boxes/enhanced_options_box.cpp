@@ -94,7 +94,7 @@ void DownloadBoostBox::prepare() {
 	_boostGroup = std::make_shared<Ui::RadiobuttonGroup>(
 		GetEnhancedInt("net_download_speed_boost"));
 
-	for (int i = 0; i <= 5; i++) {
+	for (int i = 0; i <= 6; i++) {
 		const auto button = Ui::CreateChild<Ui::Radiobutton>(
 				this,
 				_boostGroup,
@@ -122,6 +122,8 @@ QString DownloadBoostBox::BoostLabel(int boost) {
 			return tr::lng_net_speed_boost_aggressive(tr::now);
 		case 5:
 			return tr::lng_net_speed_boost_extreme(tr::now);
+		case 6:
+			return u"智能 / Smart"_q;
 		default:
 			Unexpected("Boost in DownloadBoostBox::BoostLabel.");
 	}
