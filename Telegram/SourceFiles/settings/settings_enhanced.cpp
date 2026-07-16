@@ -76,6 +76,21 @@ namespace Settings {
 			Ui::show(Box<DownloadBoostBox>());
 		});
 
+		AddButtonWithIcon(
+			inner,
+			tr::lng_settings_online_playback_debug_logs(),
+			st::settingsButtonNoIcon
+		)->toggleOn(
+			rpl::single(GetEnhancedBool("online_playback_debug_logs"))
+		)->toggledChanges(
+		) | rpl::filter([=](bool toggled) {
+			return (toggled
+				!= GetEnhancedBool("online_playback_debug_logs"));
+		}) | rpl::on_next([=](bool toggled) {
+			SetEnhancedValue("online_playback_debug_logs", toggled);
+			EnhancedSettings::Write();
+		}, container->lifetime());
+
 		const auto currentFloodPremiumWaitLabel = [] {
 			return FloodPremiumWaitBox::DelayLabel(
 				GetEnhancedString("flood_premium_wait_override_ms"));
