@@ -103,6 +103,10 @@ struct SpeedEstimate {
 	bool unreliable = false;
 };
 
+struct ServerDelay {
+	int waitMs = 0;
+};
+
 struct MutedByOther {
 };
 
