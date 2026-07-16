@@ -8693,6 +8693,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_network" = "Network";
 "lng_settings_net_upload_speed_boost" = "Upload speed boost";
 "lng_settings_net_download_speed_boost" = "Optimize online playback";
+"lng_settings_online_playback_debug_logs" = "Write online playback debug logs to log.txt";
 "lng_settings_show_message_id" = "Show message ID";
 "lng_settings_button" = "Button";
 "lng_settings_show_emoji_button_as_text" = "Show emoji button as text";
@@ -8769,7 +8770,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_net_speed_boost_title" = "Network speed boost";
 "lng_net_speed_boost_desc" = "Warning: changing this parameter to high values on slow networks can make it even worse. Use it at your own risk.";
-"lng_net_download_speed_boost_desc" = "Warning: higher values tune media downloads toward faster video startup, quicker recovery after seeking and steadier playback. The Extreme level prioritizes peak throughput more aggressively, so it may be less stable. Smart mode adapts between conservative, normal and burst prefetch based on measured throughput, which can help on periodically throttled connections. Streaming diagnostics use the existing MPV streaming debug logs option. Use it at your own risk.";
+"lng_net_download_speed_boost_desc" = "Warning: higher values tune media downloads toward faster video startup, quicker recovery after seeking and steadier playback. The Extreme level prioritizes peak throughput more aggressively, so it may be less stable. Smart mode adapts between conservative, normal and burst prefetch based on measured throughput, which can help on periodically throttled connections. Use it at your own risk.";
 
 "lng_net_speed_boost_default" = "Disabled";
 "lng_net_speed_boost_slight" = "Slight";
