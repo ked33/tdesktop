@@ -36,7 +36,7 @@ constexpr auto kMsFrequency = 1000; // 1000 ms per second.
 
 [[nodiscard]] int DownloadBoostLevel() {
 	const auto boost = GetEnhancedInt("net_download_speed_boost");
-	return (boost < 0) ? 0 : (boost > 5) ? 5 : boost;
+	return (boost < 0) ? 0 : (boost > 6) ? 6 : boost;
 }
 
 [[nodiscard]] crl::time LoadInAdvanceForRemote() {
@@ -51,6 +51,8 @@ constexpr auto kMsFrequency = 1000; // 1000 ms per second.
 		return 64 * crl::time(1000);
 	case 5:
 		return 80 * crl::time(1000);
+	case 6:
+		return 48 * crl::time(1000);
 	default:
 		return 32 * crl::time(1000);
 	}
@@ -68,6 +70,8 @@ constexpr auto kMsFrequency = 1000; // 1000 ms per second.
 		return 1900;
 	case 5:
 		return 1700;
+	case 6:
+		return 2400;
 	default:
 		return kBufferFor;
 	}
