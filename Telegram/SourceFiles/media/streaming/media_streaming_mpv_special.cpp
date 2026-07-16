@@ -101,7 +101,7 @@ constexpr auto kMpvLoaderPriority = 2;
 
 [[nodiscard]] int DownloadBoostLevel() {
 	const auto boost = GetEnhancedInt("net_download_speed_boost");
-	return std::clamp(boost, 0, 5);
+	return std::clamp(boost, 0, 6);
 }
 
 [[nodiscard]] bool MpvStreamingBoostEnabled() {

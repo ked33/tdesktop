@@ -16,7 +16,7 @@ namespace Media::Streaming {
 
 [[nodiscard]] inline int PlaybackDebugBoostLevel() {
 	const auto boost = GetEnhancedInt("net_download_speed_boost");
-	return (boost < 0) ? 0 : (boost > 5) ? 5 : boost;
+	return (boost < 0) ? 0 : (boost > 6) ? 6 : boost;
 }
 
 [[nodiscard]] inline QString PlaybackModeDebugString(Mode mode) {
