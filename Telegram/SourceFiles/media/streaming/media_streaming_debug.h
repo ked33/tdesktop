@@ -11,7 +11,8 @@
 namespace Media::Streaming {
 
 [[nodiscard]] inline bool PlaybackDebugLogsEnabled() {
-	return GetEnhancedBool("mpv_streaming_debug_logs");
+	return GetEnhancedBool("online_playback_debug_logs")
+		|| GetEnhancedBool("mpv_streaming_debug_logs");
 }
 
 [[nodiscard]] inline int PlaybackDebugBoostLevel() {
