@@ -755,6 +755,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_experimental_hide_ai_button_desc" = "Hide the AI Tools button in message compose fields.";
 "lng_settings_experimental_unlimited_message_width" = "Unlimited message width";
 "lng_settings_experimental_unlimited_message_width_desc" = "Allow text-only message bubbles to expand beyond the default maximum width.";
+"lng_settings_experimental_dialogs_unread_on_top" = "Keep unmuted unread chats on top";
+"lng_settings_experimental_dialogs_unread_on_top_desc" = "Sort chats with new unmuted messages right below the pinned ones and keep them there until you read them.";
+"lng_settings_experimental_profile_media_tabs" = "Show shared media as tabs in the profile";
+"lng_settings_experimental_profile_media_tabs_desc" = "Replace the shared media buttons in profiles with a strip of tabs holding the media lists inline. Work in progress.";
+"lng_settings_experimental_profile_media_tabs_expanded" = "Split profile media tab into photos and videos";
+"lng_settings_experimental_profile_media_tabs_expanded_desc" = "Show separate photo and video tabs in profiles instead of a single combined media tab.";
+"lng_settings_experimental_alternative_scroll_processing_desc" = "Revert the profile cover scroll to the previous filler-based implementation.";
+"lng_settings_experimental_mac_cmd_reply_immediately" = "Mac: instant reply on Cmd + Up/Down";
+"lng_settings_experimental_mac_cmd_reply_immediately_desc" = "Reply to the previous or next message right away on Cmd + Up/Down, instead of first moving the text cursor to the start or end of the input field. Hold Shift to move the cursor as before.";
+"lng_settings_experimental_qscroller" = "Use QScroller for touchpad scrolling";
+"lng_settings_experimental_qscroller_desc" = "Provide kinetic scrolling and overscroll.";
+"lng_settings_experimental_ffmpeg_multithread" = "Multi-thread video decoding";
+"lng_settings_experimental_ffmpeg_multithread_desc" = "Allow FFmpeg to use a thread pool for decoding, typically one thread per CPU thread.";
 
 "lng_settings_section_chat_settings" = "Chat Settings";
 "lng_settings_replace_emojis" = "Replace emoji automatically";

@@ -77,6 +77,8 @@ namespace {
 			tr::now);
 	} else if (id == Dialogs::kOptionForumHideChatsList) {
 		return tr::lng_settings_experimental_forum_hide_chats_list(tr::now);
+	} else if (id == Dialogs::kOptionDialogsUnreadOnTop) {
+		return tr::lng_settings_experimental_dialogs_unread_on_top(tr::now);
 	} else if (id == Core::kOptionFractionalScalingEnabled) {
 		return tr::lng_settings_experimental_fractional_scaling_enabled(
 			tr::now);
@@ -93,6 +95,11 @@ namespace {
 			tr::now);
 	} else if (id == Info::Profile::kOptionShowChannelJoinedBelowAbout) {
 		return tr::lng_settings_experimental_show_channel_joined_below_about(
+			tr::now);
+	} else if (id == Info::Profile::kOptionProfileMediaTabs) {
+		return tr::lng_settings_experimental_profile_media_tabs(tr::now);
+	} else if (id == Info::Profile::kOptionProfileMediaTabsExpanded) {
+		return tr::lng_settings_experimental_profile_media_tabs_expanded(
 			tr::now);
 	} else if (id == Ui::kOptionUseSmallMsgBubbleRadius) {
 		return tr::lng_settings_experimental_use_small_msg_bubble_radius(
@@ -153,6 +160,13 @@ namespace {
 	} else if (id == HistoryView::kOptionUnlimitedMessageWidth) {
 		return tr::lng_settings_experimental_unlimited_message_width(
 			tr::now);
+	} else if (id == HistoryView::Controls::kOptionMacCmdReplyImmediately) {
+		return tr::lng_settings_experimental_mac_cmd_reply_immediately(
+			tr::now);
+	} else if (id == Ui::kOptionQScroller) {
+		return tr::lng_settings_experimental_qscroller(tr::now);
+	} else if (id == FFmpeg::kOptionFFmpegMultiThread) {
+		return tr::lng_settings_experimental_ffmpeg_multithread(tr::now);
 	}
 	const auto &name = option.name();
 	return name.isEmpty() ? option.id() : name;
@@ -166,6 +180,9 @@ namespace {
 			tr::now);
 	} else if (id == Dialogs::kOptionForumHideChatsList) {
 		return tr::lng_settings_experimental_forum_hide_chats_list_desc(
+			tr::now);
+	} else if (id == Dialogs::kOptionDialogsUnreadOnTop) {
+		return tr::lng_settings_experimental_dialogs_unread_on_top_desc(
 			tr::now);
 	} else if (id == Core::kOptionFractionalScalingEnabled) {
 		return tr::lng_settings_experimental_fractional_scaling_enabled_desc(
@@ -184,6 +201,11 @@ namespace {
 			tr::now);
 	} else if (id == Info::Profile::kOptionShowChannelJoinedBelowAbout) {
 		return tr::lng_settings_experimental_show_channel_joined_below_about_desc(
+			tr::now);
+	} else if (id == Info::Profile::kOptionProfileMediaTabs) {
+		return tr::lng_settings_experimental_profile_media_tabs_desc(tr::now);
+	} else if (id == Info::Profile::kOptionProfileMediaTabsExpanded) {
+		return tr::lng_settings_experimental_profile_media_tabs_expanded_desc(
 			tr::now);
 	} else if (id == Ui::kOptionUseSmallMsgBubbleRadius) {
 		return tr::lng_settings_experimental_use_small_msg_bubble_radius_desc(
@@ -226,6 +248,9 @@ namespace {
 	} else if (id == kOptionFastButtonsMode) {
 		return tr::lng_settings_experimental_fast_buttons_mode_desc(
 			tr::now);
+	} else if (id == Info::kClassicProfileScroll) {
+		return tr::lng_settings_experimental_alternative_scroll_processing_desc(
+			tr::now);
 	} else if (id == kForceComposeSearchOneColumn) {
 		return tr::lng_settings_experimental_force_compose_search_one_column_desc(
 			tr::now);
@@ -242,6 +267,13 @@ namespace {
 	} else if (id == HistoryView::kOptionUnlimitedMessageWidth) {
 		return tr::lng_settings_experimental_unlimited_message_width_desc(
 			tr::now);
+	} else if (id == HistoryView::Controls::kOptionMacCmdReplyImmediately) {
+		return tr::lng_settings_experimental_mac_cmd_reply_immediately_desc(
+			tr::now);
+	} else if (id == Ui::kOptionQScroller) {
+		return tr::lng_settings_experimental_qscroller_desc(tr::now);
+	} else if (id == FFmpeg::kOptionFFmpegMultiThread) {
+		return tr::lng_settings_experimental_ffmpeg_multithread_desc(tr::now);
 	}
 	return option.description();
 }
