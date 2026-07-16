@@ -88,6 +88,10 @@ rpl::producer<SpeedEstimate> LoaderLocal::speedEstimate() const {
 	return rpl::never<SpeedEstimate>();
 }
 
+rpl::producer<ServerDelay> LoaderLocal::serverDelays() const {
+	return rpl::never<ServerDelay>();
+}
+
 void LoaderLocal::attachDownloader(
 		not_null<Storage::StreamedFileDownloader*> downloader) {
 	Unexpected("Downloader attached to a local streaming loader.");

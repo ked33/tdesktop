@@ -44,6 +44,7 @@ public:
 	[[nodiscard]] virtual rpl::producer<LoadedPart> parts() const = 0;
 	[[nodiscard]] virtual auto speedEstimate() const
 		-> rpl::producer<SpeedEstimate> = 0;
+	[[nodiscard]] virtual rpl::producer<ServerDelay> serverDelays() const = 0;
 
 	virtual void attachDownloader(
 		not_null<Storage::StreamedFileDownloader*> downloader) = 0;

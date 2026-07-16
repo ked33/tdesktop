@@ -276,6 +276,9 @@ private:
 	std::atomic<int> _adaptivePreloadPercent = 100;
 	std::atomic<int> _adaptiveLimitPercent = 100;
 	std::atomic<bool> _speedIsThrottled = false;
+	std::atomic<crl::time> _serverLimitedUntil = 0;
+	std::atomic<crl::time> _serverRecoveryUntil = 0;
+	std::atomic<int> _serverLimitPhase = 0;
 
 	// Playback-consumption estimator (streaming thread only). Updated from
 	// Reader::fill() by sampling forward offset advancement, then read in
