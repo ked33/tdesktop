@@ -1,4 +1,4 @@
-﻿# This file is part of Telegram Desktop,
+# This file is part of Telegram Desktop,
 # the official desktop application for the Telegram messaging service.
 #
 # For license and copyright information please follow this link:
@@ -94,7 +94,9 @@ if (NOT DESKTOP_APP_DISABLE_SWIFT6)
     telegram_add_apple_swift_runtime(Telegram)
 endif()
 
-target_precompile_headers(Telegram PRIVATE $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:${src_loc}/stdafx.h>)
+if (NOT TDESKTOP_DISABLE_MAIN_PCH)
+    target_precompile_headers(Telegram PRIVATE $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:${src_loc}/stdafx.h>)
+endif()
 nice_target_sources(Telegram ${src_loc}
 PRIVATE
     ${style_files}
