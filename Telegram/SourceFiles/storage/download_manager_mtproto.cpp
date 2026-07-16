@@ -50,7 +50,7 @@ constexpr auto kBadRequestDurationThreshold = 8 * crl::time(1000);
 	case 5:
 		return 16 * kDownloadPartSize;
 	case 6:
-		return 10 * kDownloadPartSize;
+		return 8 * kDownloadPartSize;
 	default:
 		return 4 * kDownloadPartSize;
 	}
@@ -69,7 +69,7 @@ constexpr auto kBadRequestDurationThreshold = 8 * crl::time(1000);
 	case 5:
 		return 64 * kDownloadPartSize;
 	case 6:
-		return 32 * kDownloadPartSize;
+		return 24 * kDownloadPartSize;
 	default:
 		return 16 * kDownloadPartSize;
 	}
@@ -107,7 +107,7 @@ constexpr auto kBadRequestDurationThreshold = 8 * crl::time(1000);
 	case 5:
 		return 16;
 	case 6:
-		return 10;
+		return 8;
 	default:
 		return 8;
 	}
