@@ -8,6 +8,9 @@ jobs:
   build:
     runs-on: windows-2022
     timeout-minutes: 720
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
 
     steps:
       - name: Prepare directories
@@ -80,6 +83,11 @@ jobs:
           restore-keys: |
             win64-qt-
 
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@d651010b8da762cde178750d8eda7b5febfe147a
+        with:
+          version: "v0.15.0"
+
       - name: Configure MSVC environment
         shell: cmd
         run: |
@@ -112,18 +120,34 @@ jobs:
           if "%TDESKTOP_API_ID%"=="" exit /b 1
           if "%TDESKTOP_API_HASH%"=="" exit /b 1
           cd /d %TBUILD%\%REPO_NAME%\Telegram
-          configure.bat x64 ^
+          configure.bat -G "Ninja Multi-Config" ^
             -D TDESKTOP_API_ID=%TDESKTOP_API_ID% ^
             -D TDESKTOP_API_HASH=%TDESKTOP_API_HASH% ^
             -D CMAKE_CONFIGURATION_TYPES=Release ^
             -D CMAKE_COMPILE_WARNING_AS_ERROR=OFF ^
-            -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=
+            -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= ^
+            -D CMAKE_C_COMPILER_LAUNCHER=sccache ^
+            -D CMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build Telegram (Release)
         shell: cmd
         run: |
           cd /d %TBUILD%\%REPO_NAME%\out
           cmake --build . --config Release --target Telegram --parallel
+
+      - name: Show sccache statistics
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:SCCACHE_PATH) {
+            & $env:SCCACHE_PATH --show-stats
+          } else {
+            sccache --show-stats
+          }
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning "sccache statistics unavailable"
+            exit 0
+          }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v6
