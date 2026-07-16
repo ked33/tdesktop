@@ -15,6 +15,10 @@ namespace Media::Streaming {
 		|| GetEnhancedBool("mpv_streaming_debug_logs");
 }
 
+[[nodiscard]] inline bool PlaybackVerboseDebugLogsEnabled() {
+	return GetEnhancedBool("mpv_streaming_debug_logs");
+}
+
 [[nodiscard]] inline int PlaybackDebugBoostLevel() {
 	const auto boost = GetEnhancedInt("net_download_speed_boost");
 	return (boost < 0) ? 0 : (boost > 6) ? 6 : boost;
@@ -72,6 +76,13 @@ namespace Media::Streaming {
 #define VIDEO_PLAYBACK_DEBUG_LOG(expr) \
 	do { \
 		if (::Media::Streaming::PlaybackDebugLogsEnabled()) { \
+			LOG(expr); \
+		} \
+	} while (false)
+
+#define VIDEO_PLAYBACK_VERBOSE_LOG(expr) \
+	do { \
+		if (::Media::Streaming::PlaybackVerboseDebugLogsEnabled()) { \
 			LOG(expr); \
 		} \
 	} while (false)
