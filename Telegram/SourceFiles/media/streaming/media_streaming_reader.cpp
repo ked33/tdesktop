@@ -24,6 +24,7 @@ constexpr auto kMaxPartsInHeader = 64;
 constexpr auto kMaxOnlyInHeader = 80 * kPartSize;
 constexpr auto kPartsOutsideFirstSliceGood = 8;
 constexpr auto kSlicesInMemory = 2;
+constexpr auto kServerRecoveryDuration = 15 * crl::time(1000);
 
 using PartsMap = base::flat_map<uint32, QByteArray>;
 
@@ -981,6 +982,35 @@ Reader::Reader(
 		}
 	}, _lifetime);
 
+	_loader->serverDelays(
+	) | rpl::on_next([=](ServerDelay delay) {
+		if (DownloadBoostLevel() != 6) {
+			return;
+		}
+		const auto now = crl::now();
+		const auto waitMs = std::max(delay.waitMs, 1000);
+		const auto limitedUntil = std::max(
+			_serverLimitedUntil.load(std::memory_order_relaxed),
+			now + waitMs);
+		const auto recoveryUntil = std::max(
+			_serverRecoveryUntil.load(std::memory_order_relaxed),
+			limitedUntil + kServerRecoveryDuration);
+		_serverLimitedUntil.store(limitedUntil, std::memory_order_relaxed);
+		_serverRecoveryUntil.store(recoveryUntil, std::memory_order_relaxed);
+		_serverLimitPhase.store(1, std::memory_order_relaxed);
+		_pendingTailPrefetchBytes.store(0, std::memory_order_release);
+		_speedState = SpeedState::Normal;
+		_burstSpeedEma = 0.0;
+		_burstSpeedInitialized = false;
+		_adaptivePreloadPercent.store(100, std::memory_order_relaxed);
+		_adaptiveLimitPercent.store(100, std::memory_order_relaxed);
+		_speedIsThrottled.store(false, std::memory_order_relaxed);
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: server limited waitMs=%1 limitedFor=%2 recoveryFor=%3 preload=8 limit=4.")
+			.arg(delay.waitMs)
+			.arg(qlonglong(limitedUntil - now))
+			.arg(qlonglong(recoveryUntil - limitedUntil)));
+	}, _lifetime);
+
 	// Adaptive scheduling driven by measured download speed. Three states:
 	//   - Burst: sustained >= 1.5 MB/s. Grow preload depth and the per-fill
 	//     request cap so we bank extra buffer before the server-side throttle
@@ -995,7 +1025,10 @@ Reader::Reader(
 	) | rpl::on_next([=](SpeedEstimate estimate) {
 		if (DownloadBoostLevel() == 0
 			|| estimate.unreliable
-			|| estimate.bytesPerSecond <= 0) {
+			|| estimate.bytesPerSecond <= 0
+			|| (DownloadBoostLevel() == 6
+				&& crl::now() < _serverRecoveryUntil.load(
+					std::memory_order_relaxed))) {
 			return;
 		}
 		constexpr auto kAlpha = 0.4;
@@ -1120,6 +1153,11 @@ void Reader::tryRemoveLoaderAsync() {
 
 void Reader::requestTailPrefetch(int64 bytes) {
 	if (bytes <= 0) {
+		return;
+	}
+	if (DownloadBoostLevel() == 6
+		&& crl::now() < _serverRecoveryUntil.load(
+			std::memory_order_relaxed)) {
 		return;
 	}
 	// Consumed on the streaming thread in consumePendingTailPrefetch().
@@ -1583,6 +1621,12 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	const auto limitBase = StreamingRequestsLimit();
 	const auto preloadMinimum = (boost == 6) ? 8 : preloadBase;
 	const auto limitMinimum = (boost == 6) ? 4 : limitBase;
+	const auto now = crl::now();
+	const auto serverLimited = (boost == 6)
+		&& (now < _serverLimitedUntil.load(std::memory_order_relaxed));
+	const auto serverRecovering = !serverLimited
+		&& (boost == 6)
+		&& (now < _serverRecoveryUntil.load(std::memory_order_relaxed));
 	auto preloadParts = std::clamp(
 		(preloadBase * _adaptivePreloadPercent.load(
 			std::memory_order_relaxed)) / 100,
@@ -1604,11 +1648,29 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 			preloadMinimum,
 			std::max(preloadMinimum, neededParts));
 	}
-	const auto requestsLimit = std::clamp(
+	auto requestsLimit = std::clamp(
 		(limitBase * _adaptiveLimitPercent.load(
 			std::memory_order_relaxed)) / 100,
 		limitMinimum,
 		int(kLoadFromRemoteMax));
+	if (serverLimited) {
+		preloadParts = 8;
+		requestsLimit = 4;
+	} else if (serverRecovering) {
+		preloadParts = std::min(preloadParts, 12);
+		requestsLimit = std::min(requestsLimit, 8);
+	}
+	const auto serverPhase = serverLimited ? 1 : serverRecovering ? 2 : 0;
+	const auto previousServerPhase = _serverLimitPhase.exchange(
+		serverPhase,
+		std::memory_order_relaxed);
+	if (previousServerPhase != serverPhase) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: server phase=%1 previous=%2 preload=%3 limit=%4.")
+			.arg(serverPhase)
+			.arg(previousServerPhase)
+			.arg(preloadParts)
+			.arg(requestsLimit));
+	}
 	auto result = _slices.fill(offset, buffer, preloadParts, requestsLimit);
 	if (result.state != FillState::Success) {
 		auto remoteRequests = 0;
@@ -1719,7 +1781,11 @@ void Reader::cancelLoadOutsideWindow(uint32 windowStart, uint32 windowTill) {
 	// already paid for (sitting in the server's slow queue). Cancelling and
 	// re-queuing just re-submits to the back of the queue, making things
 	// worse. Skip far-seek cancellation until bandwidth recovers.
-	if (_speedIsThrottled.load(std::memory_order_relaxed)) {
+	const auto serverLimited = (DownloadBoostLevel() == 6)
+		&& (crl::now() < _serverLimitedUntil.load(
+			std::memory_order_relaxed));
+	if (serverLimited
+		|| _speedIsThrottled.load(std::memory_order_relaxed)) {
 		VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader cancel outside window skipped by throttle start=%1 till=%2 boost=%3.")
 			.arg(qulonglong(windowStart))
 			.arg(qulonglong(windowTill))

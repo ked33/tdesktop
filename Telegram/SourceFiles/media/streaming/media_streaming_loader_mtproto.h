@@ -38,6 +38,7 @@ public:
 	// Parts will be sent from the main thread.
 	[[nodiscard]] rpl::producer<LoadedPart> parts() const override;
 	[[nodiscard]] rpl::producer<SpeedEstimate> speedEstimate() const override;
+	[[nodiscard]] rpl::producer<ServerDelay> serverDelays() const override;
 
 	void attachDownloader(
 		not_null<Storage::StreamedFileDownloader*> downloader) override;
@@ -68,10 +69,12 @@ private:
 	PriorityQueue _requested;
 	rpl::event_stream<LoadedPart> _parts;
 	rpl::event_stream<SpeedEstimate> _speedEstimate;
+	rpl::event_stream<ServerDelay> _serverDelays;
 
 	std::vector<StatsEntry> _stats;
 	crl::time _firstRequestStart = 0;
 	base::Timer _statsTimer;
+	rpl::lifetime _lifetime;
 
 	Storage::StreamedFileDownloader *_downloader = nullptr;
 
