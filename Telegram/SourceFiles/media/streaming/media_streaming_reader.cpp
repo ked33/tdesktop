@@ -45,7 +45,7 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 	case 5:
 		return 32;
 	case 6:
-		return 16;
+		return 12;
 	default:
 		return 8;
 	}
@@ -104,7 +104,7 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 	case 5:
 		return 48;
 	case 6:
-		return 20;
+		return 16;
 	default:
 		return 8;
 	}
@@ -986,19 +986,26 @@ Reader::Reader(
 	//     request cap so we bank extra buffer before the server-side throttle
 	//     kicks in again.
 	//   - Normal: between thresholds. Baseline behaviour.
-	//   - Throttle: sustained <= 200 KB/s. Keep scaling at baseline but flag
-	//     the state so the far-seek cancel path can back off and not thrash
-	//     requests that the server is already queueing slowly.
+	//   - Throttle: sustained <= 200 KB/s. Smart mode reduces preload and
+	//     request depth, while fixed levels stay at their configured baseline.
+	//     The state also keeps far-seek cancellation from thrashing requests.
 	// Only active when net_download_speed_boost > 0; state stays at Normal
 	// for boost level 0 and atomics stay at 100/100.
 	_loader->speedEstimate(
 	) | rpl::on_next([=](SpeedEstimate estimate) {
-		if (DownloadBoostLevel() == 0 || estimate.unreliable) {
+		if (DownloadBoostLevel() == 0
+			|| estimate.unreliable
+			|| estimate.bytesPerSecond <= 0) {
 			return;
 		}
 		constexpr auto kAlpha = 0.4;
-		_burstSpeedEma = (_burstSpeedEma * (1.0 - kAlpha))
-			+ (double(estimate.bytesPerSecond) * kAlpha);
+		if (!_burstSpeedInitialized) {
+			_burstSpeedEma = double(estimate.bytesPerSecond);
+			_burstSpeedInitialized = true;
+		} else {
+			_burstSpeedEma = (_burstSpeedEma * (1.0 - kAlpha))
+				+ (double(estimate.bytesPerSecond) * kAlpha);
+		}
 
 		constexpr auto kBurstEnter = 1'500'000.0;
 		constexpr auto kBurstLeave = 1'000'000.0;
@@ -1010,13 +1017,14 @@ Reader::Reader(
 				return;
 			}
 			_speedState = next;
+			const auto smart = (DownloadBoostLevel() == 6);
 			switch (next) {
 			case SpeedState::Burst:
 				_adaptivePreloadPercent.store(
-					200,
+					smart ? 150 : 200,
 					std::memory_order_relaxed);
 				_adaptiveLimitPercent.store(
-					150,
+					smart ? 125 : 150,
 					std::memory_order_relaxed);
 				_speedIsThrottled.store(
 					false,
@@ -1035,19 +1043,21 @@ Reader::Reader(
 				break;
 			case SpeedState::Throttle:
 				_adaptivePreloadPercent.store(
-					100,
+					smart ? 50 : 100,
 					std::memory_order_relaxed);
 				_adaptiveLimitPercent.store(
-					100,
+					smart ? 50 : 100,
 					std::memory_order_relaxed);
 				_speedIsThrottled.store(
 					true,
 					std::memory_order_relaxed);
 				break;
 			}
-			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: adaptive state=%1 boost=%2 preloadPercent=%3 limitPercent=%4 throttled=%5.")
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: adaptive state=%1 boost=%2 speed=%3 ema=%4 preloadPercent=%5 limitPercent=%6 throttled=%7.")
 				.arg(int(next))
 				.arg(DownloadBoostLevel())
+				.arg(estimate.bytesPerSecond)
+				.arg(_burstSpeedEma, 0, 'f', 0)
 				.arg(_adaptivePreloadPercent.load(std::memory_order_relaxed))
 				.arg(_adaptiveLimitPercent.load(std::memory_order_relaxed))
 				.arg(_speedIsThrottled.load(std::memory_order_relaxed) ? 1 : 0));
@@ -1477,7 +1487,7 @@ Reader::FillState Reader::fill(
 					fileSize,
 					offset + buffer.size() + guard);
 				if (start < till) {
-					VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader seek jump cancel previous=%1 offset=%2 delta=%3 windowStart=%4 windowTill=%5 loadingActive=%6 boost=%7.")
+					VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader seek jump cancel previous=%1 offset=%2 delta=%3 windowStart=%4 windowTill=%5 loadingActive=%6 boost=%7.")
 						.arg(qlonglong(previous))
 						.arg(qlonglong(offset))
 						.arg(qlonglong(delta))
@@ -1508,9 +1518,11 @@ Reader::FillState Reader::fill(
 		} else {
 			const auto deltaMs = now - _consumptionLastTime;
 			if (deltaMs >= 500) {
-				if (offset > _consumptionLastOffset && deltaMs <= 5000) {
-					const auto deltaBytes = double(
-						offset - _consumptionLastOffset);
+				const auto deltaBytes = offset - _consumptionLastOffset;
+				constexpr auto kMaxSequentialJump = int64(4 * 1024 * 1024);
+				if (deltaBytes > 0
+					&& deltaBytes <= kMaxSequentialJump
+					&& deltaMs <= 5000) {
 					const auto instantBps = deltaBytes * 1000.0
 						/ double(deltaMs);
 					constexpr auto kAlpha = 0.3;
@@ -1569,10 +1581,12 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	const auto boost = DownloadBoostLevel();
 	const auto preloadBase = PreloadPartsAhead();
 	const auto limitBase = StreamingRequestsLimit();
+	const auto preloadMinimum = (boost == 6) ? 8 : preloadBase;
+	const auto limitMinimum = (boost == 6) ? 4 : limitBase;
 	auto preloadParts = std::clamp(
 		(preloadBase * _adaptivePreloadPercent.load(
 			std::memory_order_relaxed)) / 100,
-		preloadBase,
+		preloadMinimum,
 		int(kLoadFromRemoteMax) * 2);
 	// Consumption-aware cap: once we know how fast video is being read,
 	// avoid preloading past roughly the next N seconds of playback. This
@@ -1587,13 +1601,13 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 			double(int(kLoadFromRemoteMax) * 2)));
 		preloadParts = std::clamp(
 			preloadParts,
-			preloadBase,
-			std::max(preloadBase, neededParts));
+			preloadMinimum,
+			std::max(preloadMinimum, neededParts));
 	}
 	const auto requestsLimit = std::clamp(
 		(limitBase * _adaptiveLimitPercent.load(
 			std::memory_order_relaxed)) / 100,
-		limitBase,
+		limitMinimum,
 		int(kLoadFromRemoteMax));
 	auto result = _slices.fill(offset, buffer, preloadParts, requestsLimit);
 	if (result.state != FillState::Success) {
@@ -1602,7 +1616,7 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 			(void)requestOffset;
 			++remoteRequests;
 		}
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader fill waiting offset=%1 buffer=%2 state=%3 boost=%4 preloadBase=%5 preload=%6 limitBase=%7 limit=%8 adaptivePreload=%9 adaptiveLimit=%10 consumptionBps=%11 remoteRequests=%12 loadingActive=%13 headerBytes=%14 size=%15.")
+		VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader fill waiting offset=%1 buffer=%2 state=%3 boost=%4 preloadBase=%5 preload=%6 limitBase=%7 limit=%8 adaptivePreload=%9 adaptiveLimit=%10 consumptionBps=%11 remoteRequests=%12 loadingActive=%13 headerBytes=%14 size=%15.")
 			.arg(qulonglong(offset))
 			.arg(qlonglong(buffer.size()))
 			.arg(int(result.state))
@@ -1706,7 +1720,7 @@ void Reader::cancelLoadOutsideWindow(uint32 windowStart, uint32 windowTill) {
 	// re-queuing just re-submits to the back of the queue, making things
 	// worse. Skip far-seek cancellation until bandwidth recovers.
 	if (_speedIsThrottled.load(std::memory_order_relaxed)) {
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader cancel outside window skipped by throttle start=%1 till=%2 boost=%3.")
+		VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader cancel outside window skipped by throttle start=%1 till=%2 boost=%3.")
 			.arg(qulonglong(windowStart))
 			.arg(qulonglong(windowTill))
 			.arg(DownloadBoostLevel()));
@@ -1739,7 +1753,7 @@ void Reader::cancelLoadOutsideWindow(uint32 windowStart, uint32 windowTill) {
 		}
 	}
 	if (cancelled || pinned) {
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader cancel outside window start=%1 till=%2 cancelled=%3 pinned=%4 boost=%5.")
+		VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader cancel outside window start=%1 till=%2 cancelled=%3 pinned=%4 boost=%5.")
 			.arg(qulonglong(windowStart))
 			.arg(qulonglong(windowTill))
 			.arg(cancelled)

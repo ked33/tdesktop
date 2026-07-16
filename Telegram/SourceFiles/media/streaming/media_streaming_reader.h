@@ -272,6 +272,7 @@ private:
 	enum class SpeedState : uchar { Normal, Burst, Throttle };
 	SpeedState _speedState = SpeedState::Normal;
 	double _burstSpeedEma = 0.0;
+	bool _burstSpeedInitialized = false;
 	std::atomic<int> _adaptivePreloadPercent = 100;
 	std::atomic<int> _adaptiveLimitPercent = 100;
 	std::atomic<bool> _speedIsThrottled = false;
