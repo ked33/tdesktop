@@ -630,7 +630,7 @@ int File::Context::read(bytes::span buffer) {
 
 	buffer = buffer.subspan(0, amount);
 	if (_debugReadCalls < 12) {
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: AVIO read enter offset=%1 amount=%2 requested=%3 size=%4.")
+		VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: AVIO read enter offset=%1 amount=%2 requested=%3 size=%4.")
 			.arg(qlonglong(requestedOffset))
 			.arg(qlonglong(amount))
 			.arg(qlonglong(buffer.size()))
@@ -643,7 +643,7 @@ int File::Context::read(bytes::span buffer) {
 		} else if (result == FileSource::FillState::WaitingRemote) {
 			++_debugWaitingCount;
 			if ((_debugWaitingCount <= 8) || !(_debugWaitingCount % 25)) {
-				VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: AVIO read waiting offset=%1 amount=%2 waitCount=%3.")
+				VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: AVIO read waiting offset=%1 amount=%2 waitCount=%3.")
 					.arg(qlonglong(_offset))
 					.arg(qlonglong(buffer.size()))
 					.arg(_debugWaitingCount));
@@ -673,7 +673,7 @@ int File::Context::read(bytes::span buffer) {
 	_offset += amount;
 	++_debugReadCalls;
 	if (_debugReadCalls <= 12) {
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: AVIO read success offset=%1 amount=%2 nextOffset=%3 waits=%4.")
+		VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: AVIO read success offset=%1 amount=%2 nextOffset=%3 waits=%4.")
 			.arg(qlonglong(requestedOffset))
 			.arg(qlonglong(amount))
 			.arg(qlonglong(_offset))
@@ -698,7 +698,7 @@ int64_t File::Context::seek(int64_t offset, int whence) {
 	default: break;
 	}
 	if (whence != AVSEEK_SIZE) {
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: AVIO seek request offset=%1 whence=%2 result=%3 currentOffset=%4 size=%5.")
+		VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: AVIO seek request offset=%1 whence=%2 result=%3 currentOffset=%4 size=%5.")
 			.arg(qlonglong(offset))
 			.arg(whence)
 			.arg(qlonglong(result))

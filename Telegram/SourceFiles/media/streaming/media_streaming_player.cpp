@@ -52,7 +52,7 @@ constexpr auto kMsFrequency = 1000; // 1000 ms per second.
 	case 5:
 		return 80 * crl::time(1000);
 	case 6:
-		return 48 * crl::time(1000);
+		return 40 * crl::time(1000);
 	default:
 		return 32 * crl::time(1000);
 	}
@@ -71,7 +71,7 @@ constexpr auto kMsFrequency = 1000; // 1000 ms per second.
 	case 5:
 		return 1700;
 	case 6:
-		return 2400;
+		return 2600;
 	default:
 		return kBufferFor;
 	}
@@ -413,7 +413,7 @@ void Player::fileWaitingForData() {
 		return;
 	}
 	_waitingForData = true;
-	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player fileWaitingForData stage=%1 hasAudio=%2 hasVideo=%3 remote=%4 boost=%5 waitBuffer=%6 audioState=%7 videoState=%8.")
+	VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Player fileWaitingForData stage=%1 hasAudio=%2 hasVideo=%3 remote=%4 boost=%5 waitBuffer=%6 audioState=%7 videoState=%8.")
 		.arg(int(_stage))
 		.arg(_audio ? 1 : 0)
 		.arg(_video ? 1 : 0)
