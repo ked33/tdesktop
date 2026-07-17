@@ -44,6 +44,9 @@ public:
 
 	[[nodiscard]] bool isRemoteLoader() const;
 	void setLoaderPriority(int priority);
+	void setSmartStreamingBufferPressure(bool pressure);
+	void setSmartStreamingPlaybackRate(int bytesPerSecond);
+	void notifySmartStreamingSeek();
 
 	[[nodiscard]] int64 size() const;
 	[[nodiscard]] rpl::producer<SpeedEstimate> speedEstimate() const;

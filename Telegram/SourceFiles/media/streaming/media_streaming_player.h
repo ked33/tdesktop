@@ -140,6 +140,7 @@ private:
 		const PlaybackOptions &options,
 		crl::time previousReceivedTill);
 	[[nodiscard]] crl::time loadInAdvanceFor() const;
+	void updateSmartStreamingPlaybackRate();
 
 	template <typename Track>
 	int durationByPacket(const Track &track, const FFmpeg::Packet &packet);
