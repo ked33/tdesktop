@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_loader.h"
 #include "settings.h"
 #include "storage/cache/storage_cache_database.h"
+#include "storage/storage_non_premium_delay.h"
 
 namespace Media {
 namespace Streaming {
@@ -24,6 +25,9 @@ constexpr auto kMaxPartsInHeader = 64;
 constexpr auto kMaxOnlyInHeader = 80 * kPartSize;
 constexpr auto kPartsOutsideFirstSliceGood = 8;
 constexpr auto kSlicesInMemory = 2;
+constexpr auto kSmartMinimumPreload = 8;
+constexpr auto kSmartMinimumRequests = 4;
+constexpr auto kNonPremiumMaxPreload = 20;
 
 using PartsMap = base::flat_map<uint32, QByteArray>;
 
@@ -108,6 +112,15 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 	default:
 		return 8;
 	}
+}
+
+[[nodiscard]] int NonPremiumPreloadLimit(int requests) {
+	if (requests <= 4) {
+		return kSmartMinimumPreload;
+	} else if (requests <= 6) {
+		return 10;
+	}
+	return 12;
 }
 
 struct ParsedCacheEntry {
@@ -964,6 +977,7 @@ Reader::Reader(
 	std::unique_ptr<Loader> loader,
 	Storage::Cache::Database *cache)
 : _loader(std::move(loader))
+, _premiumSession(_loader->premiumSession())
 , _cache(cache)
 , _cacheHelper(cache ? InitCacheHelper(_loader->baseCacheKey()) : nullptr)
 , _slices(_loader->size(), _cacheHelper != nullptr) {
@@ -982,9 +996,10 @@ Reader::Reader(
 	}, _lifetime);
 
 	const auto applyServerDelay = [=](ServerDelay delay) {
-		if (DownloadBoostLevel() != 6) {
+		if (_premiumSession) {
 			return;
 		}
+		_serverDcId.store(delay.dcId, std::memory_order_relaxed);
 		const auto now = crl::now();
 		const auto limitedUntil = std::max(
 			_serverLimitedUntil.load(std::memory_order_relaxed),
@@ -997,8 +1012,23 @@ Reader::Reader(
 		}
 		_serverLimitedUntil.store(limitedUntil, std::memory_order_relaxed);
 		_serverRecoveryUntil.store(recoveryUntil, std::memory_order_relaxed);
+		_serverPenalty.store(delay.penalty, std::memory_order_relaxed);
+		if (DownloadBoostLevel() != 6) {
+			return;
+		}
+		const auto state = Storage::NonPremiumDelayState{
+			.limitedUntil = limitedUntil,
+			.recoveryUntil = recoveryUntil,
+			.penalty = delay.penalty,
+		};
+		const auto dispatchLimit = Storage::NonPremiumRequestLimit(
+			state,
+			now);
 		_serverLimitPhase.store(
 			(limitedUntil > now) ? 1 : 2,
+			std::memory_order_relaxed);
+		_serverLimitRequests.store(
+			dispatchLimit,
 			std::memory_order_relaxed);
 		_pendingTailPrefetchBytes.store(0, std::memory_order_release);
 		_speedState = SpeedState::Normal;
@@ -1007,19 +1037,28 @@ Reader::Reader(
 		_adaptivePreloadPercent.store(100, std::memory_order_relaxed);
 		_adaptiveLimitPercent.store(100, std::memory_order_relaxed);
 		_speedIsThrottled.store(false, std::memory_order_relaxed);
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: server limited waitMs=%1 limitedFor=%2 recoveryFor=%3 preload=8 limit=4.")
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: server limited "
+			"dc=%1 waitMs=%2 limitedFor=%3 recoveryFor=%4 penalty=%5 "
+			"preload=%6 queueLimit=%7 dispatchLimit=%8.")
+			.arg(delay.dcId)
 			.arg(delay.waitMs)
 			.arg(qlonglong(std::max(limitedUntil - now, crl::time(0))))
-			.arg(qlonglong(recoveryUntil - std::max(limitedUntil, now))));
+			.arg(qlonglong(recoveryUntil - std::max(limitedUntil, now)))
+			.arg(delay.penalty)
+			.arg(NonPremiumPreloadLimit(dispatchLimit))
+			.arg((limitedUntil > now)
+				? kSmartMinimumRequests
+				: dispatchLimit)
+			.arg(dispatchLimit));
 	};
 	applyServerDelay(_loader->serverDelayState());
 	_loader->serverDelays(
 	) | rpl::on_next(applyServerDelay, _lifetime);
 
 	// Adaptive scheduling driven by measured download speed. Three states:
-	//   - Burst: sustained >= 1.5 MB/s. Grow preload depth and the per-fill
-	//     request cap so we bank extra buffer before the server-side throttle
-	//     kicks in again.
+	//   - Burst: sustained >= 1.5 MB/s. Grow preload depth. Premium and fixed
+	//     levels may also grow request depth, while non-Premium Smart keeps
+	//     requests within its DC-wide cap.
 	//   - Normal: between thresholds. Baseline behaviour.
 	//   - Throttle: sustained <= 200 KB/s. Smart mode reduces preload and
 	//     request depth, while fixed levels stay at their configured baseline.
@@ -1032,6 +1071,7 @@ Reader::Reader(
 			|| estimate.unreliable
 			|| estimate.bytesPerSecond <= 0
 			|| (DownloadBoostLevel() == 6
+				&& !_premiumSession
 				&& crl::now() < _serverRecoveryUntil.load(
 					std::memory_order_relaxed))) {
 			return;
@@ -1056,13 +1096,20 @@ Reader::Reader(
 			}
 			_speedState = next;
 			const auto smart = (DownloadBoostLevel() == 6);
+			const auto conservative = smart && !_premiumSession;
+			const auto burstPreloadPercent = conservative
+				? 125
+				: (smart ? 150 : 200);
+			const auto burstLimitPercent = conservative
+				? 100
+				: (smart ? 125 : 150);
 			switch (next) {
 			case SpeedState::Burst:
 				_adaptivePreloadPercent.store(
-					smart ? 150 : 200,
+					burstPreloadPercent,
 					std::memory_order_relaxed);
 				_adaptiveLimitPercent.store(
-					smart ? 125 : 150,
+					burstLimitPercent,
 					std::memory_order_relaxed);
 				_speedIsThrottled.store(
 					false,
@@ -1161,6 +1208,7 @@ void Reader::requestTailPrefetch(int64 bytes) {
 		return;
 	}
 	if (DownloadBoostLevel() == 6
+		&& !_premiumSession
 		&& crl::now() < _serverRecoveryUntil.load(
 			std::memory_order_relaxed)) {
 		return;
@@ -1622,16 +1670,33 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	using namespace rpl::mappers;
 
 	const auto boost = DownloadBoostLevel();
+	const auto smartNonPremium = (boost == 6) && !_premiumSession;
 	const auto preloadBase = PreloadPartsAhead();
 	const auto limitBase = StreamingRequestsLimit();
-	const auto preloadMinimum = (boost == 6) ? 8 : preloadBase;
-	const auto limitMinimum = (boost == 6) ? 4 : limitBase;
+	const auto preloadMinimum = (boost == 6)
+		? kSmartMinimumPreload
+		: preloadBase;
+	const auto limitMinimum = (boost == 6)
+		? kSmartMinimumRequests
+		: limitBase;
 	const auto now = crl::now();
-	const auto serverLimited = (boost == 6)
-		&& (now < _serverLimitedUntil.load(std::memory_order_relaxed));
+	const auto limitedUntil = _serverLimitedUntil.load(
+		std::memory_order_relaxed);
+	const auto recoveryUntil = _serverRecoveryUntil.load(
+		std::memory_order_relaxed);
+	const auto serverLimited = smartNonPremium
+		&& (now < limitedUntil);
 	const auto serverRecovering = !serverLimited
-		&& (boost == 6)
-		&& (now < _serverRecoveryUntil.load(std::memory_order_relaxed));
+		&& smartNonPremium
+		&& (now < recoveryUntil);
+	const auto serverState = Storage::NonPremiumDelayState{
+		.limitedUntil = limitedUntil,
+		.recoveryUntil = recoveryUntil,
+		.penalty = _serverPenalty.load(std::memory_order_relaxed),
+	};
+	const auto recoveryRequestLimit = serverRecovering
+		? Storage::NonPremiumRequestLimit(serverState, now)
+		: 0;
 	auto preloadParts = std::clamp(
 		(preloadBase * _adaptivePreloadPercent.load(
 			std::memory_order_relaxed)) / 100,
@@ -1659,22 +1724,52 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		limitMinimum,
 		int(kLoadFromRemoteMax));
 	if (serverLimited) {
-		preloadParts = 8;
-		requestsLimit = 4;
+		preloadParts = kSmartMinimumPreload;
+		requestsLimit = kSmartMinimumRequests;
 	} else if (serverRecovering) {
-		preloadParts = std::min(preloadParts, 12);
-		requestsLimit = std::min(requestsLimit, 8);
+		preloadParts = std::min(
+			preloadParts,
+			NonPremiumPreloadLimit(recoveryRequestLimit));
+		requestsLimit = std::min(
+			requestsLimit,
+			recoveryRequestLimit);
+	} else if (smartNonPremium) {
+		preloadParts = std::min(
+			preloadParts,
+			kNonPremiumMaxPreload);
+		requestsLimit = std::min(
+			requestsLimit,
+			Storage::kNonPremiumInitialRequestLimit);
 	}
-	const auto serverPhase = serverLimited ? 1 : serverRecovering ? 2 : 0;
+	const auto serverPhase = serverLimited
+		? 1
+		: (serverRecovering ? 2 : 0);
+	const auto serverRequests = [&] {
+		if (serverLimited || !smartNonPremium) {
+			return 0;
+		}
+		return serverRecovering
+			? recoveryRequestLimit
+			: Storage::kNonPremiumInitialRequestLimit;
+	}();
 	const auto previousServerPhase = _serverLimitPhase.exchange(
 		serverPhase,
 		std::memory_order_relaxed);
-	if (previousServerPhase != serverPhase) {
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: server phase=%1 previous=%2 preload=%3 limit=%4.")
+	const auto previousServerRequests = _serverLimitRequests.exchange(
+		serverRequests,
+		std::memory_order_relaxed);
+	if (previousServerPhase != serverPhase
+		|| previousServerRequests != serverRequests) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: server phase=%1 "
+			"dc=%2 previous=%3 preload=%4 queueLimit=%5 "
+			"dispatchLimit=%6 penalty=%7.")
 			.arg(serverPhase)
+			.arg(_serverDcId.load(std::memory_order_relaxed))
 			.arg(previousServerPhase)
 			.arg(preloadParts)
-			.arg(requestsLimit));
+			.arg(requestsLimit)
+			.arg(serverRequests)
+			.arg(serverState.penalty));
 	}
 	auto result = _slices.fill(offset, buffer, preloadParts, requestsLimit);
 	if (result.state != FillState::Success) {
@@ -1787,6 +1882,7 @@ void Reader::cancelLoadOutsideWindow(uint32 windowStart, uint32 windowTill) {
 	// re-queuing just re-submits to the back of the queue, making things
 	// worse. Skip far-seek cancellation until bandwidth recovers.
 	const auto serverLimited = (DownloadBoostLevel() == 6)
+		&& !_premiumSession
 		&& (crl::now() < _serverLimitedUntil.load(
 			std::memory_order_relaxed));
 	if (serverLimited
