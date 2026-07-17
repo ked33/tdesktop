@@ -105,8 +105,10 @@ struct SpeedEstimate {
 
 struct ServerDelay {
 	int waitMs = 0;
+	int dcId = 0;
 	crl::time limitedUntil = 0;
 	crl::time recoveryUntil = 0;
+	int penalty = 0;
 };
 
 struct MutedByOther {

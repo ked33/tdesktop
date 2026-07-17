@@ -48,6 +48,9 @@ public:
 	[[nodiscard]] virtual ServerDelay serverDelayState() const {
 		return {};
 	}
+	[[nodiscard]] virtual bool premiumSession() const {
+		return true;
+	}
 
 	virtual void attachDownloader(
 		not_null<Storage::StreamedFileDownloader*> downloader) = 0;
