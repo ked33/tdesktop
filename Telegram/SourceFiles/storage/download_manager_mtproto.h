@@ -79,6 +79,18 @@ public:
 	nonPremiumDelayUpdates() const {
 		return _nonPremiumDelayUpdates.events();
 	}
+	void setSmartStreamingBufferPressure(
+		not_null<Task*> task,
+		bool pressure);
+	void setSmartStreamingPlaybackRate(
+		not_null<Task*> task,
+		int bytesPerSecond);
+	void notifySmartStreamingSeek(not_null<Task*> task);
+	[[nodiscard]] int nonPremiumRequestLimit(MTP::DcId dcId) const;
+	[[nodiscard]] rpl::producer<std::pair<MTP::DcId, int>>
+	nonPremiumRequestLimitUpdates() const {
+		return _nonPremiumRequestLimitUpdates.events();
+	}
 
 private:
 	class Queue final {
@@ -115,6 +127,38 @@ private:
 		int timeouts = 0; // Since all sessions had successes >= required.
 		int totalRequested = 0;
 	};
+	struct SmartStreamingDemand {
+		MTP::DcId dcId = 0;
+		int playbackBytesPerSecond = 0;
+		crl::time pressureSince = 0;
+		crl::time seekUntil = 0;
+		bool bufferPressure = false;
+	};
+	struct SmartDemandSummary {
+		int playbackBytesPerSecond = 0;
+		crl::time pressureSince = 0;
+		crl::time seekUntil = 0;
+		bool bufferPressure = false;
+	};
+	struct SmartRequestState {
+		int target = kNonPremiumInitialRequestLimit;
+		crl::time created = 0;
+		crl::time lastChange = 0;
+		crl::time sampleLastUpdate = 0;
+		crl::time sampleBusyDuration = 0;
+		int64 sampleBytes = 0;
+		int64 sampleLatency = 0;
+		int sampleRequests = 0;
+		double throughputEma = 0.;
+		double latencyEma = 0.;
+		double lastThroughput = 0.;
+		double lastLatency = 0.;
+		int probePreviousTarget = 0;
+		crl::time probeStarted = 0;
+		double probeThroughput = 0.;
+		double probeLatency = 0.;
+		bool probeActive = false;
+	};
 
 	void checkSendNext();
 	void checkSendNext(MTP::DcId dcId, Queue &queue);
@@ -130,6 +174,24 @@ private:
 	void removeSession(MTP::DcId dcId);
 	void scheduleNonPremiumDelayCheck();
 	void checkNonPremiumDelayState();
+	[[nodiscard]] bool smartNonPremiumEnabled() const;
+	[[nodiscard]] SmartRequestState &smartRequestState(
+		MTP::DcId dcId,
+		crl::time now);
+	[[nodiscard]] SmartDemandSummary smartDemandSummary(
+		MTP::DcId dcId) const;
+	void trackSmartRequestActivity(MTP::DcId dcId, crl::time now);
+	void recordSmartRequestSuccess(
+		MTP::DcId dcId,
+		crl::time duration,
+		crl::time now);
+	void evaluateSmartRequestLimit(MTP::DcId dcId, crl::time now);
+	void updateSmartRequestLimit(
+		MTP::DcId dcId,
+		int target,
+		NonPremiumRequestLimitReason reason,
+		crl::time now);
+	void applySmartServerLimit(MTP::DcId dcId, crl::time now);
 
 	const not_null<ApiWrap*> _api;
 
@@ -138,9 +200,14 @@ private:
 		_nonPremiumDelays;
 	rpl::event_stream<std::pair<MTP::DcId, NonPremiumDelayInfo>>
 		_nonPremiumDelayUpdates;
+	rpl::event_stream<std::pair<MTP::DcId, int>>
+		_nonPremiumRequestLimitUpdates;
 
 	base::flat_map<MTP::DcId, DcBalanceData> _balanceData;
 	base::flat_map<MTP::DcId, NonPremiumDelayState> _nonPremiumDelayStates;
+	base::flat_map<not_null<Task*>, SmartStreamingDemand>
+		_smartStreamingDemands;
+	base::flat_map<MTP::DcId, SmartRequestState> _smartRequestStates;
 	base::Timer _nonPremiumDelayTimer;
 	base::Timer _resetGenerationTimer;
 

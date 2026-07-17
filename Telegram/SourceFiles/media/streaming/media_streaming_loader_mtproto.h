@@ -41,6 +41,11 @@ public:
 	[[nodiscard]] rpl::producer<ServerDelay> serverDelays() const override;
 	[[nodiscard]] ServerDelay serverDelayState() const override;
 	[[nodiscard]] bool premiumSession() const override;
+	void setSmartStreamingBufferPressure(bool pressure) override;
+	void setSmartStreamingPlaybackRate(int bytesPerSecond) override;
+	void notifySmartStreamingSeek() override;
+	[[nodiscard]] int smartStreamingRequestLimit() const override;
+	[[nodiscard]] int smartStreamingPlaybackRate() const override;
 
 	void attachDownloader(
 		not_null<Storage::StreamedFileDownloader*> downloader) override;
@@ -63,8 +68,13 @@ private:
 
 	void checkStats();
 
+	const not_null<Storage::DownloadManagerMtproto*> _owner;
 	const int64 _size = 0;
 	int _priority = 0;
+	std::atomic<int> _smartRequestLimit =
+		Storage::kNonPremiumInitialRequestLimit;
+	std::atomic<int> _smartPlaybackRate = 0;
+	std::atomic<bool> _smartBufferPressure = false;
 
 	MTP::Sender _api;
 

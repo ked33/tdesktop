@@ -87,6 +87,18 @@ public:
 		_reader->setLoaderPriority(priority);
 	}
 
+	void setSmartStreamingBufferPressure(bool pressure) override {
+		_reader->setSmartStreamingBufferPressure(pressure);
+	}
+
+	void setSmartStreamingPlaybackRate(int bytesPerSecond) override {
+		_reader->setSmartStreamingPlaybackRate(bytesPerSecond);
+	}
+
+	void notifySmartStreamingSeek() override {
+		_reader->notifySmartStreamingSeek();
+	}
+
 	[[nodiscard]] rpl::producer<SpeedEstimate> speedEstimate() const override {
 		return _reader->speedEstimate();
 	}
