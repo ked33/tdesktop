@@ -399,6 +399,7 @@ private:
 
 	void escape();
 	void fieldChanged();
+	[[nodiscard]] bool suppressSendAction() const;
 	void toggleTabbedSelectorMode();
 	void createTabbedPanel();
 	void setTabbedPanel(std::unique_ptr<ChatHelpers::TabbedPanel> panel);

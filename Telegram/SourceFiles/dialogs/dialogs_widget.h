@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -426,6 +426,7 @@ private:
 	ChatSearchTab _searchQueryTab = {};
 	ChannelData *_searchQueryCommunity = nullptr;
 	ChatTypeFilter _searchQueryFilter = {};
+	bool _searchQueryFromArchive = true;
 
 	Ui::Controls::SwipeBackResult _swipeBackData;
 	bool _swipeBackMirrored = false;

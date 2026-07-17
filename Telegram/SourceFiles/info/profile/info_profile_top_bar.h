@@ -128,6 +128,10 @@ public:
 	void bindActiveTab(
 		rpl::producer<TabTopBarBindings> bindings,
 		rpl::producer<bool> docked);
+	void setupStandaloneGroupControl(
+		rpl::producer<bool> state,
+		rpl::producer<bool> available,
+		Fn<void(bool)> toggle);
 
 	void setRoundEdges(bool value);
 	void setLottieSingleLoop(bool value);
@@ -208,6 +212,7 @@ private:
 	void refreshTabSubtitle();
 	void paintTabSubtitle(QPainter &p);
 	void updateRightButtonsPosition();
+	void updateTabGroupActive();
 	[[nodiscard]] bool tabSwapActive() const;
 	void setTabSelectedItems(SelectedItems &&items);
 	void createTabSelectionBar();
@@ -280,6 +285,10 @@ private:
 	bool _tabSearchAvailable = false;
 	bool _tabSearchShown = false;
 	Fn<void(QString)> _tabApplySearch;
+	Fn<void(bool)> _tabSetGroup;
+	bool _tabGroupActive = false;
+	bool _tabGroupAvailable = false;
+	bool _standaloneGroup = false;
 	object_ptr<Ui::FlatLabel> _status;
 	std::unique_ptr<StatusLabel> _statusLabel;
 	rpl::variable<int> _statusShift = 0;
@@ -325,6 +334,7 @@ private:
 	rpl::lifetime _userpicLoadingLifetime;
 
 	base::unique_qptr<Ui::IconButton> _close;
+	bool _closeColored = false;
 	base::unique_qptr<Ui::FadeWrap<Ui::IconButton>> _back;
 	rpl::variable<bool> _backToggles;
 
@@ -334,6 +344,7 @@ private:
 	base::unique_qptr<Ui::IconButton> _topBarButton;
 	base::unique_qptr<Ui::FadeWrap<Ui::IconButton>> _tabMenuToggle;
 	base::unique_qptr<Ui::FadeWrap<Ui::IconButton>> _tabSearchToggle;
+	base::unique_qptr<Ui::FadeWrap<Ui::IconButton>> _tabGroupToggle;
 	base::unique_qptr<Ui::PopupMenu> _peerMenu;
 
 	Ui::RpWidget *_actionMore = nullptr;
