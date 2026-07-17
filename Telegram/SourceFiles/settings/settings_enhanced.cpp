@@ -495,6 +495,20 @@ namespace Settings {
 
 		AddButtonWithIcon(
 				inner,
+				tr::lng_settings_search_main_and_archive(),
+				st::settingsButtonNoIcon
+		)->toggleOn(
+				rpl::single(GetEnhancedBool("search_main_and_archive"))
+		)->toggledChanges(
+		) | rpl::filter([=](bool toggled) {
+			return (toggled != GetEnhancedBool("search_main_and_archive"));
+		}) | rpl::on_next([=](bool toggled) {
+			SetEnhancedValue("search_main_and_archive", toggled);
+			EnhancedSettings::Write();
+		}, container->lifetime());
+
+		AddButtonWithIcon(
+				inner,
 				tr::lng_settings_show_group_sender_avatar(),
 				st::settingsButtonNoIcon
 		)->toggleOn(
