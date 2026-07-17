@@ -94,12 +94,7 @@ if (NOT DESKTOP_APP_DISABLE_SWIFT6)
     telegram_add_apple_swift_runtime(Telegram)
 endif()
 
-if (TDESKTOP_DISABLE_MAIN_PCH)
-    target_compile_options(Telegram PRIVATE
-        "$<$<COMPILE_LANGUAGE:CXX,OBJCXX>:/FI${src_loc}/stdafx.h>")
-else()
-    target_precompile_headers(Telegram PRIVATE $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:${src_loc}/stdafx.h>)
-endif()
+target_precompile_headers(Telegram PRIVATE $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:${src_loc}/stdafx.h>)
 nice_target_sources(Telegram ${src_loc}
 PRIVATE
     ${style_files}
