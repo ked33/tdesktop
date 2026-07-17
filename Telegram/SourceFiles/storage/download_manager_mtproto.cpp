@@ -31,7 +31,7 @@ constexpr auto kMaxTrackedSuccesses = kRetryAddSessionSuccesses
 constexpr auto kRemoveSessionAfterTimeouts = 4;
 constexpr auto kResetDownloadPrioritiesTimeout = crl::time(200);
 constexpr auto kBadRequestDurationThreshold = 8 * crl::time(1000);
-constexpr auto kNonPremiumRecoveryDuration = 30 * crl::time(1000);
+constexpr auto kNonPremiumDelayCoalesceTolerance = crl::time(1500);
 
 [[nodiscard]] int DownloadBoostLevel() {
 	const auto boost = GetEnhancedInt("net_download_speed_boost");
@@ -200,6 +200,7 @@ DownloadManagerMtproto::DcBalanceData::DcBalanceData()
 
 DownloadManagerMtproto::DownloadManagerMtproto(not_null<ApiWrap*> api)
 : _api(api)
+, _nonPremiumDelayTimer([=] { checkNonPremiumDelayState(); })
 , _resetGenerationTimer([=] { resetGeneration(); })
 , _killSessionsTimer([=] { killSessions(); }) {
 	_api->instance().restartsByTimeout(
@@ -222,13 +223,52 @@ void DownloadManagerMtproto::notifyNonPremiumDelay(
 		NonPremiumDelayInfo info) {
 	const auto now = crl::now();
 	auto &state = _nonPremiumDelayStates[dcId];
+	const auto limitedUntil = now + std::max(info.appliedWaitMs, 1000);
+	const auto newWindow = (state.limitedUntil <= now);
+	const auto shouldNotify = newWindow
+		|| (limitedUntil
+			> state.limitedUntil + kNonPremiumDelayCoalesceTolerance);
+	if (newWindow) {
+		state.penalty = (state.recoveryUntil > now)
+			? std::min(std::max(state.penalty, 1) + 1, 3)
+			: 1;
+	}
 	state.limitedUntil = std::max(
 		state.limitedUntil,
-		now + std::max(info.appliedWaitMs, 1000));
+		limitedUntil);
 	state.recoveryUntil = std::max(
 		state.recoveryUntil,
-		state.limitedUntil + kNonPremiumRecoveryDuration);
+		state.limitedUntil + NonPremiumRecoveryDuration(state.penalty));
+	scheduleNonPremiumDelayCheck();
+	if (!shouldNotify) {
+		return;
+	}
+	_nonPremiumDelayUpdates.fire_copy({ dcId, info });
 	_nonPremiumDelays.fire_copy({ id, info });
+}
+
+void DownloadManagerMtproto::scheduleNonPremiumDelayCheck() {
+	_nonPremiumDelayTimer.cancel();
+	const auto now = crl::now();
+	auto next = crl::time(0);
+	for (const auto &[dcId, state] : _nonPremiumDelayStates) {
+		(void)dcId;
+		const auto changeAt = NonPremiumNextStateChange(state, now);
+		if (changeAt && (!next || changeAt < next)) {
+			next = changeAt;
+		}
+	}
+	if (next) {
+		_nonPremiumDelayTimer.callOnce(std::max(
+			next - now,
+			crl::time(1)));
+	}
+}
+
+void DownloadManagerMtproto::checkNonPremiumDelayState() {
+	_nonPremiumDelayTimer.cancel();
+	checkSendNext();
+	scheduleNonPremiumDelayCheck();
 }
 
 void DownloadManagerMtproto::enqueue(not_null<Task*> task, int priority) {
@@ -275,6 +315,19 @@ void DownloadManagerMtproto::checkSendNextAfterSuccess(MTP::DcId dcId) {
 
 bool DownloadManagerMtproto::trySendNextPart(MTP::DcId dcId, Queue &queue) {
 	auto &balanceData = _balanceData[dcId];
+	const auto delay = nonPremiumDelayState(dcId);
+	const auto now = crl::now();
+	if (now < delay.limitedUntil) {
+		return false;
+	}
+	if (DownloadBoostLevel() == 6 && !_api->session().premium()) {
+		const auto requestLimit = NonPremiumRequestLimit(delay, now);
+		const auto requested = balanceData.totalRequested
+			+ kDownloadPartSize;
+		if (requested > requestLimit * kDownloadPartSize) {
+			return false;
+		}
+	}
 	const auto &sessions = balanceData.sessions;
 	const auto bestIndex = [&] {
 		const auto proj = [](const DcSessionBalanceData &data) {
@@ -930,7 +983,6 @@ void DownloadMtprotoTask::subscribeToNonPremiumLimit() {
 						dcId(),
 						documentId,
 						data.second);
-					nonPremiumDelay(data.second);
 				}
 			}
 		}

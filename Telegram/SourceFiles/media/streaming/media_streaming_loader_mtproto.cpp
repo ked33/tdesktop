@@ -30,6 +30,20 @@ LoaderMtproto::LoaderMtproto(
 , _size(size)
 , _api(&api().instance())
 , _statsTimer([=] { checkStats(); }) {
+	const auto dc = dcId();
+	owner->nonPremiumDelayUpdates(
+	) | rpl::filter([=](const auto &entry) {
+		return (entry.first == dc);
+	}) | rpl::on_next([=](const auto &entry) {
+		const auto state = nonPremiumDelayState();
+		_serverDelays.fire({
+			.waitMs = entry.second.appliedWaitMs,
+			.dcId = int(dc),
+			.limitedUntil = state.limitedUntil,
+			.recoveryUntil = state.recoveryUntil,
+			.penalty = state.penalty,
+		});
+	}, _lifetime);
 }
 
 Storage::Cache::Key LoaderMtproto::baseCacheKey() const {
@@ -177,18 +191,15 @@ rpl::producer<ServerDelay> LoaderMtproto::serverDelays() const {
 ServerDelay LoaderMtproto::serverDelayState() const {
 	const auto state = nonPremiumDelayState();
 	return {
+		.dcId = int(dcId()),
 		.limitedUntil = state.limitedUntil,
 		.recoveryUntil = state.recoveryUntil,
+		.penalty = state.penalty,
 	};
 }
 
-void LoaderMtproto::nonPremiumDelay(Storage::NonPremiumDelayInfo info) {
-	const auto state = nonPremiumDelayState();
-	_serverDelays.fire({
-		.waitMs = info.appliedWaitMs,
-		.limitedUntil = state.limitedUntil,
-		.recoveryUntil = state.recoveryUntil,
-	});
+bool LoaderMtproto::premiumSession() const {
+	return api().session().premium();
 }
 
 void LoaderMtproto::checkStats() {

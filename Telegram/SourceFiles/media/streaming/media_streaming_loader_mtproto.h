@@ -40,6 +40,7 @@ public:
 	[[nodiscard]] rpl::producer<SpeedEstimate> speedEstimate() const override;
 	[[nodiscard]] rpl::producer<ServerDelay> serverDelays() const override;
 	[[nodiscard]] ServerDelay serverDelayState() const override;
+	[[nodiscard]] bool premiumSession() const override;
 
 	void attachDownloader(
 		not_null<Storage::StreamedFileDownloader*> downloader) override;
@@ -56,7 +57,6 @@ private:
 	int64 takeNextRequestOffset() override;
 	bool feedPart(int64 offset, const QByteArray &bytes) override;
 	void cancelOnFail() override;
-	void nonPremiumDelay(Storage::NonPremiumDelayInfo info) override;
 
 	void cancelForOffset(int64 offset);
 	void addToQueueWithPriority();
@@ -76,6 +76,7 @@ private:
 	std::vector<StatsEntry> _stats;
 	crl::time _firstRequestStart = 0;
 	base::Timer _statsTimer;
+	rpl::lifetime _lifetime;
 
 	Storage::StreamedFileDownloader *_downloader = nullptr;
 
