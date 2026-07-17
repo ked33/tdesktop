@@ -256,6 +256,7 @@ private:
 		Storage::Cache::Key baseKey);
 
 	const std::unique_ptr<Loader> _loader;
+	const bool _premiumSession = true;
 	Storage::Cache::Database * const _cache = nullptr;
 
 	// shared_ptr is used to be able to have weak_ptr.
@@ -278,7 +279,10 @@ private:
 	std::atomic<bool> _speedIsThrottled = false;
 	std::atomic<crl::time> _serverLimitedUntil = 0;
 	std::atomic<crl::time> _serverRecoveryUntil = 0;
+	std::atomic<int> _serverDcId = 0;
+	std::atomic<int> _serverPenalty = 0;
 	std::atomic<int> _serverLimitPhase = 0;
+	std::atomic<int> _serverLimitRequests = 0;
 
 	// Playback-consumption estimator (streaming thread only). Updated from
 	// Reader::fill() by sampling forward offset advancement, then read in

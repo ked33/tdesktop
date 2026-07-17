@@ -66,11 +66,18 @@ public:
 	[[nodiscard]] NonPremiumDelayState nonPremiumDelayState(
 		MTP::DcId dcId) const {
 		const auto i = _nonPremiumDelayStates.find(dcId);
-		return (i != end(_nonPremiumDelayStates)) ? i->second : NonPremiumDelayState();
+		if (i != end(_nonPremiumDelayStates)) {
+			return i->second;
+		}
+		return {};
 	}
 	[[nodiscard]] rpl::producer<std::pair<DocumentId, NonPremiumDelayInfo>>
 	nonPremiumDelays() const {
 		return _nonPremiumDelays.events();
+	}
+	[[nodiscard]] rpl::producer<std::pair<MTP::DcId, NonPremiumDelayInfo>>
+	nonPremiumDelayUpdates() const {
+		return _nonPremiumDelayUpdates.events();
 	}
 
 private:
@@ -121,15 +128,20 @@ private:
 	void resetGeneration();
 	void sessionTimedOut(MTP::DcId dcId, int index);
 	void removeSession(MTP::DcId dcId);
+	void scheduleNonPremiumDelayCheck();
+	void checkNonPremiumDelayState();
 
 	const not_null<ApiWrap*> _api;
 
 	rpl::event_stream<> _taskFinished;
 	rpl::event_stream<std::pair<DocumentId, NonPremiumDelayInfo>>
 		_nonPremiumDelays;
+	rpl::event_stream<std::pair<MTP::DcId, NonPremiumDelayInfo>>
+		_nonPremiumDelayUpdates;
 
 	base::flat_map<MTP::DcId, DcBalanceData> _balanceData;
 	base::flat_map<MTP::DcId, NonPremiumDelayState> _nonPremiumDelayStates;
+	base::Timer _nonPremiumDelayTimer;
 	base::Timer _resetGenerationTimer;
 
 	base::flat_map<MTP::DcId, crl::time> _killSessionsWhen;
@@ -184,8 +196,6 @@ protected:
 	void removeFromQueue();
 	[[nodiscard]] NonPremiumDelayState nonPremiumDelayState() const {
 		return _owner->nonPremiumDelayState(_dcId);
-	}
-	virtual void nonPremiumDelay(NonPremiumDelayInfo) {
 	}
 
 	[[nodiscard]] ApiWrap &api() const {
