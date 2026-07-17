@@ -27,7 +27,9 @@ LoaderMtproto::LoaderMtproto(
 	int64 size,
 	Data::FileOrigin origin)
 : DownloadMtprotoTask(owner, location, origin)
+, _owner(owner)
 , _size(size)
+, _smartRequestLimit(owner->nonPremiumRequestLimit(location.dcId()))
 , _api(&api().instance())
 , _statsTimer([=] { checkStats(); }) {
 	const auto dc = dcId();
@@ -43,6 +45,12 @@ LoaderMtproto::LoaderMtproto(
 			.recoveryUntil = state.recoveryUntil,
 			.penalty = state.penalty,
 		});
+	}, _lifetime);
+	owner->nonPremiumRequestLimitUpdates(
+	) | rpl::filter([=](const auto &entry) {
+		return (entry.first == dc);
+	}) | rpl::on_next([=](const auto &entry) {
+		_smartRequestLimit.store(entry.second, std::memory_order_relaxed);
 	}, _lifetime);
 }
 
@@ -80,6 +88,16 @@ void LoaderMtproto::addToQueueWithPriority() {
 
 void LoaderMtproto::stop() {
 	crl::on_main(this, [=] {
+		if (_smartBufferPressure.exchange(
+				false,
+				std::memory_order_relaxed)) {
+			_owner->setSmartStreamingBufferPressure(this, false);
+		}
+		if (_smartPlaybackRate.exchange(
+				0,
+				std::memory_order_relaxed)) {
+			_owner->setSmartStreamingPlaybackRate(this, 0);
+		}
 		cancelAllRequests();
 		_requested.clear();
 		removeFromQueue();
@@ -200,6 +218,43 @@ ServerDelay LoaderMtproto::serverDelayState() const {
 
 bool LoaderMtproto::premiumSession() const {
 	return api().session().premium();
+}
+
+void LoaderMtproto::setSmartStreamingBufferPressure(bool pressure) {
+	if (_smartBufferPressure.exchange(
+			pressure,
+			std::memory_order_relaxed) == pressure) {
+		return;
+	}
+	crl::on_main(this, [=] {
+		_owner->setSmartStreamingBufferPressure(this, pressure);
+	});
+}
+
+void LoaderMtproto::setSmartStreamingPlaybackRate(int bytesPerSecond) {
+	bytesPerSecond = std::max(bytesPerSecond, 0);
+	if (_smartPlaybackRate.exchange(
+			bytesPerSecond,
+			std::memory_order_relaxed) == bytesPerSecond) {
+		return;
+	}
+	crl::on_main(this, [=] {
+		_owner->setSmartStreamingPlaybackRate(this, bytesPerSecond);
+	});
+}
+
+void LoaderMtproto::notifySmartStreamingSeek() {
+	crl::on_main(this, [=] {
+		_owner->notifySmartStreamingSeek(this);
+	});
+}
+
+int LoaderMtproto::smartStreamingRequestLimit() const {
+	return _smartRequestLimit.load(std::memory_order_relaxed);
+}
+
+int LoaderMtproto::smartStreamingPlaybackRate() const {
+	return _smartPlaybackRate.load(std::memory_order_relaxed);
 }
 
 void LoaderMtproto::checkStats() {

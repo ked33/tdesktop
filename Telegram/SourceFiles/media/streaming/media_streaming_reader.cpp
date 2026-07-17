@@ -1021,9 +1021,9 @@ Reader::Reader(
 			.recoveryUntil = recoveryUntil,
 			.penalty = delay.penalty,
 		};
-		const auto dispatchLimit = Storage::NonPremiumRequestLimit(
-			state,
-			now);
+		const auto dispatchLimit = std::min(
+			_loader->smartStreamingRequestLimit(),
+			Storage::NonPremiumRequestLimit(state, now));
 		_serverLimitPhase.store(
 			(limitedUntil > now) ? 1 : 2,
 			std::memory_order_relaxed);
@@ -1060,9 +1060,10 @@ Reader::Reader(
 	//     levels may also grow request depth, while non-Premium Smart keeps
 	//     requests within its DC-wide cap.
 	//   - Normal: between thresholds. Baseline behaviour.
-	//   - Throttle: sustained <= 200 KB/s. Smart mode reduces preload and
-	//     request depth, while fixed levels stay at their configured baseline.
-	//     The state also keeps far-seek cancellation from thrashing requests.
+	//   - Throttle: sustained <= 200 KB/s. Smart mode reduces preload, while
+	//     the non-Premium DC controller owns request depth. Fixed levels stay
+	//     at their configured baseline. The state also keeps far-seek
+	//     cancellation from thrashing requests.
 	// Only active when net_download_speed_boost > 0; state stays at Normal
 	// for boost level 0 and atomics stay at 100/100.
 	_loader->speedEstimate(
@@ -1131,7 +1132,7 @@ Reader::Reader(
 					smart ? 50 : 100,
 					std::memory_order_relaxed);
 				_adaptiveLimitPercent.store(
-					smart ? 50 : 100,
+					conservative ? 100 : (smart ? 50 : 100),
 					std::memory_order_relaxed);
 				_speedIsThrottled.store(
 					true,
@@ -1192,6 +1193,8 @@ void Reader::stopSleep() {
 
 void Reader::stopStreamingAsync() {
 	_stopStreamingAsync = true;
+	_loader->setSmartStreamingBufferPressure(false);
+	_loader->setSmartStreamingPlaybackRate(0);
 	crl::on_main(this, [=] {
 		if (_stopStreamingAsync) {
 			stopStreaming(false);
@@ -1217,6 +1220,18 @@ void Reader::requestTailPrefetch(int64 bytes) {
 	_pendingTailPrefetchBytes.store(bytes, std::memory_order_release);
 }
 
+void Reader::setSmartStreamingBufferPressure(bool pressure) {
+	_loader->setSmartStreamingBufferPressure(pressure);
+}
+
+void Reader::setSmartStreamingPlaybackRate(int bytesPerSecond) {
+	_loader->setSmartStreamingPlaybackRate(bytesPerSecond);
+}
+
+void Reader::notifySmartStreamingSeek() {
+	_loader->notifySmartStreamingSeek();
+}
+
 void Reader::startStreaming() {
 	_seekCancelGeneration.fetch_add(1, std::memory_order_release);
 	_streamingActive = true;
@@ -1236,6 +1251,8 @@ void Reader::stopStreaming(bool stillActive) {
 		cancelStreamingLoads();
 	}
 	if (!stillActive) {
+		_loader->setSmartStreamingBufferPressure(false);
+		_loader->setSmartStreamingPlaybackRate(0);
 		_seekCancelGeneration.fetch_add(1, std::memory_order_release);
 		_streamingActive = false;
 		refreshLoaderPriority();
@@ -1695,8 +1712,14 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		.penalty = _serverPenalty.load(std::memory_order_relaxed),
 	};
 	const auto recoveryRequestLimit = serverRecovering
-		? Storage::NonPremiumRequestLimit(serverState, now)
+		? std::min(
+			_loader->smartStreamingRequestLimit(),
+			Storage::NonPremiumRequestLimit(serverState, now))
 		: 0;
+	const auto smartRequestLimit = std::clamp(
+		_loader->smartStreamingRequestLimit(),
+		Storage::kNonPremiumMinimumRequestLimit,
+		Storage::kNonPremiumMaximumRequestLimit);
 	auto preloadParts = std::clamp(
 		(preloadBase * _adaptivePreloadPercent.load(
 			std::memory_order_relaxed)) / 100,
@@ -1706,9 +1729,12 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	// avoid preloading past roughly the next N seconds of playback. This
 	// keeps Burst mode from spending bandwidth on parts the user will not
 	// reach within the already-banked buffer horizon.
-	if (boost > 0 && _consumptionBytesPerSec > 0.0) {
+	const auto playbackBytesPerSecond = smartNonPremium
+		? double(_loader->smartStreamingPlaybackRate())
+		: _consumptionBytesPerSec;
+	if (boost > 0 && playbackBytesPerSecond > 0.0) {
 		constexpr auto kTargetSecondsAhead = 30.0;
-		const auto neededBytes = _consumptionBytesPerSec
+		const auto neededBytes = playbackBytesPerSecond
 			* kTargetSecondsAhead;
 		const auto neededParts = int(std::min<double>(
 			(neededBytes + double(kPartSize - 1)) / double(kPartSize),
@@ -1739,7 +1765,7 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 			kNonPremiumMaxPreload);
 		requestsLimit = std::min(
 			requestsLimit,
-			Storage::kNonPremiumInitialRequestLimit);
+			smartRequestLimit);
 	}
 	const auto serverPhase = serverLimited
 		? 1
@@ -1750,7 +1776,7 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		}
 		return serverRecovering
 			? recoveryRequestLimit
-			: Storage::kNonPremiumInitialRequestLimit;
+			: smartRequestLimit;
 	}();
 	const auto previousServerPhase = _serverLimitPhase.exchange(
 		serverPhase,
@@ -1778,7 +1804,7 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 			(void)requestOffset;
 			++remoteRequests;
 		}
-		VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader fill waiting offset=%1 buffer=%2 state=%3 boost=%4 preloadBase=%5 preload=%6 limitBase=%7 limit=%8 adaptivePreload=%9 adaptiveLimit=%10 consumptionBps=%11 remoteRequests=%12 loadingActive=%13 headerBytes=%14 size=%15.")
+		VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader fill waiting offset=%1 buffer=%2 state=%3 boost=%4 preloadBase=%5 preload=%6 limitBase=%7 limit=%8 adaptivePreload=%9 adaptiveLimit=%10 playbackBps=%11 remoteRequests=%12 loadingActive=%13 headerBytes=%14 size=%15.")
 			.arg(qulonglong(offset))
 			.arg(qlonglong(buffer.size()))
 			.arg(int(result.state))
@@ -1789,7 +1815,7 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 			.arg(requestsLimit)
 			.arg(_adaptivePreloadPercent.load(std::memory_order_relaxed))
 			.arg(_adaptiveLimitPercent.load(std::memory_order_relaxed))
-			.arg(_consumptionBytesPerSec, 0, 'f', 0)
+			.arg(playbackBytesPerSecond, 0, 'f', 0)
 			.arg(remoteRequests)
 			.arg(_loadingOffsets.empty() ? 0 : 1)
 			.arg(_slices.headerSize())
