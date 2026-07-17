@@ -128,8 +128,7 @@ jobs:
             -D CMAKE_COMPILE_WARNING_AS_ERROR=OFF ^
             -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= ^
             -D CMAKE_C_COMPILER_LAUNCHER=sccache ^
-            -D CMAKE_CXX_COMPILER_LAUNCHER=sccache ^
-            -D TDESKTOP_DISABLE_MAIN_PCH=ON
+            -D CMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build Telegram (Release)
         shell: cmd
