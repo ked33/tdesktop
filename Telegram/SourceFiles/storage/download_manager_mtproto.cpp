@@ -808,7 +808,6 @@ void DownloadManagerMtproto::requestSucceeded(
 	} else if (dc.sessions.size() == MaxSessionsCount()) {
 		return;
 	}
-	const auto now = crl::now();
 	const auto delay = (dc.sessionRemoveTimes + 1) * kRetryAddSessionTimeout;
 	if (dc.lastSessionRemove && now < dc.lastSessionRemove + delay) {
 		return;
