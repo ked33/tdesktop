@@ -430,6 +430,7 @@ Widget::Widget(
 , _searchTimer([=] { search(); })
 , _peerSearch(&controller->session(), Api::PeerSearch::Type::WithSponsored)
 , _singleMessageSearch(&controller->session()) {
+	_searchState.fromArchive = GetEnhancedBool("search_main_and_archive");
 	const auto makeChildListShown = [](PeerId peerId, float64 shown) {
 		return InnerWidget::ChildListShown{ peerId, shown };
 	};
@@ -437,6 +438,7 @@ Widget::Widget(
 	_scroll->setOverscrollTypes(
 		_stories ? OverscrollType::Virtual : OverscrollType::Real,
 		OverscrollType::Real);
+	_scroll->setOverscrollPullDistances(st::dialogsStoriesFull.height, 0);
 	_innerList = _scroll->setOwnedWidget(
 		object_ptr<Ui::VerticalLayout>(this));
 	_inner = _innerList->add(object_ptr<InnerWidget>(
@@ -538,6 +540,26 @@ Widget::Widget(
 	}) | rpl::on_next([=](ChatTypeFilter filter) {
 		auto copy = _searchState;
 		copy.filter = filter;
+		applySearchState(copy);
+	}, lifetime());
+	_inner->changeSearchFromArchiveRequests(
+	) | rpl::filter([=](bool fromArchive) {
+		return (_searchState.fromArchive != fromArchive)
+			&& (_searchState.tab == ChatSearchTab::MyMessages);
+	}) | rpl::on_next([=](bool fromArchive) {
+		auto copy = _searchState;
+		copy.fromArchive = fromArchive;
+		applySearchState(copy);
+	}, lifetime());
+	_inner->resetSearchRestrictionsRequests(
+	) | rpl::filter([=] {
+		return (_searchState.tab == ChatSearchTab::MyMessages)
+			&& ((_searchState.filter != ChatTypeFilter::All)
+				|| !_searchState.fromArchive);
+	}) | rpl::on_next([=] {
+		auto copy = _searchState;
+		copy.filter = ChatTypeFilter::All;
+		copy.fromArchive = true;
 		applySearchState(copy);
 	}, lifetime());
 	_inner->cancelSearchRequests(
@@ -1216,20 +1238,15 @@ void Widget::setupTopBarSuggestions() {
 			auto on = rpl::combine(
 				controller()->activeChatsFilter(),
 				_openedFolderOrForumChanges.events_starting_with(false),
-				widthValue() | rpl::map(
-					_1 >= st::columnMinimalWidthLeft
-				) | rpl::distinct_until_changed(),
 				_searchStateForTopBarSuggestion.events_starting_with(
 					!_searchState.query.isEmpty()),
 				_jumpToDate->toggledValue()
 			) | rpl::map([=](
 					FilterId id,
 					bool folderOrForum,
-					bool wide,
 					bool search,
 					bool searchInPeer) {
 				return !folderOrForum
-					&& wide
 					&& !search
 					&& !searchInPeer
 					&& (id == owner->chatsFilters().defaultId());
@@ -3062,6 +3079,7 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 		? _openedCommunity->channel().get()
 		: nullptr;
 	const auto filter = _searchState.filter;
+	const auto fromArchive = _searchState.fromArchive;
 	const auto fromStartType = SearchRequestType{
 		.start = true,
 		.peer = (inPeer != nullptr),
@@ -3106,6 +3124,7 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 			_searchQueryTab = tab;
 			_searchQueryCommunity = community;
 			_searchQueryFilter = filter;
+			_searchQueryFromArchive = fromArchive;
 			process->nextRate = 0;
 			process->full = false;
 			_migratedProcess.full = false;
@@ -3118,7 +3137,8 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 		|| _searchQueryTags != inTags
 		|| _searchQueryTab != tab
 		|| _searchQueryCommunity != community
-		|| _searchQueryFilter != filter) {
+		|| _searchQueryFilter != filter
+		|| _searchQueryFromArchive != fromArchive) {
 		const auto process = currentSearchProcess();
 		_searchQuery = query;
 		_searchQueryFrom = fromPeer;
@@ -3126,6 +3146,7 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 		_searchQueryTab = tab;
 		_searchQueryCommunity = community;
 		_searchQueryFilter = filter;
+		_searchQueryFromArchive = fromArchive;
 		process->nextRate = 0;
 		process->full = false;
 		_migratedProcess.full = false;
@@ -3500,15 +3521,13 @@ void Widget::requestMessages(bool fromStart) {
 	const auto community = (_searchQueryTab == ChatSearchTab::ThisCommunity)
 		? _searchQueryCommunity
 		: nullptr;
-	const auto archiveOnly = (_searchQueryTab == ChatSearchTab::Archive);
-	const auto searchMainAndArchive
-		= (_searchQueryTab == ChatSearchTab::MyMessages)
-		&& GetEnhancedBool("search_main_and_archive");
+	const auto restrictFolder = (_searchQueryTab == ChatSearchTab::Archive)
+		|| !_searchQueryFromArchive;
 	const auto flags = (community
-			? Flag::f_community
-			: searchMainAndArchive
-			? Flag()
-			: Flag::f_folder_id)
+		? Flag::f_community
+		: restrictFolder
+		? Flag::f_folder_id
+		: Flag())
 		| (_searchQueryFilter == ChatTypeFilter::Private
 			? Flag::f_users_only
 			: _searchQueryFilter == ChatTypeFilter::Groups
@@ -3516,7 +3535,7 @@ void Widget::requestMessages(bool fromStart) {
 			: _searchQueryFilter == ChatTypeFilter::Channels
 			? Flag::f_broadcasts_only
 			: Flag());
-	const auto folderId = archiveOnly
+	const auto folderId = (_searchQueryTab == ChatSearchTab::Archive)
 		? Data::Folder::kId
 		: 0;
 	_searchProcess.requestId = session().api().request(
@@ -4110,8 +4129,11 @@ bool Widget::applySearchState(SearchState state) {
 		: false;
 	if (queryEmptyChanged || tabChanged) {
 		state.filter = ChatTypeFilter::All;
+		state.fromArchive = true;
 	}
 	const auto filterChanged = (_searchState.filter != state.filter);
+	const auto fromArchiveChanged = (_searchState.fromArchive
+		!= state.fromArchive);
 
 	if (forum) {
 		if (_openedForum == forum) {
@@ -4200,6 +4222,7 @@ bool Widget::applySearchState(SearchState state) {
 		|| communityChanged
 		|| fromPeerChanged
 		|| filterChanged
+		|| fromArchiveChanged
 		|| tagsChanged
 		|| tabChanged) {
 		clearSearchCache(searchCleared);

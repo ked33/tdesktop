@@ -778,6 +778,8 @@ void ListWidget::refreshRows(const Data::MessagesSlice &old) {
 
 	pruneAccessibilityIdentities();
 
+	pruneAccessibilityIdentities();
+
 	const auto markLastAsRead = (scrolledTillEnd && markingMessagesRead());
 	checkUnreadBarCreation(markLastAsRead);
 	restoreScrollState();
@@ -1354,6 +1356,7 @@ auto ListWidget::collectSelectedItems(
 		result.canForward = selection.canForward;
 		result.canSendNow = selection.canSendNow;
 		result.canReschedule = selection.canReschedule;
+		result.ephemeral = selection.ephemeral;
 		return result;
 	};
 	auto items = SelectedItems();
@@ -1477,10 +1480,11 @@ bool ListWidget::usesGlobalSelectedMessages() const {
 SelectionData ListWidget::selectionDataForItem(
 		not_null<HistoryItem*> item) const {
 	return {
-		.canDelete = item->canDelete(),
+		.canDelete = item->canDelete() || item->isEphemeral(),
 		.canForward = item->allowsForward(),
 		.canSendNow = item->allowsSendNow(),
 		.canReschedule = item->allowsReschedule(),
+		.ephemeral = item->isEphemeral(),
 	};
 }
 
@@ -1584,7 +1588,14 @@ bool ListWidget::isGoodForSelection(
 		int &totalCount) const {
 	if (!_delegate->listIsItemGoodForSelection(item)) {
 		return false;
-	} else if (!applyTo.contains(item->fullId())) {
+	}
+	if (!applyTo.empty()) {
+		const auto first = session().data().message(applyTo.begin()->first);
+		if (first && !first->inSameSelectionGroup(item)) {
+			return false;
+		}
+	}
+	if (!applyTo.contains(item->fullId())) {
 		++totalCount;
 	}
 	return (totalCount <= MaxSelectedItems);
@@ -2132,6 +2143,11 @@ SelectionModeResult ListWidget::elementInSelectionMode(
 		const HistoryView::Element *view) {
 	if (view && !_delegate->listIsItemGoodForSelection(view->data())) {
 		return {};
+	} else if (view && !_selected.empty()) {
+		const auto first = session().data().message(_selected.begin()->first);
+		if (first && !first->inSameSelectionGroup(view->data())) {
+			return {};
+		}
 	}
 	return inSelectionMode();
 }
@@ -5957,6 +5973,20 @@ void ConfirmDeleteSelectedItems(not_null<ListWidget*> widget) {
 	}
 	const auto controller = widget->controller();
 	const auto owner = &controller->session().data();
+	if (items.front().ephemeral) {
+		auto ephemeralItems = std::vector<not_null<HistoryItem*>>();
+		ephemeralItems.reserve(items.size());
+		for (const auto &item : items) {
+			if (const auto i = owner->message(item.msgId)) {
+				ephemeralItems.push_back(i);
+			}
+		}
+		ConfirmDeleteSelectedEphemeral(
+			controller->uiShow(),
+			std::move(ephemeralItems),
+			crl::guard(widget, [=] { widget->cancelSelection(); }));
+		return;
+	}
 	auto historyItems = std::vector<not_null<HistoryItem*>>();
 	historyItems.reserve(items.size());
 	for (const auto &item : items) {

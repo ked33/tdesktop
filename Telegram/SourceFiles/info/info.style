@@ -422,6 +422,18 @@ infoTopBarBlackSearch: IconButton(infoTopBarSearch) {
 	iconOver: icon {{ "top_bar_search", windowBoldFg }};
 	ripple: universalRippleAnimation;
 }
+infoTopBarColoredGroup: IconButton(infoTopBarSearch) {
+	icon: icon {{ "menu/admin", groupCallMembersFg }};
+	iconOver: icon {{ "menu/admin", groupCallMembersFg }};
+	iconPosition: point(15px, -1px);
+	ripple: universalRippleAnimation;
+}
+infoTopBarBlackGroup: IconButton(infoTopBarSearch) {
+	icon: icon {{ "menu/admin", windowBoldFg }};
+	iconOver: icon {{ "menu/admin", windowBoldFg }};
+	iconPosition: point(15px, -1px);
+	ripple: universalRippleAnimation;
+}
 infoTopBarBlackEdit: IconButton(infoTopBarEdit) {
 	icon: icon {{ "menu/edit", windowBoldFg }};
 	iconOver: icon {{ "menu/edit", windowBoldFg }};
@@ -873,6 +885,29 @@ infoMediaSkeletonLinkThumb: 32px;
 infoMediaSkeletonSoundSize: 42px;
 infoMediaTabsRightSkip: 13px;
 infoMediaGridSizeStep: 16px;
+infoMediaTabsMinBodyWidth: infoMediaMinGridSize + infoMediaSkip + infoMediaSkip + infoMediaTabsRightSkip;
+
+infoProfileTabsStrip: ProfileTabsStrip {
+	height: 48px;
+	margin: margins(8px, 6px, 8px, 6px);
+	skip: 0px;
+	tabPadding: margins(16px, 0px, 16px, 0px);
+	activeSkip: 4px;
+	style: semiboldTextStyle;
+	fg: windowSubTextFg;
+	fgActive: lightButtonFg;
+	bg: windowBg;
+	bgActive: lightButtonBgOver;
+	ripple: RippleAnimation(defaultRippleAnimation) {
+		color: lightButtonBgRipple;
+	}
+	duration: 200;
+}
+infoProfileTabsShadow: BoxShadow {
+	blurRadius: 8px;
+	offset: point(0px, 2px);
+	opacity: 0.18;
+}
 
 infoProfileTabsStrip: ProfileTabsStrip {
 	height: 48px;
