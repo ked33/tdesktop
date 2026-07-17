@@ -31,6 +31,7 @@ constexpr auto kMaxTrackedSuccesses = kRetryAddSessionSuccesses
 constexpr auto kRemoveSessionAfterTimeouts = 4;
 constexpr auto kResetDownloadPrioritiesTimeout = crl::time(200);
 constexpr auto kBadRequestDurationThreshold = 8 * crl::time(1000);
+constexpr auto kNonPremiumRecoveryDuration = 30 * crl::time(1000);
 
 [[nodiscard]] int DownloadBoostLevel() {
 	const auto boost = GetEnhancedInt("net_download_speed_boost");
@@ -213,6 +214,21 @@ DownloadManagerMtproto::DownloadManagerMtproto(not_null<ApiWrap*> api)
 
 DownloadManagerMtproto::~DownloadManagerMtproto() {
 	killSessions();
+}
+
+void DownloadManagerMtproto::notifyNonPremiumDelay(
+		MTP::DcId dcId,
+		DocumentId id,
+		NonPremiumDelayInfo info) {
+	const auto now = crl::now();
+	auto &state = _nonPremiumDelayStates[dcId];
+	state.limitedUntil = std::max(
+		state.limitedUntil,
+		now + std::max(info.appliedWaitMs, 1000));
+	state.recoveryUntil = std::max(
+		state.recoveryUntil,
+		state.limitedUntil + kNonPremiumRecoveryDuration);
+	_nonPremiumDelays.fire_copy({ id, info });
 }
 
 void DownloadManagerMtproto::enqueue(not_null<Task*> task, int priority) {
@@ -910,7 +926,11 @@ void DownloadMtprotoTask::subscribeToNonPremiumLimit() {
 				const auto type = v::get<StorageFileLocation>(
 					_location.data).type();
 				if (type == StorageFileLocation::Type::Document) {
-					_owner->notifyNonPremiumDelay(documentId, data.second);
+					_owner->notifyNonPremiumDelay(
+						dcId(),
+						documentId,
+						data.second);
+					nonPremiumDelay(data.second);
 				}
 			}
 		}

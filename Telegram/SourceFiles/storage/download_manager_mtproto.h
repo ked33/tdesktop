@@ -59,8 +59,14 @@ public:
 	void checkSendNextAfterSuccess(MTP::DcId dcId);
 	[[nodiscard]] int chooseSessionIndex(MTP::DcId dcId) const;
 
-	void notifyNonPremiumDelay(DocumentId id, NonPremiumDelayInfo info) {
-		_nonPremiumDelays.fire_copy({ id, info });
+	void notifyNonPremiumDelay(
+		MTP::DcId dcId,
+		DocumentId id,
+		NonPremiumDelayInfo info);
+	[[nodiscard]] NonPremiumDelayState nonPremiumDelayState(
+		MTP::DcId dcId) const {
+		const auto i = _nonPremiumDelayStates.find(dcId);
+		return (i != end(_nonPremiumDelayStates)) ? i->second : NonPremiumDelayState();
 	}
 	[[nodiscard]] rpl::producer<std::pair<DocumentId, NonPremiumDelayInfo>>
 	nonPremiumDelays() const {
@@ -123,6 +129,7 @@ private:
 		_nonPremiumDelays;
 
 	base::flat_map<MTP::DcId, DcBalanceData> _balanceData;
+	base::flat_map<MTP::DcId, NonPremiumDelayState> _nonPremiumDelayStates;
 	base::Timer _resetGenerationTimer;
 
 	base::flat_map<MTP::DcId, crl::time> _killSessionsWhen;
@@ -175,6 +182,11 @@ protected:
 
 	void addToQueue(int priority = 0);
 	void removeFromQueue();
+	[[nodiscard]] NonPremiumDelayState nonPremiumDelayState() const {
+		return _owner->nonPremiumDelayState(_dcId);
+	}
+	virtual void nonPremiumDelay(NonPremiumDelayInfo) {
+	}
 
 	[[nodiscard]] ApiWrap &api() const {
 		return _owner->api();
