@@ -30,15 +30,6 @@ LoaderMtproto::LoaderMtproto(
 , _size(size)
 , _api(&api().instance())
 , _statsTimer([=] { checkStats(); }) {
-	if (location.type() == StorageFileLocation::Type::Document) {
-		const auto documentId = objectId();
-		owner->nonPremiumDelays(
-		) | rpl::filter([=](const auto &entry) {
-			return (entry.first == documentId);
-		}) | rpl::on_next([=](const auto &entry) {
-			_serverDelays.fire({ .waitMs = entry.second.appliedWaitMs });
-		}, _lifetime);
-	}
 }
 
 Storage::Cache::Key LoaderMtproto::baseCacheKey() const {
@@ -181,6 +172,23 @@ rpl::producer<SpeedEstimate> LoaderMtproto::speedEstimate() const {
 
 rpl::producer<ServerDelay> LoaderMtproto::serverDelays() const {
 	return _serverDelays.events();
+}
+
+ServerDelay LoaderMtproto::serverDelayState() const {
+	const auto state = nonPremiumDelayState();
+	return {
+		.limitedUntil = state.limitedUntil,
+		.recoveryUntil = state.recoveryUntil,
+	};
+}
+
+void LoaderMtproto::nonPremiumDelay(Storage::NonPremiumDelayInfo info) {
+	const auto state = nonPremiumDelayState();
+	_serverDelays.fire({
+		.waitMs = info.appliedWaitMs,
+		.limitedUntil = state.limitedUntil,
+		.recoveryUntil = state.recoveryUntil,
+	});
 }
 
 void LoaderMtproto::checkStats() {

@@ -24,7 +24,6 @@ constexpr auto kMaxPartsInHeader = 64;
 constexpr auto kMaxOnlyInHeader = 80 * kPartSize;
 constexpr auto kPartsOutsideFirstSliceGood = 8;
 constexpr auto kSlicesInMemory = 2;
-constexpr auto kServerRecoveryDuration = 15 * crl::time(1000);
 
 using PartsMap = base::flat_map<uint32, QByteArray>;
 
@@ -982,22 +981,25 @@ Reader::Reader(
 		}
 	}, _lifetime);
 
-	_loader->serverDelays(
-	) | rpl::on_next([=](ServerDelay delay) {
+	const auto applyServerDelay = [=](ServerDelay delay) {
 		if (DownloadBoostLevel() != 6) {
 			return;
 		}
 		const auto now = crl::now();
-		const auto waitMs = std::max(delay.waitMs, 1000);
 		const auto limitedUntil = std::max(
 			_serverLimitedUntil.load(std::memory_order_relaxed),
-			now + waitMs);
+			delay.limitedUntil);
 		const auto recoveryUntil = std::max(
 			_serverRecoveryUntil.load(std::memory_order_relaxed),
-			limitedUntil + kServerRecoveryDuration);
+			delay.recoveryUntil);
+		if (recoveryUntil <= now) {
+			return;
+		}
 		_serverLimitedUntil.store(limitedUntil, std::memory_order_relaxed);
 		_serverRecoveryUntil.store(recoveryUntil, std::memory_order_relaxed);
-		_serverLimitPhase.store(1, std::memory_order_relaxed);
+		_serverLimitPhase.store(
+			(limitedUntil > now) ? 1 : 2,
+			std::memory_order_relaxed);
 		_pendingTailPrefetchBytes.store(0, std::memory_order_release);
 		_speedState = SpeedState::Normal;
 		_burstSpeedEma = 0.0;
@@ -1007,9 +1009,12 @@ Reader::Reader(
 		_speedIsThrottled.store(false, std::memory_order_relaxed);
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: server limited waitMs=%1 limitedFor=%2 recoveryFor=%3 preload=8 limit=4.")
 			.arg(delay.waitMs)
-			.arg(qlonglong(limitedUntil - now))
-			.arg(qlonglong(recoveryUntil - limitedUntil)));
-	}, _lifetime);
+			.arg(qlonglong(std::max(limitedUntil - now, crl::time(0))))
+			.arg(qlonglong(recoveryUntil - std::max(limitedUntil, now))));
+	};
+	applyServerDelay(_loader->serverDelayState());
+	_loader->serverDelays(
+	) | rpl::on_next(applyServerDelay, _lifetime);
 
 	// Adaptive scheduling driven by measured download speed. Three states:
 	//   - Burst: sustained >= 1.5 MB/s. Grow preload depth and the per-fill
