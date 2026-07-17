@@ -3500,7 +3500,15 @@ void Widget::requestMessages(bool fromStart) {
 	const auto community = (_searchQueryTab == ChatSearchTab::ThisCommunity)
 		? _searchQueryCommunity
 		: nullptr;
-	const auto flags = (community ? Flag::f_community : Flag::f_folder_id)
+	const auto archiveOnly = (_searchQueryTab == ChatSearchTab::Archive);
+	const auto searchMainAndArchive
+		= (_searchQueryTab == ChatSearchTab::MyMessages)
+		&& GetEnhancedBool("search_main_and_archive");
+	const auto flags = (community
+			? Flag::f_community
+			: searchMainAndArchive
+			? Flag()
+			: Flag::f_folder_id)
 		| (_searchQueryFilter == ChatTypeFilter::Private
 			? Flag::f_users_only
 			: _searchQueryFilter == ChatTypeFilter::Groups
@@ -3508,7 +3516,7 @@ void Widget::requestMessages(bool fromStart) {
 			: _searchQueryFilter == ChatTypeFilter::Channels
 			? Flag::f_broadcasts_only
 			: Flag());
-	const auto folderId = (_searchQueryTab == ChatSearchTab::Archive)
+	const auto folderId = archiveOnly
 		? Data::Folder::kId
 		: 0;
 	_searchProcess.requestId = session().api().request(
