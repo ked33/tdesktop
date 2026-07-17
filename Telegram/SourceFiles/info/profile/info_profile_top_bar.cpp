@@ -160,6 +160,7 @@ constexpr auto kMinContrast = 5.5;
 constexpr auto kStoryOutlineFadeEnd = 0.4;
 constexpr auto kStoryOutlineFadeRange = 1. - kStoryOutlineFadeEnd;
 constexpr auto kSwapMoveAmplitude = 0.3;
+constexpr auto kStandaloneGroupProgress = 0.5;
 
 using AnimatedPatternPoint = TopBar::AnimatedPatternPoint;
 
@@ -1123,7 +1124,8 @@ void TopBar::setupActions(not_null<Window::SessionController*> controller) {
 	if (chechMax()) {
 		return;
 	}
-	if (peer->groupCall() || peer->canManageGroupCall()) {
+	if (peer->groupCall()
+		|| (!peer->isUser() && peer->canManageGroupCall())) {
 		const auto broadcast = peer->isBroadcast();
 		const auto text = broadcast
 			? tr::lng_profile_action_short_live_stream(tr::now)
@@ -1805,6 +1807,9 @@ int TopBar::calculateRightButtonsWidth() const {
 	}
 	if (_tabSearchToggle && _tabSearchToggle->toggled()) {
 		width += _tabSearchToggle->width();
+	}
+	if (_tabGroupToggle && _tabGroupToggle->toggled()) {
+		width += _tabGroupToggle->width();
 	}
 	return width;
 }
@@ -2500,6 +2505,548 @@ void TopBar::applyTabSwapProgress(float64 progress) {
 	update();
 }
 
+void TopBar::bindActiveTab(
+		rpl::producer<TabTopBarBindings> bindings,
+		rpl::producer<bool> docked) {
+	_tabsDocked = std::move(docked);
+	_tabsDocked.changes(
+	) | rpl::on_next([=] {
+		updateLabelsPosition();
+	}, lifetime());
+	std::move(
+		bindings
+	) | rpl::on_next([=](TabTopBarBindings &&value) {
+		applyTabBindings(std::move(value));
+	}, lifetime());
+}
+
+void TopBar::applyTabBindings(TabTopBarBindings &&bindings) {
+	_tabBindingsLifetime.destroy();
+	_tabBindingsActive = bool(bindings.title);
+	if (_tabBindingsActive) {
+		if (!_tabSubtitle) {
+			_tabSubtitle = std::make_unique<Ui::AnimatedString>(
+				statusStyle().style.font,
+				[=] { update(); },
+				Ui::AnimatedString::Options{
+					.splitByWords = true,
+					.duration = st::infoTopBarDuration,
+				});
+			_tabSubtitle->setText(QString(), false);
+		}
+		if (bindings.subtitle) {
+			std::move(
+				bindings.subtitle
+			) | rpl::on_next([=](const TextWithEntities &text) {
+				_tabSubtitleText = text.text;
+				refreshTabSubtitle();
+			}, _tabBindingsLifetime);
+		} else {
+			_tabSubtitleText = QString();
+			refreshTabSubtitle();
+		}
+	} else {
+		_tabSubtitleText = QString();
+		refreshTabSubtitle();
+	}
+	_tabSelectionAction = std::move(bindings.selectionAction);
+	_tabFillMenu = std::move(bindings.fillMenu);
+	if (bindings.selectedItems) {
+		std::move(
+			bindings.selectedItems
+		) | rpl::on_next([=](SelectedItems &&items) {
+			setTabSelectedItems(std::move(items));
+		}, _tabBindingsLifetime);
+	} else {
+		setTabSelectedItems(SelectedItems());
+	}
+	_tabApplySearch = std::move(bindings.applySearchQuery);
+	_tabSearchAvailable = false;
+	hideTabSearch();
+	if (bindings.searchEnabledByContent) {
+		std::move(
+			bindings.searchEnabledByContent
+		) | rpl::on_next([=](bool enabled) {
+			if (_tabSearchAvailable != enabled) {
+				_tabSearchAvailable = enabled;
+				updateTabSwapVisibility();
+			}
+		}, _tabBindingsLifetime);
+	}
+	_tabSetGroup = std::move(bindings.setGroupByRole);
+	_tabGroupActive = false;
+	if (bindings.groupByRoleState) {
+		std::move(
+			bindings.groupByRoleState
+		) | rpl::on_next([=](bool grouped) {
+			_tabGroupActive = grouped;
+			updateTabGroupActive();
+			updateTabSwapVisibility();
+		}, _tabBindingsLifetime);
+	}
+	_tabGroupAvailable = false;
+	if (bindings.groupByRoleAvailable) {
+		std::move(
+			bindings.groupByRoleAvailable
+		) | rpl::on_next([=](bool available) {
+			_tabGroupAvailable = available;
+			updateTabSwapVisibility();
+		}, _tabBindingsLifetime);
+	}
+	updateTabGroupActive();
+	updateTabSwapVisibility();
+}
+
+void TopBar::setupStandaloneGroupControl(
+		rpl::producer<bool> state,
+		rpl::producer<bool> available,
+		Fn<void(bool)> toggle) {
+	_standaloneGroup = true;
+	_tabSetGroup = std::move(toggle);
+	_tabGroupActive = false;
+	_tabGroupAvailable = false;
+	std::move(
+		state
+	) | rpl::on_next([=](bool grouped) {
+		_tabGroupActive = grouped;
+		updateTabGroupActive();
+		updateTabSwapVisibility();
+	}, lifetime());
+	std::move(
+		available
+	) | rpl::on_next([=](bool value) {
+		_tabGroupAvailable = value;
+		updateTabSwapVisibility();
+	}, lifetime());
+	_progress.changes(
+	) | rpl::on_next([=] {
+		updateTabSwapVisibility();
+	}, lifetime());
+	updateTabGroupActive();
+	updateTabSwapVisibility();
+}
+
+bool TopBar::tabSelectionMode() const {
+	return !_tabSelectedItems.list.empty();
+}
+
+void TopBar::setTabSelectedItems(SelectedItems &&items) {
+	_tabSelectedItems = std::move(items);
+	const auto mode = tabSelectionMode();
+	if (mode && !_tabSelectionBar) {
+		createTabSelectionBar();
+	}
+	if (_tabSelectionBar) {
+		if (mode) {
+			updateTabSelectionState();
+			_tabSelectionBar->raise();
+		}
+		_tabSelectionBar->toggle(mode, anim::type::normal);
+	}
+}
+
+void TopBar::createTabSelectionBar() {
+	_tabSelectionBar.create(
+		this,
+		object_ptr<Ui::RpWidget>(this),
+		st::infoTopBarScale);
+	const auto bar = _tabSelectionBar.data();
+	bar->setDuration(st::infoTopBarDuration);
+	bar->toggle(false, anim::type::instant);
+
+	const auto inner = bar->entity();
+	inner->paintRequest(
+	) | rpl::on_next([=](QRect clip) {
+		auto p = QPainter(inner);
+		p.fillRect(clip, _st.bg);
+	}, inner->lifetime());
+
+	const auto forwardAction = [=](SelectionAction action) {
+		if (const auto onstack = _tabSelectionAction) {
+			onstack(action);
+		}
+	};
+	_tabSelectionCancel = Ui::CreateChild<Ui::IconButton>(
+		inner,
+		_st.mediaCancel);
+	_tabSelectionCancel->setAccessibleName(
+		tr::lng_context_clear_selection(tr::now));
+	_tabSelectionCancel->clicks(
+	) | rpl::on_next([=] {
+		forwardAction(SelectionAction::Clear);
+	}, _tabSelectionCancel->lifetime());
+
+	_tabSelectionText = Ui::CreateChild<Ui::LabelWithNumbers>(
+		inner,
+		_st.title,
+		_st.titlePosition.y(),
+		Ui::StringWithNumbers());
+	_tabSelectionText->resize(0, QWidget::minimumHeight());
+
+	_tabSelectionForward = Ui::CreateChild<Ui::IconButton>(
+		inner,
+		_st.mediaForward);
+	_tabSelectionForward->setAccessibleName(
+		tr::lng_context_forward_selected(tr::now));
+	_tabSelectionForward->clicks(
+	) | rpl::on_next([=] {
+		forwardAction(SelectionAction::Forward);
+	}, _tabSelectionForward->lifetime());
+
+	_tabSelectionDelete = Ui::CreateChild<Ui::IconButton>(
+		inner,
+		_st.mediaDelete);
+	_tabSelectionDelete->setAccessibleName(
+		tr::lng_context_delete_selected(tr::now));
+	_tabSelectionDelete->clicks(
+	) | rpl::on_next([=] {
+		forwardAction(SelectionAction::Delete);
+	}, _tabSelectionDelete->lifetime());
+
+	_tabSelectionStoryInProfile = Ui::CreateChild<Ui::IconButton>(
+		inner,
+		_st.storiesSave);
+	_tabSelectionStoryInProfile->clicks(
+	) | rpl::on_next([=] {
+		const auto allInProfile = ranges::all_of(
+			_tabSelectedItems.list,
+			&SelectedItem::storyInProfile);
+		forwardAction(allInProfile
+			? SelectionAction::ToggleStoryToArchive
+			: SelectionAction::ToggleStoryToProfile);
+	}, _tabSelectionStoryInProfile->lifetime());
+
+	_tabSelectionStoryPin = Ui::CreateChild<Ui::IconButton>(
+		inner,
+		_st.storiesPin);
+	_tabSelectionStoryPin->clicks(
+	) | rpl::on_next([=] {
+		forwardAction(SelectionAction::ToggleStoryPin);
+	}, _tabSelectionStoryPin->lifetime());
+
+	_tabSelectionCancel->show();
+	_tabSelectionText->show();
+	updateTabSelectionGeometry();
+	bar->raise();
+}
+
+void TopBar::updateTabSelectionState() {
+	Expects(_tabSelectionBar != nullptr);
+
+	const auto &list = _tabSelectedItems.list;
+	const auto canDelete = ranges::all_of(list, &SelectedItem::canDelete);
+	const auto canForward = ranges::all_of(list, &SelectedItem::canForward);
+	const auto canToggleStoryPin = ranges::all_of(
+		list,
+		&SelectedItem::canToggleStoryPin);
+	const auto allInProfile = ranges::all_of(
+		list,
+		&SelectedItem::storyInProfile);
+	const auto canUnpin = ranges::any_of(
+		list,
+		&SelectedItem::canUnpinStory);
+	_tabSelectionText->setValue(_tabSelectedItems.title
+		? _tabSelectedItems.title(int(list.size()))
+		: Ui::StringWithNumbers());
+	_tabSelectionForward->setVisible(canForward);
+	_tabSelectionDelete->setVisible(canDelete);
+	_tabSelectionStoryInProfile->setVisible(canToggleStoryPin);
+	_tabSelectionStoryInProfile->setIconOverride(
+		(allInProfile
+			? &_st.storiesArchive.icon
+			: &_st.storiesSave.icon),
+		(allInProfile
+			? &_st.storiesArchive.iconOver
+			: &_st.storiesSave.iconOver));
+	_tabSelectionStoryInProfile->setAccessibleName(allInProfile
+		? tr::lng_mediaview_archive_story(tr::now)
+		: tr::lng_mediaview_save_to_profile(tr::now));
+	_tabSelectionStoryPin->setVisible(canToggleStoryPin);
+	_tabSelectionStoryPin->setIconOverride(
+		canUnpin ? &_st.storiesUnpin.icon : nullptr,
+		canUnpin ? &_st.storiesUnpin.iconOver : nullptr);
+	_tabSelectionStoryPin->setAccessibleName(canUnpin
+		? tr::lng_context_unpin_from_top(tr::now)
+		: tr::lng_context_pin_to_top(tr::now));
+	updateTabSelectionGeometry();
+}
+
+void TopBar::updateTabSelectionGeometry() {
+	if (!_tabSelectionBar || width() <= 0) {
+		return;
+	}
+	const auto barHeight = QWidget::minimumHeight();
+	const auto inner = _tabSelectionBar->entity();
+	inner->resize(width(), barHeight);
+	_tabSelectionBar->move(0, 0);
+
+	_tabSelectionCancel->moveToLeft(0, 0);
+	auto right = 0;
+	if (!_tabSelectionDelete->isHidden()) {
+		_tabSelectionDelete->moveToRight(right, 0, inner->width());
+		right += _tabSelectionDelete->width();
+	}
+	if (!_tabSelectionStoryInProfile->isHidden()) {
+		_tabSelectionStoryInProfile->moveToRight(right, 0, inner->width());
+		right += _tabSelectionStoryInProfile->width();
+	}
+	if (!_tabSelectionStoryPin->isHidden()) {
+		_tabSelectionStoryPin->moveToRight(right, 0, inner->width());
+		right += _tabSelectionStoryPin->width();
+	}
+	if (!_tabSelectionForward->isHidden()) {
+		_tabSelectionForward->moveToRight(right, 0, inner->width());
+		right += _tabSelectionForward->width();
+	}
+	const auto left = _tabSelectionCancel->width();
+	const auto available = inner->width() - left - right;
+	if (available > 0) {
+		_tabSelectionText->resizeToNaturalWidth(available);
+		_tabSelectionText->moveToLeft(left, 0);
+	}
+}
+
+void TopBar::showTabSearch() {
+	if (!_tabSearchBar) {
+		_tabSearchBar.create(
+			this,
+			object_ptr<Ui::RpWidget>(this));
+		const auto bar = _tabSearchBar.data();
+		bar->setDuration(st::infoTopBarDuration);
+		bar->toggle(false, anim::type::instant);
+
+		const auto inner = bar->entity();
+		inner->paintRequest(
+		) | rpl::on_next([=] {
+			auto p = QPainter(inner);
+			auto hq = PainterHighQualityEnabler(p);
+			const auto radius = _roundEdges ? st::boxRadius : 0;
+			p.setPen(Qt::NoPen);
+			p.setBrush(_st.bg);
+			p.drawRoundedRect(
+				inner->rect() + QMargins(0, 0, 0, radius),
+				radius,
+				radius);
+			const auto line = st::lineWidth;
+			p.fillRect(
+				0,
+				inner->height() - line,
+				inner->width(),
+				line,
+				st::shadowFg);
+		}, inner->lifetime());
+
+		_tabSearchField = Ui::CreateChild<Ui::InputField>(
+			inner,
+			_st.searchRow.field,
+			tr::lng_dlg_filter());
+		_tabSearchField->changes(
+		) | rpl::on_next([=] {
+			if (const auto onstack = _tabApplySearch) {
+				onstack(_tabSearchField->getLastText());
+			}
+		}, _tabSearchField->lifetime());
+
+		const auto cancel = Ui::CreateChild<Ui::IconButton>(
+			inner,
+			_closeColored
+				? st::infoTopBarColoredClose
+				: st::infoTopBarBlackClose);
+		cancel->setAccessibleName(tr::lng_sr_cancel_search(tr::now));
+		cancel->show();
+		cancel->addClickHandler([=] {
+			if (_tabSearchField->getLastText().isEmpty()) {
+				hideTabSearch();
+				updateTabSwapVisibility();
+			} else {
+				_tabSearchField->setText(QString());
+			}
+		});
+		inner->widthValue(
+		) | rpl::on_next([=](int newWidth) {
+			cancel->moveToRight(0, 0, newWidth);
+		}, cancel->lifetime());
+
+		_tabSearchField->show();
+	}
+	_tabSearchShown = true;
+	updateTabSwapVisibility();
+	updateTabSearchGeometry();
+	_tabSearchBar->raise();
+	_tabSearchBar->toggle(true, anim::type::normal);
+	_tabSearchField->setFocus();
+}
+
+void TopBar::hideTabSearch() {
+	if (!_tabSearchBar || !_tabSearchShown) {
+		_tabSearchShown = false;
+		return;
+	}
+	_tabSearchShown = false;
+	if (_tabSearchField->hasFocus()) {
+		setFocus();
+	}
+	_tabSearchField->setText(QString());
+	_tabSearchBar->toggle(false, anim::type::normal);
+}
+
+void TopBar::updateTabSearchGeometry() {
+	if (!_tabSearchBar || width() <= 0) {
+		return;
+	}
+	const auto barHeight = QWidget::minimumHeight();
+	const auto inner = _tabSearchBar->entity();
+	inner->resize(width(), barHeight);
+	_tabSearchBar->move(0, 0);
+
+	const auto fieldLeft = titleMostLeft();
+	const auto fieldWidth = width()
+		- fieldLeft
+		- _st.searchRow.fieldCancelSkip;
+	if (fieldWidth > 0) {
+		_tabSearchField->resize(fieldWidth, _tabSearchField->height());
+		_tabSearchField->moveToLeft(
+			fieldLeft,
+			(barHeight - _tabSearchField->height()) / 2);
+	}
+}
+
+void TopBar::refreshTabSubtitle() {
+	if (!_tabSubtitle) {
+		return;
+	}
+	_tabSubtitle->setText(tabSwapActive()
+		? _tabSubtitleText
+		: QString());
+	update();
+}
+
+void TopBar::paintTabSubtitle(QPainter &p) {
+	if (!_tabSubtitle) {
+		return;
+	}
+	const auto color = _tabSubtitleOverride
+		? *_tabSubtitleOverride
+		: statusStyle().textFg->c;
+	_tabSubtitle->draw(
+		p,
+		statusMostLeft(),
+		_st.subtitlePosition.y(),
+		color);
+}
+
+bool TopBar::tabSwapActive() const {
+	return _tabBindingsActive && _tabsDocked.current();
+}
+
+void TopBar::updateTabSwapVisibility() {
+	const auto swap = tabSwapActive();
+	if (!swap) {
+		hideTabSearch();
+	}
+	auto togglesChanged = false;
+	if (_tabMenuToggle) {
+		const auto shown = swap
+			&& !_tabSearchShown
+			&& (_tabFillMenu != nullptr);
+		if (_tabMenuToggle->toggled() != shown) {
+			_tabMenuToggle->toggle(shown, anim::type::normal);
+			togglesChanged = true;
+		}
+	}
+	if (_tabSearchToggle) {
+		const auto shown = swap
+			&& !_tabSearchShown
+			&& _tabSearchAvailable;
+		if (_tabSearchToggle->toggled() != shown) {
+			_tabSearchToggle->toggle(shown, anim::type::normal);
+			togglesChanged = true;
+		}
+	}
+	if (_tabGroupToggle) {
+		const auto collapsed = _standaloneGroup
+			? (_progress.current() < kStandaloneGroupProgress)
+			: swap;
+		const auto shown = collapsed
+			&& !_tabSearchShown
+			&& (_tabSetGroup != nullptr)
+			&& _tabGroupAvailable;
+		if (_tabGroupToggle->toggled() != shown) {
+			if (shown) {
+				updateTabGroupActive();
+			}
+			_tabGroupToggle->toggle(shown, anim::type::normal);
+			togglesChanged = true;
+		}
+	}
+	if (togglesChanged) {
+		updateRightButtonsPosition();
+		updateTitlePosition(_progress.current());
+		updateStatusPosition(_progress.current());
+	}
+	if (!_tabSubtitle && !swap) {
+		return;
+	}
+	if (_tabSwapShown != swap) {
+		_tabSwapShown = swap;
+		_tabSwapAnimation.start(
+			[=] { applyTabSwapProgress(_tabSwapAnimation.value(
+				_tabSwapShown ? 1. : 0.)); },
+			swap ? 0. : 1.,
+			swap ? 1. : 0.,
+			st::infoTopBarDuration,
+			anim::easeOutQuint);
+		refreshTabSubtitle();
+	}
+	applyTabSwapProgress(
+		_tabSwapAnimation.value(_tabSwapShown ? 1. : 0.));
+}
+
+void TopBar::updateRightButtonsPosition() {
+	if (width() <= 0) {
+		return;
+	}
+	auto right = 0;
+	if (_close) {
+		_close->moveToRight(right, 0);
+		right += _close->width();
+	}
+	if (_topBarButton) {
+		_topBarButton->moveToRight(right, 0);
+		right += _topBarButton->width();
+	}
+	if (_tabMenuToggle && _tabMenuToggle->toggled()) {
+		_tabMenuToggle->moveToRight(right, 0);
+		right += _tabMenuToggle->width();
+	}
+	if (_tabSearchToggle && _tabSearchToggle->toggled()) {
+		_tabSearchToggle->moveToRight(right, 0);
+		right += _tabSearchToggle->width();
+	}
+	if (_tabGroupToggle && _tabGroupToggle->toggled()) {
+		_tabGroupToggle->moveToRight(right, 0);
+		right += _tabGroupToggle->width();
+	}
+}
+
+void TopBar::updateTabGroupActive() {
+	if (!_tabGroupToggle) {
+		return;
+	}
+	const auto entity = _tabGroupToggle->entity();
+	entity->setForceRippled(false, anim::type::instant);
+	entity->setForceRippled(_tabGroupActive, anim::type::instant);
+}
+
+void TopBar::applyTabSwapProgress(float64 progress) {
+	if (!_forumButton) {
+		_status->setOpacity(1. - progress);
+		_status->setVisible(progress < 1.);
+		updateStatusPosition(_progress.current());
+	}
+	update();
+}
+
 void TopBar::resizeEvent(QResizeEvent *e) {
 	_cachedClipPath = QPainterPath();
 	const auto collectible = effectiveCollectible();
@@ -2724,6 +3271,7 @@ void TopBar::setupButtons(
 			&& (kMinContrast > Ui::CountContrast(
 				st::boxTitleCloseFg->c,
 				*edgeColor));
+		_closeColored = shouldUseColored;
 		_back = base::make_unique_q<Ui::FadeWrap<Ui::IconButton>>(
 			this,
 			object_ptr<Ui::IconButton>(
@@ -2800,6 +3348,33 @@ void TopBar::setupButtons(
 		_tabSearchToggle->entity()->addClickHandler([=] {
 			showTabSearch();
 		});
+
+		_tabGroupToggle = base::make_unique_q<Ui::FadeWrap<Ui::IconButton>>(
+			this,
+			object_ptr<Ui::IconButton>(
+				this,
+				shouldUseColored
+					? st::infoTopBarColoredGroup
+					: st::infoTopBarBlackGroup),
+			st::infoTopBarScale);
+		_tabGroupToggle->QWidget::show();
+		_tabGroupToggle->setDuration(st::infoTopBarDuration);
+		_tabGroupToggle->toggle(false, anim::type::instant);
+		_tabGroupToggle->entity()->setAccessibleName(
+			tr::lng_profile_participants_section(tr::now));
+		_tabGroupToggle->entity()->addClickHandler([=] {
+			if (_tabSetGroup) {
+				_tabSetGroup(!_tabGroupActive);
+			}
+		});
+		_tabGroupToggle->entity()->shownValue(
+		) | rpl::filter([](bool shown) {
+			return shown;
+		}) | rpl::on_next([=] {
+			updateTabGroupActive();
+		}, _tabGroupToggle->lifetime());
+		updateTabGroupActive();
+
 		widthValue() | rpl::on_next([=] {
 			updateRightButtonsPosition();
 		}, _tabSearchToggle->lifetime());
