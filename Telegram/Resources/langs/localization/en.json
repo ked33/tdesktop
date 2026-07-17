@@ -28,6 +28,7 @@
     "lng_settings_hide_messages": "Hide messages from blocked user",
     "lng_settings_disable_premium_animation": "Disable Premium Animation",
     "lng_settings_disable_global_search": "Disable global search",
+    "lng_settings_search_main_and_archive": "Include main list and archived chats in global search",
     "lng_settings_show_group_sender_avatar": "Show sender's avatar in groups",
     "lng_settings_show_seconds": "Time with seconds",
     "lng_settings_message_read_reactions_info": "Read / Reactions Info",

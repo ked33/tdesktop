@@ -70,6 +70,7 @@ namespace EnhancedSettings {
 			ensureBool(qsl("show_message_context_select"), true);
 			ensureBool(qsl("show_message_context_reschedule"), true);
 			ensureBool(qsl("keep_selected_messages_across_chats"), false);
+			ensureBool(qsl("search_main_and_archive"), true);
 			ensureString(qsl("mpv_path"), QString());
 			ensureString(qsl("flood_premium_wait_override_ms"), QString());
 			ensureString(qsl("quick_copy_targets"), qsl("-1002615379741,Saved Messages"));
@@ -396,6 +397,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("blocked_user_spoiler_mode"), false);
 		settings.insert(qsl("disable_premium_animation"), false);
 		settings.insert(qsl("disable_global_search"), false);
+		settings.insert(qsl("search_main_and_archive"), true);
 		settings.insert(qsl("show_group_sender_avatar"), false);
 		settings.insert(qsl("show_seconds"), false);
 		settings.insert(qsl("show_message_context_read_info"), true);
@@ -489,6 +491,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("blocked_user_spoiler_mode"), GetEnhancedBool("blocked_user_spoiler_mode"));
 		settings.insert(qsl("disable_premium_animation"), GetEnhancedBool("disable_premium_animation"));
 		settings.insert(qsl("disable_global_search"), GetEnhancedBool("disable_global_search"));
+		settings.insert(qsl("search_main_and_archive"), GetEnhancedBool("search_main_and_archive"));
 		settings.insert(qsl("show_group_sender_avatar"), GetEnhancedBool("show_group_sender_avatar"));
 		settings.insert(qsl("show_seconds"), GetEnhancedBool("show_seconds"));
 		settings.insert(qsl("show_message_context_read_info"), GetEnhancedBool("show_message_context_read_info"));
