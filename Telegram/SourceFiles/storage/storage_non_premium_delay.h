@@ -6,7 +6,9 @@
 
 namespace Storage {
 
+inline constexpr auto kNonPremiumMinimumRequestLimit = 2;
 inline constexpr auto kNonPremiumInitialRequestLimit = 8;
+inline constexpr auto kNonPremiumMaximumRequestLimit = 10;
 inline constexpr auto kNonPremiumRecoveryFirstStep = 15 * crl::time(1000);
 inline constexpr auto kNonPremiumRecoverySecondStep = 45 * crl::time(1000);
 inline constexpr auto kNonPremiumRecoveryBaseDuration = 60 * crl::time(1000);
@@ -17,6 +19,14 @@ struct NonPremiumDelayInfo {
 	int serverWaitSeconds = 0;
 	int overrideWaitMs = -1;
 	int appliedWaitMs = 0;
+};
+
+enum class NonPremiumRequestLimitReason {
+	BufferPressure,
+	ExcessCapacity,
+	ProbeNoGain,
+	HighLatency,
+	ServerLimit,
 };
 
 struct NonPremiumDelayState {

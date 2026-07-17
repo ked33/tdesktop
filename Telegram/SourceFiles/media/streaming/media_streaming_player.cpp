@@ -295,6 +295,7 @@ Mode Player::fileOpenMode() {
 
 bool Player::fileReady(int headerSize, Stream &&video, Stream &&audio) {
 	_waitingForData = false;
+	_file->setSmartStreamingBufferPressure(false);
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player fileReady header=%1 incomingVideo=%2 incomingAudio=%3 mode=%4 seekable=%5 sequential=%6 hw=%7 remote=%8 boost=%9.")
 		.arg(headerSize)
 		.arg(video.codec ? 1 : 0)
@@ -387,6 +388,7 @@ bool Player::fileReady(int headerSize, Stream &&video, Stream &&audio) {
 
 void Player::fileError(Error error) {
 	_waitingForData = false;
+	_file->setSmartStreamingBufferPressure(false);
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player fileError error=%1 stage=%2.")
 		.arg(PlaybackErrorDebugString(error))
 		.arg(int(_stage)));
@@ -413,6 +415,9 @@ void Player::fileWaitingForData() {
 		return;
 	}
 	_waitingForData = true;
+	if (_stage != Stage::Started && !_pausedByUser) {
+		_file->setSmartStreamingBufferPressure(true);
+	}
 	VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Player fileWaitingForData stage=%1 hasAudio=%2 hasVideo=%3 remote=%4 boost=%5 waitBuffer=%6 audioState=%7 videoState=%8.")
 		.arg(int(_stage))
 		.arg(_audio ? 1 : 0)
@@ -587,6 +592,7 @@ void Player::provideStartInformation() {
 		fail(Error::OpenFailed);
 	} else {
 		_stage = Stage::Ready;
+		updateSmartStreamingPlaybackRate();
 
 		if (_audio && _audioFinished) {
 			// Audio was stopped before it was ready.
@@ -621,8 +627,14 @@ void Player::play(const PlaybackOptions &options) {
 	Expects(!options.loop || (options.mode != Mode::Both));
 
 	const auto previous = getCurrentReceivedTill(computeTotalDuration());
+	const auto notifySeek = (_stage != Stage::Uninitialized)
+		&& options.seekable
+		&& (options.position != _options.position);
 
 	stop(true);
+	if (notifySeek) {
+		_file->notifySmartStreamingSeek();
+	}
 	_lastFailure = std::nullopt;
 
 	savePreviousReceivedTill(options, previous);
@@ -672,6 +684,23 @@ crl::time Player::loadInAdvanceFor() const {
 	return _remoteLoader ? LoadInAdvanceForRemote() : kLoadInAdvanceForLocal;
 }
 
+void Player::updateSmartStreamingPlaybackRate() {
+	auto bytesPerSecond = 0;
+	if (_remoteLoader
+		&& _stage != Stage::Uninitialized
+		&& !_pausedByUser
+		&& _totalDuration > 1
+		&& _totalDuration != kDurationUnavailable) {
+		const auto estimate = double(_file->size()) * 1000.
+			* _options.speed / double(_totalDuration);
+		bytesPerSecond = int(std::clamp(
+			estimate,
+			0.,
+			double(64 * 1024 * 1024)));
+	}
+	_file->setSmartStreamingPlaybackRate(bytesPerSecond);
+}
+
 crl::time Player::computeTotalDuration() const {
 	if (_totalDuration != kDurationUnavailable) {
 		return _totalDuration;
@@ -713,6 +742,8 @@ void Player::pause() {
 	Expects(active());
 
 	_pausedByUser = true;
+	_file->setSmartStreamingBufferPressure(false);
+	updateSmartStreamingPlaybackRate();
 	updatePausedState();
 }
 
@@ -720,6 +751,8 @@ void Player::resume() {
 	Expects(active());
 
 	_pausedByUser = false;
+	_file->setSmartStreamingBufferPressure(_pausedByWaitingForData);
+	updateSmartStreamingPlaybackRate();
 	updatePausedState();
 }
 
@@ -806,6 +839,7 @@ void Player::checkResumeFromWaitingForData() {
 	if (_pausedByWaitingForData
 		&& bothReceivedEnough(WaitingForDataBuffer(_remoteLoader))) {
 		_pausedByWaitingForData = false;
+		_file->setSmartStreamingBufferPressure(false);
 		updatePausedState();
 		_updates.fire({ WaitingForData{ false } });
 	}
@@ -815,6 +849,7 @@ void Player::start() {
 	Expects(_stage == Stage::Ready);
 
 	_stage = Stage::Started;
+	_file->setSmartStreamingBufferPressure(false);
 	const auto guard = base::make_weak(&_sessionGuard);
 
 	_file->speedEstimate() | rpl::on_next([=](SpeedEstimate value) {
@@ -828,6 +863,9 @@ void Player::start() {
 		return !bothReceivedEnough(WaitingForDataBuffer(_remoteLoader));
 	}) | rpl::on_next([=] {
 		_pausedByWaitingForData = true;
+		if (!_pausedByUser) {
+			_file->setSmartStreamingBufferPressure(true);
+		}
 		updatePausedState();
 		_updates.fire({ WaitingForData{ true } });
 	}, _sessionLifetime);
@@ -898,6 +936,8 @@ void Player::stop(bool stillActive) {
 		.arg(_video ? 1 : 0)
 		.arg(_lastFailure.has_value() ? 1 : 0));
 
+	_file->setSmartStreamingBufferPressure(false);
+	_file->setSmartStreamingPlaybackRate(0);
 	_file->stop(stillActive);
 	_sessionLifetime = rpl::lifetime();
 	_stage = Stage::Uninitialized;
@@ -957,6 +997,7 @@ void Player::setSpeed(float64 speed) {
 	}
 	if (!EqualSpeeds(_options.speed, speed)) {
 		_options.speed = speed;
+		updateSmartStreamingPlaybackRate();
 		if (active()) {
 			if (_audio) {
 				_audio->setSpeed(speed);

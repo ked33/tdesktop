@@ -44,6 +44,12 @@ public:
 	virtual void startStreaming() = 0;
 	virtual void stopStreaming(bool stillActive = false) = 0;
 	virtual void setLoaderPriority(int priority) = 0;
+	virtual void setSmartStreamingBufferPressure(bool) {
+	}
+	virtual void setSmartStreamingPlaybackRate(int) {
+	}
+	virtual void notifySmartStreamingSeek() {
+	}
 	[[nodiscard]] virtual rpl::producer<SpeedEstimate> speedEstimate() const = 0;
 
 	virtual ~FileSource() = default;

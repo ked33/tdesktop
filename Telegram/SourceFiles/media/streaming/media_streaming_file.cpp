@@ -1267,6 +1267,18 @@ void File::setLoaderPriority(int priority) {
 	_source->setLoaderPriority(priority);
 }
 
+void File::setSmartStreamingBufferPressure(bool pressure) {
+	_source->setSmartStreamingBufferPressure(pressure);
+}
+
+void File::setSmartStreamingPlaybackRate(int bytesPerSecond) {
+	_source->setSmartStreamingPlaybackRate(bytesPerSecond);
+}
+
+void File::notifySmartStreamingSeek() {
+	_source->notifySmartStreamingSeek();
+}
+
 int64 File::size() const {
 	return _source->size();
 }

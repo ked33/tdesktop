@@ -69,6 +69,9 @@ public:
 	void stopStreamingAsync();
 	void tryRemoveLoaderAsync();
 	void requestTailPrefetch(int64 bytes);
+	void setSmartStreamingBufferPressure(bool pressure);
+	void setSmartStreamingPlaybackRate(int bytesPerSecond);
+	void notifySmartStreamingSeek();
 
 	// Main thread.
 	void startStreaming();

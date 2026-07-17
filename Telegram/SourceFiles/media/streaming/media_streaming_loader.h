@@ -51,6 +51,18 @@ public:
 	[[nodiscard]] virtual bool premiumSession() const {
 		return true;
 	}
+	virtual void setSmartStreamingBufferPressure(bool) {
+	}
+	virtual void setSmartStreamingPlaybackRate(int) {
+	}
+	virtual void notifySmartStreamingSeek() {
+	}
+	[[nodiscard]] virtual int smartStreamingRequestLimit() const {
+		return 8;
+	}
+	[[nodiscard]] virtual int smartStreamingPlaybackRate() const {
+		return 0;
+	}
 
 	virtual void attachDownloader(
 		not_null<Storage::StreamedFileDownloader*> downloader) = 0;
