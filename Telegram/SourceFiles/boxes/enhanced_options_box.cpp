@@ -9,9 +9,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/enhanced_options_box.h"
 
 #include "lang/lang_keys.h"
-#include "ui/widgets/checkbox.h"
 #include "ui/widgets/fields/input_field.h"
+#include "ui/widgets/checkbox.h"
 #include "ui/widgets/labels.h"
+#include "ui/widgets/scroll_area.h"
+#include "ui/wrap/vertical_layout.h"
 #include "ui/style/style_core.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
@@ -22,6 +24,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_enhanced.h"
 
 #include <QKeySequence>
+
+#include <algorithm>
+#include <array>
 
 NetBoostBox::NetBoostBox(QWidget *parent) {
 }
@@ -143,6 +148,269 @@ void DownloadBoostBox::save() {
 				.confirmText = tr::lng_settings_restart_now(tr::now),
 				.cancelText = tr::lng_cancel(tr::now),
 		}));
+}
+
+DownloadBoostProfilesBox::DownloadBoostProfilesBox(QWidget *parent)
+	: _profiles(Media::Streaming::LoadBoostProfiles())
+, _scroll(base::make_unique_q<Ui::ScrollArea>(this, st::boxScroll)) {
+}
+
+void DownloadBoostProfilesBox::prepare() {
+	setTitle(u"优化在线播放参数配置 / Online playback parameters"_q);
+
+	addButton(u"还原 / Reset"_q, [=] { reset(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+	addButton(u"保存 / Save"_q, [=] {
+		if (!save()) {
+			return;
+		}
+		getDelegate()->show(Ui::MakeConfirmBox({
+			.text = u"参数已保存。需要重启 Telegram 才会应用新的在线播放参数。"_q,
+			.confirmed = [=](Fn<void()> &&) {
+				EnhancedSettings::Write();
+				Core::Restart();
+			},
+			.confirmText = tr::lng_settings_restart_now(tr::now),
+			.cancelText = tr::lng_cancel(tr::now),
+		}));
+	});
+
+	_profileGroup = std::make_shared<Ui::RadiobuttonGroup>(_editingProfile);
+	const auto top = st::boxOptionListPadding.top();
+	for (auto i = 0; i != 7; ++i) {
+		const auto button = Ui::CreateChild<Ui::Radiobutton>(
+			this,
+			_profileGroup,
+			i,
+			DownloadBoostBox::BoostLabel(i),
+			st::autolockButton);
+		button->moveToLeft(
+			st::boxPadding.left(),
+			top + i * (button->heightNoMargins() + st::boxOptionListSkip));
+		_radioHeight = button->heightNoMargins();
+	}
+	_profileGroup->setChangedCallback([=](int value) {
+		if (_revertingProfile) {
+			return;
+		}
+		if (!saveCurrentProfile()) {
+			_revertingProfile = true;
+			_profileGroup->setValue(_editingProfile);
+			_revertingProfile = false;
+			return;
+		}
+		_editingProfile = value;
+		loadProfile(value);
+	});
+
+	_content = new Ui::VerticalLayout(this);
+	_scroll->setOwnedWidget(object_ptr<Ui::VerticalLayout>::fromRaw(_content));
+	_content->add(object_ptr<Ui::FlatLabel>(
+		_content,
+		u"每个分片为 128 KB。以 Smart 开头的参数仅智能档位生效；其他档位仍会保存这些值，便于复制和预先配置。"_q,
+		st::boxLabel));
+
+	const auto addField = [&](int index, const QString &description) {
+		_content->add(object_ptr<Ui::FlatLabel>(
+			_content,
+			description,
+			st::boxLabel));
+		_fields[index] = _content->add(object_ptr<Ui::InputField>(
+			_content,
+			st::defaultInputField,
+			u"请输入整数 / Integer"_q));
+	};
+	addField(0, u"并发请求上限：同时向服务器请求多少个视频分片。"_q);
+	addField(1, u"基础预读分片数：播放位置前方预先加载的分片数量。"_q);
+	addField(2, u"文件尾预读分片数：为 MP4 索引/尾部信息额外预读的分片数量。"_q);
+	addField(3, u"Seek 取消跳跃分片数：拖动距离超过该值时取消旧请求。"_q);
+	addField(4, u"Seek 取消保护分片数：保护播放点附近已在途的分片。"_q);
+	addField(5, u"远程播放提前加载毫秒数：播放器希望提前准备的播放时长。"_q);
+	addField(6, u"远程播放等待缓冲毫秒数：短暂缺数据时先等待多久再报卡顿。"_q);
+	addField(7, u"下载会话初始等待分片数：单个会话启动时允许积压的分片数。"_q);
+	addField(8, u"下载会话最大等待分片数：单个会话允许积压的分片上限。"_q);
+	addField(9, u"初始下载会话数：开始下载时创建的并发会话数。"_q);
+	addField(10, u"最大下载会话数：下载管理器允许扩展到的会话上限。"_q);
+	addField(11, u"MPV 文件尾预读分片数：MPV 播放时额外读取的尾部范围。"_q);
+	addField(12, u"MPV 最大缓存 MB：MPV demuxer 缓存上限。"_q);
+	addField(13, u"MPV 回看缓存 MB：MPV 保留在播放位置后方的缓存。"_q);
+	addField(14, u"非 Premium 预读上限：服务端限速恢复期间的预读分片上限。"_q);
+	addField(15, u"Smart 最小预读：智能档位触发限速时保留的最低预读。"_q);
+	addField(16, u"Smart 最小并发：智能档位触发限速时保留的最低并发。"_q);
+	addField(17, u"Smart 最大预读：智能档位正常运行时允许的最高预读。"_q);
+	addField(18, u"Smart DC 初始并发：首次播放某个 DC 时使用的请求并发。"_q);
+	addField(19, u"Smart DC 最小并发：服务端限速时允许降到的最低并发。"_q);
+	addField(20, u"Smart DC 最大并发：缓冲压力探测时允许升到的最高并发。"_q);
+	addField(21, u"Smart 容量回落下限：带宽充足时自动降低并发的停止值。"_q);
+
+	_seekCancel = _content->add(object_ptr<Ui::Checkbox>(
+		_content,
+		u"启用 Seek 旧请求取消：拖动较远时停止旧位置的请求。"_q,
+		false,
+		st::defaultBoxCheckbox));
+	_tailPrefetch = _content->add(object_ptr<Ui::Checkbox>(
+		_content,
+		u"启用文件尾预读：关闭时文件尾预读分片数会保存为 0。"_q,
+		false,
+		st::defaultBoxCheckbox));
+
+	loadProfile(_editingProfile);
+	showChildren();
+	setDimensions(
+		st::boxWidth,
+		st::boxWidth + 4 * st::boxMediumSkip);
+}
+
+void DownloadBoostProfilesBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+	const auto top = st::boxOptionListPadding.top();
+	const auto radioHeight = 7 * (_radioHeight + st::boxOptionListSkip);
+	_scroll->setGeometry(
+		st::boxPadding.left(),
+		top + radioHeight,
+		width() - st::boxPadding.left() - st::boxPadding.right(),
+		height() - top - radioHeight - st::boxPadding.bottom());
+}
+
+void DownloadBoostProfilesBox::loadProfile(int profile) {
+	const auto &value = _profiles[profile];
+	const auto values = std::array<int, kNumericFieldCount>{
+		value.requestsLimit,
+		value.preloadPartsAhead,
+		value.tailPrefetchParts,
+		value.seekCancelJumpParts,
+		value.seekCancelGuardParts,
+		value.loadInAdvanceMs,
+		value.waitingBufferMs,
+		value.startWaitedParts,
+		value.maxWaitedParts,
+		value.startSessions,
+		value.maxSessions,
+		value.mpvTailPrefetchParts,
+		value.mpvCacheMaxMb,
+		value.mpvCacheBackMb,
+		value.nonPremiumPreloadLimit,
+		value.smartMinimumPreload,
+		value.smartMinimumRequests,
+		value.smartMaximumPreload,
+		value.smartInitialRequestLimit,
+		value.smartMinimumRequestLimit,
+		value.smartMaximumRequestLimit,
+		value.smartCapacityMinimumRequestLimit,
+	};
+	for (auto i = 0; i != kNumericFieldCount; ++i) {
+		_fields[i]->setText(QString::number(values[i]));
+	}
+	_seekCancel->setChecked(
+		value.seekCancelEnabled,
+		Ui::Checkbox::NotifyAboutChange::DontNotify);
+	_tailPrefetch->setChecked(
+		value.tailPrefetchParts > 0,
+		Ui::Checkbox::NotifyAboutChange::DontNotify);
+}
+
+bool DownloadBoostProfilesBox::saveCurrentProfile() {
+	auto &value = _profiles[_editingProfile];
+	const auto ranges = std::array<std::pair<int, int>, kNumericFieldCount>{
+		std::pair{1, 32},
+		std::pair{1, 64},
+		std::pair{0, 16},
+		std::pair{1, 256},
+		std::pair{0, 64},
+		std::pair{0, 300000},
+		std::pair{0, 30000},
+		std::pair{1, 128},
+		std::pair{1, 256},
+		std::pair{1, 32},
+		std::pair{1, 64},
+		std::pair{0, 16},
+		std::pair{0, 4096},
+		std::pair{0, 1024},
+		std::pair{1, 128},
+		std::pair{1, 64},
+		std::pair{1, 32},
+		std::pair{1, 64},
+		std::pair{1, 32},
+		std::pair{1, 32},
+		std::pair{1, 32},
+		std::pair{1, 32},
+	};
+	const auto current = std::array<int*, kNumericFieldCount>{
+		&value.requestsLimit,
+		&value.preloadPartsAhead,
+		&value.tailPrefetchParts,
+		&value.seekCancelJumpParts,
+		&value.seekCancelGuardParts,
+		&value.loadInAdvanceMs,
+		&value.waitingBufferMs,
+		&value.startWaitedParts,
+		&value.maxWaitedParts,
+		&value.startSessions,
+		&value.maxSessions,
+		&value.mpvTailPrefetchParts,
+		&value.mpvCacheMaxMb,
+		&value.mpvCacheBackMb,
+		&value.nonPremiumPreloadLimit,
+		&value.smartMinimumPreload,
+		&value.smartMinimumRequests,
+		&value.smartMaximumPreload,
+		&value.smartInitialRequestLimit,
+		&value.smartMinimumRequestLimit,
+		&value.smartMaximumRequestLimit,
+		&value.smartCapacityMinimumRequestLimit,
+	};
+	for (auto i = 0; i != kNumericFieldCount; ++i) {
+		auto ok = false;
+		const auto number = _fields[i]->getLastText().trimmed().toInt(&ok);
+		if (!ok || number < ranges[i].first || number > ranges[i].second) {
+			Ui::Toast::Show(u"参数必须是有效的整数，并处于允许范围内。"_q);
+			_fields[i]->showError();
+			return false;
+		}
+		*current[i] = number;
+	}
+	value.seekCancelEnabled = _seekCancel->checked();
+	if (value.maxWaitedParts < value.startWaitedParts
+		|| value.maxSessions < value.startSessions
+		|| value.mpvCacheBackMb > value.mpvCacheMaxMb
+		|| value.smartMaximumPreload < value.smartMinimumPreload
+		|| value.smartMaximumRequestLimit
+			< value.smartMinimumRequestLimit
+		|| value.smartInitialRequestLimit
+			< value.smartMinimumRequestLimit
+		|| value.smartInitialRequestLimit
+			> value.smartMaximumRequestLimit
+		|| value.smartCapacityMinimumRequestLimit
+			< value.smartMinimumRequestLimit
+		|| value.smartCapacityMinimumRequestLimit
+			> value.smartMaximumRequestLimit) {
+		Ui::Toast::Show(
+			u"最大值、初始值、最小值或 MPV 缓存关系无效。"_q);
+		return false;
+	}
+	if (_tailPrefetch->checked() && value.tailPrefetchParts == 0) {
+		value.tailPrefetchParts = 1;
+	}
+	if (!_tailPrefetch->checked()) {
+		value.tailPrefetchParts = 0;
+	}
+	return true;
+}
+
+bool DownloadBoostProfilesBox::save() {
+	if (!saveCurrentProfile()) {
+		return false;
+	}
+	SetEnhancedValue(
+		"net_download_speed_boost_profiles",
+		Media::Streaming::SerializeBoostProfiles(_profiles));
+	EnhancedSettings::Write();
+	return true;
+}
+
+void DownloadBoostProfilesBox::reset() {
+	_profiles = Media::Streaming::DefaultBoostProfiles();
+	loadProfile(_editingProfile);
 }
 
 void NetBoostBox::save() {
