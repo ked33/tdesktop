@@ -158,9 +158,9 @@ DownloadBoostProfilesBox::DownloadBoostProfilesBox(QWidget *parent)
 void DownloadBoostProfilesBox::prepare() {
 	setTitle(u"优化在线播放参数配置 / Online playback parameters"_q);
 
-	addButton(u"还原 / Reset"_q, [=] { reset(); });
+	addButton(rpl::single(u"还原 / Reset"_q), [=] { reset(); });
 	addButton(tr::lng_cancel(), [=] { closeBox(); });
-	addButton(u"保存 / Save"_q, [=] {
+	addButton(rpl::single(u"保存 / Save"_q), [=] {
 		if (!save()) {
 			return;
 		}
