@@ -280,6 +280,9 @@ private:
 	std::atomic<int> _adaptivePreloadPercent = 100;
 	std::atomic<int> _adaptiveLimitPercent = 100;
 	std::atomic<bool> _speedIsThrottled = false;
+	std::atomic<bool> _smartBufferPressure = false;
+	std::atomic<crl::time> _smartPreloadRecoveryUntil = 0;
+	std::atomic<int> _smartPreloadRecoveryLoggedPercent = 0;
 	std::atomic<crl::time> _serverLimitedUntil = 0;
 	std::atomic<crl::time> _serverRecoveryUntil = 0;
 	std::atomic<int> _serverDcId = 0;

@@ -28,6 +28,15 @@ constexpr auto kSlicesInMemory = 2;
 constexpr auto kSmartMinimumPreload = 8;
 constexpr auto kSmartMinimumRequests = 4;
 constexpr auto kNonPremiumMaxPreload = 20;
+constexpr auto kSmartPreloadRecoveryFullDuration
+	= 15 * crl::time(1000);
+constexpr auto kSmartPreloadRecoveryTaperDuration
+	= 15 * crl::time(1000);
+constexpr auto kSmartPreloadRecoveryDuration
+	= kSmartPreloadRecoveryFullDuration
+	+ kSmartPreloadRecoveryTaperDuration;
+constexpr auto kSmartPreloadRecoveryFullPercent = 100;
+constexpr auto kSmartPreloadRecoveryTaperPercent = 75;
 
 using PartsMap = base::flat_map<uint32, QByteArray>;
 
@@ -1193,7 +1202,7 @@ void Reader::stopSleep() {
 
 void Reader::stopStreamingAsync() {
 	_stopStreamingAsync = true;
-	_loader->setSmartStreamingBufferPressure(false);
+	setSmartStreamingBufferPressure(false);
 	_loader->setSmartStreamingPlaybackRate(0);
 	crl::on_main(this, [=] {
 		if (_stopStreamingAsync) {
@@ -1221,6 +1230,14 @@ void Reader::requestTailPrefetch(int64 bytes) {
 }
 
 void Reader::setSmartStreamingBufferPressure(bool pressure) {
+	const auto previous = _smartBufferPressure.load(
+		std::memory_order_relaxed);
+	if (pressure || previous) {
+		_smartPreloadRecoveryUntil.store(
+			crl::now() + kSmartPreloadRecoveryDuration,
+			std::memory_order_release);
+	}
+	_smartBufferPressure.store(pressure, std::memory_order_release);
 	_loader->setSmartStreamingBufferPressure(pressure);
 }
 
@@ -1251,7 +1268,7 @@ void Reader::stopStreaming(bool stillActive) {
 		cancelStreamingLoads();
 	}
 	if (!stillActive) {
-		_loader->setSmartStreamingBufferPressure(false);
+		setSmartStreamingBufferPressure(false);
 		_loader->setSmartStreamingPlaybackRate(0);
 		_seekCancelGeneration.fetch_add(1, std::memory_order_release);
 		_streamingActive = false;
@@ -1697,6 +1714,26 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		? kSmartMinimumRequests
 		: limitBase;
 	const auto now = crl::now();
+	const auto bufferPressure = _smartBufferPressure.load(
+		std::memory_order_acquire);
+	const auto preloadRecoveryUntil = _smartPreloadRecoveryUntil.load(
+		std::memory_order_acquire);
+	const auto preloadRecoveryRemaining = std::max(
+		preloadRecoveryUntil - now,
+		crl::time(0));
+	const auto recoveryPreloadPercent = [&] {
+		if (!smartNonPremium) {
+			return 0;
+		}
+		if (bufferPressure
+			|| preloadRecoveryRemaining
+				> kSmartPreloadRecoveryTaperDuration) {
+			return kSmartPreloadRecoveryFullPercent;
+		}
+		return (preloadRecoveryRemaining > crl::time(0))
+			? kSmartPreloadRecoveryTaperPercent
+			: 0;
+	}();
 	const auto limitedUntil = _serverLimitedUntil.load(
 		std::memory_order_relaxed);
 	const auto recoveryUntil = _serverRecoveryUntil.load(
@@ -1720,9 +1757,13 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		_loader->smartStreamingRequestLimit(),
 		Storage::kNonPremiumMinimumRequestLimit,
 		Storage::kNonPremiumMaximumRequestLimit);
+	const auto adaptivePreloadPercent = _adaptivePreloadPercent.load(
+		std::memory_order_relaxed);
+	const auto preloadPercent = std::max(
+		adaptivePreloadPercent,
+		recoveryPreloadPercent);
 	auto preloadParts = std::clamp(
-		(preloadBase * _adaptivePreloadPercent.load(
-			std::memory_order_relaxed)) / 100,
+		(preloadBase * preloadPercent) / 100,
 		preloadMinimum,
 		int(kLoadFromRemoteMax) * 2);
 	// Consumption-aware cap: once we know how fast video is being read,
@@ -1770,6 +1811,22 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	const auto serverPhase = serverLimited
 		? 1
 		: (serverRecovering ? 2 : 0);
+	const auto previousRecoveryPreloadPercent
+		= _smartPreloadRecoveryLoggedPercent.exchange(
+			recoveryPreloadPercent,
+			std::memory_order_relaxed);
+	if (previousRecoveryPreloadPercent != recoveryPreloadPercent) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: preload recovery "
+			"previous=%1 floor=%2 pressure=%3 remaining=%4 "
+			"adaptive=%5 preload=%6 serverPhase=%7.")
+			.arg(previousRecoveryPreloadPercent)
+			.arg(recoveryPreloadPercent)
+			.arg(bufferPressure ? 1 : 0)
+			.arg(qlonglong(preloadRecoveryRemaining))
+			.arg(adaptivePreloadPercent)
+			.arg(preloadParts)
+			.arg(serverPhase));
+	}
 	const auto serverRequests = [&] {
 		if (serverLimited || !smartNonPremium) {
 			return 0;
