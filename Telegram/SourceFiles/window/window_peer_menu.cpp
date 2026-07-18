@@ -221,14 +221,6 @@ constexpr auto kDeleteOwnMessagesBatchSize = 100;
 	return info && info->collapsedInDialogs();
 }
 
-[[nodiscard]] bool InsideCollapsedCommunity(History *history) {
-	// A member chat hidden inside a collapsed community lives in that
-	// community's own list, not the main chats list, so the top-level
-	// placement actions (archive / pin / add-to-folder) don't apply to it.
-	const auto info = history ? history->communityListInfo() : nullptr;
-	return info && info->collapsedInDialogs();
-}
-
 [[nodiscard]] QString LookupMemberRank(
 		not_null<PeerData*> peer,
 		not_null<UserData*> user) {
