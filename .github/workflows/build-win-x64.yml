@@ -85,7 +85,7 @@ jobs:
             win64-qt-
 
       - name: Set up sccache
-        uses: mozilla-actions/sccache-action@d651010b8da762cde178750d8eda7b5febfe147a
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696
         with:
           version: "v0.15.0"
 
