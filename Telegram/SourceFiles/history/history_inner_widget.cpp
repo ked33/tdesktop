@@ -3935,7 +3935,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 					HistoryView::ViewAsJSON(controller, itemId);
 				}, &st::menuIcon64gJson);
 			}
-			if (isUponSelected != -2) {
+			if (item && isUponSelected != -2) {
 				HistoryView::AddEphemeralAboutAction(_menu, item);
 			}
 	} else { // maybe cursor on some text history item?
@@ -4450,7 +4450,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				HistoryView::ViewAsJSON(controller, itemId);
 			}, &st::menuIcon64gJson);
 		}
-		if (isUponSelected != -2) {
+		if (item && isUponSelected != -2) {
 			HistoryView::AddEphemeralAboutAction(_menu, item);
 		}
 	}
