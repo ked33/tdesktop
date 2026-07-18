@@ -8046,6 +8046,7 @@ void OverlayWidget::handleMousePress(
 	ClickHandler::pressed();
 
 	if (button == Qt::LeftButton) {
+		_videoPlaybackToggledOnLastRelease = false;
 		_down = Over::None;
 		if (!ClickHandler::getPressed()) {
 			if ((_over == Over::Left && moveToNext(-1))
@@ -8129,7 +8130,9 @@ bool OverlayWidget::handleDoubleClick(
 		return false;
 	} else {
 		playbackToggleFullScreen();
-		playbackPauseResume();
+		if (base::take(_videoPlaybackToggledOnLastRelease)) {
+			playbackPauseResume();
+		}
 	}
 	return true;
 }
@@ -8591,6 +8594,7 @@ void OverlayWidget::handleMouseRelease(
 						}
 					} else {
 						playbackPauseResume();
+						_videoPlaybackToggledOnLastRelease = true;
 					}
 				}
 			}

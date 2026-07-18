@@ -801,6 +801,7 @@ private:
 	Over _down = Over::None;
 	QPoint _lastAction, _lastMouseMovePos;
 	bool _ignoringDropdown = false;
+	bool _videoPlaybackToggledOnLastRelease = false;
 
 	Ui::Animations::Basic _stateAnimation;
 
