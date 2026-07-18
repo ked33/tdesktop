@@ -7,14 +7,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "storage/download_manager_mtproto.h"
 
+#include "apiwrap.h"
+#include "base/openssl_help.h"
+#include "data/data_document.h"
+#include "data/data_session.h"
+#include "main/main_session.h"
+#include "media/streaming/media_streaming_boost.h"
 #include "mtproto/facade.h"
 #include "mtproto/mtproto_auth_key.h"
 #include "mtproto/mtproto_response.h"
-#include "main/main_session.h"
-#include "data/data_session.h"
-#include "data/data_document.h"
-#include "apiwrap.h"
-#include "base/openssl_help.h"
 #include "settings.h"
 
 #include <algorithm>
@@ -35,7 +36,6 @@ constexpr auto kNonPremiumDelayCoalesceTolerance = crl::time(1500);
 constexpr auto kSmartSampleBusyDuration = 5 * crl::time(1000);
 constexpr auto kSmartSampleMaximumRequests = 64;
 constexpr auto kSmartMeasurementMaxAge = 2 * 60 * crl::time(1000);
-constexpr auto kSmartCapacityMinimumRequestLimit = 4;
 constexpr auto kSmartLimitChangeCooldown = 30 * crl::time(1000);
 constexpr auto kSmartPressureDuration = 3 * crl::time(1000);
 constexpr auto kSmartSeekFreezeDuration = 15 * crl::time(1000);
@@ -75,80 +75,28 @@ constexpr auto kSmartMaximumMeasuredThroughput = 64 * 1024 * 1024;
 	return std::clamp(boost, 0, 6);
 }
 
+[[nodiscard]] const Media::Streaming::BoostProfile &SmartProfile() {
+	return Media::Streaming::BoostProfileFor(6);
+}
+
 [[nodiscard]] int StartWaitedInSession() {
-	switch (DownloadBoostLevel()) {
-	case 1:
-		return 8 * kDownloadPartSize;
-	case 2:
-		return 10 * kDownloadPartSize;
-	case 3:
-		return 12 * kDownloadPartSize;
-	case 4:
-		return 14 * kDownloadPartSize;
-	case 5:
-		return 16 * kDownloadPartSize;
-	case 6:
-		return 8 * kDownloadPartSize;
-	default:
-		return 4 * kDownloadPartSize;
-	}
+	return Media::Streaming::BoostProfileFor(
+		DownloadBoostLevel()).startWaitedParts * kDownloadPartSize;
 }
 
 [[nodiscard]] int MaxWaitedInSession() {
-	switch (DownloadBoostLevel()) {
-	case 1:
-		return 24 * kDownloadPartSize;
-	case 2:
-		return 32 * kDownloadPartSize;
-	case 3:
-		return 40 * kDownloadPartSize;
-	case 4:
-		return 48 * kDownloadPartSize;
-	case 5:
-		return 64 * kDownloadPartSize;
-	case 6:
-		return 24 * kDownloadPartSize;
-	default:
-		return 16 * kDownloadPartSize;
-	}
+	return Media::Streaming::BoostProfileFor(
+		DownloadBoostLevel()).maxWaitedParts * kDownloadPartSize;
 }
 
 [[nodiscard]] int StartSessionsCount() {
-	switch (DownloadBoostLevel()) {
-	case 1:
-		return 2;
-	case 2:
-		return 2;
-	case 3:
-		return 3;
-	case 4:
-		return 4;
-	case 5:
-		return 5;
-	case 6:
-		return 2;
-	default:
-		return 1;
-	}
+	return Media::Streaming::BoostProfileFor(
+		DownloadBoostLevel()).startSessions;
 }
 
 [[nodiscard]] int MaxSessionsCount() {
-	switch (DownloadBoostLevel()) {
-	case 1:
-		return 8;
-	case 2:
-		return 10;
-	case 3:
-		return 12;
-	case 4:
-		return 14;
-	case 5:
-		return 16;
-	case 6:
-		return 8;
-	default:
-		return 8;
-	}
+	return Media::Streaming::BoostProfileFor(
+		DownloadBoostLevel()).maxSessions;
 }
 
 // Each (session remove by timeouts) we wait for time:
@@ -264,6 +212,7 @@ auto DownloadManagerMtproto::smartRequestState(
 -> SmartRequestState & {
 	auto &state = _smartRequestStates[dcId];
 	if (!state.created) {
+		state.target = SmartProfile().smartInitialRequestLimit;
 		state.created = now;
 		state.lastChange = now;
 		state.sampleLastUpdate = now;
@@ -338,7 +287,7 @@ void DownloadManagerMtproto::notifySmartStreamingSeek(
 int DownloadManagerMtproto::nonPremiumRequestLimit(MTP::DcId dcId) const {
 	const auto i = _smartRequestStates.find(dcId);
 	return (i == end(_smartRequestStates))
-		? kNonPremiumInitialRequestLimit
+		? SmartProfile().smartInitialRequestLimit
 		: i->second.target;
 }
 
@@ -463,8 +412,9 @@ void DownloadManagerMtproto::evaluateSmartRequestLimit(
 		return;
 	}
 	const auto playback = double(demand.playbackBytesPerSecond);
+	const auto &profile = SmartProfile();
 	if (!demand.bufferPressure) {
-		if (state.target > kSmartCapacityMinimumRequestLimit
+		if (state.target > profile.smartCapacityMinimumRequestLimit
 			&& playback > 0.
 			&& state.throughputEma
 				> playback * kSmartExcessCapacityRatio) {
@@ -473,7 +423,7 @@ void DownloadManagerMtproto::evaluateSmartRequestLimit(
 				state.target - 1,
 				NonPremiumRequestLimitReason::ExcessCapacity,
 				now);
-		} else if (state.target > kSmartCapacityMinimumRequestLimit
+		} else if (state.target > profile.smartCapacityMinimumRequestLimit
 			&& playback > 0.
 			&& state.latencyEma > kSmartHighLatencyThreshold
 			&& state.throughputEma
@@ -488,7 +438,7 @@ void DownloadManagerMtproto::evaluateSmartRequestLimit(
 	}
 	if (!demand.pressureSince
 		|| now < demand.pressureSince + kSmartPressureDuration
-		|| state.target >= kNonPremiumMaximumRequestLimit
+		|| state.target >= profile.smartMaximumRequestLimit
 		|| state.lastLatency > kSmartProbeMaximumLatency) {
 		return;
 	}
@@ -510,10 +460,11 @@ void DownloadManagerMtproto::updateSmartRequestLimit(
 		NonPremiumRequestLimitReason reason,
 		crl::time now) {
 	auto &state = smartRequestState(dcId, now);
+	const auto &profile = SmartProfile();
 	target = std::clamp(
 		target,
-		kNonPremiumMinimumRequestLimit,
-		kNonPremiumMaximumRequestLimit);
+		profile.smartMinimumRequestLimit,
+		profile.smartMaximumRequestLimit);
 	if (state.target == target) {
 		return;
 	}
@@ -560,7 +511,7 @@ void DownloadManagerMtproto::applySmartServerLimit(
 	state.probeActive = false;
 	state.probePreviousTarget = 0;
 	const auto target = std::max(
-		kNonPremiumMinimumRequestLimit,
+		SmartProfile().smartMinimumRequestLimit,
 		(state.target + 1) / 2);
 	updateSmartRequestLimit(
 		dcId,
@@ -689,8 +640,14 @@ bool DownloadManagerMtproto::trySendNextPart(MTP::DcId dcId, Queue &queue) {
 	}
 	if (DownloadBoostLevel() == 6 && !_api->session().premium()) {
 		const auto target = nonPremiumRequestLimit(dcId);
+		const auto &profile = SmartProfile();
 		const auto requestLimit = (delay.recoveryUntil > now)
-			? std::min(target, NonPremiumRequestLimit(delay, now))
+			? std::min(target, NonPremiumRequestLimit(
+				delay,
+				now,
+				profile.smartInitialRequestLimit,
+				profile.smartMinimumRequestLimit,
+				profile.smartMaximumRequestLimit))
 			: target;
 		const auto requested = balanceData.totalRequested
 			+ kDownloadPartSize;

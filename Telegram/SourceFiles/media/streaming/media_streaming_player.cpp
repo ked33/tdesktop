@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/streaming/media_streaming_player.h"
 
+#include "media/streaming/media_streaming_boost.h"
 #include "media/streaming/media_streaming_debug.h"
 #include "media/streaming/media_streaming_file.h"
 #include "media/streaming/media_streaming_loader.h"
@@ -40,41 +41,11 @@ constexpr auto kMsFrequency = 1000; // 1000 ms per second.
 }
 
 [[nodiscard]] crl::time LoadInAdvanceForRemote() {
-	switch (DownloadBoostLevel()) {
-	case 1:
-		return 40 * crl::time(1000);
-	case 2:
-		return 48 * crl::time(1000);
-	case 3:
-		return 56 * crl::time(1000);
-	case 4:
-		return 64 * crl::time(1000);
-	case 5:
-		return 80 * crl::time(1000);
-	case 6:
-		return 40 * crl::time(1000);
-	default:
-		return 32 * crl::time(1000);
-	}
+	return BoostProfileFor(DownloadBoostLevel()).loadInAdvanceMs;
 }
 
 [[nodiscard]] crl::time WaitingForDataBufferForRemote() {
-	switch (DownloadBoostLevel()) {
-	case 1:
-		return 2600;
-	case 2:
-		return 2300;
-	case 3:
-		return 2100;
-	case 4:
-		return 1900;
-	case 5:
-		return 1700;
-	case 6:
-		return 2600;
-	default:
-		return kBufferFor;
-	}
+	return BoostProfileFor(DownloadBoostLevel()).waitingBufferMs;
 }
 
 [[nodiscard]] crl::time WaitingForDataBuffer(bool remoteLoader) {

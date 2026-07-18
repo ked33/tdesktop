@@ -78,6 +78,14 @@ namespace Settings {
 
 		AddButtonWithIcon(
 			inner,
+			u"优化在线播放参数配置 / Online playback parameters"_q,
+			st::settingsButtonNoIcon
+		)->addClickHandler([=] {
+			Ui::show(Box<DownloadBoostProfilesBox>());
+		});
+
+		AddButtonWithIcon(
+			inner,
 			tr::lng_settings_online_playback_debug_logs(),
 			st::settingsButtonNoIcon
 		)->toggleOn(
