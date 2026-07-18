@@ -14,6 +14,7 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #include "facades.h"
 #include "ui/widgets/fields/input_field.h"
 #include "lang/lang_cloud_manager.h"
+#include "media/streaming/media_streaming_boost.h"
 
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
@@ -72,6 +73,10 @@ namespace EnhancedSettings {
 			ensureBool(qsl("keep_selected_messages_across_chats"), false);
 			ensureBool(qsl("search_main_and_archive"), true);
 			ensureString(qsl("mpv_path"), QString());
+			ensureString(
+				qsl("net_download_speed_boost_profiles"),
+				Media::Streaming::SerializeBoostProfiles(
+					Media::Streaming::DefaultBoostProfiles()));
 			ensureString(qsl("flood_premium_wait_override_ms"), QString());
 			ensureString(qsl("quick_copy_targets"), qsl("-1002615379741,Saved Messages"));
 			ensureString(qsl("chat_switch_persistent_shortcut"), QString());
@@ -376,6 +381,10 @@ namespace EnhancedSettings {
 		auto settings = QJsonObject();
 		settings.insert(qsl("net_speed_boost"), 0);
 		settings.insert(qsl("net_download_speed_boost"), 0);
+		settings.insert(
+			qsl("net_download_speed_boost_profiles"),
+			Media::Streaming::SerializeBoostProfiles(
+				Media::Streaming::DefaultBoostProfiles()));
 		settings.insert(qsl("show_messages_id"), false);
 		settings.insert(qsl("show_repeater_option"), false);
 		settings.insert(qsl("show_emoji_button_as_text"), false);
@@ -470,6 +479,9 @@ namespace EnhancedSettings {
 		auto settings = QJsonObject();
 		settings.insert(qsl("net_speed_boost"), GetEnhancedInt("net_speed_boost"));
 		settings.insert(qsl("net_download_speed_boost"), GetEnhancedInt("net_download_speed_boost"));
+		settings.insert(
+			qsl("net_download_speed_boost_profiles"),
+			GetEnhancedString("net_download_speed_boost_profiles"));
 		settings.insert(qsl("show_messages_id"), GetEnhancedBool("show_messages_id"));
 		settings.insert(qsl("show_repeater_option"), GetEnhancedBool("show_repeater_option"));
 		settings.insert(qsl("show_emoji_button_as_text"), GetEnhancedBool("show_emoji_button_as_text"));

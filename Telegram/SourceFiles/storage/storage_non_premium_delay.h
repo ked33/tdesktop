@@ -45,22 +45,32 @@ struct NonPremiumDelayState {
 
 [[nodiscard]] inline int NonPremiumRequestLimit(
 		const NonPremiumDelayState &state,
-		crl::time now) {
+		crl::time now,
+		int initialLimit = kNonPremiumInitialRequestLimit,
+		int minimumLimit = kNonPremiumMinimumRequestLimit,
+		int maximumLimit = kNonPremiumMaximumRequestLimit) {
+	initialLimit = std::clamp(initialLimit, minimumLimit, maximumLimit);
 	if (now < state.limitedUntil) {
 		return 0;
 	} else if (!state.recoveryUntil || now >= state.recoveryUntil) {
-		return kNonPremiumInitialRequestLimit;
+		return initialLimit;
 	}
 	const auto elapsed = std::max(
 		now - state.limitedUntil,
 		crl::time(0));
 	const auto repeated = (state.penalty >= 2);
 	if (elapsed < kNonPremiumRecoveryFirstStep) {
-		return repeated ? 2 : 4;
+		return repeated
+			? minimumLimit
+			: std::clamp(initialLimit - 4, minimumLimit, maximumLimit);
 	} else if (elapsed < kNonPremiumRecoverySecondStep) {
-		return repeated ? 4 : 6;
+		return repeated
+			? std::clamp(minimumLimit + 2, minimumLimit, maximumLimit)
+			: std::clamp(initialLimit - 2, minimumLimit, maximumLimit);
 	}
-	return repeated ? 6 : kNonPremiumInitialRequestLimit;
+	return repeated
+		? std::clamp(minimumLimit + 4, minimumLimit, maximumLimit)
+		: initialLimit;
 }
 
 [[nodiscard]] inline crl::time NonPremiumNextStateChange(

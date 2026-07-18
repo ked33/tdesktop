@@ -8,8 +8,14 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #pragma once
 
 #include "boxes/abstract_box.h"
+#include "base/unique_qptr.h"
+#include "media/streaming/media_streaming_boost.h"
+
+#include <array>
 
 namespace Ui {
+	class Checkbox;
+
 	class RadiobuttonGroup;
 
 	class Radiobutton;
@@ -17,6 +23,8 @@ namespace Ui {
 	class FlatLabel;
 
 	class InputField;
+	class ScrollArea;
+	class VerticalLayout;
 } // namespace Ui
 
 class NetBoostBox : public Ui::BoxContent {
@@ -50,6 +58,35 @@ private:
 
 	object_ptr<Ui::FlatLabel> _description = {nullptr};
 	std::shared_ptr<Ui::RadiobuttonGroup> _boostGroup;
+
+};
+
+class DownloadBoostProfilesBox : public Ui::BoxContent {
+public:
+	DownloadBoostProfilesBox(QWidget *parent);
+
+protected:
+	void prepare() override;
+	void resizeEvent(QResizeEvent *e) override;
+
+private:
+	static constexpr auto kNumericFieldCount = 22;
+
+	void loadProfile(int profile);
+	bool saveCurrentProfile();
+	bool save();
+	void reset();
+
+	Media::Streaming::BoostProfiles _profiles;
+	std::shared_ptr<Ui::RadiobuttonGroup> _profileGroup;
+	base::unique_qptr<Ui::ScrollArea> _scroll;
+	Ui::VerticalLayout *_content = nullptr;
+	std::array<Ui::InputField*, kNumericFieldCount> _fields = {};
+	Ui::Checkbox *_seekCancel = nullptr;
+	Ui::Checkbox *_tailPrefetch = nullptr;
+	int _radioHeight = 0;
+	int _editingProfile = 0;
+	bool _revertingProfile = false;
 
 };
 

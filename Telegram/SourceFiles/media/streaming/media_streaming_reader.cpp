@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/streaming/media_streaming_reader.h"
 
+#include "media/streaming/media_streaming_boost.h"
 #include "media/streaming/media_streaming_common.h"
 #include "media/streaming/media_streaming_debug.h"
 #include "media/streaming/media_streaming_loader.h"
@@ -25,9 +26,6 @@ constexpr auto kMaxPartsInHeader = 64;
 constexpr auto kMaxOnlyInHeader = 80 * kPartSize;
 constexpr auto kPartsOutsideFirstSliceGood = 8;
 constexpr auto kSlicesInMemory = 2;
-constexpr auto kSmartMinimumPreload = 8;
-constexpr auto kSmartMinimumRequests = 4;
-constexpr auto kNonPremiumMaxPreload = 20;
 constexpr auto kSmartPreloadRecoveryFullDuration
 	= 15 * crl::time(1000);
 constexpr auto kSmartPreloadRecoveryTaperDuration
@@ -46,57 +44,30 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 }
 
 [[nodiscard]] int StreamingRequestsLimit() {
-	switch (DownloadBoostLevel()) {
-	case 1:
-		return 12;
-	case 2:
-		return 16;
-	case 3:
-		return 20;
-	case 4:
-		return 24;
-	case 5:
-		return 32;
-	case 6:
-		return 12;
-	default:
-		return 8;
-	}
+	return BoostProfileFor(DownloadBoostLevel()).requestsLimit;
 }
 
 [[nodiscard]] bool StreamingSeekCancelEnabled() {
-	return (DownloadBoostLevel() > 0);
+	return BoostProfileFor(DownloadBoostLevel()).seekCancelEnabled;
 }
 
 [[nodiscard]] int64 StreamingSeekCancelJumpBytes() {
-	return int64(kInSlice / 2);
+	return int64(BoostProfileFor(DownloadBoostLevel()).seekCancelJumpParts)
+		* kPartSize;
 }
 
 [[nodiscard]] int64 StreamingSeekCancelGuardBytes() {
-	return int64(kPartSize * 4);
+	return int64(BoostProfileFor(DownloadBoostLevel()).seekCancelGuardParts)
+		* kPartSize;
 }
 
 [[nodiscard]] bool StreamingTailPrefetchEnabled() {
-	return (DownloadBoostLevel() > 0);
+	return BoostProfileFor(DownloadBoostLevel()).tailPrefetchParts > 0;
 }
 
 [[nodiscard]] int64 StreamingTailPrefetchBytes() {
-	// Keep the speculative MP4 moov tail small: most container footers fit
-	// in 128-256 KB. We align up to kPartSize.
-	switch (DownloadBoostLevel()) {
-	case 1:
-	case 2:
-		return int64(2 * kPartSize);
-	case 3:
-	case 4:
-		return int64(3 * kPartSize);
-	case 5:
-		return int64(4 * kPartSize);
-	case 6:
-		return int64(2 * kPartSize);
-	default:
-		return int64(0);
-	}
+	return int64(BoostProfileFor(DownloadBoostLevel()).tailPrefetchParts)
+		* kPartSize;
 }
 
 // Burst-mode adaptive preload multiplier: 100 = base depth, 200 = 2x.
@@ -105,31 +76,11 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 // the final counts into Slices::fill.
 
 [[nodiscard]] int PreloadPartsAhead() {
-	switch (DownloadBoostLevel()) {
-	case 1:
-		return 12;
-	case 2:
-		return 16;
-	case 3:
-		return 24;
-	case 4:
-		return 32;
-	case 5:
-		return 48;
-	case 6:
-		return 16;
-	default:
-		return 8;
-	}
+	return BoostProfileFor(DownloadBoostLevel()).preloadPartsAhead;
 }
 
-[[nodiscard]] int NonPremiumPreloadLimit(int requests) {
-	if (requests <= 4) {
-		return kSmartMinimumPreload;
-	} else if (requests <= 6) {
-		return 10;
-	}
-	return 12;
+[[nodiscard]] int NonPremiumPreloadLimit() {
+	return BoostProfileFor(DownloadBoostLevel()).nonPremiumPreloadLimit;
 }
 
 struct ParsedCacheEntry {
@@ -1032,7 +983,12 @@ Reader::Reader(
 		};
 		const auto dispatchLimit = std::min(
 			_loader->smartStreamingRequestLimit(),
-			Storage::NonPremiumRequestLimit(state, now));
+			Storage::NonPremiumRequestLimit(
+				state,
+				now,
+				BoostProfileFor(6).smartInitialRequestLimit,
+				BoostProfileFor(6).smartMinimumRequestLimit,
+				BoostProfileFor(6).smartMaximumRequestLimit));
 		_serverLimitPhase.store(
 			(limitedUntil > now) ? 1 : 2,
 			std::memory_order_relaxed);
@@ -1054,9 +1010,9 @@ Reader::Reader(
 			.arg(qlonglong(std::max(limitedUntil - now, crl::time(0))))
 			.arg(qlonglong(recoveryUntil - std::max(limitedUntil, now)))
 			.arg(delay.penalty)
-			.arg(NonPremiumPreloadLimit(dispatchLimit))
+			.arg(NonPremiumPreloadLimit())
 			.arg((limitedUntil > now)
-				? kSmartMinimumRequests
+				? BoostProfileFor(DownloadBoostLevel()).smartMinimumRequests
 				: dispatchLimit)
 			.arg(dispatchLimit));
 	};
@@ -1704,14 +1660,15 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	using namespace rpl::mappers;
 
 	const auto boost = DownloadBoostLevel();
+	const auto &profile = BoostProfileFor(boost);
 	const auto smartNonPremium = (boost == 6) && !_premiumSession;
 	const auto preloadBase = PreloadPartsAhead();
 	const auto limitBase = StreamingRequestsLimit();
 	const auto preloadMinimum = (boost == 6)
-		? kSmartMinimumPreload
+		? profile.smartMinimumPreload
 		: preloadBase;
 	const auto limitMinimum = (boost == 6)
-		? kSmartMinimumRequests
+		? profile.smartMinimumRequests
 		: limitBase;
 	const auto now = crl::now();
 	const auto bufferPressure = _smartBufferPressure.load(
@@ -1751,12 +1708,17 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	const auto recoveryRequestLimit = serverRecovering
 		? std::min(
 			_loader->smartStreamingRequestLimit(),
-			Storage::NonPremiumRequestLimit(serverState, now))
+			Storage::NonPremiumRequestLimit(
+				serverState,
+				now,
+				profile.smartInitialRequestLimit,
+				profile.smartMinimumRequestLimit,
+				profile.smartMaximumRequestLimit))
 		: 0;
 	const auto smartRequestLimit = std::clamp(
 		_loader->smartStreamingRequestLimit(),
-		Storage::kNonPremiumMinimumRequestLimit,
-		Storage::kNonPremiumMaximumRequestLimit);
+		profile.smartMinimumRequestLimit,
+		profile.smartMaximumRequestLimit);
 	const auto adaptivePreloadPercent = _adaptivePreloadPercent.load(
 		std::memory_order_relaxed);
 	const auto preloadPercent = std::max(
@@ -1791,19 +1753,19 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		limitMinimum,
 		int(kLoadFromRemoteMax));
 	if (serverLimited) {
-		preloadParts = kSmartMinimumPreload;
-		requestsLimit = kSmartMinimumRequests;
+		preloadParts = profile.smartMinimumPreload;
+		requestsLimit = profile.smartMinimumRequests;
 	} else if (serverRecovering) {
 		preloadParts = std::min(
 			preloadParts,
-			NonPremiumPreloadLimit(recoveryRequestLimit));
+			NonPremiumPreloadLimit());
 		requestsLimit = std::min(
 			requestsLimit,
 			recoveryRequestLimit);
 	} else if (smartNonPremium) {
 		preloadParts = std::min(
 			preloadParts,
-			kNonPremiumMaxPreload);
+			profile.smartMaximumPreload);
 		requestsLimit = std::min(
 			requestsLimit,
 			smartRequestLimit);
