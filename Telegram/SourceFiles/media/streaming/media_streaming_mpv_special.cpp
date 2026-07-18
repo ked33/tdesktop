@@ -19,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item.h"
 #include "history/history_item_components.h"
 #include "main/main_session.h"
+#include "media/streaming/media_streaming_boost.h"
 #include "media/streaming/media_streaming_reader.h"
 #include "logs.h"
 #include "settings.h"
@@ -90,13 +91,13 @@ constexpr auto kMpvLoaderPriority = 2;
 	if (!LooksLikeMp4Stream(document)) {
 		return 0;
 	}
-	const auto boost = GetEnhancedInt("net_download_speed_boost");
-	if (boost <= 0) {
+	const auto &profile = BoostProfileFor(std::clamp(
+		GetEnhancedInt("net_download_speed_boost"), 0, 6));
+	if (profile.mpvTailPrefetchParts <= 0) {
 		return 0;
 	}
 	constexpr auto kPart = int64(128 * 1024);
-	const auto parts = (boost >= 5) ? 4 : (boost >= 3) ? 3 : 2;
-	return parts * kPart;
+	return profile.mpvTailPrefetchParts * kPart;
 }
 
 [[nodiscard]] int DownloadBoostLevel() {
@@ -113,11 +114,14 @@ constexpr auto kMpvLoaderPriority = 2;
 		QStringLiteral("--force-window=immediate"),
 		QStringLiteral("--demuxer-lavf-o=ignore_editlist=1"),
 	};
-	if (MpvStreamingBoostEnabled()) {
+	const auto &profile = BoostProfileFor(DownloadBoostLevel());
+	if (MpvStreamingBoostEnabled() && profile.mpvCacheMaxMb > 0) {
 		result.push_back(QStringLiteral("--cache=yes"));
 		result.push_back(QStringLiteral("--demuxer-seekable-cache=yes"));
-		result.push_back(QStringLiteral("--demuxer-max-bytes=536870912"));
-		result.push_back(QStringLiteral("--demuxer-max-back-bytes=134217728"));
+		result.push_back(QStringLiteral("--demuxer-max-bytes=%1")
+			.arg(int64(profile.mpvCacheMaxMb) * 1024 * 1024));
+		result.push_back(QStringLiteral("--demuxer-max-back-bytes=%1")
+			.arg(int64(profile.mpvCacheBackMb) * 1024 * 1024));
 	}
 	result.push_back(url);
 	return result;
