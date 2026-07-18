@@ -909,28 +909,6 @@ infoProfileTabsShadow: BoxShadow {
 	opacity: 0.18;
 }
 
-infoProfileTabsStrip: ProfileTabsStrip {
-	height: 48px;
-	margin: margins(8px, 6px, 8px, 6px);
-	skip: 0px;
-	tabPadding: margins(16px, 0px, 16px, 0px);
-	activeSkip: 4px;
-	style: semiboldTextStyle;
-	fg: windowSubTextFg;
-	fgActive: lightButtonFg;
-	bg: windowBg;
-	bgActive: lightButtonBgOver;
-	ripple: RippleAnimation(defaultRippleAnimation) {
-		color: lightButtonBgRipple;
-	}
-	duration: 200;
-}
-infoProfileTabsShadow: BoxShadow {
-	blurRadius: 8px;
-	offset: point(0px, 2px);
-	opacity: 0.18;
-}
-
 infoCommonGroupsMargin: margins(0px, 2px, 0px, 2px);
 infoCommonGroupsListItem: PeerListItem(defaultPeerListItem) {
 	height: 52px;
