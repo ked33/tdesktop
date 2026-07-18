@@ -753,14 +753,6 @@ private:
 	int _communityRequestableCount = 0;
 	rpl::lifetime _openedCommunityLifetime;
 
-	CommunityRowsView _communityViewable;
-	object_ptr<CommunityRequestableList> _communityRequestableList
-		= { nullptr };
-	int _communitySelected = -1;
-	int _communityPressed = -1;
-	int _communityRequestableCount = 0;
-	rpl::lifetime _openedCommunityLifetime;
-
 	WidgetState _state = WidgetState::Default;
 
 	std::unique_ptr<ChatSearchIn> _searchIn;
