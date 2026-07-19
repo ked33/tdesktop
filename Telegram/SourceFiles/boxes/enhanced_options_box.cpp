@@ -218,7 +218,7 @@ void DownloadBoostProfilesBox::prepare() {
 		_fields[index] = _content->add(object_ptr<Ui::InputField>(
 			_content,
 			st::defaultInputField,
-			u"请输入整数 / Integer"_q));
+			rpl::single(u"请输入整数 / Integer"_q)));
 	};
 	addField(0, u"并发请求上限：同时向服务器请求多少个视频分片。"_q);
 	addField(1, u"基础预读分片数：播放位置前方预先加载的分片数量。"_q);
