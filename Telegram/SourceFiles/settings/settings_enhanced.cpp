@@ -78,8 +78,7 @@ namespace Settings {
 
 		AddButtonWithIcon(
 			inner,
-			rpl::single(
-				u"优化在线播放参数配置 / Online playback parameters"_q),
+			tr::lng_settings_online_playback_parameters_title(),
 			st::settingsButtonNoIcon
 		)->addClickHandler([=] {
 			Ui::show(Box<DownloadBoostProfilesBox>());

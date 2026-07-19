@@ -11,6 +11,9 @@ using "ui/layers/layers.style";
 using "ui/widgets/widgets.style";
 using "intro/intro.style";
 
+onlinePlaybackProfilesWidth: 520px;
+onlinePlaybackProfilesHeight: 640px;
+
 UserpicButton {
 	size: size;
 	photoSize: pixels;
