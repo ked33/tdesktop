@@ -128,7 +128,7 @@ QString DownloadBoostBox::BoostLabel(int boost) {
 		case 5:
 			return tr::lng_net_speed_boost_extreme(tr::now);
 		case 6:
-			return u"智能 / Smart"_q;
+			return tr::lng_net_speed_boost_smart(tr::now);
 		default:
 			Unexpected("Boost in DownloadBoostBox::BoostLabel.");
 	}
@@ -156,16 +156,19 @@ DownloadBoostProfilesBox::DownloadBoostProfilesBox(QWidget *parent)
 }
 
 void DownloadBoostProfilesBox::prepare() {
-	setTitle(u"优化在线播放参数配置 / Online playback parameters"_q);
+	setTitle(tr::lng_settings_online_playback_parameters_title());
 
-	addButton(rpl::single(u"还原 / Reset"_q), [=] { reset(); });
+	addButton(tr::lng_settings_online_playback_parameters_reset(), [=] {
+		reset();
+	});
 	addButton(tr::lng_cancel(), [=] { closeBox(); });
-	addButton(rpl::single(u"保存 / Save"_q), [=] {
+	addButton(tr::lng_settings_save(), [=] {
 		if (!save()) {
 			return;
 		}
 		getDelegate()->show(Ui::MakeConfirmBox({
-			.text = u"参数已保存。需要重启 Telegram 才会应用新的在线播放参数。"_q,
+			.text = tr::lng_settings_online_playback_parameters_saved_restart(
+				tr::now),
 			.confirmed = [=](Fn<void()> &&) {
 				EnhancedSettings::Write();
 				Core::Restart();
@@ -207,7 +210,7 @@ void DownloadBoostProfilesBox::prepare() {
 	_scroll->setOwnedWidget(object_ptr<Ui::VerticalLayout>::fromRaw(_content));
 	_content->add(object_ptr<Ui::FlatLabel>(
 		_content,
-		u"每个分片为 128 KB。以 Smart 开头的参数仅智能档位生效；其他档位仍会保存这些值，便于复制和预先配置。"_q,
+		tr::lng_settings_online_playback_parameters_desc(tr::now),
 		st::boxLabel));
 
 	const auto addField = [&](int index, const QString &description) {
@@ -218,47 +221,47 @@ void DownloadBoostProfilesBox::prepare() {
 		_fields[index] = _content->add(object_ptr<Ui::InputField>(
 			_content,
 			st::defaultInputField,
-			rpl::single(u"请输入整数 / Integer"_q)));
+			tr::lng_settings_online_playback_integer_placeholder()));
 	};
-	addField(0, u"并发请求上限：同时向服务器请求多少个视频分片。"_q);
-	addField(1, u"基础预读分片数：播放位置前方预先加载的分片数量。"_q);
-	addField(2, u"文件尾预读分片数：为 MP4 索引/尾部信息额外预读的分片数量。"_q);
-	addField(3, u"Seek 取消跳跃分片数：拖动距离超过该值时取消旧请求。"_q);
-	addField(4, u"Seek 取消保护分片数：保护播放点附近已在途的分片。"_q);
-	addField(5, u"远程播放提前加载毫秒数：播放器希望提前准备的播放时长。"_q);
-	addField(6, u"远程播放等待缓冲毫秒数：短暂缺数据时先等待多久再报卡顿。"_q);
-	addField(7, u"下载会话初始等待分片数：单个会话启动时允许积压的分片数。"_q);
-	addField(8, u"下载会话最大等待分片数：单个会话允许积压的分片上限。"_q);
-	addField(9, u"初始下载会话数：开始下载时创建的并发会话数。"_q);
-	addField(10, u"最大下载会话数：下载管理器允许扩展到的会话上限。"_q);
-	addField(11, u"MPV 文件尾预读分片数：MPV 播放时额外读取的尾部范围。"_q);
-	addField(12, u"MPV 最大缓存 MB：MPV demuxer 缓存上限。"_q);
-	addField(13, u"MPV 回看缓存 MB：MPV 保留在播放位置后方的缓存。"_q);
-	addField(14, u"非 Premium 预读上限：服务端限速恢复期间的预读分片上限。"_q);
-	addField(15, u"Smart 最小预读：智能档位触发限速时保留的最低预读。"_q);
-	addField(16, u"Smart 最小并发：智能档位触发限速时保留的最低并发。"_q);
-	addField(17, u"Smart 最大预读：智能档位正常运行时允许的最高预读。"_q);
-	addField(18, u"Smart DC 初始并发：首次播放某个 DC 时使用的请求并发。"_q);
-	addField(19, u"Smart DC 最小并发：服务端限速时允许降到的最低并发。"_q);
-	addField(20, u"Smart DC 最大并发：缓冲压力探测时允许升到的最高并发。"_q);
-	addField(21, u"Smart 容量回落下限：带宽充足时自动降低并发的停止值。"_q);
+	addField(0, tr::lng_online_playback_profile_requests_limit(tr::now));
+	addField(1, tr::lng_online_playback_profile_preload_parts(tr::now));
+	addField(2, tr::lng_online_playback_profile_tail_prefetch_parts(tr::now));
+	addField(3, tr::lng_online_playback_profile_seek_jump_parts(tr::now));
+	addField(4, tr::lng_online_playback_profile_seek_guard_parts(tr::now));
+	addField(5, tr::lng_online_playback_profile_load_ahead_ms(tr::now));
+	addField(6, tr::lng_online_playback_profile_waiting_buffer_ms(tr::now));
+	addField(7, tr::lng_online_playback_profile_start_waited_parts(tr::now));
+	addField(8, tr::lng_online_playback_profile_max_waited_parts(tr::now));
+	addField(9, tr::lng_online_playback_profile_start_sessions(tr::now));
+	addField(10, tr::lng_online_playback_profile_max_sessions(tr::now));
+	addField(11, tr::lng_online_playback_profile_mpv_tail_prefetch(tr::now));
+	addField(12, tr::lng_online_playback_profile_mpv_cache_max(tr::now));
+	addField(13, tr::lng_online_playback_profile_mpv_cache_back(tr::now));
+	addField(14, tr::lng_online_playback_profile_nonpremium_preload(tr::now));
+	addField(15, tr::lng_online_playback_profile_smart_min_preload(tr::now));
+	addField(16, tr::lng_online_playback_profile_smart_min_requests(tr::now));
+	addField(17, tr::lng_online_playback_profile_smart_max_preload(tr::now));
+	addField(18, tr::lng_online_playback_profile_smart_dc_initial(tr::now));
+	addField(19, tr::lng_online_playback_profile_smart_dc_min(tr::now));
+	addField(20, tr::lng_online_playback_profile_smart_dc_max(tr::now));
+	addField(21, tr::lng_online_playback_profile_smart_capacity_floor(tr::now));
 
 	_seekCancel = _content->add(object_ptr<Ui::Checkbox>(
 		_content,
-		u"启用 Seek 旧请求取消：拖动较远时停止旧位置的请求。"_q,
+		tr::lng_online_playback_profile_seek_cancel_enabled(tr::now),
 		false,
 		st::defaultBoxCheckbox));
 	_tailPrefetch = _content->add(object_ptr<Ui::Checkbox>(
 		_content,
-		u"启用文件尾预读：关闭时文件尾预读分片数会保存为 0。"_q,
+		tr::lng_online_playback_profile_tail_prefetch_enabled(tr::now),
 		false,
 		st::defaultBoxCheckbox));
 
 	loadProfile(_editingProfile);
 	showChildren();
 	setDimensions(
-		st::boxWidth,
-		st::boxWidth + 4 * st::boxMediumSkip);
+		st::onlinePlaybackProfilesWidth,
+		st::onlinePlaybackProfilesHeight);
 }
 
 void DownloadBoostProfilesBox::resizeEvent(QResizeEvent *e) {
@@ -270,6 +273,9 @@ void DownloadBoostProfilesBox::resizeEvent(QResizeEvent *e) {
 		top + radioHeight,
 		width() - st::boxPadding.left() - st::boxPadding.right(),
 		height() - top - radioHeight - st::boxPadding.bottom());
+	if (_content) {
+		_content->resizeToWidth(_scroll->width());
+	}
 }
 
 void DownloadBoostProfilesBox::loadProfile(int profile) {
@@ -363,7 +369,8 @@ bool DownloadBoostProfilesBox::saveCurrentProfile() {
 		auto ok = false;
 		const auto number = _fields[i]->getLastText().trimmed().toInt(&ok);
 		if (!ok || number < ranges[i].first || number > ranges[i].second) {
-			Ui::Toast::Show(u"参数必须是有效的整数，并处于允许范围内。"_q);
+			Ui::Toast::Show(
+				tr::lng_online_playback_profile_invalid_integer(tr::now));
 			_fields[i]->showError();
 			return false;
 		}
@@ -385,7 +392,7 @@ bool DownloadBoostProfilesBox::saveCurrentProfile() {
 		|| value.smartCapacityMinimumRequestLimit
 			> value.smartMaximumRequestLimit) {
 		Ui::Toast::Show(
-			u"最大值、初始值、最小值或 MPV 缓存关系无效。"_q);
+			tr::lng_online_playback_profile_invalid_relations(tr::now));
 		return false;
 	}
 	if (_tailPrefetch->checked() && value.tailPrefetchParts == 0) {
@@ -409,7 +416,8 @@ bool DownloadBoostProfilesBox::save() {
 }
 
 void DownloadBoostProfilesBox::reset() {
-	_profiles = Media::Streaming::DefaultBoostProfiles();
+	_profiles[_editingProfile]
+		= Media::Streaming::DefaultBoostProfiles()[_editingProfile];
 	loadProfile(_editingProfile);
 }
 
