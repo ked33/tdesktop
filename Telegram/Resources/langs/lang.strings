@@ -8793,8 +8793,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_online_playback_parameters_title" = "Online playback parameters";
 "lng_settings_online_playback_parameters_reset" = "Reset selected profile";
 "lng_settings_online_playback_parameters_saved_restart" = "Parameters saved. Restart Telegram to apply the new online playback parameters.";
-"lng_settings_online_playback_parameters_desc" = "Each part is 128 KB. Parameters beginning with Smart only affect Smart mode; values for other modes are still saved for copying and advance configuration.";
+"lng_settings_online_playback_parameters_desc" = "Each part is 128 KB. Edit profiles separately here; Save writes all profiles.";
+"lng_settings_online_playback_smart_desc" = "The parameters below only affect Smart mode. Values for other modes are still saved for copying and advance configuration.";
 "lng_settings_online_playback_integer_placeholder" = "Enter an integer";
+"lng_online_playback_group_playback_reader" = "Playback and Reader";
+"lng_online_playback_group_download_mpv" = "Download sessions and MPV";
+"lng_online_playback_group_smart" = "Smart parameters";
 "lng_online_playback_profile_requests_limit" = "Request concurrency limit: number of video parts requested from the server at the same time.";
 "lng_online_playback_profile_preload_parts" = "Base prefetch parts: number of parts loaded ahead of the playback position.";
 "lng_online_playback_profile_tail_prefetch_parts" = "File-tail prefetch parts: extra parts loaded for MP4 indexes and tail metadata.";
@@ -8820,7 +8824,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_online_playback_profile_seek_cancel_enabled" = "Enable stale Seek request cancellation: stop requests for the old position after a long seek.";
 "lng_online_playback_profile_tail_prefetch_enabled" = "Enable file-tail prefetch: when disabled, file-tail prefetch parts are saved as 0.";
 "lng_online_playback_profile_invalid_integer" = "Parameters must be valid integers within the allowed ranges.";
-"lng_online_playback_profile_invalid_relations" = "The maximum, initial, minimum, or MPV cache relationship is invalid.";
+"lng_online_playback_error_waited_parts" = "Maximum queued parts cannot be lower than initial queued parts.";
+"lng_online_playback_error_sessions" = "Maximum download sessions cannot be lower than initial download sessions.";
+"lng_online_playback_error_mpv_cache" = "MPV backward cache cannot exceed MPV maximum cache.";
+"lng_online_playback_error_smart_preload" = "Smart maximum prefetch cannot be lower than Smart minimum prefetch.";
+"lng_online_playback_error_smart_dc_range" = "Smart DC maximum concurrency cannot be lower than Smart DC minimum concurrency.";
+"lng_online_playback_error_smart_dc_initial_min" = "Smart DC initial concurrency cannot be lower than Smart DC minimum concurrency.";
+"lng_online_playback_error_smart_dc_initial_max" = "Smart DC initial concurrency cannot exceed Smart DC maximum concurrency.";
+"lng_online_playback_error_smart_capacity_min" = "Smart capacity reduction floor cannot be lower than Smart DC minimum concurrency.";
+"lng_online_playback_error_smart_capacity_max" = "Smart capacity reduction floor cannot exceed Smart DC maximum concurrency.";
 
 "lng_net_boost_restart_desc" = "You'll need to restart app to change network boost.\n\nRestart now?";
 "lng_show_messages_id_desc" = "Warning: the changes will take effect immediately with restart.";

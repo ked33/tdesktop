@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/scroll_area.h"
+#include "ui/vertical_list.h"
 #include "ui/wrap/vertical_layout.h"
 #include "ui/style/style_core.h"
 #include "styles/style_layers.h"
@@ -223,6 +224,9 @@ void DownloadBoostProfilesBox::prepare() {
 			st::defaultInputField,
 			tr::lng_settings_online_playback_integer_placeholder()));
 	};
+	Ui::AddSubsectionTitle(
+		_content,
+		tr::lng_online_playback_group_playback_reader());
 	addField(0, tr::lng_online_playback_profile_requests_limit(tr::now));
 	addField(1, tr::lng_online_playback_profile_preload_parts(tr::now));
 	addField(2, tr::lng_online_playback_profile_tail_prefetch_parts(tr::now));
@@ -230,21 +234,7 @@ void DownloadBoostProfilesBox::prepare() {
 	addField(4, tr::lng_online_playback_profile_seek_guard_parts(tr::now));
 	addField(5, tr::lng_online_playback_profile_load_ahead_ms(tr::now));
 	addField(6, tr::lng_online_playback_profile_waiting_buffer_ms(tr::now));
-	addField(7, tr::lng_online_playback_profile_start_waited_parts(tr::now));
-	addField(8, tr::lng_online_playback_profile_max_waited_parts(tr::now));
-	addField(9, tr::lng_online_playback_profile_start_sessions(tr::now));
-	addField(10, tr::lng_online_playback_profile_max_sessions(tr::now));
-	addField(11, tr::lng_online_playback_profile_mpv_tail_prefetch(tr::now));
-	addField(12, tr::lng_online_playback_profile_mpv_cache_max(tr::now));
-	addField(13, tr::lng_online_playback_profile_mpv_cache_back(tr::now));
 	addField(14, tr::lng_online_playback_profile_nonpremium_preload(tr::now));
-	addField(15, tr::lng_online_playback_profile_smart_min_preload(tr::now));
-	addField(16, tr::lng_online_playback_profile_smart_min_requests(tr::now));
-	addField(17, tr::lng_online_playback_profile_smart_max_preload(tr::now));
-	addField(18, tr::lng_online_playback_profile_smart_dc_initial(tr::now));
-	addField(19, tr::lng_online_playback_profile_smart_dc_min(tr::now));
-	addField(20, tr::lng_online_playback_profile_smart_dc_max(tr::now));
-	addField(21, tr::lng_online_playback_profile_smart_capacity_floor(tr::now));
 
 	_seekCancel = _content->add(object_ptr<Ui::Checkbox>(
 		_content,
@@ -257,11 +247,46 @@ void DownloadBoostProfilesBox::prepare() {
 		false,
 		st::defaultBoxCheckbox));
 
+	Ui::AddSkip(_content, st::onlinePlaybackProfilesSectionSkip);
+	Ui::AddSubsectionTitle(
+		_content,
+		tr::lng_online_playback_group_download_mpv());
+	addField(7, tr::lng_online_playback_profile_start_waited_parts(tr::now));
+	addField(8, tr::lng_online_playback_profile_max_waited_parts(tr::now));
+	addField(9, tr::lng_online_playback_profile_start_sessions(tr::now));
+	addField(10, tr::lng_online_playback_profile_max_sessions(tr::now));
+	addField(11, tr::lng_online_playback_profile_mpv_tail_prefetch(tr::now));
+	addField(12, tr::lng_online_playback_profile_mpv_cache_max(tr::now));
+	addField(13, tr::lng_online_playback_profile_mpv_cache_back(tr::now));
+
+	Ui::AddSkip(_content, st::onlinePlaybackProfilesSectionSkip);
+	Ui::AddSubsectionTitle(
+		_content,
+		tr::lng_online_playback_group_smart());
+	_content->add(object_ptr<Ui::FlatLabel>(
+		_content,
+		tr::lng_settings_online_playback_smart_desc(tr::now),
+		st::boxLabel));
+	addField(15, tr::lng_online_playback_profile_smart_min_preload(tr::now));
+	addField(16, tr::lng_online_playback_profile_smart_min_requests(tr::now));
+	addField(17, tr::lng_online_playback_profile_smart_max_preload(tr::now));
+	addField(18, tr::lng_online_playback_profile_smart_dc_initial(tr::now));
+	addField(19, tr::lng_online_playback_profile_smart_dc_min(tr::now));
+	addField(20, tr::lng_online_playback_profile_smart_dc_max(tr::now));
+	addField(21, tr::lng_online_playback_profile_smart_capacity_floor(tr::now));
+
 	loadProfile(_editingProfile);
 	showChildren();
+	const auto outer = getDelegate()->outerContainer();
+	const auto availableWidth = (outer
+		&& outer->width() > 2 * st::onlinePlaybackProfilesOuterSkip)
+		? std::max(
+			outer->width() - 2 * st::onlinePlaybackProfilesOuterSkip,
+			st::boxWidth)
+		: st::onlinePlaybackProfilesPreferredWidth;
 	setDimensions(
-		st::onlinePlaybackProfilesWidth,
-		st::onlinePlaybackProfilesHeight);
+		std::min(st::onlinePlaybackProfilesPreferredWidth, availableWidth),
+		st::onlinePlaybackProfilesMaximumHeight);
 }
 
 void DownloadBoostProfilesBox::resizeEvent(QResizeEvent *e) {
@@ -365,35 +390,91 @@ bool DownloadBoostProfilesBox::saveCurrentProfile() {
 		&value.smartMaximumRequestLimit,
 		&value.smartCapacityMinimumRequestLimit,
 	};
+	const auto showError = [&](
+			int primary,
+			int related,
+			const QString &message) {
+		Ui::Toast::Show(message);
+		_fields[primary]->showError();
+		if (related >= 0) {
+			_fields[related]->showErrorNoFocus();
+		}
+		_scroll->scrollToWidget(_fields[primary]);
+		return false;
+	};
+	for (const auto field : _fields) {
+		field->hideError();
+	}
 	for (auto i = 0; i != kNumericFieldCount; ++i) {
 		auto ok = false;
 		const auto number = _fields[i]->getLastText().trimmed().toInt(&ok);
 		if (!ok || number < ranges[i].first || number > ranges[i].second) {
-			Ui::Toast::Show(
+			return showError(
+				i,
+				-1,
 				tr::lng_online_playback_profile_invalid_integer(tr::now));
-			_fields[i]->showError();
-			return false;
 		}
 		*current[i] = number;
 	}
 	value.seekCancelEnabled = _seekCancel->checked();
-	if (value.maxWaitedParts < value.startWaitedParts
-		|| value.maxSessions < value.startSessions
-		|| value.mpvCacheBackMb > value.mpvCacheMaxMb
-		|| value.smartMaximumPreload < value.smartMinimumPreload
-		|| value.smartMaximumRequestLimit
-			< value.smartMinimumRequestLimit
-		|| value.smartInitialRequestLimit
-			< value.smartMinimumRequestLimit
-		|| value.smartInitialRequestLimit
-			> value.smartMaximumRequestLimit
-		|| value.smartCapacityMinimumRequestLimit
-			< value.smartMinimumRequestLimit
-		|| value.smartCapacityMinimumRequestLimit
+	if (value.maxWaitedParts < value.startWaitedParts) {
+		return showError(
+			8,
+			7,
+			tr::lng_online_playback_error_waited_parts(tr::now));
+	}
+	if (value.maxSessions < value.startSessions) {
+		return showError(
+			10,
+			9,
+			tr::lng_online_playback_error_sessions(tr::now));
+	}
+	if (value.mpvCacheBackMb > value.mpvCacheMaxMb) {
+		return showError(
+			13,
+			12,
+			tr::lng_online_playback_error_mpv_cache(tr::now));
+	}
+	if (value.smartMaximumPreload < value.smartMinimumPreload) {
+		return showError(
+			17,
+			15,
+			tr::lng_online_playback_error_smart_preload(tr::now));
+	}
+	if (value.smartMaximumRequestLimit
+			< value.smartMinimumRequestLimit) {
+		return showError(
+			20,
+			19,
+			tr::lng_online_playback_error_smart_dc_range(tr::now));
+	}
+	if (value.smartInitialRequestLimit
+			< value.smartMinimumRequestLimit) {
+		return showError(
+			18,
+			19,
+			tr::lng_online_playback_error_smart_dc_initial_min(tr::now));
+	}
+	if (value.smartInitialRequestLimit
 			> value.smartMaximumRequestLimit) {
-		Ui::Toast::Show(
-			tr::lng_online_playback_profile_invalid_relations(tr::now));
-		return false;
+		return showError(
+			18,
+			20,
+			tr::lng_online_playback_error_smart_dc_initial_max(tr::now));
+	}
+	if (value.smartCapacityMinimumRequestLimit
+			< value.smartMinimumRequestLimit) {
+		return showError(
+			21,
+			19,
+			tr::lng_online_playback_error_smart_capacity_min(tr::now));
+	}
+	if (value.smartCapacityMinimumRequestLimit
+			> value.smartMaximumRequestLimit) {
+		return showError(
+			21,
+			20,
+			tr::lng_online_playback_error_smart_capacity_max(tr::now));
 	}
 	if (_tailPrefetch->checked() && value.tailPrefetchParts == 0) {
 		value.tailPrefetchParts = 1;
