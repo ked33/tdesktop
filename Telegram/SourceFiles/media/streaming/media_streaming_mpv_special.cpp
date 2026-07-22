@@ -69,15 +69,6 @@ constexpr auto kCleanupInterval = 60 * crl::time(1000);
 constexpr auto kTokenLifetime = 5 * 60 * crl::time(1000);
 constexpr auto kPlayerStartTimeout = 5000;
 constexpr auto kMpvLoaderPriority = 2;
-constexpr auto kSmartSeekStartupGrace = crl::time(2000);
-constexpr auto kSmartSeekDuplicateInterval = crl::time(750);
-constexpr auto kSmartSeekPressureMaximum = crl::time(1500);
-constexpr auto kSmartSeekMinimumPlaybackBytes = int64(2) * 1024 * 1024;
-constexpr auto kSmartSeekMinimumJump = int64(4) * 1024 * 1024;
-constexpr auto kSmartSeekMaximumJump = int64(32) * 1024 * 1024;
-constexpr auto kSmartSeekMinimumRange = int64(1024) * 1024;
-constexpr auto kSmartSeekTailGuard = int64(4) * 1024 * 1024;
-constexpr auto kSmartSeekPrefetchFallback = int64(4) * 1024 * 1024;
 
 [[nodiscard]] bool MpvDebugLogsEnabled() {
 	return GetEnhancedBool("mpv_streaming_debug_logs");
@@ -117,13 +108,6 @@ constexpr auto kSmartSeekPrefetchFallback = int64(4) * 1024 * 1024;
 
 [[nodiscard]] bool MpvStreamingBoostEnabled() {
 	return (DownloadBoostLevel() > 0);
-}
-
-[[nodiscard]] int SmartPlaybackRateForDocument(
-		not_null<DocumentData*> document) {
-	return AveragePlaybackBytesPerSecond(
-		document->size,
-		document->duration());
 }
 
 [[nodiscard]] QStringList LaunchArguments(const QString &url) {
@@ -183,20 +167,7 @@ struct Entry {
 	, reader(std::move(reader))
 	, size(this->reader ? this->reader->size() : 0)
 	, preferCompatibilityForLargeFrontMoov(preferCompatibilityForLargeFrontMoov)
-	, allowCompatibilityLateSeekGate(allowCompatibilityLateSeekGate)
-	, smartPlaybackRate(SmartPlaybackRateForDocument(document))
-	, smartOpenedAt(crl::now()) {
-		smartActiveReader = this->reader;
-		if (this->reader
-			&& smartPlaybackRate > 0
-			&& this->reader->smartStreamingEnabled()) {
-			this->reader->setSmartStreamingPlaybackRate(smartPlaybackRate);
-			MPV_STREAMING_LOG(("MPV Streaming (Special): Smart reader "
-				"playback=%1 size=%2 duration=%3.")
-				.arg(smartPlaybackRate)
-				.arg(qlonglong(document->size))
-				.arg(qlonglong(document->duration())));
-		}
+	, allowCompatibilityLateSeekGate(allowCompatibilityLateSeekGate) {
 	}
 
 	not_null<DocumentData*> document;
@@ -215,16 +186,6 @@ struct Entry {
 	std::atomic<bool> compatibilityLateSeekReady = false;
 	bool preferCompatibilityForLargeFrontMoov = false;
 	bool allowCompatibilityLateSeekGate = true;
-	int smartPlaybackRate = 0;
-	crl::time smartOpenedAt = 0;
-	crl::time smartLastSeekAt = 0;
-	int64 smartPlaybackTill = 0;
-	int64 smartPlaybackBytes = 0;
-	int64 smartLastSeekOffset = -1;
-	std::uint64_t smartPlaybackGeneration = 0;
-	std::weak_ptr<Reader> smartActiveReader;
-	std::map<Reader*, int> smartPressureReaders;
-	std::mutex smartStateMutex;
 	std::mutex fillMutex;
 	std::mutex seekFillMutex;
 };
@@ -235,160 +196,6 @@ enum class Mp4Layout {
 	Regular = 2,
 	LargeFrontMoov = 3,
 };
-
-struct SmartRangeDecision {
-	bool trackPlayback = false;
-	bool seek = false;
-	std::uint64_t generation = 0;
-	int64 previousTill = 0;
-	int64 jump = 0;
-};
-
-[[nodiscard]] SmartRangeDecision ClassifySmartRange(
-		const std::shared_ptr<Entry> &entry,
-		not_null<Reader*> reader,
-		int64 offset,
-		int64 length,
-		bool startedFromZero,
-		bool directRange) {
-	if (!reader->smartStreamingEnabled() || entry->smartPlaybackRate <= 0) {
-		return {};
-	}
-	const auto now = crl::now();
-	const auto guard = std::lock_guard(entry->smartStateMutex);
-	auto result = SmartRangeDecision{
-		.generation = entry->smartPlaybackGeneration,
-		.previousTill = entry->smartPlaybackTill,
-	};
-	if (startedFromZero) {
-		result.trackPlayback = true;
-		return result;
-	}
-	const auto jump = (offset >= entry->smartPlaybackTill)
-		? (offset - entry->smartPlaybackTill)
-		: (entry->smartPlaybackTill - offset);
-	result.jump = jump;
-	const auto continuationLimit = std::max<int64>(
-		2 * kReadChunkSize,
-		std::min<int64>(entry->smartPlaybackRate, kSmartSeekMinimumJump));
-	if (entry->smartPlaybackBytes > 0 && jump <= continuationLimit) {
-		result.trackPlayback = true;
-		return result;
-	}
-	const auto seekJump = std::clamp<int64>(
-		int64(entry->smartPlaybackRate) * 2,
-		kSmartSeekMinimumJump,
-		kSmartSeekMaximumJump);
-	if (jump < seekJump) {
-		result.trackPlayback = true;
-		return result;
-	}
-	const auto duplicateJump = (entry->smartLastSeekOffset >= 0)
-		? ((offset >= entry->smartLastSeekOffset)
-			? (offset - entry->smartLastSeekOffset)
-			: (entry->smartLastSeekOffset - offset))
-		: seekJump;
-	const auto usableDirectRange = directRange
-		&& offset > 0
-		&& length >= kSmartSeekMinimumRange
-		&& offset <= entry->size
-			- std::min(entry->size, kSmartSeekTailGuard)
-		&& now >= entry->smartOpenedAt + kSmartSeekStartupGrace;
-	if (entry->smartPlaybackBytes < kSmartSeekMinimumPlaybackBytes) {
-		result.trackPlayback = usableDirectRange;
-		return result;
-	}
-	if (!usableDirectRange
-		|| (now < entry->smartLastSeekAt + kSmartSeekDuplicateInterval
-			&& duplicateJump <= continuationLimit)) {
-		return result;
-	}
-	result.trackPlayback = true;
-	result.seek = true;
-	result.generation = ++entry->smartPlaybackGeneration;
-	entry->smartLastSeekAt = now;
-	entry->smartLastSeekOffset = offset;
-	return result;
-}
-
-void NoteSmartPlaybackProgress(
-		const std::shared_ptr<Entry> &entry,
-		const SmartRangeDecision &decision,
-		int64 till,
-		int size) {
-	if (!decision.trackPlayback || size <= 0) {
-		return;
-	}
-	const auto guard = std::lock_guard(entry->smartStateMutex);
-	if (decision.generation != entry->smartPlaybackGeneration) {
-		return;
-	}
-	entry->smartPlaybackTill = till;
-	entry->smartPlaybackBytes = std::min(
-		entry->smartPlaybackBytes + size,
-		kSmartSeekMinimumPlaybackBytes);
-}
-
-void ActivateSmartReader(
-		const std::shared_ptr<Entry> &entry,
-		const std::shared_ptr<Reader> &reader,
-		std::uint64_t generation) {
-	if (!reader
-		|| entry->smartPlaybackRate <= 0
-		|| !reader->smartStreamingEnabled()) {
-		return;
-	}
-	const auto guard = std::lock_guard(entry->smartStateMutex);
-	if (generation != entry->smartPlaybackGeneration) {
-		return;
-	}
-	const auto previous = entry->smartActiveReader.lock();
-	if (previous == reader) {
-		return;
-	}
-	if (previous) {
-		previous->setSmartStreamingPlaybackRate(0);
-	}
-	reader->setSmartStreamingPlaybackRate(entry->smartPlaybackRate);
-	entry->smartActiveReader = reader;
-}
-
-[[nodiscard]] bool BeginSmartSeekPressure(
-		const std::shared_ptr<Entry> &entry,
-		const std::shared_ptr<Reader> &reader,
-		std::uint64_t generation) {
-	const auto guard = std::lock_guard(entry->smartStateMutex);
-	if (generation != entry->smartPlaybackGeneration) {
-		return false;
-	}
-	++entry->smartPressureReaders[reader.get()];
-	reader->setSmartStreamingBufferPressure(true);
-	return true;
-}
-
-void EndSmartSeekPressure(
-		const std::shared_ptr<Entry> &entry,
-		const std::shared_ptr<Reader> &reader) {
-	const auto guard = std::lock_guard(entry->smartStateMutex);
-	const auto i = entry->smartPressureReaders.find(reader.get());
-	if (i == end(entry->smartPressureReaders)) {
-		return;
-	} else if (--i->second == 0) {
-		reader->setSmartStreamingBufferPressure(false);
-		entry->smartPressureReaders.erase(i);
-	}
-}
-
-void PrefetchSmartSeekIfCurrent(
-		const std::shared_ptr<Entry> &entry,
-		const std::shared_ptr<Reader> &reader,
-		const SmartRangeDecision &decision,
-		int64 offset) {
-	const auto guard = std::lock_guard(entry->smartStateMutex);
-	if (decision.generation == entry->smartPlaybackGeneration) {
-		reader->prefetch(offset, kSmartSeekPrefetchFallback);
-	}
-}
 
 [[nodiscard]] QString StreamingErrorDebugString(std::optional<Error> error) {
 	if (!error) {
@@ -530,8 +337,7 @@ void NoteCompatibilityBootstrapProgress(
 	[[nodiscard]] bool RecoverEntryReader(
 			const std::shared_ptr<Entry> &entry,
 			const QString &token,
-			int64 offset,
-			const SmartRangeDecision &smartRange) {
+			int64 offset) {
 		const auto fresh = CreateDedicatedReaderFromWorker(
 			entry->document,
 			entry->origin);
@@ -541,12 +347,6 @@ void NoteCompatibilityBootstrapProgress(
 					.arg(offset));
 				return false;
 			}
-		if (smartRange.trackPlayback) {
-			ActivateSmartReader(
-				entry,
-				fresh,
-				smartRange.generation);
-		}
 		const auto previous = std::move(entry->reader);
 		entry->reader = fresh;
 		entry->headerFinalized = false;
@@ -1242,47 +1042,6 @@ private:
 				}
 			}
 			const auto usingSeekReader = (activeReader != entry->reader);
-			const auto smartRange = ClassifySmartRange(
-				entry,
-				activeReader.get(),
-				offset,
-				left,
-				startedFromZero,
-				!compatibilitySequentialRequest
-					&& !initialSequentialOpen
-					&& (range.range.from > 0));
-			if (smartRange.trackPlayback) {
-				ActivateSmartReader(
-					entry,
-					activeReader,
-					smartRange.generation);
-			}
-			auto smartPressureActive = smartRange.seek
-				&& BeginSmartSeekPressure(
-					entry,
-					activeReader,
-					smartRange.generation);
-			auto smartPrefetchPending = smartPressureActive;
-			auto smartSeekServed = int64(0);
-			const auto smartPressureStarted = crl::now();
-			if (smartPressureActive) {
-				activeReader->notifySmartStreamingSeek();
-				MPV_STREAMING_LOG(("MPV Streaming (Special): Smart seek "
-					"target=%1 previous=%2 jump=%3 length=%4 "
-					"playback=%5 layout=%6 isolated=%7.")
-					.arg(qlonglong(offset))
-					.arg(qlonglong(smartRange.previousTill))
-					.arg(qlonglong(smartRange.jump))
-					.arg(qlonglong(left))
-					.arg(entry->smartPlaybackRate)
-					.arg(entry->mp4Layout.load())
-					.arg(usingSeekReader ? 1 : 0));
-			}
-			const auto smartPressureGuard = gsl::finally([&] {
-				if (smartPressureActive) {
-					EndSmartSeekPressure(entry, activeReader);
-				}
-			});
 			const auto seekGenerationManaged =
 				(entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov))
 				&& isolatedSeekRequest;
@@ -1324,14 +1083,6 @@ private:
 						clientDisconnected = true;
 						break;
 					}
-					if (smartPrefetchPending) {
-						PrefetchSmartSeekIfCurrent(
-							entry,
-							activeReader,
-							smartRange,
-							range.range.from);
-						smartPrefetchPending = false;
-					}
 					if (!FillBuffer(
 							activeReader.get(),
 							offset,
@@ -1343,11 +1094,7 @@ private:
 							&& !retriedLoadFailure
 							&& error
 							&& (*error == Error::LoadFailed)
-							&& RecoverEntryReader(
-								entry,
-								request.token,
-								offset,
-								smartRange)) {
+							&& RecoverEntryReader(entry, request.token, offset)) {
 							retriedLoadFailure = true;
 							continue;
 						}
@@ -1382,20 +1129,6 @@ private:
 				retriedLoadFailure = false;
 				offset += size;
 				left -= size;
-				NoteSmartPlaybackProgress(
-					entry,
-					smartRange,
-					offset,
-					size);
-				if (smartPressureActive) {
-					smartSeekServed += size;
-					if (smartSeekServed >= kSmartSeekMinimumPlaybackBytes
-						|| crl::now() >= smartPressureStarted
-							+ kSmartSeekPressureMaximum) {
-						EndSmartSeekPressure(entry, activeReader);
-						smartPressureActive = false;
-					}
-				}
 				entry->lastActivity = crl::now();
 				if (startedFromZero && !usingSeekReader) {
 					NoteCompatibilityBootstrapProgress(
