@@ -88,16 +88,16 @@ void LoaderMtproto::addToQueueWithPriority() {
 
 void LoaderMtproto::stop() {
 	crl::on_main(this, [=] {
-		if (_smartBufferPressure.exchange(
-				false,
-				std::memory_order_relaxed)) {
-			_owner->setSmartStreamingBufferPressure(this, false);
-		}
-		if (_smartPlaybackRate.exchange(
-				0,
-				std::memory_order_relaxed)) {
-			_owner->setSmartStreamingPlaybackRate(this, 0);
-		}
+		_smartBufferPressureGeneration.fetch_add(
+			1,
+			std::memory_order_release);
+		_smartPlaybackRateGeneration.fetch_add(
+			1,
+			std::memory_order_release);
+		_smartBufferPressure.store(false, std::memory_order_release);
+		_smartPlaybackRate.store(0, std::memory_order_release);
+		_owner->setSmartStreamingBufferPressure(this, false);
+		_owner->setSmartStreamingPlaybackRate(this, 0);
 		cancelAllRequests();
 		_requested.clear();
 		removeFromQueue();
@@ -223,10 +223,19 @@ bool LoaderMtproto::premiumSession() const {
 void LoaderMtproto::setSmartStreamingBufferPressure(bool pressure) {
 	if (_smartBufferPressure.exchange(
 			pressure,
-			std::memory_order_relaxed) == pressure) {
+			std::memory_order_acq_rel) == pressure) {
 		return;
 	}
+	const auto generation = _smartBufferPressureGeneration.fetch_add(
+		1,
+		std::memory_order_acq_rel) + 1;
 	crl::on_main(this, [=] {
+		if (_smartBufferPressureGeneration.load(std::memory_order_acquire)
+				!= generation
+			|| _smartBufferPressure.load(std::memory_order_acquire)
+				!= pressure) {
+			return;
+		}
 		_owner->setSmartStreamingBufferPressure(this, pressure);
 	});
 }
@@ -235,10 +244,19 @@ void LoaderMtproto::setSmartStreamingPlaybackRate(int bytesPerSecond) {
 	bytesPerSecond = std::max(bytesPerSecond, 0);
 	if (_smartPlaybackRate.exchange(
 			bytesPerSecond,
-			std::memory_order_relaxed) == bytesPerSecond) {
+			std::memory_order_acq_rel) == bytesPerSecond) {
 		return;
 	}
+	const auto generation = _smartPlaybackRateGeneration.fetch_add(
+		1,
+		std::memory_order_acq_rel) + 1;
 	crl::on_main(this, [=] {
+		if (_smartPlaybackRateGeneration.load(std::memory_order_acquire)
+				!= generation
+			|| _smartPlaybackRate.load(std::memory_order_acquire)
+				!= bytesPerSecond) {
+			return;
+		}
 		_owner->setSmartStreamingPlaybackRate(this, bytesPerSecond);
 	});
 }

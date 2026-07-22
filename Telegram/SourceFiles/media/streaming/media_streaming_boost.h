@@ -49,6 +49,7 @@ using BoostProfiles = std::array<BoostProfile, 7>;
 [[nodiscard]] int AveragePlaybackBytesPerSecond(
 	int64 size,
 	int64 duration);
+[[nodiscard]] bool IsHighBitratePlaybackRate(int bytesPerSecond);
 [[nodiscard]] bool IsHighBitrateVideo(int64 size, int64 duration);
 
 } // namespace Media::Streaming

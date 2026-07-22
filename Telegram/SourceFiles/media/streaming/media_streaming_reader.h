@@ -52,6 +52,7 @@ public:
 	[[nodiscard]] int64 size() const;
 	[[nodiscard]] bool isRemoteLoader() const;
 	[[nodiscard]] bool smartStreamingEnabled() const;
+	[[nodiscard]] crl::time smartStreamingRecoveryBuffer() const;
 
 	// Single thread.
 	[[nodiscard]] FillState fill(
@@ -292,6 +293,7 @@ private:
 	std::atomic<bool> _smartBufferPressure = false;
 	std::atomic<crl::time> _smartPreloadRecoveryUntil = 0;
 	std::atomic<int> _smartPreloadRecoveryLoggedPercent = 0;
+	std::atomic<int> _serverObservedWaitMs = 0;
 	std::atomic<crl::time> _serverLimitedUntil = 0;
 	std::atomic<crl::time> _serverRecoveryUntil = 0;
 	std::atomic<int> _serverDcId = 0;
@@ -327,7 +329,7 @@ private:
 	Storage::StreamedFileDownloader *_attachedDownloader = nullptr;
 	rpl::event_stream<LoadedPart> _partsForDownloader;
 	int _realPriority = 1;
-	bool _streamingActive = false;
+	std::atomic<bool> _streamingActive = false;
 
 	// Streaming thread.
 	std::deque<uint32> _offsetsForDownloader;
