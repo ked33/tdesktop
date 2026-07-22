@@ -64,6 +64,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/view/media_view_video_stream.h"
 #include "media/stories/media_stories_share.h"
 #include "media/stories/media_stories_view.h"
+#include "media/streaming/media_streaming_boost.h"
 #include "media/streaming/media_streaming_debug.h"
 #include "media/streaming/media_streaming_document.h"
 #include "media/streaming/media_streaming_player.h"
@@ -143,6 +144,18 @@ struct RecognitionId {
 
 using RecognitionResult = Platform::TextRecognition::Result;
 using RecognitionCacheMap = base::flat_map<RecognitionId, RecognitionResult>;
+
+[[nodiscard]] crl::time StreamingDuration(
+		const Streaming::Information &info) {
+	const auto valid = [](crl::time duration) {
+		return (duration > 1 && duration != kDurationUnavailable)
+			? duration
+			: crl::time();
+	};
+	return std::max(
+		valid(info.video.state.duration),
+		valid(info.audio.state.duration));
+}
 
 [[nodiscard]] RecognitionCacheMap *RecognitionCache() {
 	static auto cache = Platform::TextRecognition::IsAvailable()
@@ -2886,6 +2899,7 @@ void OverlayWidget::assignMediaPointer(DocumentData *document) {
 	_photoMedia = nullptr;
 	_videoStream = nullptr;
 	if (_document != document) {
+		_highBitrateToastShown = false;
 		_streamedQualityChangeFrame = QImage();
 		_streamedQualityChangeFinished = false;
 		if ((_document = document)) {
@@ -2916,6 +2930,7 @@ void OverlayWidget::assignMediaPointer(DocumentData *document) {
 
 void OverlayWidget::assignMediaPointer(not_null<PhotoData*> photo) {
 	_savePhotoVideoWhenLoaded = SavePhotoVideo::None;
+	_highBitrateToastShown = false;
 	_chosenQuality = nullptr;
 	_streamedQualityChangeFrame = QImage();
 	_streamedQualityChangeFinished = false;
@@ -2939,6 +2954,7 @@ void OverlayWidget::assignMediaPointer(not_null<PhotoData*> photo) {
 void OverlayWidget::assignMediaPointer(
 		std::shared_ptr<Data::GroupCall> call) {
 	_savePhotoVideoWhenLoaded = SavePhotoVideo::None;
+	_highBitrateToastShown = false;
 	_chosenQuality = nullptr;
 	_streamedQualityChangeFrame = QImage();
 	_streamedQualityChangeFinished = false;
@@ -4877,6 +4893,10 @@ bool OverlayWidget::initStreaming(const StartStreaming &startStreaming) {
 		}
 		return false;
 	}
+	if (_document) {
+		const auto video = _chosenQuality ? _chosenQuality : _document;
+		maybeShowHighBitrateToast(video, video->duration());
+	}
 
 	Core::App().updateNonIdle();
 
@@ -5027,6 +5047,10 @@ void OverlayWidget::initStreamingThumbnail() {
 }
 
 void OverlayWidget::streamingReady(Streaming::Information &&info) {
+	if (_document) {
+		const auto video = _chosenQuality ? _chosenQuality : _document;
+		maybeShowHighBitrateToast(video, StreamingDuration(info));
+	}
 	markStreamedReady();
 	if (videoShown()) {
 		if (_document
@@ -5049,6 +5073,22 @@ void OverlayWidget::streamingReady(Streaming::Information &&info) {
 	} else {
 		updateContentRect();
 	}
+}
+
+void OverlayWidget::maybeShowHighBitrateToast(
+		not_null<DocumentData*> video,
+		crl::time duration) {
+	if (_highBitrateToastShown
+		|| (!video->isVideoFile() && !video->isVideoMessage())
+		|| !video->useStreamingLoader()
+		|| !video->hasRemoteLocation()
+		|| !video->filepath(true).isEmpty()
+		|| video->loadedInMediaCache()
+		|| !Streaming::IsHighBitrateVideo(video->size, duration)) {
+		return;
+	}
+	_highBitrateToastShown = true;
+	uiShow()->showToast(tr::lng_high_bitrate_video_notice(tr::now));
 }
 
 void OverlayWidget::applyVideoSize() {
