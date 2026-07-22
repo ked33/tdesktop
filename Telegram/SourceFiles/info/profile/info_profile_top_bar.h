@@ -133,6 +133,10 @@ public:
 		rpl::producer<bool> available,
 		Fn<void(bool)> toggle);
 
+	void checkBeforeCloseByEscape(Fn<void()> close);
+	[[nodiscard]] bool searchAvailable() const;
+	void showSearch();
+
 	void setRoundEdges(bool value);
 	void setLottieSingleLoop(bool value);
 	void setColorProfileIndex(std::optional<uint8> index);
@@ -218,9 +222,12 @@ private:
 	void createTabSelectionBar();
 	void updateTabSelectionState();
 	void updateTabSelectionGeometry();
+	void raiseTabSelectionOverlay();
 	[[nodiscard]] bool tabSelectionMode() const;
 	void showTabSearch();
 	void hideTabSearch();
+	bool cancelTabSearch();
+	void raiseTabSearchOverlay();
 	void updateTabSearchGeometry();
 	[[nodiscard]] int calculateRightButtonsWidth() const;
 	[[nodiscard]] const style::FlatLabel &statusStyle() const;
@@ -334,7 +341,6 @@ private:
 	rpl::lifetime _userpicLoadingLifetime;
 
 	base::unique_qptr<Ui::IconButton> _close;
-	bool _closeColored = false;
 	base::unique_qptr<Ui::FadeWrap<Ui::IconButton>> _back;
 	rpl::variable<bool> _backToggles;
 
