@@ -43,6 +43,7 @@ public:
 	void stop(bool stillActive = false);
 
 	[[nodiscard]] bool isRemoteLoader() const;
+	[[nodiscard]] crl::time smartStreamingRecoveryBuffer() const;
 	void setLoaderPriority(int priority);
 	void setSmartStreamingBufferPressure(bool pressure);
 	void setSmartStreamingPlaybackRate(int bytesPerSecond);

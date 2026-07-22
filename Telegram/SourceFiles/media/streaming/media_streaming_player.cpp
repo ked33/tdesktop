@@ -44,14 +44,6 @@ constexpr auto kMsFrequency = 1000; // 1000 ms per second.
 	return BoostProfileFor(DownloadBoostLevel()).loadInAdvanceMs;
 }
 
-[[nodiscard]] crl::time WaitingForDataBufferForRemote() {
-	return BoostProfileFor(DownloadBoostLevel()).waitingBufferMs;
-}
-
-[[nodiscard]] crl::time WaitingForDataBuffer(bool remoteLoader) {
-	return remoteLoader ? WaitingForDataBufferForRemote() : kBufferFor;
-}
-
 void SaveValidStateInformation(TrackState &to, TrackState &&from) {
 	Expects(from.position != kTimeUnknown);
 	Expects(from.receivedTill != kTimeUnknown);
@@ -395,7 +387,7 @@ void Player::fileWaitingForData() {
 		.arg(_video ? 1 : 0)
 		.arg(_remoteLoader ? 1 : 0)
 		.arg(PlaybackDebugBoostLevel())
-		.arg(qlonglong(WaitingForDataBuffer(_remoteLoader)))
+		.arg(qlonglong(waitingForDataBuffer()))
 		.arg(PlaybackTrackStateDebugString(_information.audio.state))
 		.arg(PlaybackTrackStateDebugString(_information.video.state)));
 	if (_audio) {
@@ -617,6 +609,7 @@ void Player::play(const PlaybackOptions &options) {
 		_options.position = 0;
 	}
 	_stage = Stage::Initializing;
+	updateSmartStreamingPlaybackRate();
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player play mode=%1 position=%2 previousReceived=%3 durationOverride=%4 seekable=%5 sequential=%6 hwRequested=%7 hwUsed=%8 speed=%9 remote=%10 boost=%11 loadAhead=%12 waitBuffer=%13.")
 		.arg(PlaybackModeDebugString(_options.mode))
 		.arg(qlonglong(_options.position))
@@ -630,7 +623,7 @@ void Player::play(const PlaybackOptions &options) {
 		.arg(_remoteLoader ? 1 : 0)
 		.arg(PlaybackDebugBoostLevel())
 		.arg(qlonglong(loadInAdvanceFor()))
-		.arg(qlonglong(WaitingForDataBuffer(_remoteLoader))));
+		.arg(qlonglong(waitingForDataBuffer())));
 	_file->start(delegate(), {
 		.position = _options.position,
 		.durationOverride = options.durationOverride,
@@ -655,15 +648,30 @@ crl::time Player::loadInAdvanceFor() const {
 	return _remoteLoader ? LoadInAdvanceForRemote() : kLoadInAdvanceForLocal;
 }
 
+crl::time Player::waitingForDataBuffer() const {
+	if (!_remoteLoader) {
+		return kBufferFor;
+	}
+	const auto recovery = crl::time(
+		double(_file->smartStreamingRecoveryBuffer()) * _options.speed);
+	return std::max(
+		crl::time(BoostProfileFor(DownloadBoostLevel()).waitingBufferMs),
+		recovery);
+}
+
 void Player::updateSmartStreamingPlaybackRate() {
 	auto bytesPerSecond = 0;
+	const auto duration = (_totalDuration > 1
+		&& _totalDuration != kDurationUnavailable)
+		? _totalDuration
+		: _options.durationOverride;
 	if (_remoteLoader
 		&& _stage != Stage::Uninitialized
 		&& !_pausedByUser
-		&& _totalDuration > 1
-		&& _totalDuration != kDurationUnavailable) {
+		&& duration > 1
+		&& duration != kDurationUnavailable) {
 		const auto estimate = double(_file->size()) * 1000.
-			* _options.speed / double(_totalDuration);
+			* _options.speed / double(duration);
 		bytesPerSecond = int(std::clamp(
 			estimate,
 			0.,
@@ -808,7 +816,7 @@ bool Player::receivedTillEnd() const {
 
 void Player::checkResumeFromWaitingForData() {
 	if (_pausedByWaitingForData
-		&& bothReceivedEnough(WaitingForDataBuffer(_remoteLoader))) {
+		&& bothReceivedEnough(waitingForDataBuffer())) {
 		_pausedByWaitingForData = false;
 		_file->setSmartStreamingBufferPressure(false);
 		updatePausedState();
@@ -831,7 +839,7 @@ void Player::start() {
 		_audio ? _audio->waitingForData() : nullptr,
 		_video ? _video->waitingForData() : nullptr
 	) | rpl::filter([=] {
-		return !bothReceivedEnough(WaitingForDataBuffer(_remoteLoader));
+		return !bothReceivedEnough(waitingForDataBuffer());
 	}) | rpl::on_next([=] {
 		_pausedByWaitingForData = true;
 		if (!_pausedByUser) {
