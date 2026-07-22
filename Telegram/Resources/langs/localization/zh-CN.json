@@ -294,8 +294,10 @@
     "lng_context_details_resolution": "分辨率",
     "lng_context_details_datacenter": "数据中心",
     "lng_context_details_video_codec": "视频编码",
+    "lng_context_details_average_bitrate": "平均码率（估算）",
     "lng_context_details_quality": "清晰度",
     "lng_context_details_pack_owner": "包作者",
+    "lng_high_bitrate_video_notice": "此视频码率较高，加载可能比较缓慢，请稍等",
 
     "lng_context_stream_in_mpv": "mpv 播放",
     "lng_context_stream_in_mpv_not_found": "未在 PATH 中找到 mpv。",

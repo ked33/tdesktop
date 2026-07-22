@@ -38,6 +38,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/info_memento.h"
 #include "main/main_session.h"
 #include "main/session/send_as_peers.h"
+#include "media/streaming/media_streaming_boost.h"
 #include "media/streaming/media_streaming_mpv.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/menu/menu_add_action_callback_factory.h"
@@ -465,6 +466,49 @@ private:
 		: QString();
 }
 
+[[nodiscard]] QString AverageVideoBitrate(HistoryItem *item) {
+	if (!item) {
+		return {};
+	}
+	const auto media = item->media();
+	const auto document = media ? media->document() : nullptr;
+	if (!document
+		|| (!document->isVideoFile() && !document->isVideoMessage())) {
+		return {};
+	}
+	const auto bytesPerSecond = ::Media::Streaming::AveragePlaybackBytesPerSecond(
+		document->size,
+		document->duration());
+	if (!bytesPerSecond) {
+		return {};
+	}
+	const auto megabitsPerSecond = double(bytesPerSecond) * 8. / 1000000.;
+	return u"%1 Mbps"_q.arg(QString::number(
+		megabitsPerSecond,
+		'f',
+		(megabitsPerSecond < 10.) ? 2 : 1));
+}
+
+[[nodiscard]] bool IsStreamedHighBitrateVideo(DocumentData *document) {
+	return document
+		&& (document->isVideoFile() || document->isVideoMessage())
+		&& document->useStreamingLoader()
+		&& document->hasRemoteLocation()
+		&& document->filepath(true).isEmpty()
+		&& !document->loadedInMediaCache()
+		&& ::Media::Streaming::IsHighBitrateVideo(
+			document->size,
+			document->duration());
+}
+
+void ShowHighBitrateVideoToast(
+		not_null<Window::SessionController*> controller,
+		DocumentData *document) {
+	if (IsStreamedHighBitrateVideo(document)) {
+		controller->showToast(tr::lng_high_bitrate_video_notice(tr::now));
+	}
+}
+
 [[nodiscard]] uint64 UserIdFromPackId(uint64 id) {
 	auto ownerId = id >> 32;
 	if ((id >> 16) & 0xFF) {
@@ -553,13 +597,15 @@ void FillDetailsSubmenu(
 	const auto mediaResolution = MediaResolution(item);
 	const auto mediaDC = MediaDC(item);
 	const auto videoCodec = VideoCodec(item);
+	const auto averageVideoBitrate = AverageVideoBitrate(item);
 	const auto hasAnyPostField = !messageViews.isEmpty() || !messageShares.isEmpty();
 	const auto hasAnyMediaField = !mediaSize.isEmpty()
 		|| !mediaMimeName.isEmpty()
 		|| !mediaName.isEmpty()
 		|| !mediaResolution.isEmpty()
 		|| !mediaDC.isEmpty()
-		|| !videoCodec.isEmpty();
+		|| !videoCodec.isEmpty()
+		|| !averageVideoBitrate.isEmpty();
 	if (hasAnyPostField) {
 		if (!messageViews.isEmpty()) {
 			menu->addAction(CreateTwoTextAction(
@@ -643,6 +689,13 @@ void FillDetailsSubmenu(
 				&st::menuIconShowAll,
 				tr::lng_context_details_video_codec(tr::now),
 				videoCodec));
+		}
+		if (!averageVideoBitrate.isEmpty()) {
+			menu->addAction(CreateTwoTextAction(
+				menu->menu(),
+				&st::menuIconStats,
+				tr::lng_context_details_average_bitrate(tr::now),
+				averageVideoBitrate));
 		}
 		if (!mediaDC.isEmpty()) {
 			menu->addAction(CreateTwoTextAction(
@@ -2684,7 +2737,9 @@ void AddMessageDetailsAction(
 					const auto result = ::Media::Streaming::Mpv::OpenVideoMessageInMpv(
 						resolvedItem,
 						resolvedDocument);
-					if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
+					if (result == ::Media::Streaming::Mpv::OpenResult::Success) {
+						ShowHighBitrateVideoToast(controller, resolvedDocument);
+					} else if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
 						controller->showToast(
 							tr::lng_context_stream_in_mpv_not_found(tr::now));
 					} else if (result == ::Media::Streaming::Mpv::OpenResult::Failed) {
@@ -2700,7 +2755,9 @@ void AddMessageDetailsAction(
 					const auto result = ::Media::Streaming::Mpv::OpenVideoMessageInMpvSpecial(
 						resolvedItem,
 						resolvedDocument);
-					if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
+					if (result == ::Media::Streaming::Mpv::OpenResult::Success) {
+						ShowHighBitrateVideoToast(controller, resolvedDocument);
+					} else if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
 						controller->showToast(
 							tr::lng_context_stream_in_mpv_not_found(tr::now));
 					} else if (result == ::Media::Streaming::Mpv::OpenResult::Failed) {

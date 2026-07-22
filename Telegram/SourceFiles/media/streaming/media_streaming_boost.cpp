@@ -18,6 +18,8 @@ namespace Media::Streaming {
 namespace {
 
 constexpr auto kProfilesKey = "net_download_speed_boost_profiles";
+constexpr auto kHighBitrateBytesPerSecond = 1024 * 1024;
+constexpr auto kPlaybackRateMaximum = 64 * 1024 * 1024;
 
 [[nodiscard]] int ReadInt(
 		const QJsonObject &object,
@@ -384,6 +386,21 @@ QString SerializeBoostProfiles(const BoostProfiles &profiles) {
 const BoostProfile &BoostProfileFor(int level) {
 	static const auto profiles = LoadBoostProfiles();
 	return profiles[std::clamp(level, 0, int(profiles.size() - 1))];
+}
+
+int AveragePlaybackBytesPerSecond(int64 size, int64 duration) {
+	if (size <= 0 || duration <= 1) {
+		return 0;
+	}
+	return int(std::clamp(
+		double(size) * 1000. / double(duration),
+		0.,
+		double(kPlaybackRateMaximum)));
+}
+
+bool IsHighBitrateVideo(int64 size, int64 duration) {
+	return AveragePlaybackBytesPerSecond(size, duration)
+		>= kHighBitrateBytesPerSecond;
 }
 
 } // namespace Media::Streaming

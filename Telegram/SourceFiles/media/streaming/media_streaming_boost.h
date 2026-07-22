@@ -6,6 +6,8 @@ https://github.com/telegramdesktop/tdesktop/blob/dev/LEGAL
 */
 #pragma once
 
+#include "base/basic_types.h"
+
 #include <array>
 
 #include <QtCore/QString>
@@ -44,5 +46,9 @@ using BoostProfiles = std::array<BoostProfile, 7>;
 [[nodiscard]] BoostProfiles LoadBoostProfiles();
 [[nodiscard]] QString SerializeBoostProfiles(const BoostProfiles &profiles);
 [[nodiscard]] const BoostProfile &BoostProfileFor(int level);
+[[nodiscard]] int AveragePlaybackBytesPerSecond(
+	int64 size,
+	int64 duration);
+[[nodiscard]] bool IsHighBitrateVideo(int64 size, int64 duration);
 
 } // namespace Media::Streaming
