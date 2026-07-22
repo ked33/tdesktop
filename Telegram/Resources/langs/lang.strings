@@ -5424,8 +5424,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_context_details_resolution" = "Resolution";
 "lng_context_details_datacenter" = "Datacenter";
 "lng_context_details_video_codec" = "Video Codec";
+"lng_context_details_average_bitrate" = "Average Bitrate (estimated)";
 "lng_context_details_quality" = "Quality";
 "lng_context_details_pack_owner" = "Pack Owner";
+"lng_high_bitrate_video_notice" = "This video has a high bitrate. Loading may be slow, please wait.";
 "lng_context_copy_topic_link" = "Copy Topic Link";
 "lng_context_copy_email" = "Copy Email Address";
 "lng_context_copy_hashtag" = "Copy Hashtag";

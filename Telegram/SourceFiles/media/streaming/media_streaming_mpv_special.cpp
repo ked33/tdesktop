@@ -78,7 +78,6 @@ constexpr auto kSmartSeekMaximumJump = int64(32) * 1024 * 1024;
 constexpr auto kSmartSeekMinimumRange = int64(1024) * 1024;
 constexpr auto kSmartSeekTailGuard = int64(4) * 1024 * 1024;
 constexpr auto kSmartSeekPrefetchFallback = int64(4) * 1024 * 1024;
-constexpr auto kSmartPlaybackRateMaximum = 64 * 1024 * 1024;
 
 [[nodiscard]] bool MpvDebugLogsEnabled() {
 	return GetEnhancedBool("mpv_streaming_debug_logs");
@@ -122,14 +121,9 @@ constexpr auto kSmartPlaybackRateMaximum = 64 * 1024 * 1024;
 
 [[nodiscard]] int SmartPlaybackRateForDocument(
 		not_null<DocumentData*> document) {
-	const auto duration = document->duration();
-	if (duration <= 1 || document->size <= 0) {
-		return 0;
-	}
-	return int(std::clamp(
-		double(document->size) * 1000. / double(duration),
-		0.,
-		double(kSmartPlaybackRateMaximum)));
+	return AveragePlaybackBytesPerSecond(
+		document->size,
+		document->duration());
 }
 
 [[nodiscard]] QStringList LaunchArguments(const QString &url) {
