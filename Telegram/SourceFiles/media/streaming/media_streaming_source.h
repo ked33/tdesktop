@@ -27,6 +27,9 @@ public:
 
 	[[nodiscard]] virtual int64 size() const = 0;
 	[[nodiscard]] virtual bool isRemoteLoader() const = 0;
+	[[nodiscard]] virtual bool smartStreamingEnabled() const {
+		return false;
+	}
 	[[nodiscard]] virtual FillState fill(
 		int64 offset,
 		bytes::span buffer,

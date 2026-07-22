@@ -857,18 +857,24 @@ void File::Context::seekToPosition(
 	const auto timestamp = FFmpeg::TimeToPts(
 		std::clamp(position, crl::time(0), stream.duration - 1),
 		stream.timeBase);
-	const auto prefetchAroundCurrentOffset = [&] {
-		if (_offset < 0 || _offset >= _size) {
+	const auto prefetchAroundOffset = [&](int64 offset) {
+		if (!_source->smartStreamingEnabled()) {
 			return;
 		}
-		const auto start = std::max<int64>(0, _offset - kSeekPrefetchBackAmount);
+		if (offset < 0 || offset >= _size) {
+			return;
+		}
+		const auto start = std::max<int64>(
+			0,
+			offset - kSeekPrefetchBackAmount);
 		const auto amount = std::min<int64>(
 			_size - start,
 			kSeekPrefetchBackAmount + kSeekPrefetchAheadAmount);
 		_source->prefetch(start, amount);
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File seek prefetch target=%1 currentOffset=%2 start=%3 amount=%4.")
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File seek prefetch "
+			"target=%1 sourceOffset=%2 start=%3 amount=%4.")
 			.arg(qlonglong(position))
-			.arg(qlonglong(_offset))
+			.arg(qlonglong(offset))
 			.arg(qlonglong(start))
 			.arg(qlonglong(amount)));
 	};
@@ -884,7 +890,6 @@ void File::Context::seekToPosition(
 			.arg(QString::fromLatin1(name))
 			.arg(error.code()));
 		if (!error) {
-			prefetchAroundCurrentOffset();
 			return true;
 		}
 		return false;
@@ -901,7 +906,6 @@ void File::Context::seekToPosition(
 			.arg(QString::fromLatin1(name))
 			.arg(error.code()));
 		if (!error) {
-			prefetchAroundCurrentOffset();
 			return true;
 		}
 		return false;
@@ -928,8 +932,10 @@ void File::Context::seekToPosition(
 							.arg(qlonglong(*sampleOffset))
 							.arg(qlonglong(adjustedOffset)));
 						if (tryByteSeek(adjustedOffset, "byte-map")) {
+							prefetchAroundOffset(int64(*sampleOffset));
 							return;
 						}
+						prefetchAroundOffset(int64(*sampleOffset));
 					}
 				}
 			}
@@ -939,6 +945,44 @@ void File::Context::seekToPosition(
 		} else if (trySeek(0, "default")) {
 			return;
 		} else if (trySeek(AVSEEK_FLAG_BACKWARD, "backward")) {
+			return;
+		}
+	} else if (!stream.frequency
+		&& _source->smartStreamingEnabled()
+		&& IsMp4LikeFormat(format)) {
+		const auto track = BuildMp4SeekTrack(
+				_source,
+				stream,
+				_interrupted);
+		if (track) {
+			const auto targetSample = FindTargetSample(*track, position);
+			if (targetSample) {
+				const auto syncSample = FindSyncSample(*track, *targetSample);
+				const auto sampleOffset = ComputeSampleOffset(
+					*track,
+					syncSample);
+				if (sampleOffset && *sampleOffset < uint64(_size)) {
+					const auto adjustedOffset = std::max<int64>(
+						0,
+						int64(*sampleOffset) - kSeekPrefetchBackAmount);
+					VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File "
+						"seek map target=%1 duration=%2 sample=%3 "
+						"sync=%4 sampleOffset=%5 adjustedOffset=%6.")
+						.arg(qlonglong(position))
+						.arg(qlonglong(track->duration))
+						.arg(*targetSample)
+						.arg(syncSample)
+						.arg(qlonglong(*sampleOffset))
+						.arg(qlonglong(adjustedOffset)));
+					if (tryByteSeek(adjustedOffset, "byte-map")) {
+						prefetchAroundOffset(int64(*sampleOffset));
+						return;
+					}
+					prefetchAroundOffset(int64(*sampleOffset));
+				}
+			}
+		}
+		if (trySeek(AVSEEK_FLAG_BACKWARD, "backward")) {
 			return;
 		}
 	} else if (trySeek(AVSEEK_FLAG_BACKWARD, "backward")) {
@@ -1056,16 +1100,32 @@ void File::Context::start(StartOptions options) {
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File header done headerSize=%1 remote=%2.")
 		.arg(_source->headerSize())
 		.arg(_source->isRemoteLoader() ? 1 : 0));
+	if (_source->smartStreamingEnabled()) {
+		const auto duration = std::max(
+			(video.codec && video.duration != kDurationUnavailable)
+				? video.duration
+				: crl::time(0),
+			(audio.codec && audio.duration != kDurationUnavailable)
+				? audio.duration
+				: crl::time(0));
+		if (duration > 1) {
+			const auto bytesPerSecond = int(std::clamp(
+				double(_size) * 1000. / double(duration),
+				0.,
+				double(64 * 1024 * 1024)));
+			_source->setSmartStreamingPlaybackRate(bytesPerSecond);
+		}
+	}
 	if (_source->isRemoteLoader()) {
 		sendFullInCache(true);
 	}
-		if (options.seekable && (video.codec || audio.codec)) {
-			seekToPosition(
-				format.get(),
-				video.codec ? video : audio,
-				options,
-				options.position);
-		}
+	if (options.seekable && (video.codec || audio.codec)) {
+		seekToPosition(
+			format.get(),
+			video.codec ? video : audio,
+			options,
+			options.position);
+	}
 	if (unroll()) {
 		return;
 	}
