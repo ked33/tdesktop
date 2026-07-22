@@ -51,12 +51,14 @@ public:
 	// Any thread.
 	[[nodiscard]] int64 size() const;
 	[[nodiscard]] bool isRemoteLoader() const;
+	[[nodiscard]] bool smartStreamingEnabled() const;
 
 	// Single thread.
 	[[nodiscard]] FillState fill(
 		int64 offset,
 		bytes::span buffer,
 		not_null<crl::semaphore*> notify);
+	void prefetch(int64 offset, int64 amount);
 	[[nodiscard]] std::optional<Error> streamingError() const;
 	void headerDone();
 	[[nodiscard]] int headerSize() const;
@@ -231,6 +233,7 @@ private:
 
 	void cancelLoadInRange(uint32 from, uint32 till);
 	void cancelLoadOutsideWindow(uint32 windowStart, uint32 windowTill);
+	void consumePendingSeekPrefetch();
 	void consumePendingTailPrefetch();
 	void cancelStreamingLoads();
 	void loadAtOffset(uint32 offset);
@@ -270,6 +273,12 @@ private:
 	std::atomic<crl::semaphore*> _sleeping = nullptr;
 	std::atomic<bool> _stopStreamingAsync = false;
 	std::atomic<int64> _pendingTailPrefetchBytes = 0;
+	std::atomic<int64> _seekPrefetchOffset = -1;
+	std::atomic<int64> _seekPrefetchBytes = 0;
+	std::atomic<uint64> _seekPrefetchGeneration = 0;
+	int64 _seekPrefetchWindowStart = -1;
+	int64 _seekPrefetchWindowTill = -1;
+	uint64 _seekPrefetchConsumedGeneration = 0;
 
 	// Adaptive scheduling driven by speedEstimate (main thread updates,
 	// streaming thread reads). 100 = static baseline.
