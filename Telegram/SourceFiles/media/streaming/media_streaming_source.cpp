@@ -26,6 +26,10 @@ public:
 		return _reader->isRemoteLoader();
 	}
 
+	[[nodiscard]] bool smartStreamingEnabled() const override {
+		return _reader->smartStreamingEnabled();
+	}
+
 	[[nodiscard]] FillState fill(
 			int64 offset,
 			bytes::span buffer,
@@ -41,6 +45,10 @@ public:
 		}
 		Unexpected("Unknown reader fill state.");
 		return FillState::Failed;
+	}
+
+	void prefetch(int64 offset, int64 amount) override {
+		_reader->prefetch(offset, amount);
 	}
 
 	[[nodiscard]] std::optional<Error> streamingError() const override {
