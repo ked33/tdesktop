@@ -376,6 +376,26 @@ private:
 	return -1;
 }
 
+[[nodiscard]] QString MediaUploadDate(HistoryItem *item) {
+	if (!item) {
+		return {};
+	}
+	const auto media = item->media();
+	if (!media) {
+		return {};
+	}
+	const auto document = media->document();
+	const auto photo = media->photo();
+	const auto date = document && document->date
+		? TimeId(document->date)
+		: photo
+		? photo->date()
+		: TimeId(0);
+	return date
+		? FormatDetailsDateTime(base::unixtime::parse(date))
+		: QString();
+}
+
 [[nodiscard]] QString MediaSizeText(HistoryItem *item) {
 	if (!item) {
 		return {};
@@ -584,6 +604,7 @@ void FillDetailsSubmenu(
 	const auto messageShares = (views && views->forwardsCount > 0)
 		? QString::number(views->forwardsCount)
 		: QString();
+	const auto mediaUploadDate = MediaUploadDate(item);
 	const auto mediaSize = MediaSizeText(item);
 	const auto mediaMime = MediaMime(item);
 	const auto mediaMimeName = [&] {
@@ -599,7 +620,8 @@ void FillDetailsSubmenu(
 	const auto videoCodec = VideoCodec(item);
 	const auto averageVideoBitrate = AverageVideoBitrate(item);
 	const auto hasAnyPostField = !messageViews.isEmpty() || !messageShares.isEmpty();
-	const auto hasAnyMediaField = !mediaSize.isEmpty()
+	const auto hasAnyMediaField = !mediaUploadDate.isEmpty()
+		|| !mediaSize.isEmpty()
 		|| !mediaMimeName.isEmpty()
 		|| !mediaName.isEmpty()
 		|| !mediaResolution.isEmpty()
@@ -649,6 +671,13 @@ void FillDetailsSubmenu(
 	}
 	if (media && hasAnyMediaField) {
 		menu->addSeparator(&st::expandedMenuSeparator);
+		if (!mediaUploadDate.isEmpty()) {
+			menu->addAction(CreateTwoTextAction(
+				menu->menu(),
+				&st::menuIconSchedule,
+				tr::lng_context_details_upload_date(tr::now),
+				mediaUploadDate));
+		}
 		if (!mediaSize.isEmpty()) {
 			menu->addAction(CreateTwoTextAction(
 				menu->menu(),

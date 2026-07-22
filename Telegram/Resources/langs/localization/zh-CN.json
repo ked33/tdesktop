@@ -288,6 +288,7 @@
     "lng_context_details_date": "发送时间",
     "lng_context_details_edit_date": "编辑时间",
     "lng_context_details_forward_date": "转发时间",
+    "lng_context_details_upload_date": "上传日期",
     "lng_context_details_file_size": "文件大小",
     "lng_context_details_mime_type": "MIME 类型",
     "lng_context_details_file_name": "文件名",
