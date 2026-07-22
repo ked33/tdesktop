@@ -212,6 +212,7 @@ public:
 	virtual Ui::ElasticScroll *listScrollArea() const { return nullptr; }
 	virtual bool listThanosEffectEnabled() const { return true; }
 	virtual AboutView *listAboutView() { return nullptr; }
+	virtual bool listInvertedOrder() { return false; }
 };
 
 class WindowListDelegate : public ListDelegate {
@@ -362,6 +363,9 @@ public:
 	void touchScrollUpdated(const QPoint &screenPos);
 	[[nodiscard]] rpl::producer<bool> touchMaybeSelectingValue() const;
 
+	[[nodiscard]] std::optional<int> skippedAtTop() const;
+	[[nodiscard]] std::optional<int> skippedAtBottom() const;
+	[[nodiscard]] bool atNewestEdge() const;
 	[[nodiscard]] bool loadedAtTopKnown() const;
 	[[nodiscard]] bool loadedAtTop() const;
 	[[nodiscard]] bool loadedAtBottomKnown() const;
@@ -572,6 +576,7 @@ private:
 		std::unique_ptr<Element>>;
 
 	[[nodiscard]] std::vector<Element*> accessibleElements() const;
+	[[nodiscard]] int accessibilityNewestIndex(int count) const;
 	[[nodiscard]] int accessibilityUnreadBarIndex() const;
 	[[nodiscard]] HistoryItem *accessibilityItemAtIndex(
 		int index,
@@ -881,6 +886,7 @@ private:
 	const not_null<Main::Session*> _session;
 	const std::unique_ptr<EmojiInteractions> _emojiInteractions;
 	const Context _context;
+	const bool _inverted = false;
 
 	Data::MessagePosition _aroundPosition;
 	Data::MessagePosition _shownAtPosition;

@@ -163,7 +163,9 @@ ScheduledWidget::ScheduledWidget(
 			listShowPremiumToast(emoji);
 		},
 		.mode = ComposeControls::Mode::Scheduled,
-		.sendMenuDetails = [] { return SendMenu::Details(); },
+		.sendMenuDetails = crl::guard(this, [=] {
+			return sendMenuDetails();
+		}),
 		.regularWindow = controller,
 		.stickerOrEmojiChosen = controller->stickerOrEmojiChosen(),
 	}))
@@ -360,6 +362,7 @@ void ScheduledWidget::setupComposeControls() {
 		}();
 	_composeControls->setHistory({
 		.history = _history.get(),
+		.sendActionFactory = [=] { return prepareSendAction({}); },
 		.writeRestriction = std::move(writeRestriction),
 	});
 

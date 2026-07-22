@@ -459,8 +459,8 @@ private:
 
 	void unregisterDraftSources();
 	void registerDraftSource();
-	void unregisterThreadFieldBridge();
-	void registerThreadFieldBridge();
+	void untrackThreadFieldVisibility();
+	void trackThreadFieldVisibility();
 	void updateFieldVisibility();
 	void changeFocusedControl();
 
@@ -468,12 +468,14 @@ private:
 	[[nodiscard]] Data::Draft *cloudDraft() const;
 	[[nodiscard]] bool isComposeBoxOpen() const;
 	[[nodiscard]] bool hasRichDraftThreadScope() const;
+	[[nodiscard]] bool isShortcutComposeEligible() const;
 	[[nodiscard]] bool bypassNormalDraftHandling() const;
 	[[nodiscard]] bool hasEditDraft() const;
 	[[nodiscard]] bool shouldShowRichDraftPreview() const;
-	[[nodiscard]] std::unique_ptr<Data::Draft> readThreadFieldDraft() const;
-	void saveThreadFieldDraft(std::unique_ptr<Data::Draft> draft);
 	void migrateFieldToRichEditor();
+	void migrateScheduledFieldToRichEditor();
+	void migrateShortcutFieldToRichEditor(
+		BusinessShortcutId expectedShortcutId);
 
 	const style::ComposeControls &_st;
 	ChatHelpers::ComposeFeatures _features;
@@ -607,7 +609,7 @@ private:
 	bool _threadFieldVisible = false;
 
 	rpl::lifetime _historyLifetime;
-	rpl::lifetime _threadFieldBridgeLifetime;
+	rpl::lifetime _threadFieldVisibleLifetime;
 	rpl::lifetime _uploaderSubscriptions;
 
 };
