@@ -398,9 +398,13 @@ int AveragePlaybackBytesPerSecond(int64 size, int64 duration) {
 		double(kPlaybackRateMaximum)));
 }
 
+bool IsHighBitratePlaybackRate(int bytesPerSecond) {
+	return bytesPerSecond >= kHighBitrateBytesPerSecond;
+}
+
 bool IsHighBitrateVideo(int64 size, int64 duration) {
-	return AveragePlaybackBytesPerSecond(size, duration)
-		>= kHighBitrateBytesPerSecond;
+	return IsHighBitratePlaybackRate(
+		AveragePlaybackBytesPerSecond(size, duration));
 }
 
 } // namespace Media::Streaming

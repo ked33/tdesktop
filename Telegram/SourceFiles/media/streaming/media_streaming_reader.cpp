@@ -36,6 +36,8 @@ constexpr auto kSmartPreloadRecoveryDuration
 constexpr auto kSmartPreloadRecoveryFullPercent = 100;
 constexpr auto kSmartPreloadRecoveryTaperPercent = 75;
 constexpr auto kSmartSeekPrefetchTargetDuration = crl::time(8000);
+constexpr auto kSmartRecoverySafetyMargin = 2 * crl::time(1000);
+constexpr auto kSmartRecoveryMaximumDuration = 15 * crl::time(1000);
 constexpr auto kSmartSeekPrefetchMinimum = int64(4) * 1024 * 1024;
 constexpr auto kSmartSeekPrefetchMaximum = int64(16) * 1024 * 1024;
 
@@ -84,6 +86,14 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 
 [[nodiscard]] int NonPremiumPreloadLimit() {
 	return BoostProfileFor(DownloadBoostLevel()).nonPremiumPreloadLimit;
+}
+
+[[nodiscard]] int64 BytesForDuration(
+		int bytesPerSecond,
+		crl::time duration) {
+	return (bytesPerSecond > 0 && duration > 0)
+		? (int64(bytesPerSecond) * duration + 999) / 1000
+		: 0;
 }
 
 struct ParsedCacheEntry {
@@ -949,7 +959,7 @@ Reader::Reader(
 		if (_attachedDownloader) {
 			_partsForDownloader.fire_copy(part);
 		}
-		if (_streamingActive) {
+		if (_streamingActive.load(std::memory_order_acquire)) {
 			_loadedParts.emplace(std::move(part));
 		}
 		if (const auto waiting = _waiting.load(std::memory_order_acquire)) {
@@ -962,8 +972,20 @@ Reader::Reader(
 		if (_premiumSession) {
 			return;
 		}
-		_serverDcId.store(delay.dcId, std::memory_order_relaxed);
 		const auto now = crl::now();
+		const auto remainingWait = int(std::clamp(
+			delay.limitedUntil - now,
+			crl::time(0),
+			crl::time(std::numeric_limits<int>::max())));
+		const auto observedWait = std::max(delay.waitMs, remainingWait);
+		if (observedWait > 0) {
+			_serverObservedWaitMs.store(
+				std::max(
+					_serverObservedWaitMs.load(std::memory_order_relaxed),
+					observedWait),
+				std::memory_order_relaxed);
+		}
+		_serverDcId.store(delay.dcId, std::memory_order_relaxed);
 		const auto limitedUntil = std::max(
 			_serverLimitedUntil.load(std::memory_order_relaxed),
 			delay.limitedUntil);
@@ -1007,7 +1029,7 @@ Reader::Reader(
 		_speedIsThrottled.store(false, std::memory_order_relaxed);
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: server limited "
 			"dc=%1 waitMs=%2 limitedFor=%3 recoveryFor=%4 penalty=%5 "
-			"preload=%6 queueLimit=%7 dispatchLimit=%8.")
+			"preload=%6 queueLimit=%7 dispatchLimit=%8 bufferMs=%9.")
 			.arg(delay.dcId)
 			.arg(delay.waitMs)
 			.arg(qlonglong(std::max(limitedUntil - now, crl::time(0))))
@@ -1017,7 +1039,8 @@ Reader::Reader(
 			.arg((limitedUntil > now)
 				? BoostProfileFor(DownloadBoostLevel()).smartMinimumRequests
 				: dispatchLimit)
-			.arg(dispatchLimit));
+			.arg(dispatchLimit)
+			.arg(qlonglong(smartStreamingRecoveryBuffer())));
 	};
 	applyServerDelay(_loader->serverDelayState());
 	_loader->serverDelays(
@@ -1189,28 +1212,51 @@ void Reader::requestTailPrefetch(int64 bytes) {
 }
 
 void Reader::setSmartStreamingBufferPressure(bool pressure) {
-	const auto previous = _smartBufferPressure.load(
-		std::memory_order_relaxed);
+	if (pressure
+		&& !_streamingActive.load(std::memory_order_acquire)) {
+		return;
+	}
+	const auto previous = _smartBufferPressure.exchange(
+		pressure,
+		std::memory_order_acq_rel);
+	const auto recoveryBuffer = smartStreamingRecoveryBuffer();
 	if (pressure || previous) {
 		_smartPreloadRecoveryUntil.store(
 			crl::now() + kSmartPreloadRecoveryDuration,
 			std::memory_order_release);
 	}
-	_smartBufferPressure.store(pressure, std::memory_order_release);
-	_loader->setSmartStreamingBufferPressure(pressure);
+	const auto localRecovery = pressure && (recoveryBuffer > 0);
+	_loader->setSmartStreamingBufferPressure(pressure && !localRecovery);
+	if (previous != pressure) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Smart pressure "
+			"pressure=%1 localOnly=%2 playback=%3 waitMs=%4 bufferMs=%5.")
+			.arg(pressure ? 1 : 0)
+			.arg(localRecovery ? 1 : 0)
+			.arg(_loader->smartStreamingPlaybackRate())
+			.arg(_serverObservedWaitMs.load(std::memory_order_relaxed))
+			.arg(qlonglong(recoveryBuffer)));
+	}
 }
 
 void Reader::setSmartStreamingPlaybackRate(int bytesPerSecond) {
 	_loader->setSmartStreamingPlaybackRate(bytesPerSecond);
+	if (_smartBufferPressure.load(std::memory_order_acquire)) {
+		_loader->setSmartStreamingBufferPressure(
+			!smartStreamingEnabled()
+			|| !IsHighBitratePlaybackRate(bytesPerSecond));
+	}
 }
 
 void Reader::notifySmartStreamingSeek() {
+	if (!_streamingActive.load(std::memory_order_acquire)) {
+		return;
+	}
 	_loader->notifySmartStreamingSeek();
 }
 
 void Reader::startStreaming() {
 	_seekCancelGeneration.fetch_add(1, std::memory_order_release);
-	_streamingActive = true;
+	_streamingActive.store(true, std::memory_order_release);
 	refreshLoaderPriority();
 }
 
@@ -1227,8 +1273,13 @@ void Reader::stopStreaming(bool stillActive) {
 		cancelStreamingLoads();
 	}
 	if (!stillActive) {
+		_streamingActive.store(false, std::memory_order_release);
 		setSmartStreamingBufferPressure(false);
 		_loader->setSmartStreamingPlaybackRate(0);
+		_smartPreloadRecoveryUntil.store(0, std::memory_order_release);
+		_smartPreloadRecoveryLoggedPercent.store(
+			0,
+			std::memory_order_relaxed);
 		_seekPrefetchOffset.store(-1, std::memory_order_relaxed);
 		_seekPrefetchBytes.store(0, std::memory_order_release);
 		_seekPrefetchGeneration.store(0, std::memory_order_release);
@@ -1236,10 +1287,8 @@ void Reader::stopStreaming(bool stillActive) {
 		_seekPrefetchWindowStart = -1;
 		_seekPrefetchWindowTill = -1;
 		_seekCancelGeneration.fetch_add(1, std::memory_order_release);
-		_streamingActive = false;
 		refreshLoaderPriority();
-		_loadingOffsets.clear();
-		_pinnedTailOffsets.clear();
+		cancelStreamingLoads();
 		processDownloaderRequests();
 	}
 }
@@ -1421,7 +1470,7 @@ void Reader::checkCacheResultsForDownloader() {
 }
 
 void Reader::continueDownloaderFromMainThread() {
-	if (_streamingActive) {
+	if (_streamingActive.load(std::memory_order_acquire)) {
 		wakeFromSleep();
 	} else {
 		processDownloaderRequests();
@@ -1441,7 +1490,10 @@ void Reader::setLoaderPriority(int priority) {
 }
 
 void Reader::refreshLoaderPriority() {
-	_loader->setPriority(_streamingActive ? _realPriority : 0);
+	_loader->setPriority(
+		_streamingActive.load(std::memory_order_acquire)
+			? _realPriority
+			: 0);
 }
 
 bool Reader::isRemoteLoader() const {
@@ -1452,6 +1504,19 @@ bool Reader::smartStreamingEnabled() const {
 	return isRemoteLoader()
 		&& (DownloadBoostLevel() == 6)
 		&& !_premiumSession;
+}
+
+crl::time Reader::smartStreamingRecoveryBuffer() const {
+	const auto playback = _loader->smartStreamingPlaybackRate();
+	if (!smartStreamingEnabled()
+		|| !IsHighBitratePlaybackRate(playback)) {
+		return 0;
+	}
+	return std::clamp(
+		crl::time(_serverObservedWaitMs.load(std::memory_order_relaxed))
+			+ kSmartRecoverySafetyMargin,
+		kSmartSeekPrefetchTargetDuration,
+		kSmartRecoveryMaximumDuration);
 }
 
 std::shared_ptr<Reader::CacheHelper> Reader::InitCacheHelper(
@@ -1672,7 +1737,8 @@ Reader::FillState Reader::fill(
 }
 
 void Reader::prefetch(int64 offset, int64 amount) {
-	if (!smartStreamingEnabled()
+	if (!_streamingActive.load(std::memory_order_acquire)
+		|| !smartStreamingEnabled()
 		|| offset < 0
 		|| amount <= 0
 		|| offset >= size()) {
@@ -1680,8 +1746,12 @@ void Reader::prefetch(int64 offset, int64 amount) {
 	}
 	const auto playback = _loader->smartStreamingPlaybackRate();
 	if (playback > 0) {
-		const auto target = (int64(playback) / 1000)
-			* kSmartSeekPrefetchTargetDuration;
+		const auto recoveryBuffer = smartStreamingRecoveryBuffer();
+		const auto target = BytesForDuration(
+			playback,
+			recoveryBuffer > 0
+				? recoveryBuffer
+				: kSmartSeekPrefetchTargetDuration);
 		amount = std::clamp(
 			target,
 			kSmartSeekPrefetchMinimum,
@@ -1709,6 +1779,10 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		? profile.smartMinimumRequests
 		: limitBase;
 	const auto now = crl::now();
+	const auto smartPlaybackRate = smartNonPremium
+		? _loader->smartStreamingPlaybackRate()
+		: 0;
+	const auto recoveryBuffer = smartStreamingRecoveryBuffer();
 	const auto bufferPressure = _smartBufferPressure.load(
 		std::memory_order_acquire);
 	const auto preloadRecoveryUntil = _smartPreloadRecoveryUntil.load(
@@ -1764,6 +1838,32 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		&& seekPrefetchWindowTill > seekPrefetchWindowStart
 		&& int64(offset) >= seekPrefetchWindowStart
 		&& int64(offset) < seekPrefetchWindowTill;
+	const auto recoveryPreloadParts = [&] {
+		if (!recoveryPreloadPercent
+			|| recoveryBuffer <= 0
+			|| smartPlaybackRate <= 0) {
+			return 0;
+		}
+		const auto bytes = BytesForDuration(
+			smartPlaybackRate,
+			recoveryBuffer);
+		const auto full = int(std::min<int64>(
+			(bytes + kPartSize - 1) / kPartSize,
+			kPartsInSlice));
+		const auto tapered = (full * recoveryPreloadPercent + 99) / 100;
+		return std::max(
+			std::min(profile.smartMaximumPreload, kPartsInSlice),
+			tapered);
+	}();
+	const auto seekPrefetchParts = seekPrefetchActive
+		? int(std::min<int64>(
+			(seekPrefetchWindowTill - int64(offset) + kPartSize - 1)
+				/ kPartSize,
+			kPartsInSlice))
+		: 0;
+	const auto localRecoveryPreloadParts = std::max(
+		recoveryPreloadParts,
+		seekPrefetchParts);
 	const auto adaptivePreloadPercent = _adaptivePreloadPercent.load(
 		std::memory_order_relaxed);
 	const auto preloadPercent = std::max(
@@ -1773,12 +1873,13 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		(preloadBase * preloadPercent) / 100,
 		preloadMinimum,
 		int(kLoadFromRemoteMax) * 2);
+	preloadParts = std::max(preloadParts, localRecoveryPreloadParts);
 	// Consumption-aware cap: once we know how fast video is being read,
 	// avoid preloading past roughly the next N seconds of playback. This
 	// keeps Burst mode from spending bandwidth on parts the user will not
 	// reach within the already-banked buffer horizon.
 	const auto playbackBytesPerSecond = smartNonPremium
-		? double(_loader->smartStreamingPlaybackRate())
+		? double(smartPlaybackRate)
 		: _consumptionBytesPerSec;
 	if (boost > 0 && playbackBytesPerSecond > 0.0) {
 		constexpr auto kTargetSecondsAhead = 30.0;
@@ -1803,22 +1904,21 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	} else if (serverRecovering) {
 		preloadParts = std::min(
 			preloadParts,
-			NonPremiumPreloadLimit());
+			std::max(
+				NonPremiumPreloadLimit(),
+				localRecoveryPreloadParts));
 		requestsLimit = std::min(
 			requestsLimit,
 			recoveryRequestLimit);
 	} else if (smartNonPremium) {
 		preloadParts = std::min(
 			preloadParts,
-			profile.smartMaximumPreload);
+			std::max(
+				profile.smartMaximumPreload,
+				localRecoveryPreloadParts));
 		requestsLimit = std::min(
 			requestsLimit,
 			smartRequestLimit);
-	}
-	if (seekPrefetchActive && !serverLimited && !serverRecovering) {
-		preloadParts = std::max(
-			preloadParts,
-			profile.smartMaximumPreload);
 	}
 	const auto serverPhase = serverLimited
 		? 1
@@ -1830,14 +1930,18 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	if (previousRecoveryPreloadPercent != recoveryPreloadPercent) {
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: preload recovery "
 			"previous=%1 floor=%2 pressure=%3 remaining=%4 "
-			"adaptive=%5 preload=%6 serverPhase=%7.")
+			"adaptive=%5 preload=%6 serverPhase=%7 targetParts=%8 "
+			"bufferMs=%9 seekParts=%10.")
 			.arg(previousRecoveryPreloadPercent)
 			.arg(recoveryPreloadPercent)
 			.arg(bufferPressure ? 1 : 0)
 			.arg(qlonglong(preloadRecoveryRemaining))
 			.arg(adaptivePreloadPercent)
 			.arg(preloadParts)
-			.arg(serverPhase));
+			.arg(serverPhase)
+			.arg(recoveryPreloadParts)
+			.arg(qlonglong(recoveryBuffer))
+			.arg(seekPrefetchParts));
 	}
 	const auto serverRequests = [&] {
 		if (serverLimited || !smartNonPremium) {
@@ -2058,27 +2162,29 @@ void Reader::consumePendingSeekPrefetch() {
 		return;
 	}
 	const auto now = crl::now();
-	if (now < _serverRecoveryUntil.load(std::memory_order_relaxed)) {
-		_seekPrefetchOffset.store(requestedOffset, std::memory_order_relaxed);
-		_seekPrefetchBytes.store(amount, std::memory_order_relaxed);
-		_seekPrefetchGeneration.fetch_add(1, std::memory_order_release);
-		return;
-	}
-	if (StreamingSeekCancelEnabled()) {
+	const auto serverRecovering = now < _serverRecoveryUntil.load(
+		std::memory_order_relaxed);
+	if (StreamingSeekCancelEnabled() && !serverRecovering) {
 		cancelLoadOutsideWindow(uint32(start), uint32(alignedTill));
 	}
 	_seekPrefetchWindowStart = start;
 	_seekPrefetchWindowTill = alignedTill;
+	const auto targetParts = int(
+		(alignedTill - start + kPartSize - 1) / kPartSize);
+	const auto preloadParts = std::min(targetParts, kPartsInSlice);
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader seek prefetch window "
-		"start=%1 bytes=%2 targetBytes=%3 preload=%4 playback=%5 "
-		"size=%6 boost=%7.")
+		"start=%1 bytes=%2 targetBytes=%3 targetParts=%4 preloadParts=%5 "
+		"playback=%6 size=%7 boost=%8 bufferMs=%9 recovering=%10.")
 		.arg(qlonglong(start))
 		.arg(qlonglong(alignedTill - start))
 		.arg(qlonglong(amount))
-		.arg(BoostProfileFor(6).smartMaximumPreload)
+		.arg(targetParts)
+		.arg(preloadParts)
 		.arg(_loader->smartStreamingPlaybackRate())
 		.arg(qlonglong(fileSize))
-		.arg(DownloadBoostLevel()));
+		.arg(DownloadBoostLevel())
+		.arg(qlonglong(smartStreamingRecoveryBuffer()))
+		.arg(serverRecovering ? 1 : 0));
 }
 
 void Reader::consumePendingTailPrefetch() {
@@ -2114,13 +2220,31 @@ void Reader::consumePendingTailPrefetch() {
 }
 
 void Reader::cancelStreamingLoads() {
+	enqueueDownloaderOffsets();
 	_pinnedTailOffsets.clear();
+	auto cancelled = 0;
+	auto keptForDownloader = 0;
 	for (const auto offset : _loadingOffsets.takeInRange(
 		0,
 		std::numeric_limits<int64>::max())) {
-		if (!_downloaderOffsetsRequested.contains(offset)) {
+		const auto downloaderNeedsOffset
+			= _attachedDownloader
+			&& (_downloaderOffsetsRequested.contains(offset)
+			|| (ranges::find(_offsetsForDownloader, uint32(offset))
+				!= end(_offsetsForDownloader)));
+		if (downloaderNeedsOffset) {
+			++keptForDownloader;
+		} else {
 			_loader->cancel(offset);
+			++cancelled;
 		}
+	}
+	if (cancelled || keptForDownloader) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader cancel streaming "
+			"cancelled=%1 downloader=%2 active=%3.")
+			.arg(cancelled)
+			.arg(keptForDownloader)
+			.arg(_streamingActive.load(std::memory_order_acquire) ? 1 : 0));
 	}
 }
 
