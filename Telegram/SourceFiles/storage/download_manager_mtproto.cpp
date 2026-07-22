@@ -39,6 +39,7 @@ constexpr auto kSmartMeasurementMaxAge = 2 * 60 * crl::time(1000);
 constexpr auto kSmartLimitChangeCooldown = 30 * crl::time(1000);
 constexpr auto kSmartPressureDuration = 3 * crl::time(1000);
 constexpr auto kSmartSeekFreezeDuration = 15 * crl::time(1000);
+constexpr auto kSmartSeekPressureDuration = crl::time(1000);
 constexpr auto kSmartProbeDuration = 15 * crl::time(1000);
 constexpr auto kSmartExcessCapacityRatio = 2.25;
 constexpr auto kSmartHighLatencyCapacityRatio = 1.5;
@@ -282,6 +283,17 @@ void DownloadManagerMtproto::notifySmartStreamingSeek(
 	demand.seekUntil = std::max(
 		demand.seekUntil,
 		now + kSmartSeekFreezeDuration);
+	if (smartNonPremiumEnabled()) {
+		auto &state = smartRequestState(demand.dcId, now);
+		state.sampleLastUpdate = now;
+		state.sampleBusyDuration = 0;
+		state.sampleBytes = 0;
+		state.sampleLatency = 0;
+		state.sampleRequests = 0;
+		if (demand.bufferPressure) {
+			evaluateSmartRequestLimit(demand.dcId, now);
+		}
+	}
 }
 
 int DownloadManagerMtproto::nonPremiumRequestLimit(MTP::DcId dcId) const {
@@ -339,7 +351,13 @@ void DownloadManagerMtproto::recordSmartRequestSuccess(
 	state.sampleBytes += kDownloadPartSize;
 	state.sampleLatency += std::max(duration, crl::time(1));
 	++state.sampleRequests;
-	if (state.sampleBusyDuration < kSmartSampleBusyDuration
+	const auto demand = smartDemandSummary(dcId);
+	const auto seekPressure = demand.bufferPressure
+		&& (now < demand.seekUntil);
+	const auto sampleDuration = seekPressure
+		? kSmartSeekPressureDuration
+		: kSmartSampleBusyDuration;
+	if (state.sampleBusyDuration < sampleDuration
 		&& state.sampleRequests < kSmartSampleMaximumRequests) {
 		return;
 	} else if (!state.sampleBusyDuration || !state.sampleRequests) {
@@ -407,13 +425,18 @@ void DownloadManagerMtproto::evaluateSmartRequestLimit(
 		}
 		return;
 	}
+	const auto seekPressure = demand.bufferPressure
+		&& (now < demand.seekUntil);
 	if (now < state.lastChange + kSmartLimitChangeCooldown
-		|| now < demand.seekUntil) {
+		&& !seekPressure) {
 		return;
 	}
 	const auto playback = double(demand.playbackBytesPerSecond);
 	const auto &profile = SmartProfile();
 	if (!demand.bufferPressure) {
+		if (now < demand.seekUntil) {
+			return;
+		}
 		if (state.target > profile.smartCapacityMinimumRequestLimit
 			&& playback > 0.
 			&& state.throughputEma
@@ -436,17 +459,21 @@ void DownloadManagerMtproto::evaluateSmartRequestLimit(
 		}
 		return;
 	}
+	const auto pressureDuration = seekPressure
+		? kSmartSeekPressureDuration
+		: kSmartPressureDuration;
 	if (!demand.pressureSince
-		|| now < demand.pressureSince + kSmartPressureDuration
+		|| now < demand.pressureSince + pressureDuration
 		|| state.target >= profile.smartMaximumRequestLimit
-		|| state.lastLatency > kSmartProbeMaximumLatency) {
+		|| (state.lastLatency > 0.
+			&& state.lastLatency > kSmartProbeMaximumLatency)) {
 		return;
 	}
 	state.probeActive = true;
 	state.probePreviousTarget = state.target;
 	state.probeStarted = now;
-	state.probeThroughput = state.lastThroughput;
-	state.probeLatency = state.lastLatency;
+	state.probeThroughput = state.throughputEma;
+	state.probeLatency = state.latencyEma;
 	updateSmartRequestLimit(
 		dcId,
 		state.target + 1,
