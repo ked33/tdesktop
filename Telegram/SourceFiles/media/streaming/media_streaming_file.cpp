@@ -906,6 +906,7 @@ void File::Context::seekToPosition(
 			.arg(QString::fromLatin1(name))
 			.arg(error.code()));
 		if (!error) {
+			prefetchAroundOffset(_offset);
 			return true;
 		}
 		return false;
@@ -1321,6 +1322,10 @@ void File::stop(bool stillActive) {
 
 bool File::isRemoteLoader() const {
 	return _source->isRemoteLoader();
+}
+
+crl::time File::smartStreamingRecoveryBuffer() const {
+	return _source->smartStreamingRecoveryBuffer();
 }
 
 void File::setLoaderPriority(int priority) {

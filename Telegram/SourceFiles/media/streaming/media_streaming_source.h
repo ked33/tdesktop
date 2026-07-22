@@ -30,6 +30,9 @@ public:
 	[[nodiscard]] virtual bool smartStreamingEnabled() const {
 		return false;
 	}
+	[[nodiscard]] virtual crl::time smartStreamingRecoveryBuffer() const {
+		return 0;
+	}
 	[[nodiscard]] virtual FillState fill(
 		int64 offset,
 		bytes::span buffer,

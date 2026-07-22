@@ -30,6 +30,10 @@ public:
 		return _reader->smartStreamingEnabled();
 	}
 
+	[[nodiscard]] crl::time smartStreamingRecoveryBuffer() const override {
+		return _reader->smartStreamingRecoveryBuffer();
+	}
+
 	[[nodiscard]] FillState fill(
 			int64 offset,
 			bytes::span buffer,
