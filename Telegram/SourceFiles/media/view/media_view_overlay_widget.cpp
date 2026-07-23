@@ -157,6 +157,25 @@ using RecognitionCacheMap = base::flat_map<RecognitionId, RecognitionResult>;
 		valid(info.audio.state.duration));
 }
 
+[[nodiscard]] QString VideoQualitiesDebugString(
+		not_null<DocumentData*> original,
+		HistoryItem *context) {
+	const auto &qualities = original->resolveQualities(context);
+	auto result = QStringList();
+	result.reserve(qualities.size());
+	for (const auto &quality : qualities) {
+		result.push_back(u"id:%1,height:%2,size:%3,bps:%4,mime:%5"_q
+			.arg(qulonglong(quality->id))
+			.arg(quality->resolveVideoQuality())
+			.arg(qlonglong(quality->size))
+			.arg(Streaming::AveragePlaybackBytesPerSecond(
+				quality->size,
+				quality->duration()))
+			.arg(quality->mimeString()));
+	}
+	return result.isEmpty() ? u"none"_q : result.join(u";"_q);
+}
+
 [[nodiscard]] RecognitionCacheMap *RecognitionCache() {
 	static auto cache = Platform::TextRecognition::IsAvailable()
 		? std::make_unique<base::flat_map<RecognitionId, RecognitionResult>>()
@@ -207,6 +226,7 @@ constexpr auto kArrowHoldTimeoutMs = crl::time(350);
 constexpr auto kSeekTimeMsLong = 10 * crl::time(1000);
 constexpr auto kFrameStepFallbackFps = 30.;
 constexpr auto kFrameStepThrottleMs = crl::time(150);
+constexpr auto kAutomaticQualitySwitchCooldown = 30 * crl::time(1000);
 
 // macOS OpenGL renderer fails to render larger texture
 // even though it reports that max texture size is 16384.
@@ -2899,6 +2919,8 @@ void OverlayWidget::assignMediaPointer(DocumentData *document) {
 	_photoMedia = nullptr;
 	_videoStream = nullptr;
 	if (_document != document) {
+		_automaticQualitySwitchAllowedAt = 0;
+		_automaticQualityToastShown = false;
 		_highBitrateToastShown = false;
 		_streamedQualityChangeFrame = QImage();
 		_streamedQualityChangeFinished = false;
@@ -2930,6 +2952,8 @@ void OverlayWidget::assignMediaPointer(DocumentData *document) {
 
 void OverlayWidget::assignMediaPointer(not_null<PhotoData*> photo) {
 	_savePhotoVideoWhenLoaded = SavePhotoVideo::None;
+	_automaticQualitySwitchAllowedAt = 0;
+	_automaticQualityToastShown = false;
 	_highBitrateToastShown = false;
 	_chosenQuality = nullptr;
 	_streamedQualityChangeFrame = QImage();
@@ -2954,6 +2978,8 @@ void OverlayWidget::assignMediaPointer(not_null<PhotoData*> photo) {
 void OverlayWidget::assignMediaPointer(
 		std::shared_ptr<Data::GroupCall> call) {
 	_savePhotoVideoWhenLoaded = SavePhotoVideo::None;
+	_automaticQualitySwitchAllowedAt = 0;
+	_automaticQualityToastShown = false;
 	_highBitrateToastShown = false;
 	_chosenQuality = nullptr;
 	_streamedQualityChangeFrame = QImage();
@@ -4883,6 +4909,25 @@ bool OverlayWidget::initStreaming(const StartStreaming &startStreaming) {
 			.arg(video->inappPlaybackFailed())
 			.arg(qlonglong(video->size))
 			.arg(video->mimeString()));
+		const auto qualityReason = _quality.manual
+			? u"manual"_q
+			: (video == _document)
+			? u"auto_original"_q
+			: u"auto_alternative"_q;
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: quality selection "
+			"original=%1 chosen=%2 reason=%3 requestedHeight=%4 "
+			"chosenHeight=%5 chosenSize=%6 chosenBps=%7 "
+			"alternatives=[%8].")
+			.arg(qulonglong(_document->id))
+			.arg(qulonglong(video->id))
+			.arg(qualityReason)
+			.arg(_quality.height)
+			.arg(video->resolveVideoQuality())
+			.arg(qlonglong(video->size))
+			.arg(Streaming::AveragePlaybackBytesPerSecond(
+				video->size,
+				video->duration()))
+			.arg(VideoQualitiesDebugString(_document, _message)));
 	}
 	initStreamingThumbnail();
 	if (!createStreamingObjects()) {
@@ -4909,12 +4954,31 @@ bool OverlayWidget::initStreaming(const StartStreaming &startStreaming) {
 
 	_streamed->instance.switchQualityRequests(
 	) | rpl::filter([=](int quality) {
-		return !_quality.manual && _quality.height != quality;
+		return !_quality.manual
+			&& _quality.height != quality;
 	}) | rpl::on_next([=](int quality) {
-		applyVideoQuality({
+		const auto value = VideoQuality{
 			.manual = 0,
 			.height = uint32(quality),
-		});
+		};
+		const auto from = _chosenQuality ? _chosenQuality : _document;
+		const auto to = _document->chooseQuality(_message, value);
+		const auto lowered = from
+			&& to != from
+			&& to->size < from->size
+			&& to->mimeString() == u"video/mp4"_q;
+		const auto now = crl::now();
+		if (!lowered && now < _automaticQualitySwitchAllowedAt) {
+			return;
+		}
+		_automaticQualitySwitchAllowedAt = now
+			+ kAutomaticQualitySwitchCooldown;
+		if (lowered && !_automaticQualityToastShown) {
+			_automaticQualityToastShown = true;
+			uiShow()->showToast(
+				tr::lng_video_quality_auto_lowered(tr::now));
+		}
+		applyVideoQuality(value);
 	}, _streamed->instance.lifetime());
 
 	const auto continuing = startStreaming.continueStreaming

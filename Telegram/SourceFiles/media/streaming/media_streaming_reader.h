@@ -59,7 +59,7 @@ public:
 		int64 offset,
 		bytes::span buffer,
 		not_null<crl::semaphore*> notify);
-	void prefetch(int64 offset, int64 amount);
+	void prefetch(int64 offset, int64 amount, int64 urgentOffset);
 	[[nodiscard]] std::optional<Error> streamingError() const;
 	void headerDone();
 	[[nodiscard]] int headerSize() const;
@@ -186,6 +186,7 @@ private:
 		[[nodiscard]] SerializedSlice unloadToCache();
 
 		[[nodiscard]] QByteArray partForDownloader(uint32 offset) const;
+		[[nodiscard]] bool hasPart(uint32 offset) const;
 		[[nodiscard]] bool readCacheForDownloaderRequired(uint32 offset);
 
 	private:
@@ -234,10 +235,11 @@ private:
 
 	void cancelLoadInRange(uint32 from, uint32 till);
 	void cancelLoadOutsideWindow(uint32 windowStart, uint32 windowTill);
+	[[nodiscard]] crl::time smartStreamingBackgroundBuffer() const;
 	void syncSmartStreamingBufferPressure(crl::time now);
 	void consumePendingSeekPrefetch();
 	void consumePendingTailPrefetch();
-	void cancelStreamingLoads();
+	void cancelStreamingLoads(bool preserveSent = false);
 	void loadAtOffset(uint32 offset);
 	void checkLoadWillBeFirst(uint32 offset);
 	bool processLoadedParts();
@@ -277,10 +279,15 @@ private:
 	std::atomic<int64> _pendingTailPrefetchBytes = 0;
 	std::atomic<int64> _seekPrefetchOffset = -1;
 	std::atomic<int64> _seekPrefetchBytes = 0;
+	std::atomic<int64> _seekPrefetchUrgentOffset = -1;
+	std::atomic<int64> _seekPrefetchUrgentBytes = 0;
 	std::atomic<uint64> _seekPrefetchGeneration = 0;
 	int64 _seekPrefetchWindowStart = -1;
 	int64 _seekPrefetchWindowTill = -1;
+	int64 _seekPrefetchUrgentWindowStart = -1;
+	int64 _seekPrefetchUrgentWindowTill = -1;
 	uint64 _seekPrefetchConsumedGeneration = 0;
+	bool _seekPrefetchBackgroundActive = false;
 
 	// Adaptive scheduling driven by speedEstimate (main thread updates,
 	// streaming thread reads). 100 = static baseline.
@@ -291,6 +298,10 @@ private:
 	std::atomic<int> _adaptivePreloadPercent = 100;
 	std::atomic<int> _adaptiveLimitPercent = 100;
 	std::atomic<bool> _speedIsThrottled = false;
+	std::atomic<int> _streamThroughputBytesPerSecond = 0;
+	std::atomic<int> _streamLatencyMs = 0;
+	std::atomic<int> _streamJitterMs = 0;
+	std::atomic<int> _smartBufferTargetLoggedMs = 0;
 	std::atomic<bool> _smartBufferPressure = false;
 	std::atomic<crl::time> _smartSeekRecoveryUntil = 0;
 	std::atomic<crl::time> _smartPreloadRecoveryUntil = 0;
@@ -317,6 +328,7 @@ private:
 	bool _seekCancelEnabledLastFill = false;
 
 	PriorityQueue _loadingOffsets;
+	base::flat_set<int64> _seekCancellationOffsets;
 	base::flat_set<int64> _pinnedTailOffsets;
 
 	Slices _slices;
