@@ -81,6 +81,10 @@ private:
 
 		[[nodiscard]] int read(bytes::span buffer);
 		[[nodiscard]] int64_t seek(int64_t offset, int whence);
+		void prefetchAroundOffset(
+			int64 offset,
+			crl::time position,
+			bool mapped);
 
 		[[nodiscard]] bool unroll() const;
 		void logError(QLatin1String method);
@@ -94,11 +98,11 @@ private:
 			AVMediaType type,
 			Mode mode,
 			StartOptions options);
-			void seekToPosition(
-				not_null<AVFormatContext *> format,
-				const Stream &stream,
-				StartOptions options,
-				crl::time position);
+		void seekToPosition(
+			not_null<AVFormatContext *> format,
+			const Stream &stream,
+			StartOptions options,
+			crl::time position);
 
 		// TODO base::expected.
 		[[nodiscard]] auto readPacket()
@@ -114,6 +118,7 @@ private:
 		base::flat_map<int, std::vector<FFmpeg::Packet>> _queuedPackets;
 		int64 _offset = 0;
 		int64 _size = 0;
+		crl::time _pendingSeekPrefetchPosition = 0;
 		bool _failed = false;
 		bool _readTillEnd = false;
 		int _debugReadCalls = 0;

@@ -43,8 +43,8 @@ constexpr auto kSmartBitrateRecoveryMinimumDuration = 3 * crl::time(1000);
 constexpr auto kSmartBitrateRecoveryMaximumDuration = 4 * crl::time(1000);
 constexpr auto kSmartServerRecoveryMinimumDuration = 4 * crl::time(1000);
 constexpr auto kSmartServerRecoveryPenaltyStep = 2 * crl::time(1000);
-constexpr auto kSmartServerRecoveryWaitMargin = crl::time(1500);
-constexpr auto kSmartServerRecoveryMaximumDuration = 8 * crl::time(1000);
+constexpr auto kSmartServerRecoveryWaitMargin = 2 * crl::time(1000);
+constexpr auto kSmartServerRecoveryMaximumDuration = 20 * crl::time(1000);
 constexpr auto kSmartSeekPrefetchMinimum = int64(4) * 1024 * 1024;
 constexpr auto kSmartSeekPrefetchMaximum = int64(16) * 1024 * 1024;
 
@@ -1596,15 +1596,12 @@ crl::time Reader::smartStreamingRecoveryBuffer() const {
 		3);
 	const auto minimum = kSmartServerRecoveryMinimumDuration
 		+ (penalty - 1) * kSmartServerRecoveryPenaltyStep;
-	const auto maximum = std::min(
-		minimum + kSmartServerRecoveryPenaltyStep,
-		kSmartServerRecoveryMaximumDuration);
 	const auto observed = crl::time(
 		_serverObservedWaitMs.load(std::memory_order_relaxed));
 	const auto serverBuffer = std::clamp(
 		observed + kSmartServerRecoveryWaitMargin,
 		minimum,
-		maximum);
+		kSmartServerRecoveryMaximumDuration);
 	return std::max(bitrateBuffer, serverBuffer);
 }
 
