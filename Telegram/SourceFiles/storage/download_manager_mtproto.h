@@ -146,6 +146,7 @@ private:
 		crl::time lastChange = 0;
 		crl::time sampleLastUpdate = 0;
 		crl::time sampleBusyDuration = 0;
+		crl::time lastPressureAt = 0;
 		int64 sampleBytes = 0;
 		int64 sampleLatency = 0;
 		int sampleRequests = 0;
