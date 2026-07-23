@@ -857,7 +857,8 @@ void File::Context::seekToPosition(
 	const auto timestamp = FFmpeg::TimeToPts(
 		std::clamp(position, crl::time(0), stream.duration - 1),
 		stream.timeBase);
-	const auto prefetchAroundOffset = [&](int64 offset) {
+	auto mappedPrefetchOffset = int64(-1);
+	const auto prefetchAroundOffset = [&](int64 offset, bool mapped) {
 		if (!_source->smartStreamingEnabled()) {
 			return;
 		}
@@ -872,11 +873,12 @@ void File::Context::seekToPosition(
 			kSeekPrefetchBackAmount + kSeekPrefetchAheadAmount);
 		_source->prefetch(start, amount);
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File seek prefetch "
-			"target=%1 sourceOffset=%2 start=%3 amount=%4.")
+			"target=%1 sourceOffset=%2 start=%3 amount=%4 mapped=%5.")
 			.arg(qlonglong(position))
 			.arg(qlonglong(offset))
 			.arg(qlonglong(start))
-			.arg(qlonglong(amount)));
+			.arg(qlonglong(amount))
+			.arg(mapped ? 1 : 0));
 	};
 	const auto tryByteSeek = [&](int64 offset, const char *name) {
 		error = av_seek_frame(
@@ -884,11 +886,13 @@ void File::Context::seekToPosition(
 			-1,
 			offset,
 			AVSEEK_FLAG_BYTE);
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File seek attempt target=%1 flags=%2 name=%3 result=%4.")
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File seek attempt "
+			"target=%1 flags=%2 name=%3 result=%4 error=%5.")
 			.arg(qlonglong(position))
 			.arg(AVSEEK_FLAG_BYTE)
 			.arg(QString::fromLatin1(name))
-			.arg(error.code()));
+			.arg(error.code())
+			.arg(error.text()));
 		if (!error) {
 			return true;
 		}
@@ -900,13 +904,18 @@ void File::Context::seekToPosition(
 			stream.index,
 			timestamp,
 			flags);
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File seek attempt target=%1 flags=%2 name=%3 result=%4.")
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File seek attempt "
+			"target=%1 flags=%2 name=%3 result=%4 error=%5.")
 			.arg(qlonglong(position))
 			.arg(flags)
 			.arg(QString::fromLatin1(name))
-			.arg(error.code()));
+			.arg(error.code())
+			.arg(error.text()));
 		if (!error) {
-			prefetchAroundOffset(_offset);
+			const auto mapped = (mappedPrefetchOffset >= 0);
+			prefetchAroundOffset(
+				mapped ? mappedPrefetchOffset : _offset,
+				mapped);
 			return true;
 		}
 		return false;
@@ -925,6 +934,7 @@ void File::Context::seekToPosition(
 						const auto adjustedOffset = std::max<int64>(
 							0,
 							int64(*sampleOffset) - kSeekPrefetchBackAmount);
+						mappedPrefetchOffset = int64(*sampleOffset);
 						VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File explicit seek map target=%1 duration=%2 sample=%3 sync=%4 sampleOffset=%5 adjustedOffset=%6.")
 							.arg(qlonglong(position))
 							.arg(qlonglong(track->duration))
@@ -933,10 +943,9 @@ void File::Context::seekToPosition(
 							.arg(qlonglong(*sampleOffset))
 							.arg(qlonglong(adjustedOffset)));
 						if (tryByteSeek(adjustedOffset, "byte-map")) {
-							prefetchAroundOffset(int64(*sampleOffset));
+							prefetchAroundOffset(mappedPrefetchOffset, true);
 							return;
 						}
-						prefetchAroundOffset(int64(*sampleOffset));
 					}
 				}
 			}
@@ -966,6 +975,7 @@ void File::Context::seekToPosition(
 					const auto adjustedOffset = std::max<int64>(
 						0,
 						int64(*sampleOffset) - kSeekPrefetchBackAmount);
+					mappedPrefetchOffset = int64(*sampleOffset);
 					VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File "
 						"seek map target=%1 duration=%2 sample=%3 "
 						"sync=%4 sampleOffset=%5 adjustedOffset=%6.")
@@ -976,10 +986,9 @@ void File::Context::seekToPosition(
 						.arg(qlonglong(*sampleOffset))
 						.arg(qlonglong(adjustedOffset)));
 					if (tryByteSeek(adjustedOffset, "byte-map")) {
-						prefetchAroundOffset(int64(*sampleOffset));
+						prefetchAroundOffset(mappedPrefetchOffset, true);
 						return;
 					}
-					prefetchAroundOffset(int64(*sampleOffset));
 				}
 			}
 		}

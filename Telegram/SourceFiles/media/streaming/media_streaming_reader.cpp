@@ -36,8 +36,15 @@ constexpr auto kSmartPreloadRecoveryDuration
 constexpr auto kSmartPreloadRecoveryFullPercent = 100;
 constexpr auto kSmartPreloadRecoveryTaperPercent = 75;
 constexpr auto kSmartSeekPrefetchTargetDuration = crl::time(8000);
-constexpr auto kSmartRecoverySafetyMargin = 2 * crl::time(1000);
-constexpr auto kSmartRecoveryMaximumDuration = 15 * crl::time(1000);
+constexpr auto kSmartSeekLocalRecoveryDuration = 3 * crl::time(1000);
+constexpr auto kSmartBitrateRecoveryStart = 768 * 1024;
+constexpr auto kSmartBitrateRecoveryFull = 2 * 1024 * 1024;
+constexpr auto kSmartBitrateRecoveryMinimumDuration = 3 * crl::time(1000);
+constexpr auto kSmartBitrateRecoveryMaximumDuration = 4 * crl::time(1000);
+constexpr auto kSmartServerRecoveryMinimumDuration = 4 * crl::time(1000);
+constexpr auto kSmartServerRecoveryPenaltyStep = 2 * crl::time(1000);
+constexpr auto kSmartServerRecoveryWaitMargin = crl::time(1500);
+constexpr auto kSmartServerRecoveryMaximumDuration = 8 * crl::time(1000);
 constexpr auto kSmartSeekPrefetchMinimum = int64(4) * 1024 * 1024;
 constexpr auto kSmartSeekPrefetchMaximum = int64(16) * 1024 * 1024;
 
@@ -94,6 +101,22 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 	return (bytesPerSecond > 0 && duration > 0)
 		? (int64(bytesPerSecond) * duration + 999) / 1000
 		: 0;
+}
+
+[[nodiscard]] crl::time SmartBitrateRecoveryBuffer(int bytesPerSecond) {
+	if (bytesPerSecond <= kSmartBitrateRecoveryStart) {
+		return 0;
+	}
+	const auto clamped = std::min(
+		bytesPerSecond,
+		kSmartBitrateRecoveryFull);
+	const auto range = kSmartBitrateRecoveryFull
+		- kSmartBitrateRecoveryStart;
+	const auto durationRange = kSmartBitrateRecoveryMaximumDuration
+		- kSmartBitrateRecoveryMinimumDuration;
+	return kSmartBitrateRecoveryMinimumDuration
+		+ (int64(clamped - kSmartBitrateRecoveryStart) * durationRange)
+			/ range;
 }
 
 struct ParsedCacheEntry {
@@ -978,7 +1001,13 @@ Reader::Reader(
 			crl::time(0),
 			crl::time(std::numeric_limits<int>::max())));
 		const auto observedWait = std::max(delay.waitMs, remainingWait);
-		if (observedWait > 0) {
+		const auto previousRecoveryUntil = _serverRecoveryUntil.load(
+			std::memory_order_relaxed);
+		if (previousRecoveryUntil <= now) {
+			_serverObservedWaitMs.store(
+				observedWait,
+				std::memory_order_relaxed);
+		} else if (observedWait > 0) {
 			_serverObservedWaitMs.store(
 				std::max(
 					_serverObservedWaitMs.load(std::memory_order_relaxed),
@@ -990,7 +1019,7 @@ Reader::Reader(
 			_serverLimitedUntil.load(std::memory_order_relaxed),
 			delay.limitedUntil);
 		const auto recoveryUntil = std::max(
-			_serverRecoveryUntil.load(std::memory_order_relaxed),
+			previousRecoveryUntil,
 			delay.recoveryUntil);
 		if (recoveryUntil <= now) {
 			return;
@@ -1211,6 +1240,32 @@ void Reader::requestTailPrefetch(int64 bytes) {
 	_pendingTailPrefetchBytes.store(bytes, std::memory_order_release);
 }
 
+void Reader::syncSmartStreamingBufferPressure(crl::time now) {
+	while (true) {
+		const auto pressure = _smartBufferPressure.load(
+			std::memory_order_acquire);
+		const auto seekRecoveryUntil = _smartSeekRecoveryUntil.load(
+			std::memory_order_acquire);
+		const auto smart = smartStreamingEnabled();
+		const auto forwarded = pressure
+			&& (!smart || now >= seekRecoveryUntil);
+		_loader->setSmartStreamingBufferPressure(forwarded);
+
+		const auto currentNow = crl::now();
+		const auto currentPressure = _smartBufferPressure.load(
+			std::memory_order_acquire);
+		const auto currentSeekRecoveryUntil = _smartSeekRecoveryUntil.load(
+			std::memory_order_acquire);
+		const auto currentSmart = smartStreamingEnabled();
+		const auto currentForwarded = currentPressure
+			&& (!currentSmart || currentNow >= currentSeekRecoveryUntil);
+		if (currentForwarded == forwarded) {
+			return;
+		}
+		now = currentNow;
+	}
+}
+
 void Reader::setSmartStreamingBufferPressure(bool pressure) {
 	if (pressure
 		&& !_streamingActive.load(std::memory_order_acquire)) {
@@ -1219,37 +1274,55 @@ void Reader::setSmartStreamingBufferPressure(bool pressure) {
 	const auto previous = _smartBufferPressure.exchange(
 		pressure,
 		std::memory_order_acq_rel);
+	const auto now = crl::now();
 	const auto recoveryBuffer = smartStreamingRecoveryBuffer();
 	if (pressure || previous) {
 		_smartPreloadRecoveryUntil.store(
-			crl::now() + kSmartPreloadRecoveryDuration,
+			now + kSmartPreloadRecoveryDuration,
 			std::memory_order_release);
 	}
-	const auto localRecovery = pressure && (recoveryBuffer > 0);
-	_loader->setSmartStreamingBufferPressure(pressure && !localRecovery);
+	const auto seekRecoveryUntil = _smartSeekRecoveryUntil.load(
+		std::memory_order_acquire);
+	const auto localRecovery = pressure
+		&& smartStreamingEnabled()
+		&& (now < seekRecoveryUntil);
+	syncSmartStreamingBufferPressure(now);
 	if (previous != pressure) {
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Smart pressure "
-			"pressure=%1 localOnly=%2 playback=%3 waitMs=%4 bufferMs=%5.")
+			"pressure=%1 localOnly=%2 playback=%3 waitMs=%4 bufferMs=%5 "
+			"seekRemaining=%6.")
 			.arg(pressure ? 1 : 0)
 			.arg(localRecovery ? 1 : 0)
 			.arg(_loader->smartStreamingPlaybackRate())
 			.arg(_serverObservedWaitMs.load(std::memory_order_relaxed))
-			.arg(qlonglong(recoveryBuffer)));
+			.arg(qlonglong(recoveryBuffer))
+			.arg(qlonglong(std::max(
+				seekRecoveryUntil - now,
+				crl::time(0)))));
 	}
 }
 
 void Reader::setSmartStreamingPlaybackRate(int bytesPerSecond) {
 	_loader->setSmartStreamingPlaybackRate(bytesPerSecond);
-	if (_smartBufferPressure.load(std::memory_order_acquire)) {
-		_loader->setSmartStreamingBufferPressure(
-			!smartStreamingEnabled()
-			|| !IsHighBitratePlaybackRate(bytesPerSecond));
-	}
+	syncSmartStreamingBufferPressure(crl::now());
 }
 
 void Reader::notifySmartStreamingSeek() {
 	if (!_streamingActive.load(std::memory_order_acquire)) {
 		return;
+	}
+	const auto now = crl::now();
+	if (smartStreamingEnabled()) {
+		const auto recoveryUntil = now + kSmartSeekLocalRecoveryDuration;
+		_smartSeekRecoveryUntil.store(
+			recoveryUntil,
+			std::memory_order_release);
+		syncSmartStreamingBufferPressure(now);
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Smart seek recovery "
+			"localMs=%1 playback=%2 bufferMs=%3.")
+			.arg(qlonglong(recoveryUntil - now))
+			.arg(_loader->smartStreamingPlaybackRate())
+			.arg(qlonglong(smartStreamingRecoveryBuffer())));
 	}
 	_loader->notifySmartStreamingSeek();
 }
@@ -1277,6 +1350,7 @@ void Reader::stopStreaming(bool stillActive) {
 		setSmartStreamingBufferPressure(false);
 		_loader->setSmartStreamingPlaybackRate(0);
 		_smartPreloadRecoveryUntil.store(0, std::memory_order_release);
+		_smartSeekRecoveryUntil.store(0, std::memory_order_release);
 		_smartPreloadRecoveryLoggedPercent.store(
 			0,
 			std::memory_order_relaxed);
@@ -1508,15 +1582,30 @@ bool Reader::smartStreamingEnabled() const {
 
 crl::time Reader::smartStreamingRecoveryBuffer() const {
 	const auto playback = _loader->smartStreamingPlaybackRate();
-	if (!smartStreamingEnabled()
-		|| !IsHighBitratePlaybackRate(playback)) {
+	if (!smartStreamingEnabled() || playback <= 0) {
 		return 0;
 	}
-	return std::clamp(
-		crl::time(_serverObservedWaitMs.load(std::memory_order_relaxed))
-			+ kSmartRecoverySafetyMargin,
-		kSmartSeekPrefetchTargetDuration,
-		kSmartRecoveryMaximumDuration);
+	const auto bitrateBuffer = SmartBitrateRecoveryBuffer(playback);
+	if (crl::now() >= _serverRecoveryUntil.load(
+			std::memory_order_relaxed)) {
+		return bitrateBuffer;
+	}
+	const auto penalty = std::clamp(
+		_serverPenalty.load(std::memory_order_relaxed),
+		1,
+		3);
+	const auto minimum = kSmartServerRecoveryMinimumDuration
+		+ (penalty - 1) * kSmartServerRecoveryPenaltyStep;
+	const auto maximum = std::min(
+		minimum + kSmartServerRecoveryPenaltyStep,
+		kSmartServerRecoveryMaximumDuration);
+	const auto observed = crl::time(
+		_serverObservedWaitMs.load(std::memory_order_relaxed));
+	const auto serverBuffer = std::clamp(
+		observed + kSmartServerRecoveryWaitMargin,
+		minimum,
+		maximum);
+	return std::max(bitrateBuffer, serverBuffer);
 }
 
 std::shared_ptr<Reader::CacheHelper> Reader::InitCacheHelper(
@@ -1749,11 +1838,11 @@ void Reader::prefetch(int64 offset, int64 amount) {
 		const auto recoveryBuffer = smartStreamingRecoveryBuffer();
 		const auto target = BytesForDuration(
 			playback,
-			recoveryBuffer > 0
-				? recoveryBuffer
-				: kSmartSeekPrefetchTargetDuration);
+			std::max(
+				recoveryBuffer,
+				kSmartSeekPrefetchTargetDuration));
 		amount = std::clamp(
-			target,
+			std::max(amount, target),
 			kSmartSeekPrefetchMinimum,
 			kSmartSeekPrefetchMaximum);
 	}
@@ -1785,6 +1874,12 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	const auto recoveryBuffer = smartStreamingRecoveryBuffer();
 	const auto bufferPressure = _smartBufferPressure.load(
 		std::memory_order_acquire);
+	const auto seekLocalRecovery = smartNonPremium
+		&& (now < _smartSeekRecoveryUntil.load(
+			std::memory_order_acquire));
+	if (smartNonPremium && bufferPressure && !seekLocalRecovery) {
+		syncSmartStreamingBufferPressure(now);
+	}
 	const auto preloadRecoveryUntil = _smartPreloadRecoveryUntil.load(
 		std::memory_order_acquire);
 	const auto preloadRecoveryRemaining = std::max(
@@ -1931,7 +2026,7 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: preload recovery "
 			"previous=%1 floor=%2 pressure=%3 remaining=%4 "
 			"adaptive=%5 preload=%6 serverPhase=%7 targetParts=%8 "
-			"bufferMs=%9 seekParts=%10.")
+			"bufferMs=%9 seekParts=%10 seekLocal=%11.")
 			.arg(previousRecoveryPreloadPercent)
 			.arg(recoveryPreloadPercent)
 			.arg(bufferPressure ? 1 : 0)
@@ -1941,7 +2036,8 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 			.arg(serverPhase)
 			.arg(recoveryPreloadParts)
 			.arg(qlonglong(recoveryBuffer))
-			.arg(seekPrefetchParts));
+			.arg(seekPrefetchParts)
+			.arg(seekLocalRecovery ? 1 : 0));
 	}
 	const auto serverRequests = [&] {
 		if (serverLimited || !smartNonPremium) {

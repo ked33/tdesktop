@@ -39,7 +39,6 @@ constexpr auto kSmartMeasurementMaxAge = 2 * 60 * crl::time(1000);
 constexpr auto kSmartLimitChangeCooldown = 30 * crl::time(1000);
 constexpr auto kSmartPressureDuration = 3 * crl::time(1000);
 constexpr auto kSmartSeekFreezeDuration = 15 * crl::time(1000);
-constexpr auto kSmartSeekPressureDuration = crl::time(1000);
 constexpr auto kSmartProbeDuration = 15 * crl::time(1000);
 constexpr auto kSmartExcessCapacityRatio = 2.25;
 constexpr auto kSmartHighLatencyCapacityRatio = 1.5;
@@ -290,9 +289,6 @@ void DownloadManagerMtproto::notifySmartStreamingSeek(
 		state.sampleBytes = 0;
 		state.sampleLatency = 0;
 		state.sampleRequests = 0;
-		if (demand.bufferPressure) {
-			evaluateSmartRequestLimit(demand.dcId, now);
-		}
 	}
 }
 
@@ -351,13 +347,7 @@ void DownloadManagerMtproto::recordSmartRequestSuccess(
 	state.sampleBytes += kDownloadPartSize;
 	state.sampleLatency += std::max(duration, crl::time(1));
 	++state.sampleRequests;
-	const auto demand = smartDemandSummary(dcId);
-	const auto seekPressure = demand.bufferPressure
-		&& (now < demand.seekUntil);
-	const auto sampleDuration = seekPressure
-		? kSmartSeekPressureDuration
-		: kSmartSampleBusyDuration;
-	if (state.sampleBusyDuration < sampleDuration
+	if (state.sampleBusyDuration < kSmartSampleBusyDuration
 		&& state.sampleRequests < kSmartSampleMaximumRequests) {
 		return;
 	} else if (!state.sampleBusyDuration || !state.sampleRequests) {
@@ -425,10 +415,7 @@ void DownloadManagerMtproto::evaluateSmartRequestLimit(
 		}
 		return;
 	}
-	const auto seekPressure = demand.bufferPressure
-		&& (now < demand.seekUntil);
-	if (now < state.lastChange + kSmartLimitChangeCooldown
-		&& !seekPressure) {
+	if (now < state.lastChange + kSmartLimitChangeCooldown) {
 		return;
 	}
 	const auto playback = double(demand.playbackBytesPerSecond);
@@ -459,11 +446,8 @@ void DownloadManagerMtproto::evaluateSmartRequestLimit(
 		}
 		return;
 	}
-	const auto pressureDuration = seekPressure
-		? kSmartSeekPressureDuration
-		: kSmartPressureDuration;
 	if (!demand.pressureSince
-		|| now < demand.pressureSince + pressureDuration
+		|| now < demand.pressureSince + kSmartPressureDuration
 		|| state.target >= profile.smartMaximumRequestLimit
 		|| (state.lastLatency > 0.
 			&& state.lastLatency > kSmartProbeMaximumLatency)) {
