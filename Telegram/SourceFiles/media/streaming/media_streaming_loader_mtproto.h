@@ -29,6 +29,7 @@ public:
 
 	void load(int64 offset) override;
 	void cancel(int64 offset) override;
+	void cancelForSeek(int64 offset) override;
 	void resetPriorities() override;
 	void setPriority(int priority) override;
 	void stop() override;

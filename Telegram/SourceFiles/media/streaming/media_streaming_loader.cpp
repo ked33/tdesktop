@@ -69,6 +69,18 @@ std::optional<int64> PriorityQueue::take() {
 	return result;
 }
 
+base::flat_set<int64> PriorityQueue::valuesInRange(
+		int64 from,
+		int64 till) const {
+	auto result = base::flat_set<int64>();
+	for (const auto &entry : _data) {
+		if (entry.value >= from && entry.value < till) {
+			result.emplace(entry.value);
+		}
+	}
+	return result;
+}
+
 base::flat_set<int64> PriorityQueue::takeInRange(int64 from, int64 till) {
 	auto result = base::flat_set<int64>();
 	for (auto i = _data.begin(); i != _data.end();) {

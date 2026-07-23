@@ -1018,6 +1018,10 @@ int64 Player::fileSize() const {
 	return _file->size();
 }
 
+bool Player::smartStreamingEnabled() const {
+	return _file->smartStreamingEnabled();
+}
+
 QSize Player::videoSize() const {
 	return _information.video.size;
 }

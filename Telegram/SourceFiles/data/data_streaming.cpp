@@ -60,6 +60,7 @@ bool PruneDestroyedAndSet(
 				result.push_back({
 					.sizeInBytes = uint32(video->size),
 					.height = uint32(height),
+					.mp4 = (video->mimeString() == u"video/mp4"_q),
 				});
 			}
 		}
