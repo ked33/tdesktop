@@ -418,13 +418,12 @@ void PlaybackControls::updateTimeTexts(const Player::TrackState &state) {
 	}
 	auto playFrequency = state.frequency;
 	auto playAlready = position / playFrequency;
-	auto playLeft = (state.length / playFrequency) - playAlready;
+	auto playTotal = state.length / playFrequency;
 
 	_lastDurationMs = (state.length * crl::time(1000)) / playFrequency;
 
 	_timeAlready = Ui::FormatDurationText(playAlready);
-	auto minus = QChar(8722);
-	_timeLeft = minus + Ui::FormatDurationText(playLeft);
+	_timeLeft = Ui::FormatDurationText(playTotal);
 
 	if (_seekPositionMs < 0) {
 		refreshTimeTexts();
@@ -437,11 +436,10 @@ void PlaybackControls::refreshTimeTexts() {
 	auto timeLeft = _timeLeft;
 	if (_seekPositionMs >= 0) {
 		auto playAlready = _seekPositionMs / crl::time(1000);
-		auto playLeft = (_lastDurationMs / crl::time(1000)) - playAlready;
+		auto playTotal = _lastDurationMs / crl::time(1000);
 
 		timeAlready = Ui::FormatDurationText(playAlready);
-		auto minus = QChar(8722);
-		timeLeft = minus + Ui::FormatDurationText(playLeft);
+		timeLeft = Ui::FormatDurationText(playTotal);
 	}
 
 	_playedAlready->setText(timeAlready, &alreadyChanged);
