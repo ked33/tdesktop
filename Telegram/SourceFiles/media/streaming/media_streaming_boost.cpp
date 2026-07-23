@@ -20,6 +20,17 @@ namespace {
 constexpr auto kProfilesKey = "net_download_speed_boost_profiles";
 constexpr auto kHighBitrateBytesPerSecond = 1024 * 1024;
 constexpr auto kPlaybackRateMaximum = 64 * 1024 * 1024;
+constexpr auto kSmartBufferMinimumMs = int64(6000);
+constexpr auto kSmartBufferMaximumMs = int64(12000);
+constexpr auto kSmartBufferBitrateStart = 512 * 1024;
+constexpr auto kSmartBufferBitrateFull = 2 * 1024 * 1024;
+constexpr auto kSmartBufferBitrateExtraMs = int64(2000);
+constexpr auto kSmartBufferThroughputRiskStart = 650;
+constexpr auto kSmartBufferThroughputRiskFull = 1100;
+constexpr auto kSmartBufferThroughputExtraMs = int64(4000);
+constexpr auto kSmartBufferNetworkExtraMaximumMs = int64(3000);
+constexpr auto kSmartSeekUrgentTargetMs = int64(2000);
+constexpr auto kSmartSeekHighBitrateBootstrapWaitMs = int64(4000);
 
 [[nodiscard]] int ReadInt(
 		const QJsonObject &object,
@@ -405,6 +416,134 @@ bool IsHighBitratePlaybackRate(int bytesPerSecond) {
 bool IsHighBitrateVideo(int64 size, int64 duration) {
 	return IsHighBitratePlaybackRate(
 		AveragePlaybackBytesPerSecond(size, duration));
+}
+
+int64 SmartAdaptiveBufferMs(
+		int playbackBytesPerSecond,
+		int throughputBytesPerSecond,
+		int latencyMs,
+		int jitterMs) {
+	auto result = kSmartBufferMinimumMs;
+	if (playbackBytesPerSecond > kSmartBufferBitrateStart) {
+		const auto range = kSmartBufferBitrateFull
+			- kSmartBufferBitrateStart;
+		const auto above = std::clamp(
+			playbackBytesPerSecond - kSmartBufferBitrateStart,
+			0,
+			range);
+		result += (int64(above) * kSmartBufferBitrateExtraMs) / range;
+	}
+	if (throughputBytesPerSecond > 0) {
+		const auto risk = int(std::clamp<int64>(
+			int64(playbackBytesPerSecond) * 1000
+				/ throughputBytesPerSecond,
+			0,
+			2000));
+		const auto range = kSmartBufferThroughputRiskFull
+			- kSmartBufferThroughputRiskStart;
+		const auto above = std::clamp(
+			risk - kSmartBufferThroughputRiskStart,
+			0,
+			range);
+		result += (int64(above) * kSmartBufferThroughputExtraMs) / range;
+	} else {
+		result += int64(1000);
+	}
+	const auto networkExtra = std::clamp<int64>(
+		int64(std::max(latencyMs, 0))
+			+ 3 * int64(std::max(jitterMs, 0)),
+		0,
+		kSmartBufferNetworkExtraMaximumMs);
+	result += networkExtra;
+	return std::clamp(result, kSmartBufferMinimumMs, kSmartBufferMaximumMs);
+}
+
+int SmartPreloadPartsForBufferMs(
+		int playbackBytesPerSecond,
+		int64 bufferMs,
+		int partSize,
+		int minimumParts,
+		int maximumParts) {
+	if (playbackBytesPerSecond <= 0
+		|| bufferMs <= 0
+		|| partSize <= 0
+		|| maximumParts <= 0) {
+		return std::max(0, minimumParts);
+	}
+	const auto bytes = (int64(playbackBytesPerSecond) * bufferMs + 999)
+		/ 1000;
+	const auto parts = int((bytes + partSize - 1) / partSize);
+	return std::clamp(
+		parts,
+		std::max(0, minimumParts),
+		maximumParts);
+}
+
+bool SmartSeekUrgentWindowReady(
+		int urgentHits,
+		int urgentParts,
+		int64 readOffset,
+		int64 urgentWindowTill) {
+	if (urgentParts <= 0) {
+		return true;
+	}
+	if (urgentHits >= urgentParts) {
+		return true;
+	}
+	return (readOffset >= 0)
+		&& (urgentWindowTill > 0)
+		&& (readOffset >= urgentWindowTill);
+}
+
+int64 SmartSeekBootstrapWaitMs(
+		int playbackBytesPerSecond,
+		int64 backgroundBufferMs) {
+	if (backgroundBufferMs <= 0) {
+		return 0;
+	}
+	const auto bootstrap = IsHighBitratePlaybackRate(playbackBytesPerSecond)
+		? kSmartSeekHighBitrateBootstrapWaitMs
+		: kSmartSeekUrgentTargetMs;
+	return std::min(backgroundBufferMs, bootstrap);
+}
+
+QString SmartPolicySelfCheck() {
+	const auto rate = AveragePlaybackBytesPerSecond(773795309, 636934);
+	if (rate < 1'100'000 || rate > 1'300'000) {
+		return QStringLiteral("playback-rate-range");
+	}
+	if (!IsHighBitratePlaybackRate(rate)) {
+		return QStringLiteral("high-bitrate-flag");
+	}
+	const auto buffer = SmartAdaptiveBufferMs(rate, 900000, 500, 50);
+	if (buffer < 6000 || buffer > 12000) {
+		return QStringLiteral("adaptive-buffer-range");
+	}
+	const auto parts = SmartPreloadPartsForBufferMs(
+		rate,
+		buffer,
+		128 * 1024,
+		8,
+		64);
+	if (parts < 16 || parts > 64) {
+		return QStringLiteral("preload-parts-range");
+	}
+	if (SmartSeekUrgentWindowReady(0, 20, 0, 1000)) {
+		return QStringLiteral("urgent-not-ready");
+	}
+	if (!SmartSeekUrgentWindowReady(20, 20, 0, 1000)) {
+		return QStringLiteral("urgent-hits-ready");
+	}
+	if (!SmartSeekUrgentWindowReady(5, 20, 1000, 1000)) {
+		return QStringLiteral("urgent-offset-ready");
+	}
+	if (SmartSeekBootstrapWaitMs(rate, buffer) != 4000) {
+		return QStringLiteral("bootstrap-wait-high");
+	}
+	if (SmartSeekBootstrapWaitMs(400 * 1024, buffer) != 2000) {
+		return QStringLiteral("bootstrap-wait-normal");
+	}
+	return QString();
 }
 
 } // namespace Media::Streaming

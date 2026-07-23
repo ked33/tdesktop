@@ -330,6 +330,9 @@ private:
 	PriorityQueue _loadingOffsets;
 	base::flat_set<int64> _seekCancellationOffsets;
 	base::flat_set<int64> _pinnedTailOffsets;
+	int _seekCancelLogQueued = 0;
+	int _seekCancelLogSentCompleted = 0;
+	crl::time _seekCancelLogLastTime = 0;
 
 	Slices _slices;
 
