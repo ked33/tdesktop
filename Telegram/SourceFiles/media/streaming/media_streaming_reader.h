@@ -234,6 +234,7 @@ private:
 
 	void cancelLoadInRange(uint32 from, uint32 till);
 	void cancelLoadOutsideWindow(uint32 windowStart, uint32 windowTill);
+	void syncSmartStreamingBufferPressure(crl::time now);
 	void consumePendingSeekPrefetch();
 	void consumePendingTailPrefetch();
 	void cancelStreamingLoads();
@@ -291,6 +292,7 @@ private:
 	std::atomic<int> _adaptiveLimitPercent = 100;
 	std::atomic<bool> _speedIsThrottled = false;
 	std::atomic<bool> _smartBufferPressure = false;
+	std::atomic<crl::time> _smartSeekRecoveryUntil = 0;
 	std::atomic<crl::time> _smartPreloadRecoveryUntil = 0;
 	std::atomic<int> _smartPreloadRecoveryLoggedPercent = 0;
 	std::atomic<int> _serverObservedWaitMs = 0;
