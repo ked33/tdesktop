@@ -524,9 +524,12 @@ QString SmartPolicySelfCheck() {
 		buffer,
 		128 * 1024,
 		8,
-		64);
-	if (parts < 16 || parts > 64) {
+		128);
+	if (parts < 16 || parts > 128) {
 		return QStringLiteral("preload-parts-range");
+	}
+	if (parts < 64) {
+		return QStringLiteral("high-bitrate-depth");
 	}
 	if (SmartSeekUrgentWindowReady(0, 20, 0, 1000)) {
 		return QStringLiteral("urgent-not-ready");

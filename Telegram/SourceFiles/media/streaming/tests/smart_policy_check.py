@@ -81,8 +81,9 @@ def test_formulas() -> None:
 	assert high(rate)
 	buf = adaptive(rate, 900000, 500, 50)
 	assert 6000 <= buf <= 12000, buf
-	p = parts_for(rate, buf)
-	assert 16 <= p <= 64, p
+	p = parts_for(rate, buf, mx=128)
+	assert 16 <= p <= 128, p
+	assert p >= 64, p
 	assert not urgent_ready(0, 20, 0, 1000)
 	assert urgent_ready(20, 20, 0, 1000)
 	assert urgent_ready(5, 20, 1000, 1000)
@@ -106,6 +107,22 @@ def test_source_structure() -> None:
 			"result.state == FillState::Success || remoteRequests > 0"
 			not in reader,
 			"removed early background flip on remoteRequests",
+		),
+		(
+			"wantNextPreload" in reader,
+			"cross-slice preload for steady buffer",
+		),
+		(
+			"kSmartSeekPressureLocalDuration" in reader,
+			"short pressure-local seek window",
+		),
+		(
+			"kSmartHighBitrateExcessCapacityRatio" in (
+				ROOT.parent.parent
+				/ "storage"
+				/ "download_manager_mtproto.cpp"
+			).read_text(encoding="utf-8"),
+			"high-bitrate excess capacity ratio",
 		),
 		(
 			"kSmartCancelLogMinInterval" in reader,
