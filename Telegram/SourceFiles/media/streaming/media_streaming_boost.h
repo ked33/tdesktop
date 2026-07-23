@@ -52,4 +52,27 @@ using BoostProfiles = std::array<BoostProfile, 7>;
 [[nodiscard]] bool IsHighBitratePlaybackRate(int bytesPerSecond);
 [[nodiscard]] bool IsHighBitrateVideo(int64 size, int64 duration);
 
+// Pure Smart policy helpers (ms / part counts). Safe for unit tests and
+// Reader; no session or settings dependency.
+[[nodiscard]] int64 SmartAdaptiveBufferMs(
+	int playbackBytesPerSecond,
+	int throughputBytesPerSecond,
+	int latencyMs,
+	int jitterMs);
+[[nodiscard]] int SmartPreloadPartsForBufferMs(
+	int playbackBytesPerSecond,
+	int64 bufferMs,
+	int partSize,
+	int minimumParts,
+	int maximumParts);
+[[nodiscard]] bool SmartSeekUrgentWindowReady(
+	int urgentHits,
+	int urgentParts,
+	int64 readOffset,
+	int64 urgentWindowTill);
+[[nodiscard]] int64 SmartSeekBootstrapWaitMs(
+	int playbackBytesPerSecond,
+	int64 backgroundBufferMs);
+[[nodiscard]] QString SmartPolicySelfCheck();
+
 } // namespace Media::Streaming
