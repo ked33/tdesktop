@@ -30,6 +30,7 @@ constexpr auto kSequentialOpenProbeSize = int64(2) * 1024 * 1024;
 constexpr auto kSequentialOpenAnalyzeDuration = int64(3) * AV_TIME_BASE;
 constexpr auto kSeekPrefetchBackAmount = int64(2) * 1024 * 1024;
 constexpr auto kSeekPrefetchAheadAmount = int64(8) * 1024 * 1024;
+constexpr auto kSeekPrefetchUrgentBackAmount = int64(256) * 1024;
 constexpr auto kMp4TopLevelAtomHeaderSize = 16;
 constexpr auto kMp4SeekMapMaximumMoovSize = int64(kMaxSingleReadAmount);
 constexpr auto kMp4SeekMapMaximumTopLevelAtoms = 64;
@@ -47,6 +48,8 @@ constexpr auto kMp4SeekMapMaximumTopLevelAtoms = 64;
 			format->iformat->name
 		).split(QChar(',')).contains(u"webm");
 }
+
+} // namespace
 
 struct Mp4Atom {
 	int offset = 0;
@@ -154,7 +157,23 @@ struct Mp4SeekPoint {
 struct Mp4SeekMapResolution {
 	std::optional<Mp4SeekPoint> point;
 	Mp4SeekMapDiagnostic diagnostic;
+	crl::time buildDuration = 0;
+	bool cacheHit = false;
+	bool logFailure = true;
 };
+
+class Mp4SeekMapCache final {
+public:
+	int64 fileSize = 0;
+	crl::time streamDuration = 0;
+	std::optional<Mp4SeekTrack> track;
+	Mp4SeekMapDiagnostic diagnostic;
+	bool ready = false;
+	bool failureLogged = false;
+
+};
+
+namespace {
 
 constexpr auto kMp4SeekTableStts = uint32(1) << 0;
 constexpr auto kMp4SeekTableStsc = uint32(1) << 1;
@@ -811,35 +830,100 @@ template <typename Stop>
 	return std::nullopt;
 }
 
+[[nodiscard]] bool CacheableMp4SeekMapFailure(
+		Mp4SeekMapFailure failure) {
+	switch (failure) {
+	case Mp4SeekMapFailure::None:
+	case Mp4SeekMapFailure::AtomHeaderReadFailed:
+	case Mp4SeekMapFailure::MoovReadFailed:
+		return false;
+	case Mp4SeekMapFailure::FormatUnsupported:
+	case Mp4SeekMapFailure::AtomHeaderInvalid:
+	case Mp4SeekMapFailure::AtomScanLimit:
+	case Mp4SeekMapFailure::MoovMissing:
+	case Mp4SeekMapFailure::MoovTooLarge:
+	case Mp4SeekMapFailure::MoovInvalid:
+	case Mp4SeekMapFailure::VideoTrackMissing:
+	case Mp4SeekMapFailure::VideoMetadataMissing:
+	case Mp4SeekMapFailure::SampleTableMissing:
+	case Mp4SeekMapFailure::CompactSampleSizesUnsupported:
+	case Mp4SeekMapFailure::SttsInvalid:
+	case Mp4SeekMapFailure::StscInvalid:
+	case Mp4SeekMapFailure::StszInvalid:
+	case Mp4SeekMapFailure::ChunkOffsetsInvalid:
+	case Mp4SeekMapFailure::StssInvalid:
+	case Mp4SeekMapFailure::TrackInvalid:
+	case Mp4SeekMapFailure::Fragmented:
+	case Mp4SeekMapFailure::TargetSampleInvalid:
+	case Mp4SeekMapFailure::SampleOffsetInvalid:
+	case Mp4SeekMapFailure::SampleOffsetOutOfRange:
+		return true;
+	}
+	Unexpected("Mp4SeekMapFailure value.");
+}
+
 [[nodiscard]] Mp4SeekMapResolution ResolveMp4SeekMap(
 		not_null<FileSource*> source,
 		const Stream &stream,
 		const std::atomic<bool> &interrupted,
+		not_null<Mp4SeekMapCache*> cache,
 		crl::time position) {
-	auto built = BuildMp4SeekTrack(source, stream, interrupted);
 	auto result = Mp4SeekMapResolution();
-	result.diagnostic = std::move(built.diagnostic);
-	if (!built.track) {
+	const auto fileSize = source->size();
+	const auto cacheMatches = cache->ready
+		&& cache->fileSize == fileSize
+		&& cache->streamDuration == stream.duration;
+	if (!cacheMatches && cache->ready) {
+		*cache = Mp4SeekMapCache();
+	}
+	if (cacheMatches) {
+		result.cacheHit = true;
+		result.diagnostic = cache->diagnostic;
+	} else {
+		const auto started = crl::now();
+		auto built = BuildMp4SeekTrack(source, stream, interrupted);
+		result.buildDuration = crl::now() - started;
+		result.diagnostic = built.diagnostic;
+		if (!interrupted.load()
+			&& (built.track
+				|| CacheableMp4SeekMapFailure(
+					built.diagnostic.failure))) {
+			cache->fileSize = fileSize;
+			cache->streamDuration = stream.duration;
+			cache->track = std::move(built.track);
+			cache->diagnostic = built.diagnostic;
+			cache->ready = true;
+			cache->failureLogged = false;
+		}
+	}
+	if (!cache->ready || !cache->track) {
+		if (cache->ready) {
+			result.logFailure = !cache->failureLogged;
+			cache->failureLogged = true;
+		}
 		return result;
 	}
-	const auto targetSample = FindTargetSample(*built.track, position);
+	const auto &track = *cache->track;
+	const auto failed = [&](Mp4SeekMapFailure failure) {
+		result.diagnostic.failure = failure;
+		result.logFailure = !cache->failureLogged;
+		cache->failureLogged = true;
+		return result;
+	};
+	const auto targetSample = FindTargetSample(track, position);
 	if (!targetSample) {
-		result.diagnostic.failure = Mp4SeekMapFailure::TargetSampleInvalid;
-		return result;
+		return failed(Mp4SeekMapFailure::TargetSampleInvalid);
 	}
-	const auto syncSample = FindSyncSample(*built.track, *targetSample);
-	const auto sampleOffset = ComputeSampleOffset(*built.track, syncSample);
+	const auto syncSample = FindSyncSample(track, *targetSample);
+	const auto sampleOffset = ComputeSampleOffset(track, syncSample);
 	if (!sampleOffset) {
-		result.diagnostic.failure = Mp4SeekMapFailure::SampleOffsetInvalid;
-		return result;
+		return failed(Mp4SeekMapFailure::SampleOffsetInvalid);
 	} else if (*sampleOffset >= uint64(source->size())
 		|| *sampleOffset > uint64(std::numeric_limits<int64>::max())) {
-		result.diagnostic.failure
-			= Mp4SeekMapFailure::SampleOffsetOutOfRange;
-		return result;
+		return failed(Mp4SeekMapFailure::SampleOffsetOutOfRange);
 	}
 	result.point = Mp4SeekPoint{
-		.duration = built.track->duration,
+		.duration = track.duration,
 		.targetSample = *targetSample,
 		.syncSample = syncSample,
 		.sampleOffset = int64(*sampleOffset),
@@ -911,7 +995,9 @@ void LogMp4SeekMapFailure(
 		not_null<AVFormatContext*> format,
 		int64 fileSize,
 		crl::time position,
-		const Mp4SeekMapDiagnostic &diagnostic) {
+		const Mp4SeekMapDiagnostic &diagnostic,
+		bool cacheHit,
+		crl::time buildDuration) {
 	const auto formatName = (format->iformat && format->iformat->name)
 		? QString::fromLatin1(format->iformat->name)
 		: u"unknown"_q;
@@ -924,7 +1010,8 @@ void LogMp4SeekMapFailure(
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File seek map unavailable "
 		"target=%1 reason=%2 format=%3 header=%4 file=%5 scan=%6 "
 		"atom=%7 atomSize=%8 moovOffset=%9 moovSize=%10 tail=%11 "
-		"fragmented=%12 tracks=%13 videoTracks=%14 tables=%15.")
+		"fragmented=%12 tracks=%13 videoTracks=%14 tables=%15 "
+		"cache=%16 mapMs=%17.")
 		.arg(qlonglong(position))
 		.arg(Mp4SeekMapFailureName(diagnostic.failure))
 		.arg(formatName)
@@ -939,7 +1026,9 @@ void LogMp4SeekMapFailure(
 		.arg(diagnostic.fragmented ? 1 : 0)
 		.arg(diagnostic.tracks)
 		.arg(diagnostic.videoTracks)
-		.arg(QString::number(diagnostic.tables, 16)));
+		.arg(QString::number(diagnostic.tables, 16))
+		.arg(cacheHit ? u"hit"_q : u"miss"_q)
+		.arg(qlonglong(buildDuration)));
 }
 
 [[nodiscard]] bool IsMp4LikeFormat(not_null<AVFormatContext*> format) {
@@ -954,9 +1043,11 @@ void LogMp4SeekMapFailure(
 
 File::Context::Context(
 	not_null<FileDelegate*> delegate,
-	not_null<FileSource*> source)
+	not_null<FileSource*> source,
+	not_null<Mp4SeekMapCache*> seekMapCache)
 : _delegate(delegate)
 , _source(source)
+, _seekMapCache(seekMapCache)
 , _size(source->size()) {
 }
 
@@ -982,18 +1073,22 @@ void File::Context::prefetchAroundOffset(
 	}
 	const auto start = std::max<int64>(
 		0,
-		offset - kSeekPrefetchBackAmount);
+		offset - (mapped ? kSeekPrefetchBackAmount : 0));
+	const auto urgentOffset = std::max<int64>(
+		0,
+		offset - (mapped ? kSeekPrefetchUrgentBackAmount : 0));
 	const auto amount = std::min<int64>(
 		_size - start,
 		kSeekPrefetchBackAmount + kSeekPrefetchAheadAmount);
-	_source->prefetch(start, amount);
+	_source->prefetch(start, amount, urgentOffset);
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File seek prefetch "
-		"target=%1 sourceOffset=%2 start=%3 amount=%4 mapped=%5 "
-		"source=%6.")
+		"target=%1 sourceOffset=%2 start=%3 amount=%4 urgent=%5 "
+		"mapped=%6 source=%7.")
 		.arg(qlonglong(position))
 		.arg(qlonglong(offset))
 		.arg(qlonglong(start))
 		.arg(qlonglong(amount))
+		.arg(qlonglong(urgentOffset))
 		.arg(mapped ? 1 : 0)
 		.arg(mapped ? u"map"_q : u"read"_q));
 }
@@ -1302,21 +1397,33 @@ void File::Context::seekToPosition(
 				.failure = Mp4SeekMapFailure::FormatUnsupported,
 				.headerSize = _source->headerSize(),
 			};
-			LogMp4SeekMapFailure(format, _size, position, diagnostic);
+			if (!_seekMapCache->failureLogged) {
+				LogMp4SeekMapFailure(
+					format,
+					_size,
+					position,
+					diagnostic,
+					false,
+					0);
+				_seekMapCache->failureLogged = true;
+			}
 			return false;
 		}
 		const auto resolved = ResolveMp4SeekMap(
 			_source,
 			stream,
 			_interrupted,
+			_seekMapCache,
 			position);
 		if (!resolved.point) {
-			if (!unroll()) {
+			if (!unroll() && resolved.logFailure) {
 				LogMp4SeekMapFailure(
 					format,
 					_size,
 					position,
-					resolved.diagnostic);
+					resolved.diagnostic,
+					resolved.cacheHit,
+					resolved.buildDuration);
 			}
 			return false;
 		}
@@ -1329,7 +1436,7 @@ void File::Context::seekToPosition(
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File seek map "
 			"target=%1 duration=%2 sample=%3 sync=%4 sampleOffset=%5 "
 			"adjustedOffset=%6 explicit=%7 moovOffset=%8 moovSize=%9 "
-			"tail=%10 fragmented=%11.")
+			"tail=%10 fragmented=%11 cache=%12 mapMs=%13.")
 			.arg(qlonglong(position))
 			.arg(qlonglong(point.duration))
 			.arg(point.targetSample)
@@ -1340,7 +1447,9 @@ void File::Context::seekToPosition(
 			.arg(qlonglong(resolved.diagnostic.moovOffset))
 			.arg(qulonglong(resolved.diagnostic.moovSize))
 			.arg(tailMoov ? 1 : 0)
-			.arg(resolved.diagnostic.fragmented ? 1 : 0));
+			.arg(resolved.diagnostic.fragmented ? 1 : 0)
+			.arg(resolved.cacheHit ? u"hit"_q : u"miss"_q)
+			.arg(qlonglong(resolved.buildDuration)));
 		if (!tryByteSeek(adjustedOffset, "byte-map")) {
 			return false;
 		}
@@ -1652,7 +1761,8 @@ void File::Context::stopStreamingAsync() {
 }
 
 File::File(std::shared_ptr<FileSource> source)
-: _source(std::move(source)) {
+: _source(std::move(source))
+, _seekMapCache(std::make_unique<Mp4SeekMapCache>()) {
 }
 
 File::File(std::shared_ptr<Reader> reader)
@@ -1666,7 +1776,7 @@ void File::start(not_null<FileDelegate*> delegate, StartOptions options) {
 	stop(true);
 
 	_source->startStreaming();
-	_context.emplace(delegate, _source.get());
+	_context.emplace(delegate, _source.get(), _seekMapCache.get());
 
 	_thread = std::thread([=, context = &*_context] {
 		crl::toggle_fp_exceptions(true);
@@ -1705,6 +1815,10 @@ void File::stop(bool stillActive) {
 
 bool File::isRemoteLoader() const {
 	return _source->isRemoteLoader();
+}
+
+bool File::smartStreamingEnabled() const {
+	return _source->smartStreamingEnabled();
 }
 
 crl::time File::smartStreamingRecoveryBuffer() const {

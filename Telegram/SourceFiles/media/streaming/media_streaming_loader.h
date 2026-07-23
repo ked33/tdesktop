@@ -18,6 +18,7 @@ namespace Media::Streaming {
 struct LoadedPart {
 	int64 offset = 0;
 	QByteArray bytes;
+	bool cancelled = false;
 
 	static constexpr auto kFailedOffset = int64(-1);
 
@@ -33,6 +34,9 @@ public:
 
 	virtual void load(int64 offset) = 0;
 	virtual void cancel(int64 offset) = 0;
+	virtual void cancelForSeek(int64 offset) {
+		cancel(offset);
+	}
 	virtual void resetPriorities() = 0;
 	virtual void setPriority(int priority) = 0;
 	virtual void stop() = 0;
@@ -80,6 +84,9 @@ public:
 	[[nodiscard]] bool empty() const;
 	[[nodiscard]] std::optional<int64> front() const;
 	[[nodiscard]] std::optional<int64> take();
+	[[nodiscard]] base::flat_set<int64> valuesInRange(
+		int64 from,
+		int64 till) const;
 	[[nodiscard]] base::flat_set<int64> takeInRange(int64 from, int64 till);
 	void clear();
 

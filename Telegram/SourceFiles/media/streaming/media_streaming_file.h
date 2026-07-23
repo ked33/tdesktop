@@ -20,6 +20,7 @@ namespace Media {
 namespace Streaming {
 
 class FileDelegate;
+class Mp4SeekMapCache;
 class Reader;
 
 struct StartOptions {
@@ -43,6 +44,7 @@ public:
 	void stop(bool stillActive = false);
 
 	[[nodiscard]] bool isRemoteLoader() const;
+	[[nodiscard]] bool smartStreamingEnabled() const;
 	[[nodiscard]] crl::time smartStreamingRecoveryBuffer() const;
 	void setLoaderPriority(int priority);
 	void setSmartStreamingBufferPressure(bool pressure);
@@ -57,7 +59,10 @@ public:
 private:
 	class Context final : public base::has_weak_ptr {
 	public:
-		Context(not_null<FileDelegate*> delegate, not_null<FileSource*> source);
+		Context(
+			not_null<FileDelegate*> delegate,
+			not_null<FileSource*> source,
+			not_null<Mp4SeekMapCache*> seekMapCache);
 		~Context();
 
 		void start(StartOptions options);
@@ -114,6 +119,7 @@ private:
 
 		const not_null<FileDelegate*> _delegate;
 		const not_null<FileSource*> _source;
+		const not_null<Mp4SeekMapCache*> _seekMapCache;
 
 		base::flat_map<int, std::vector<FFmpeg::Packet>> _queuedPackets;
 		int64 _offset = 0;
@@ -133,6 +139,7 @@ private:
 
 	std::optional<Context> _context;
 	std::shared_ptr<FileSource> _source;
+	std::unique_ptr<Mp4SeekMapCache> _seekMapCache;
 	std::thread _thread;
 
 };

@@ -100,6 +100,8 @@ struct WaitingForData {
 
 struct SpeedEstimate {
 	int bytesPerSecond = 0;
+	int latencyMs = 0;
+	int jitterMs = 0;
 	bool unreliable = false;
 };
 
