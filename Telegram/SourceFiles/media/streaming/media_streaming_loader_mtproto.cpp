@@ -118,6 +118,19 @@ void LoaderMtproto::cancel(int64 offset) {
 	});
 }
 
+void LoaderMtproto::cancelForSeek(int64 offset) {
+	crl::on_main(this, [=] {
+		if (haveSentRequestForOffset(offset)) {
+			return;
+		} else if (_requested.remove(offset)) {
+			_parts.fire({
+				.offset = offset,
+				.cancelled = true,
+			});
+		}
+	});
+}
+
 void LoaderMtproto::cancelForOffset(int64 offset) {
 	if (haveSentRequestForOffset(offset)) {
 		cancelRequestForOffset(offset);
@@ -298,6 +311,8 @@ void LoaderMtproto::checkStats() {
 	auto durationCountedTill = _stats.front().start;
 	auto duration = crl::time(0);
 	auto received = int64(0);
+	auto latencyTotal = int64(0);
+	auto latencyCount = 0;
 	for (const auto &entry : _stats) {
 		if (entry.start > durationCountedTill) {
 			durationCountedTill = entry.start;
@@ -309,14 +324,38 @@ void LoaderMtproto::checkStats() {
 		}
 		if (entry.end) {
 			received += Storage::kDownloadPartSize;
+			latencyTotal += std::max(entry.end - entry.start, crl::time(1));
+			++latencyCount;
 		}
 	}
 	if (duration) {
+		const auto latency = latencyCount
+			? crl::time(latencyTotal / latencyCount)
+			: crl::time(0);
+		auto jitterTotal = int64(0);
+		for (const auto &entry : _stats) {
+			if (entry.end) {
+				const auto sample = entry.end - entry.start;
+				jitterTotal += (sample >= latency)
+					? (sample - latency)
+					: (latency - sample);
+			}
+		}
 		_speedEstimate.fire({
 			.bytesPerSecond = int(std::clamp(
 				int64(received * 1000 / duration),
 				int64(0),
 				int64(64 * 1024 * 1024))),
+			.latencyMs = int(std::clamp(
+				latency,
+				crl::time(0),
+				crl::time(std::numeric_limits<int>::max()))),
+			.jitterMs = latencyCount
+				? int(std::clamp(
+					crl::time(jitterTotal / latencyCount),
+					crl::time(0),
+					crl::time(std::numeric_limits<int>::max())))
+				: 0,
 			.unreliable = (received < 3 * Storage::kDownloadPartSize),
 		});
 	}

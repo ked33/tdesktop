@@ -33,6 +33,10 @@ constexpr auto kWaitingShowDelay = crl::time(500);
 constexpr auto kGoodThumbQuality = 87;
 constexpr auto kSwitchQualityUpPreloadedThreshold = 4 * crl::time(1000);
 constexpr auto kSwitchQualityUpSpeedMultiplier = 1.2;
+constexpr auto kSwitchQualityDownBufferThreshold = 12 * crl::time(1000);
+constexpr auto kSwitchQualityDownRiskDuration = 3 * crl::time(1000);
+constexpr auto kSwitchQualityDownRequestCooldown = 30 * crl::time(1000);
+constexpr auto kSwitchQualityDownSpeedMultiplier = 1.15;
 
 } // namespace
 
@@ -222,12 +226,20 @@ void Document::setOtherQualities(std::vector<QualityDescriptor> value) {
 
 void Document::checkForQualitySwitch(SpeedEstimate estimate) {
 	_lastSpeedEstimate = estimate;
-	if (!checkSwitchToHigherQuality()) {
-		checkSwitchToLowerQuality();
+	if (!estimate.unreliable && estimate.bytesPerSecond > 0) {
+		constexpr auto kAlpha = 0.35;
+		_qualityThroughputEma = _qualityThroughputEma
+			? (_qualityThroughputEma * (1. - kAlpha))
+				+ (double(estimate.bytesPerSecond) * kAlpha)
+			: double(estimate.bytesPerSecond);
+	}
+	if (!checkSwitchToLowerQuality()) {
+		checkSwitchToHigherQuality();
 	}
 }
 
 bool Document::checkSwitchToHigherQuality() {
+	const auto now = crl::now();
 	if (_otherQualities.empty()
 		|| (_info.video.state.duration == kTimeUnknown)
 		|| (_info.video.state.duration == kDurationUnavailable)
@@ -235,6 +247,10 @@ bool Document::checkSwitchToHigherQuality() {
 		|| (_info.video.state.receivedTill == kTimeUnknown)
 		|| !_lastSpeedEstimate.bytesPerSecond
 		|| _lastSpeedEstimate.unreliable
+		|| _qualityRiskSince
+		|| (_lastQualitySwitchRequest
+			&& now < _lastQualitySwitchRequest
+				+ kSwitchQualityDownRequestCooldown)
 		|| (_info.video.state.receivedTill
 			< std::min(
 				_info.video.state.duration,
@@ -248,39 +264,137 @@ bool Document::checkSwitchToHigherQuality() {
 	const auto duration = _info.video.state.duration / 1000.;
 	const auto speed = _player.speed();
 	const auto multiplier = speed * kSwitchQualityUpSpeedMultiplier;
+	const auto latency = std::max(_lastSpeedEstimate.latencyMs, 1);
+	const auto jitterRatio = std::clamp(
+		double(_lastSpeedEstimate.jitterMs) / latency,
+		0.,
+		1.);
+	const auto available = _qualityThroughputEma
+		? (_qualityThroughputEma * (0.85 - 0.2 * jitterRatio))
+		: double(_lastSpeedEstimate.bytesPerSecond);
 	for (const auto &descriptor : _otherQualities) {
 		const auto perSecond = descriptor.sizeInBytes / duration;
 		if (descriptor.sizeInBytes > to.sizeInBytes
-			&& _lastSpeedEstimate.bytesPerSecond >= perSecond * multiplier) {
+			&& available >= perSecond * multiplier) {
 			to = descriptor;
 		}
 	}
 	if (!to.height) {
 		return false;
 	}
+	_lastQualitySwitchRequest = now;
 	_switchQualityRequests.fire_copy(to.height);
 	return true;
 }
 
 bool Document::checkSwitchToLowerQuality() {
 	if (_otherQualities.empty()
-		|| !_waiting
-		|| !_radial.animating()
 		|| !_lastSpeedEstimate.bytesPerSecond) {
 		return false;
 	}
 	const auto size = _player.fileSize();
 	Assert(size >= 0 && size <= std::numeric_limits<uint32>::max());
+	const auto waiting = _waiting && _radial.animating();
+	const auto &state = _info.video.state;
+	const auto predictive = [&] {
+		if (waiting
+			|| !_player.smartStreamingEnabled()
+			|| !_document
+			|| _document->mimeString() != u"video/mp4"_q
+			|| _lastSpeedEstimate.unreliable
+			|| !_qualityThroughputEma
+			|| state.duration <= 1
+			|| state.duration == kDurationUnavailable
+			|| state.position == kTimeUnknown
+			|| state.receivedTill == kTimeUnknown) {
+			return false;
+		}
+		const auto duration = state.duration / 1000.;
+		const auto currentRate = double(size) / duration * _player.speed();
+		const auto latency = std::max(_lastSpeedEstimate.latencyMs, 1);
+		const auto jitterRatio = std::clamp(
+			double(_lastSpeedEstimate.jitterMs) / latency,
+			0.,
+			1.);
+		const auto safety = 0.85 - 0.2 * jitterRatio;
+		const auto safeThroughput = _qualityThroughputEma * safety;
+		const auto buffered = std::max(
+			state.receivedTill - state.position,
+			crl::time(0));
+		return safeThroughput
+			< currentRate * kSwitchQualityDownSpeedMultiplier
+			&& buffered <= kSwitchQualityDownBufferThreshold;
+	}();
+	const auto now = crl::now();
+	if (!waiting && !predictive) {
+		_qualityRiskSince = 0;
+		return false;
+	} else if (predictive && !_qualityRiskSince) {
+		_qualityRiskSince = now;
+		return false;
+	} else if (predictive
+		&& now < _qualityRiskSince + kSwitchQualityDownRiskDuration) {
+		return false;
+	} else if (predictive
+		&& _lastQualitySwitchRequest
+		&& now < _lastQualitySwitchRequest
+			+ kSwitchQualityDownRequestCooldown) {
+		return false;
+	}
+	const auto duration = (state.duration > 1
+		&& state.duration != kDurationUnavailable)
+		? (state.duration / 1000.)
+		: 0.;
+	const auto latency = std::max(_lastSpeedEstimate.latencyMs, 1);
+	const auto jitterRatio = std::clamp(
+		double(_lastSpeedEstimate.jitterMs) / latency,
+		0.,
+		1.);
+	const auto safeThroughput = _qualityThroughputEma
+		* (0.85 - 0.2 * jitterRatio);
 	auto to = QualityDescriptor();
+	auto lowest = QualityDescriptor();
 	for (const auto &descriptor : _otherQualities) {
-		if (descriptor.sizeInBytes < size
-			&& descriptor.sizeInBytes > to.sizeInBytes) {
+		if (!descriptor.mp4 || descriptor.sizeInBytes >= size) {
+			continue;
+		}
+		if (!lowest.height
+			|| descriptor.sizeInBytes < lowest.sizeInBytes) {
+			lowest = descriptor;
+		}
+		const auto sustainable = waiting
+			|| !duration
+			|| (double(descriptor.sizeInBytes) / duration
+				* _player.speed() * kSwitchQualityDownSpeedMultiplier
+				<= safeThroughput);
+		if (sustainable && descriptor.sizeInBytes > to.sizeInBytes) {
 			to = descriptor;
 		}
 	}
 	if (!to.height) {
+		to = lowest;
+	}
+	if (!to.height) {
 		return false;
 	}
+	_lastQualitySwitchRequest = now;
+	_qualityRiskSince = 0;
+	const auto buffered = (state.position != kTimeUnknown
+		&& state.receivedTill != kTimeUnknown)
+		? std::max(state.receivedTill - state.position, crl::time(0))
+		: crl::time(0);
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: quality downgrade "
+		"reason=%1 currentSize=%2 targetSize=%3 targetHeight=%4 "
+		"throughput=%5 safe=%6 latency=%7 jitter=%8 bufferMs=%9.")
+		.arg(waiting ? u"waiting"_q : u"predicted"_q)
+		.arg(qlonglong(size))
+		.arg(to.sizeInBytes)
+		.arg(to.height)
+		.arg(_lastSpeedEstimate.bytesPerSecond)
+		.arg(int(safeThroughput))
+		.arg(_lastSpeedEstimate.latencyMs)
+		.arg(_lastSpeedEstimate.jitterMs)
+		.arg(qlonglong(buffered)));
 	_switchQualityRequests.fire_copy(to.height);
 	return true;
 }

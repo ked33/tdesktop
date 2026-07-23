@@ -37,7 +37,10 @@ public:
 		int64 offset,
 		bytes::span buffer,
 		not_null<crl::semaphore*> notify) = 0;
-	virtual void prefetch(int64 offset, int64 amount) {
+	virtual void prefetch(
+		int64 offset,
+		int64 amount,
+		int64 urgentOffset) {
 	}
 	[[nodiscard]] virtual std::optional<Error> streamingError() const = 0;
 	virtual void headerDone() = 0;

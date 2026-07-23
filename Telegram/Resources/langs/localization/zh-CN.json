@@ -299,6 +299,7 @@
     "lng_context_details_quality": "清晰度",
     "lng_context_details_pack_owner": "包作者",
     "lng_high_bitrate_video_notice": "此视频码率较高，加载可能比较缓慢，请稍等",
+    "lng_video_quality_auto_lowered": "网络吞吐不足，已自动降低视频清晰度以保持流畅播放",
 
     "lng_context_stream_in_mpv": "mpv 播放",
     "lng_context_stream_in_mpv_not_found": "未在 PATH 中找到 mpv。",

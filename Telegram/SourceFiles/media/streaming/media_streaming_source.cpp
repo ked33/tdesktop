@@ -51,8 +51,11 @@ public:
 		return FillState::Failed;
 	}
 
-	void prefetch(int64 offset, int64 amount) override {
-		_reader->prefetch(offset, amount);
+	void prefetch(
+			int64 offset,
+			int64 amount,
+			int64 urgentOffset) override {
+		_reader->prefetch(offset, amount, urgentOffset);
 	}
 
 	[[nodiscard]] std::optional<Error> streamingError() const override {

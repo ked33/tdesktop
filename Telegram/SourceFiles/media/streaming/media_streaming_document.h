@@ -23,6 +23,7 @@ class Loader;
 struct QualityDescriptor {
 	uint32 sizeInBytes = 0;
 	uint32 height = 0;
+	bool mp4 = false;
 };
 
 class Document {
@@ -105,6 +106,9 @@ private:
 	std::vector<QualityDescriptor> _otherQualities;
 	rpl::event_stream<int> _switchQualityRequests;
 	SpeedEstimate _lastSpeedEstimate;
+	double _qualityThroughputEma = 0.;
+	crl::time _qualityRiskSince = 0;
+	crl::time _lastQualitySwitchRequest = 0;
 	bool _waiting = false;
 
 };

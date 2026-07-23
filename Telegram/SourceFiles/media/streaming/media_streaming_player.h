@@ -63,6 +63,7 @@ public:
 	[[nodiscard]] rpl::producer<bool> fullInCache() const;
 
 	[[nodiscard]] int64 fileSize() const;
+	[[nodiscard]] bool smartStreamingEnabled() const;
 	[[nodiscard]] QSize videoSize() const;
 	[[nodiscard]] QImage frame(
 		const FrameRequest &request,

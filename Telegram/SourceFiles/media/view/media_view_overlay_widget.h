@@ -744,6 +744,8 @@ private:
 	int _streamedCreated = 0;
 	bool _streamedQualityChangeFinished = false;
 	bool _showAsPip = false;
+	crl::time _automaticQualitySwitchAllowedAt = 0;
+	bool _automaticQualityToastShown = false;
 	bool _highBitrateToastShown = false;
 
 	Qt::Orientations _flip;
