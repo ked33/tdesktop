@@ -41,6 +41,10 @@ constexpr auto kSmartPressureDuration = 3 * crl::time(1000);
 constexpr auto kSmartSeekFreezeDuration = 15 * crl::time(1000);
 constexpr auto kSmartProbeDuration = 15 * crl::time(1000);
 constexpr auto kSmartExcessCapacityRatio = 2.25;
+// High-bitrate (~1MB/s+) streams need more headroom before cutting
+// concurrency; brief catch-up bursts otherwise thrash 9↔8 and drain buffer.
+constexpr auto kSmartHighBitrateExcessCapacityRatio = 3.5;
+constexpr auto kSmartPostPressureHoldDuration = 20 * crl::time(1000);
 constexpr auto kSmartHighLatencyCapacityRatio = 1.5;
 constexpr auto kSmartHighLatencyThreshold = 3 * crl::time(1000);
 constexpr auto kSmartProbeMaximumLatency = 4 * crl::time(1000);
@@ -420,14 +424,27 @@ void DownloadManagerMtproto::evaluateSmartRequestLimit(
 	}
 	const auto playback = double(demand.playbackBytesPerSecond);
 	const auto &profile = SmartProfile();
+	if (demand.bufferPressure) {
+		state.lastPressureAt = now;
+	}
 	if (!demand.bufferPressure) {
 		if (now < demand.seekUntil) {
 			return;
 		}
+		// After pressure clears, hold concurrency so high-bitrate catch-up
+		// is not immediately undone by a single high-throughput sample.
+		if (state.lastPressureAt
+			&& now < state.lastPressureAt + kSmartPostPressureHoldDuration) {
+			return;
+		}
+		const auto excessRatio
+			= Media::Streaming::IsHighBitratePlaybackRate(
+				demand.playbackBytesPerSecond)
+			? kSmartHighBitrateExcessCapacityRatio
+			: kSmartExcessCapacityRatio;
 		if (state.target > profile.smartCapacityMinimumRequestLimit
 			&& playback > 0.
-			&& state.throughputEma
-				> playback * kSmartExcessCapacityRatio) {
+			&& state.throughputEma > playback * excessRatio) {
 			updateSmartRequestLimit(
 				dcId,
 				state.target - 1,

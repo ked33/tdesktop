@@ -38,6 +38,12 @@ constexpr auto kSmartPreloadRecoveryTaperPercent = 75;
 constexpr auto kSmartSeekPrefetchTargetDuration = crl::time(8000);
 constexpr auto kSmartSeekUrgentTargetDuration = crl::time(2000);
 constexpr auto kSmartSeekLocalRecoveryDuration = 15 * crl::time(1000);
+// Pressure stays local only while the urgent seek window fills. Long freezes
+// block DC catch-up after first frame on high-bitrate streams.
+constexpr auto kSmartSeekPressureLocalDuration = 4 * crl::time(1000);
+// Up to ~2 slices of 128KB parts (16MB) so high-bitrate streams can bank
+// more than the current-slice remainder when throughput briefly exceeds rate.
+constexpr auto kSmartMaxPreloadParts = 128;
 constexpr auto kSmartServerRecoveryMinimumDuration = 4 * crl::time(1000);
 constexpr auto kSmartServerRecoveryPenaltyStep = 2 * crl::time(1000);
 constexpr auto kSmartServerRecoveryWaitMargin = 2 * crl::time(1000);
@@ -659,9 +665,9 @@ auto Reader::Slices::fill(
 	auto result = FillResult();
 	const auto till = uint32(offset + buffer.size());
 	const auto fromSlice = offset / kInSlice;
-	const auto tillSlice = (till + kInSlice - 1) / kInSlice;
-	Assert((fromSlice + 1 == tillSlice || fromSlice + 2 == tillSlice)
-		&& tillSlice <= _data.size());
+	const auto readTillSlice = (till + kInSlice - 1) / kInSlice;
+	Assert((fromSlice + 1 == readTillSlice || fromSlice + 2 == readTillSlice)
+		&& readTillSlice <= _data.size());
 
 	const auto cacheNotLoaded = [&](int sliceIndex) {
 		return (_headerMode != HeaderMode::NoCache)
@@ -674,20 +680,22 @@ auto Reader::Slices::fill(
 		if (cacheNotLoaded(sliceIndex)) {
 			return;
 		}
-		for (const auto offset : prepared.offsetsFromLoader.values()) {
-			const auto full = offset + sliceIndex * kInSlice;
-			if (offset < kInSlice && full < _size) {
+		for (const auto partOffset : prepared.offsetsFromLoader.values()) {
+			const auto full = partOffset + sliceIndex * kInSlice;
+			if (partOffset < kInSlice && full < _size) {
 				result.offsetsFromLoader.add(full);
 			}
 		}
 	};
-	const auto handleReadFromCache = [&](int sliceIndex) {
+	const auto handleReadFromCache = [&](int sliceIndex, bool block) {
 		if (cacheNotLoaded(sliceIndex)) {
 			if (!(_data[sliceIndex].flags & Flag::LoadingFromCache)) {
 				_data[sliceIndex].flags |= Flag::LoadingFromCache;
 				result.sliceNumbersFromCache.add(sliceIndex + 1);
 			}
-			result.state = FillState::WaitingCache;
+			if (block) {
+				result.state = FillState::WaitingCache;
+			}
 		}
 	};
 	const auto addToHeader = [&](int slice, auto parts) {
@@ -707,28 +715,46 @@ auto Reader::Slices::fill(
 	const auto secondTill = (till > (fromSlice + 1) * kInSlice)
 		? (till - (fromSlice + 1) * kInSlice)
 		: 0;
+	// When preload needs more than the remainder of the current 8MB slice,
+	// also schedule the next slice. Read readiness still only depends on
+	// slices covered by the actual buffer span.
+	const auto remainingFirstParts = std::max(
+		1,
+		int((kInSlice - firstFrom + kPartSize - 1) / kPartSize));
+	const auto wantNextPreload = (preloadParts > remainingFirstParts)
+		&& (fromSlice + 1 < uint32(_data.size()));
+	const auto useSecondSlice = (readTillSlice > fromSlice + 1)
+		|| wantNextPreload;
 	const auto first = _data[fromSlice].prepareFill(
 		firstFrom,
 		firstTill,
 		preloadParts,
 		requestsLimit);
-	const auto second = (fromSlice + 1 < tillSlice)
+	const auto second = useSecondSlice
 		? _data[fromSlice + 1].prepareFill(
 			secondFrom,
+			// till=0 still issues forward preload requests inside the slice.
 			secondTill,
 			preloadParts,
 			requestsLimit)
 		: Slice::PrepareFillResult();
 	handlePrepareResult(fromSlice, first);
-	if (fromSlice + 1 < tillSlice) {
-		handlePrepareResult(fromSlice + 1, second);
+	if (useSecondSlice) {
+		if (cacheNotLoaded(fromSlice + 1)) {
+			// Prefetch-only next slice must not block current-frame reads.
+			handleReadFromCache(fromSlice + 1, secondTill > 0);
+		} else {
+			handlePrepareResult(fromSlice + 1, second);
+		}
 	}
-	if (first.ready && second.ready) {
+	const auto readReady = first.ready
+		&& (secondTill == 0 || second.ready);
+	if (readReady) {
 		markSliceUsed(fromSlice);
 		auto &&list = ranges::make_subrange(first.start, first.finish);
 		CopyLoaded(buffer, list, firstFrom, firstTill);
 		addToHeader(fromSlice, list);
-		if (fromSlice + 1 < tillSlice) {
+		if (secondTill > 0) {
 			markSliceUsed(fromSlice + 1);
 			auto &&list = ranges::make_subrange(second.start, second.finish);
 			CopyLoaded(
@@ -741,9 +767,9 @@ auto Reader::Slices::fill(
 		result.toCache = serializeAndUnloadUnused();
 		result.state = FillState::Success;
 	} else {
-		handleReadFromCache(fromSlice);
-		if (fromSlice + 1 < tillSlice) {
-			handleReadFromCache(fromSlice + 1);
+		handleReadFromCache(fromSlice, true);
+		if (secondTill > 0) {
+			handleReadFromCache(fromSlice + 1, true);
 		}
 	}
 	return result;
@@ -1092,7 +1118,10 @@ Reader::Reader(
 			|| estimate.bytesPerSecond <= 0) {
 			return;
 		}
-		if (smartStreamingEnabled()) {
+		const auto seekGrace = smartStreamingEnabled()
+			&& (crl::now() < _smartSeekRecoveryUntil.load(
+				std::memory_order_relaxed));
+		if (smartStreamingEnabled() && !seekGrace) {
 			const auto throughput = UpdateIntegerEma(
 				_streamThroughputBytesPerSecond.load(
 					std::memory_order_relaxed),
@@ -1134,8 +1163,9 @@ Reader::Reader(
 		}
 		if (DownloadBoostLevel() == 6
 			&& !_premiumSession
-			&& crl::now() < _serverRecoveryUntil.load(
-				std::memory_order_relaxed)) {
+			&& (crl::now() < _serverRecoveryUntil.load(
+					std::memory_order_relaxed)
+				|| seekGrace)) {
 			return;
 		}
 		constexpr auto kAlpha = 0.4;
@@ -1295,22 +1325,24 @@ void Reader::syncSmartStreamingBufferPressure(crl::time now) {
 		const auto smart = smartStreamingEnabled();
 		const auto playbackReady = !smart
 			|| (_loader->smartStreamingPlaybackRate() > 0);
+		const auto pressureLocalUntil = _smartSeekPressureLocalUntil.load(
+			std::memory_order_acquire);
 		const auto forwarded = pressure
 			&& playbackReady
-			&& (!smart || now >= seekRecoveryUntil);
+			&& (!smart || now >= pressureLocalUntil);
 		_loader->setSmartStreamingBufferPressure(forwarded);
 
 		const auto currentNow = crl::now();
 		const auto currentPressure = _smartBufferPressure.load(
 			std::memory_order_acquire);
-		const auto currentSeekRecoveryUntil = _smartSeekRecoveryUntil.load(
-			std::memory_order_acquire);
+		const auto currentPressureLocalUntil
+			= _smartSeekPressureLocalUntil.load(std::memory_order_acquire);
 		const auto currentSmart = smartStreamingEnabled();
 		const auto currentPlaybackReady = !currentSmart
 			|| (_loader->smartStreamingPlaybackRate() > 0);
 		const auto currentForwarded = currentPressure
 			&& currentPlaybackReady
-			&& (!currentSmart || currentNow >= currentSeekRecoveryUntil);
+			&& (!currentSmart || currentNow >= currentPressureLocalUntil);
 		if (currentForwarded == forwarded) {
 			return;
 		}
@@ -1333,11 +1365,11 @@ void Reader::setSmartStreamingBufferPressure(bool pressure) {
 			now + kSmartPreloadRecoveryDuration,
 			std::memory_order_release);
 	}
-	const auto seekRecoveryUntil = _smartSeekRecoveryUntil.load(
+	const auto pressureLocalUntil = _smartSeekPressureLocalUntil.load(
 		std::memory_order_acquire);
 	const auto localRecovery = pressure
 		&& smartStreamingEnabled()
-		&& (now < seekRecoveryUntil);
+		&& (now < pressureLocalUntil);
 	syncSmartStreamingBufferPressure(now);
 	if (previous != pressure) {
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Smart pressure "
@@ -1349,7 +1381,7 @@ void Reader::setSmartStreamingBufferPressure(bool pressure) {
 			.arg(_serverObservedWaitMs.load(std::memory_order_relaxed))
 			.arg(qlonglong(recoveryBuffer))
 			.arg(qlonglong(std::max(
-				seekRecoveryUntil - now,
+				pressureLocalUntil - now,
 				crl::time(0)))));
 	}
 }
@@ -1366,8 +1398,13 @@ void Reader::notifySmartStreamingSeek() {
 	const auto now = crl::now();
 	if (smartStreamingEnabled()) {
 		const auto recoveryUntil = now + kSmartSeekLocalRecoveryDuration;
+		const auto pressureLocalUntil = now
+			+ kSmartSeekPressureLocalDuration;
 		_smartSeekRecoveryUntil.store(
 			recoveryUntil,
+			std::memory_order_release);
+		_smartSeekPressureLocalUntil.store(
+			pressureLocalUntil,
 			std::memory_order_release);
 		// Drop Throttle state caused by seek-cancel throughput dips.
 		_speedState = SpeedState::Normal;
@@ -1378,8 +1415,9 @@ void Reader::notifySmartStreamingSeek() {
 		_speedIsThrottled.store(false, std::memory_order_relaxed);
 		syncSmartStreamingBufferPressure(now);
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Smart seek recovery "
-			"localMs=%1 playback=%2 bufferMs=%3.")
+			"localMs=%1 pressureLocalMs=%2 playback=%3 bufferMs=%4.")
 			.arg(qlonglong(recoveryUntil - now))
+			.arg(qlonglong(pressureLocalUntil - now))
 			.arg(_loader->smartStreamingPlaybackRate())
 			.arg(qlonglong(smartStreamingRecoveryBuffer())));
 	}
@@ -1422,6 +1460,7 @@ void Reader::stopStreaming(bool stillActive) {
 		_seekCancelLogLastTime = 0;
 		_smartPreloadRecoveryUntil.store(0, std::memory_order_release);
 		_smartSeekRecoveryUntil.store(0, std::memory_order_release);
+		_smartSeekPressureLocalUntil.store(0, std::memory_order_release);
 		_smartPreloadRecoveryLoggedPercent.store(
 			0,
 			std::memory_order_relaxed);
@@ -1996,11 +2035,18 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	const auto preloadRecoveryRemaining = std::max(
 		preloadRecoveryUntil - now,
 		crl::time(0));
+	const auto streamThroughput = _streamThroughputBytesPerSecond.load(
+		std::memory_order_relaxed);
+	const auto underPlayback = smartNonPremium
+		&& smartPlaybackRate > 0
+		&& streamThroughput > 0
+		&& streamThroughput < smartPlaybackRate;
 	const auto recoveryPreloadPercent = [&] {
 		if (!smartNonPremium) {
 			return 0;
 		}
 		if (bufferPressure
+			|| underPlayback
 			|| preloadRecoveryRemaining
 				> kSmartPreloadRecoveryTaperDuration) {
 			return kSmartPreloadRecoveryFullPercent;
@@ -2044,13 +2090,16 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		&& seekPrefetchWindowTill > seekPrefetchWindowStart
 		&& int64(offset) >= seekPrefetchWindowStart
 		&& int64(offset) < seekPrefetchWindowTill;
+	const auto smartPreloadCap = IsHighBitratePlaybackRate(smartPlaybackRate)
+		? kSmartMaxPreloadParts
+		: kPartsInSlice;
 	const auto smartTargetPreloadParts = smartNonPremium
 		? SmartPreloadPartsForBufferMs(
 			smartPlaybackRate,
 			recoveryBuffer,
 			kPartSize,
 			profile.smartMinimumPreload,
-			kPartsInSlice)
+			smartPreloadCap)
 		: 0;
 	const auto seekPrefetchTill = _seekPrefetchBackgroundActive
 		? seekPrefetchWindowTill
@@ -2061,7 +2110,7 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		? int(std::min<int64>(
 			(seekPrefetchTill - int64(offset) + kPartSize - 1)
 				/ kPartSize,
-			kPartsInSlice))
+			smartPreloadCap))
 		: 0;
 	// Steady bitrate floor: keep adaptive/recovery depth from collapsing
 	// under the parts needed for recoveryBuffer, even when recovery
@@ -2083,10 +2132,13 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	const auto preloadPercent = std::max(
 		adaptivePreloadPercent,
 		recoveryPreloadPercent);
+	const auto preloadCeiling = smartNonPremium
+		? smartPreloadCap
+		: int(kLoadFromRemoteMax) * 2;
 	auto preloadParts = std::clamp(
 		(preloadBase * preloadPercent) / 100,
 		preloadMinimum,
-		int(kLoadFromRemoteMax) * 2);
+		preloadCeiling);
 	preloadParts = std::max(preloadParts, localRecoveryPreloadParts);
 	if (serverLimited) {
 		preloadParts = std::min(
@@ -2107,16 +2159,20 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		? double(smartPlaybackRate)
 		: _consumptionBytesPerSec;
 	if (boost > 0 && playbackBytesPerSecond > 0.0) {
-		constexpr auto kTargetSecondsAhead = 30.0;
+		const auto targetSecondsAhead = smartNonPremium ? 20.0 : 30.0;
 		const auto neededBytes = playbackBytesPerSecond
-			* kTargetSecondsAhead;
+			* targetSecondsAhead;
 		const auto neededParts = int(std::min<double>(
 			(neededBytes + double(kPartSize - 1)) / double(kPartSize),
-			double(int(kLoadFromRemoteMax) * 2)));
+			double(preloadCeiling)));
+		// Never clamp below the bitrate floor while Smart is catching up.
+		const auto floorParts = std::max(
+			preloadMinimum,
+			localRecoveryPreloadParts);
 		preloadParts = std::clamp(
 			preloadParts,
-			preloadMinimum,
-			std::max(preloadMinimum, neededParts));
+			floorParts,
+			std::max(floorParts, neededParts));
 	}
 	auto requestsLimit = std::clamp(
 		(limitBase * _adaptiveLimitPercent.load(
