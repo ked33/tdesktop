@@ -53,6 +53,8 @@ constexpr auto kSmartSeekPrefetchMaximum = int64(16) * 1024 * 1024;
 constexpr auto kSmartSeekUrgentMinimum = int64(2) * 1024 * 1024;
 constexpr auto kSmartSeekUrgentMaximum = int64(4) * 1024 * 1024;
 constexpr auto kSmartCancelLogMinInterval = crl::time(1000);
+// Sparse Smart diagnostics: state transitions + at most one snapshot / interval.
+constexpr auto kSmartCatchupLogMinInterval = 2 * crl::time(1000);
 // After seek grace, require this much sustained low speed before Throttle
 // (Smart non-Premium never uses Throttle; this guards other boost levels).
 constexpr auto kSmartThrottleConfirmSamples = 3;
@@ -1470,6 +1472,11 @@ void Reader::stopStreaming(bool stillActive) {
 		_seekCancelLogQueued = 0;
 		_seekCancelLogSentCompleted = 0;
 		_seekCancelLogLastTime = 0;
+		_smartCatchupLogged = false;
+		_smartUnderPlaybackSkipLogged = false;
+		_smartCatchupLogLastTime = 0;
+		_smartCatchupLogPreload = -1;
+		_smartCatchupLogRequests = -1;
 		_smartPreloadRecoveryUntil.store(0, std::memory_order_release);
 		_smartSeekRecoveryUntil.store(0, std::memory_order_release);
 		_smartSeekPressureLocalUntil.store(0, std::memory_order_release);
@@ -2252,6 +2259,39 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 			.arg(seekPrefetchParts)
 			.arg(seekLocalRecovery ? 1 : 0));
 	}
+	// Sparse catch-up snapshot: transitions or ≥2s while still catching up.
+	if (smartNonPremium) {
+		const auto catchUp = underPlayback || bufferPressure;
+		const auto due = (catchUp != _smartCatchupLogged)
+			|| (catchUp
+				&& (now >= _smartCatchupLogLastTime
+					+ kSmartCatchupLogMinInterval)
+				&& (preloadParts != _smartCatchupLogPreload
+					|| requestsLimit != _smartCatchupLogRequests));
+		if (due) {
+			_smartCatchupLogged = catchUp;
+			_smartCatchupLogLastTime = now;
+			_smartCatchupLogPreload = preloadParts;
+			_smartCatchupLogRequests = requestsLimit;
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Smart catch-up "
+				"active=%1 underPlayback=%2 pressure=%3 seekLocal=%4 "
+				"throughput=%5 playback=%6 preload=%7 requests=%8 "
+				"targetParts=%9 windowTill=%10 loading=%11 "
+				"serverPhase=%12.")
+				.arg(catchUp ? 1 : 0)
+				.arg(underPlayback ? 1 : 0)
+				.arg(bufferPressure ? 1 : 0)
+				.arg(seekLocalRecovery ? 1 : 0)
+				.arg(streamThroughput)
+				.arg(smartPlaybackRate)
+				.arg(preloadParts)
+				.arg(requestsLimit)
+				.arg(smartTargetPreloadParts)
+				.arg(qlonglong(_seekPrefetchWindowTill))
+				.arg(_loadingOffsets.empty() ? 0 : 1)
+				.arg(serverPhase));
+		}
+	}
 	const auto serverRequests = [&] {
 		if (serverLimited || !smartNonPremium) {
 			return 0;
@@ -2448,12 +2488,24 @@ void Reader::cancelLoadOutsideWindow(
 	// - still inside seek recovery (old parts must yield to the new position).
 	// bufferPressure alone used to skip cancel and made frequent seeks worse.
 	if (!force && underPlayback && !seekRecovery) {
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader cancel outside window "
-			"skipped by under-playback start=%1 till=%2 boost=%3.")
-			.arg(qulonglong(windowStart))
-			.arg(qulonglong(windowTill))
-			.arg(DownloadBoostLevel()));
+		if (!_smartUnderPlaybackSkipLogged) {
+			_smartUnderPlaybackSkipLogged = true;
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader cancel outside "
+				"window skipped by under-playback start=%1 till=%2 "
+				"throughput=%3 playback=%4 boost=%5.")
+				.arg(qulonglong(windowStart))
+				.arg(qulonglong(windowTill))
+				.arg(_streamThroughputBytesPerSecond.load(
+					std::memory_order_relaxed))
+				.arg(_loader->smartStreamingPlaybackRate())
+				.arg(DownloadBoostLevel()));
+		}
 		return;
+	}
+	if (underPlayback && (force || seekRecovery)) {
+		_smartUnderPlaybackSkipLogged = false;
+	} else if (!underPlayback) {
+		_smartUnderPlaybackSkipLogged = false;
 	}
 	if (!force
 		&& !preserveSent
@@ -2507,13 +2559,29 @@ void Reader::cancelLoadOutsideWindow(
 		}
 	}
 	if (cancelled || selective || pinned) {
-		VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader cancel outside window start=%1 till=%2 cancelled=%3 selective=%4 pinned=%5 boost=%6.")
-			.arg(qulonglong(windowStart))
-			.arg(qulonglong(windowTill))
-			.arg(cancelled)
-			.arg(selective)
-			.arg(pinned)
-			.arg(DownloadBoostLevel()));
+		// Force path is rare (new seek window / jump); keep one DEBUG line.
+		// Steady cancels stay VERBOSE to avoid thrash spam.
+		if (force) {
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader cancel outside "
+				"window force=%1 start=%2 till=%3 cancelled=%4 selective=%5 "
+				"pinned=%6 seekRecovery=%7 boost=%8.")
+				.arg(1)
+				.arg(qulonglong(windowStart))
+				.arg(qulonglong(windowTill))
+				.arg(cancelled)
+				.arg(selective)
+				.arg(pinned)
+				.arg(seekRecovery ? 1 : 0)
+				.arg(DownloadBoostLevel()));
+		} else {
+			VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader cancel outside window start=%1 till=%2 cancelled=%3 selective=%4 pinned=%5 boost=%6.")
+				.arg(qulonglong(windowStart))
+				.arg(qulonglong(windowTill))
+				.arg(cancelled)
+				.arg(selective)
+				.arg(pinned)
+				.arg(DownloadBoostLevel()));
+		}
 	}
 }
 
