@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/clip/media_clip_reader.h"
 #include "media/media_common.h"
 #include "media/player/media_player_instance.h"
+#include "media/streaming/media_streaming_boost.h"
 #include "media/streaming/media_streaming_debug.h"
 #include "media/streaming/media_streaming_instance.h"
 #include "media/streaming/media_streaming_player.h"
@@ -77,6 +78,25 @@ constexpr auto kMaxInlineArea = 1920 * 1080;
 constexpr auto kMaxInstantViewInlineArea = 1920 * 1920;
 constexpr auto kSeekAnimationDuration = crl::time(200);
 constexpr auto kSeekTrackOpacity = 0.2;
+constexpr auto kHighBitrateMarkMbps = 8.;
+
+[[nodiscard]] QString CornerDownloadSizeText(not_null<DocumentData*> data) {
+	auto result = Ui::FormatSizeText(data->size);
+	if (!data->isVideoFile() && !data->isVideoMessage()) {
+		return result;
+	}
+	const auto bytesPerSecond = ::Media::Streaming::AveragePlaybackBytesPerSecond(
+		data->size,
+		data->duration());
+	if (!bytesPerSecond) {
+		return result;
+	}
+	const auto megabitsPerSecond = double(bytesPerSecond) * 8. / 1000000.;
+	if (megabitsPerSecond >= kHighBitrateMarkMbps) {
+		result += u"*"_q;
+	}
+	return result;
+}
 
 using ::Media::ValidFrameSize;
 
@@ -192,7 +212,7 @@ Gif::Gif(
 	|| realParent->isMediaSensitive())
 	? std::make_unique<MediaSpoiler>()
 	: nullptr)
-, _downloadSize(Ui::FormatSizeText(_data->size))
+, _downloadSize(CornerDownloadSizeText(_data))
 , _videoTimestamp(::Media::View::ExtractVideoTimestamp(realParent))
 , _sensitiveSpoiler(realParent->isMediaSensitive())
 , _hasVideoCover(realParent->media() && realParent->media()->videoCover()) {
