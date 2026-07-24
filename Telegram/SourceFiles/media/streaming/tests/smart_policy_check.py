@@ -163,9 +163,15 @@ def test_source_structure() -> None:
 			"sparse Smart catch-up debug snapshot",
 		),
 		(
-			"Reader cancel outside window force=" in reader
-			or "force=%1 start=" in reader,
-			"force cancel debug line",
+			"forceJump" in reader
+			and "Dual A/V AVIO jumps" in reader,
+			"seek-jump force only in seek recovery",
+		),
+		(
+			"_smartForceCancelLogLastTime" in (
+				ROOT / "media_streaming_reader.h"
+			).read_text(encoding="utf-8"),
+			"force cancel debug rate-limited",
 		),
 		(
 			"force-cancel on a new seek window" in reader
