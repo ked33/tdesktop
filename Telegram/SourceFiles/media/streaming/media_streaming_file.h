@@ -95,6 +95,8 @@ private:
 		void readNextPacket();
 		[[nodiscard]] bool readyForSoftSeek() const;
 		[[nodiscard]] FFmpeg::FormatPointer takeFormat();
+		[[nodiscard]] SoftSeekStreamCache streamCache() const;
+		void setStreamCache(const SoftSeekStreamCache &cache);
 
 		void interrupt();
 		void wake();
@@ -138,8 +140,6 @@ private:
 			StartOptions options,
 			crl::time position);
 		void rememberStreams(const Stream &video, const Stream &audio);
-		[[nodiscard]] SoftSeekStreamCache streamCache() const;
-		void setStreamCache(const SoftSeekStreamCache &cache);
 		bool seekUsingCache(
 			not_null<AVFormatContext*> format,
 			StartOptions options);
