@@ -1892,7 +1892,8 @@ Reader::FillState Reader::fill(
 						.arg(DownloadBoostLevel()));
 					cancelLoadOutsideWindow(
 						uint32(start),
-						uint32(till));
+						uint32(till),
+						true);
 				}
 			}
 		}
@@ -2425,7 +2426,10 @@ void Reader::cancelLoadInRange(uint32 from, uint32 till) {
 	}
 }
 
-void Reader::cancelLoadOutsideWindow(uint32 windowStart, uint32 windowTill) {
+void Reader::cancelLoadOutsideWindow(
+		uint32 windowStart,
+		uint32 windowTill,
+		bool force) {
 	Expects(windowStart < windowTill);
 
 	const auto preserveSent = smartStreamingEnabled();
@@ -2433,21 +2437,26 @@ void Reader::cancelLoadOutsideWindow(uint32 windowStart, uint32 windowTill) {
 	const auto serverLimited = (DownloadBoostLevel() == 6)
 		&& !_premiumSession
 		&& (now < _serverLimitedUntil.load(std::memory_order_relaxed));
-	const auto catchUp = preserveSent
-		&& (_smartBufferPressure.load(std::memory_order_acquire)
-			|| SmartIsUnderPlayback(
-				_loader->smartStreamingPlaybackRate(),
-				_streamThroughputBytesPerSecond.load(
-					std::memory_order_relaxed)));
-	// Catch-up needs every useful part; cancel/requeue wastes scarce bandwidth.
-	if (catchUp) {
-		VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader cancel outside window skipped by catch-up start=%1 till=%2 boost=%3.")
+	const auto seekRecovery = preserveSent
+		&& (now < _smartSeekRecoveryUntil.load(std::memory_order_acquire));
+	const auto underPlayback = preserveSent
+		&& SmartIsUnderPlayback(
+			_loader->smartStreamingPlaybackRate(),
+			_streamThroughputBytesPerSecond.load(std::memory_order_relaxed));
+	// Only skip cancel during *steady* under-playback. Never skip when:
+	// - force (new seek window install), or
+	// - still inside seek recovery (old parts must yield to the new position).
+	// bufferPressure alone used to skip cancel and made frequent seeks worse.
+	if (!force && underPlayback && !seekRecovery) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader cancel outside window "
+			"skipped by under-playback start=%1 till=%2 boost=%3.")
 			.arg(qulonglong(windowStart))
 			.arg(qulonglong(windowTill))
 			.arg(DownloadBoostLevel()));
 		return;
 	}
-	if (!preserveSent
+	if (!force
+		&& !preserveSent
 		&& (serverLimited
 			|| _speedIsThrottled.load(std::memory_order_relaxed))) {
 		VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader cancel outside window skipped by throttle start=%1 till=%2 boost=%3.")
@@ -2557,8 +2566,13 @@ void Reader::consumePendingSeekPrefetch() {
 	const auto now = crl::now();
 	const auto serverRecovering = now < _serverRecoveryUntil.load(
 		std::memory_order_relaxed);
+	// Always force-cancel on a new seek window so stale parts cannot keep
+	// competing with the urgent path (even if buffer pressure is high).
 	if (StreamingSeekCancelEnabled()) {
-		cancelLoadOutsideWindow(uint32(windowStart), uint32(windowTill));
+		cancelLoadOutsideWindow(
+			uint32(windowStart),
+			uint32(windowTill),
+			true);
 	}
 	_seekPrefetchWindowStart = windowStart;
 	_seekPrefetchWindowTill = windowTill;
