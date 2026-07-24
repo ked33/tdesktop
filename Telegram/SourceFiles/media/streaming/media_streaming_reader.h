@@ -295,6 +295,7 @@ private:
 	SpeedState _speedState = SpeedState::Normal;
 	double _burstSpeedEma = 0.0;
 	bool _burstSpeedInitialized = false;
+	int _throttleConfirmCount = 0;
 	std::atomic<int> _adaptivePreloadPercent = 100;
 	std::atomic<int> _adaptiveLimitPercent = 100;
 	std::atomic<bool> _speedIsThrottled = false;
