@@ -118,6 +118,9 @@ private:
 	void streamFailed(Error error);
 	void start();
 	void stop(bool stillActive);
+	[[nodiscard]] bool trySoftSeek(
+		const PlaybackOptions &options,
+		crl::time previousReceivedTill);
 	void provideStartInformation();
 	void fail(Error error);
 	void checkVideoStep();

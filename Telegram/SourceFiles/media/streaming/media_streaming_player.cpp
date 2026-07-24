@@ -583,6 +583,86 @@ void Player::fail(Error error) {
 	stopGuarded();
 }
 
+bool Player::trySoftSeek(
+		const PlaybackOptions &options,
+		crl::time previousReceivedTill) {
+	if (!_remoteLoader
+		|| !_file->smartStreamingEnabled()
+		|| _stage == Stage::Uninitialized
+		|| _lastFailure
+		|| !options.seekable
+		|| options.sequentialOpen
+		|| options.loop
+		|| (options.mode != _options.mode)
+		|| (options.hwAllowed != _options.hwAllowed)
+		|| (options.position == _options.position)
+		|| !_file->canSoftSeek()) {
+		return false;
+	}
+
+	_file->notifySmartStreamingSeek();
+	_file->setSmartStreamingBufferPressure(false);
+	_file->setSmartStreamingPlaybackRate(0);
+
+	// 1) Join demuxer thread and keep AVFormatContext.
+	auto format = _file->detachFormatForSoftSeek();
+	if (!format) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player soft seek "
+			"detach failed, using hard path position=%1.")
+			.arg(qlonglong(options.position)));
+		return false;
+	}
+
+	// 2) Destroy tracks only after the old file thread has joined.
+	_sessionLifetime = rpl::lifetime();
+	_audio = nullptr;
+	_video = nullptr;
+	invalidate_weak_ptrs(&_sessionGuard);
+	_pausedByUser = _pausedByWaitingForData = _paused = false;
+	_renderFrameTimer.cancel();
+	_nextFrameTime = kTimeUnknown;
+	_audioFinished = false;
+	_videoFinished = false;
+	_pauseReading = false;
+	_readTillEnd = false;
+	_loopingShift = 0;
+	_durationByPackets = 0;
+	_durationByLastAudioPacket = 0;
+	_durationByLastVideoPacket = 0;
+	const auto header = _information.headerSize;
+	_information = Information();
+	_information.headerSize = header;
+	_lastFailure = std::nullopt;
+
+	savePreviousReceivedTill(options, previousReceivedTill);
+	_options = options;
+	if (!Media::Audio::SupportsSpeedControl()) {
+		_options.speed = 1.;
+	}
+	_stage = Stage::Initializing;
+	updateSmartStreamingPlaybackRate();
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player soft seek "
+		"position=%1 previousReceived=%2 speed=%3 remote=%4 boost=%5 "
+		"loadAhead=%6 waitBuffer=%7.")
+		.arg(qlonglong(_options.position))
+		.arg(qlonglong(_previousReceivedTill))
+		.arg(_options.speed, 0, 'f', 2)
+		.arg(_remoteLoader ? 1 : 0)
+		.arg(PlaybackDebugBoostLevel())
+		.arg(qlonglong(loadInAdvanceFor()))
+		.arg(qlonglong(waitingForDataBuffer())));
+
+	// 3) Resume demuxer without avformat_find_stream_info.
+	_file->resumeSoftSeek(delegate(), std::move(format), {
+		.position = _options.position,
+		.durationOverride = options.durationOverride,
+		.seekable = true,
+		.hwAllow = _options.hwAllowed,
+		.sequentialOpen = false,
+	});
+	return true;
+}
+
 void Player::play(const PlaybackOptions &options) {
 	Expects(options.speed >= kSpeedMin && options.speed <= kSpeedMax);
 
@@ -593,6 +673,10 @@ void Player::play(const PlaybackOptions &options) {
 	const auto notifySeek = (_stage != Stage::Uninitialized)
 		&& options.seekable
 		&& (options.position != _options.position);
+
+	if (trySoftSeek(options, previous)) {
+		return;
+	}
 
 	stop(true);
 	if (notifySeek) {
