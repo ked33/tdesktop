@@ -234,7 +234,10 @@ private:
 	void putToCache(SerializedSlice &&data);
 
 	void cancelLoadInRange(uint32 from, uint32 till);
-	void cancelLoadOutsideWindow(uint32 windowStart, uint32 windowTill);
+	void cancelLoadOutsideWindow(
+		uint32 windowStart,
+		uint32 windowTill,
+		bool force = false);
 	[[nodiscard]] crl::time smartStreamingBackgroundBuffer() const;
 	void syncSmartStreamingBufferPressure(crl::time now);
 	void consumePendingSeekPrefetch();

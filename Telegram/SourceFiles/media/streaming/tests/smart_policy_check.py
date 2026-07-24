@@ -154,8 +154,21 @@ def test_source_structure() -> None:
 			"smart disables false throttle path",
 		),
 		(
-			"skipped by catch-up" in reader,
-			"cancel skipped during catch-up",
+			"skipped by under-playback" in reader,
+			"cancel skipped only for under-playback",
+		),
+		(
+			"force-cancel on a new seek window" in reader
+			or "force)," in reader
+			or "bool force" in (
+				ROOT / "media_streaming_reader.h"
+			).read_text(encoding="utf-8"),
+			"force cancel on seek window",
+		),
+		(
+			"bufferPressure alone used to skip cancel" in reader
+			or "!seekRecovery" in reader,
+			"seek recovery never skips cancel",
 		),
 		(
 			"kSmartCancelLogMinInterval" in reader,
