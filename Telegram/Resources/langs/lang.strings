@@ -5428,7 +5428,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_context_details_average_bitrate" = "Average Bitrate (estimated)";
 "lng_context_details_quality" = "Quality";
 "lng_context_details_pack_owner" = "Pack Owner";
-"lng_high_bitrate_video_notice" = "This video has a high bitrate. Loading may be slow, please wait.";
 "lng_video_quality_auto_lowered" = "Video quality was automatically lowered to keep playback stable.";
 "lng_context_copy_topic_link" = "Copy Topic Link";
 "lng_context_copy_email" = "Copy Email Address";

@@ -509,26 +509,6 @@ private:
 		(megabitsPerSecond < 10.) ? 2 : 1));
 }
 
-[[nodiscard]] bool IsStreamedHighBitrateVideo(DocumentData *document) {
-	return document
-		&& (document->isVideoFile() || document->isVideoMessage())
-		&& document->useStreamingLoader()
-		&& document->hasRemoteLocation()
-		&& document->filepath(true).isEmpty()
-		&& !document->loadedInMediaCache()
-		&& ::Media::Streaming::IsHighBitrateVideo(
-			document->size,
-			document->duration());
-}
-
-void ShowHighBitrateVideoToast(
-		not_null<Window::SessionController*> controller,
-		DocumentData *document) {
-	if (IsStreamedHighBitrateVideo(document)) {
-		controller->showToast(tr::lng_high_bitrate_video_notice(tr::now));
-	}
-}
-
 [[nodiscard]] uint64 UserIdFromPackId(uint64 id) {
 	auto ownerId = id >> 32;
 	if ((id >> 16) & 0xFF) {
@@ -2766,9 +2746,7 @@ void AddMessageDetailsAction(
 					const auto result = ::Media::Streaming::Mpv::OpenVideoMessageInMpv(
 						resolvedItem,
 						resolvedDocument);
-					if (result == ::Media::Streaming::Mpv::OpenResult::Success) {
-						ShowHighBitrateVideoToast(controller, resolvedDocument);
-					} else if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
+					if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
 						controller->showToast(
 							tr::lng_context_stream_in_mpv_not_found(tr::now));
 					} else if (result == ::Media::Streaming::Mpv::OpenResult::Failed) {
@@ -2784,9 +2762,7 @@ void AddMessageDetailsAction(
 					const auto result = ::Media::Streaming::Mpv::OpenVideoMessageInMpvSpecial(
 						resolvedItem,
 						resolvedDocument);
-					if (result == ::Media::Streaming::Mpv::OpenResult::Success) {
-						ShowHighBitrateVideoToast(controller, resolvedDocument);
-					} else if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
+					if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
 						controller->showToast(
 							tr::lng_context_stream_in_mpv_not_found(tr::now));
 					} else if (result == ::Media::Streaming::Mpv::OpenResult::Failed) {
