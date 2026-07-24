@@ -84,6 +84,25 @@ using BoostProfiles = std::array<BoostProfile, 7>;
 	int preloadParts,
 	int partSize,
 	int64 fileSize);
+// Dual A/V read envelopes: two ranges so streams do not cancel each other.
+struct SmartDualKeep {
+	int64 start0 = -1;
+	int64 till0 = -1;
+	int64 start1 = -1;
+	int64 till1 = -1;
+	int lastSlot = 0;
+};
+[[nodiscard]] bool SmartOffsetInDualKeep(
+	int64 offset,
+	const SmartDualKeep &keep);
+// Expand/replace a dual-keep slot with [offset-guard, offset+guard+span].
+void SmartNoteDualKeepOffset(
+	SmartDualKeep &keep,
+	int64 offset,
+	int64 guard,
+	int64 span,
+	int64 fileSize);
+void SmartClearDualKeep(SmartDualKeep &keep);
 [[nodiscard]] QString SmartPolicySelfCheck();
 
 } // namespace Media::Streaming
