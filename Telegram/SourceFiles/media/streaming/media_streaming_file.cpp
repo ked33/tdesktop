@@ -1657,6 +1657,108 @@ void File::Context::sendFullInCache(bool force) {
 	}
 }
 
+bool File::Context::readyForSoftSeek() const {
+	return _format
+		&& !_failed
+		&& !_interrupted.load(std::memory_order_acquire);
+}
+
+FFmpeg::FormatPointer File::Context::takeFormat() {
+	return base::take(_format);
+}
+
+void File::Context::startWithFormat(
+		FFmpeg::FormatPointer format,
+		StartOptions options) {
+	Expects(options.seekable || !options.position);
+	Expects(format != nullptr);
+
+	if (unroll()) {
+		return;
+	}
+	_format = std::move(format);
+	_size = _source->size();
+	_queuedPackets.clear();
+	_readTillEnd = false;
+	_pendingSeekPrefetchPosition = 0;
+	_debugReadCalls = 0;
+	_debugWaitingCount = 0;
+
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File soft seek start "
+		"position=%1 durationOverride=%2 hwAllow=%3 remote=%4 size=%5.")
+		.arg(qlonglong(options.position))
+		.arg(qlonglong(options.durationOverride))
+		.arg(options.hwAllow ? 1 : 0)
+		.arg(_source->isRemoteLoader() ? 1 : 0)
+		.arg(qlonglong(_size)));
+
+	const auto mode = _delegate->fileOpenMode();
+	auto video = initStream(
+		_format.get(),
+		AVMEDIA_TYPE_VIDEO,
+		mode,
+		options);
+	if (unroll()) {
+		return;
+	}
+	auto audio = initStream(
+		_format.get(),
+		AVMEDIA_TYPE_AUDIO,
+		mode,
+		options);
+	if (unroll()) {
+		return;
+	}
+	if (_source->smartStreamingEnabled()) {
+		const auto duration = std::max(
+			(video.codec && video.duration != kDurationUnavailable)
+				? video.duration
+				: crl::time(0),
+			(audio.codec && audio.duration != kDurationUnavailable)
+				? audio.duration
+				: crl::time(0));
+		if (duration > 1) {
+			const auto bytesPerSecond = int(std::clamp(
+				double(_size) * 1000. / double(duration),
+				0.,
+				double(64 * 1024 * 1024)));
+			_source->setSmartStreamingPlaybackRate(bytesPerSecond);
+		}
+	}
+	if (_source->isRemoteLoader()) {
+		sendFullInCache(true);
+	}
+	if (options.seekable && (video.codec || audio.codec)) {
+		seekToPosition(
+			_format.get(),
+			video.codec ? video : audio,
+			options,
+			options.position);
+	}
+	if (unroll()) {
+		return;
+	}
+	if (video.codec) {
+		_queuedPackets[video.index].reserve(kMaxQueuedPackets);
+	}
+	if (audio.codec) {
+		_queuedPackets[audio.index].reserve(kMaxQueuedPackets);
+	}
+	const auto header = _source->headerSize();
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File soft seek ready "
+		"header=%1 hasVideo=%2 hasAudio=%3 videoIndex=%4 audioIndex=%5 "
+		"position=%6.")
+		.arg(header)
+		.arg(video.codec ? 1 : 0)
+		.arg(audio.codec ? 1 : 0)
+		.arg(video.index)
+		.arg(audio.index)
+		.arg(qlonglong(options.position)));
+	if (!_delegate->fileReady(header, std::move(video), std::move(audio))) {
+		return fail(Error::OpenFailed);
+	}
+}
+
 void File::Context::readNextPacket() {
 	auto result = readPacket();
 	if (unroll()) {
@@ -1785,6 +1887,70 @@ void File::start(not_null<FileDelegate*> delegate, StartOptions options) {
 			context->readNextPacket();
 		}
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File thread exit interrupted=%1 failed=%2 readTillEnd=%3.")
+			.arg(context->interrupted() ? 1 : 0)
+			.arg(context->failed() ? 1 : 0)
+			.arg(context->finished() ? 1 : 0));
+		if (!context->interrupted()) {
+			context->stopStreamingAsync();
+		}
+	});
+}
+
+bool File::canSoftSeek() const {
+	return _thread.joinable()
+		&& _context.has_value()
+		&& _context->readyForSoftSeek();
+}
+
+FFmpeg::FormatPointer File::detachFormatForSoftSeek() {
+	if (!canSoftSeek()) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File soft seek detach "
+			"rejected joinable=%1 hasContext=%2.")
+			.arg(_thread.joinable() ? 1 : 0)
+			.arg(_context.has_value() ? 1 : 0));
+		return nullptr;
+	}
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File soft seek detach begin."));
+	_context->interrupt();
+	if (_thread.joinable()) {
+		_thread.join();
+	}
+	auto format = _context->takeFormat();
+	_source->stopStreaming(true);
+	_context.reset();
+	if (!format) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File soft seek detach "
+			"aborted no format."));
+	}
+	return format;
+}
+
+void File::resumeSoftSeek(
+		not_null<FileDelegate*> delegate,
+		FFmpeg::FormatPointer format,
+		StartOptions options) {
+	Expects(format != nullptr);
+	Expects(!_thread.joinable());
+	Expects(!_context.has_value());
+
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File soft seek resume "
+		"position=%1 seekable=%2.")
+		.arg(qlonglong(options.position))
+		.arg(options.seekable ? 1 : 0));
+	_source->startStreaming();
+	_context.emplace(delegate, _source.get(), _seekMapCache.get());
+	_thread = std::thread([
+		=,
+		context = &*_context,
+		format = std::move(format)
+	]() mutable {
+		crl::toggle_fp_exceptions(true);
+		context->startWithFormat(std::move(format), options);
+		while (!context->finished()) {
+			context->readNextPacket();
+		}
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File soft-seek thread exit "
+			"interrupted=%1 failed=%2 readTillEnd=%3.")
 			.arg(context->interrupted() ? 1 : 0)
 			.arg(context->failed() ? 1 : 0)
 			.arg(context->finished() ? 1 : 0));

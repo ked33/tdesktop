@@ -40,6 +40,15 @@ public:
 	File &operator=(const File &other) = delete;
 
 	void start(not_null<FileDelegate*> delegate, StartOptions options);
+	// Soft seek helpers: join reader + detach format, then resume without
+	// avformat_find_stream_info. Caller must destroy tracks between detach
+	// and resume (main-thread track ownership).
+	[[nodiscard]] bool canSoftSeek() const;
+	[[nodiscard]] FFmpeg::FormatPointer detachFormatForSoftSeek();
+	void resumeSoftSeek(
+		not_null<FileDelegate*> delegate,
+		FFmpeg::FormatPointer format,
+		StartOptions options);
 	void wake();
 	void stop(bool stillActive = false);
 
@@ -66,7 +75,12 @@ private:
 		~Context();
 
 		void start(StartOptions options);
+		void startWithFormat(
+			FFmpeg::FormatPointer format,
+			StartOptions options);
 		void readNextPacket();
+		[[nodiscard]] bool readyForSoftSeek() const;
+		[[nodiscard]] FFmpeg::FormatPointer takeFormat();
 
 		void interrupt();
 		void wake();
