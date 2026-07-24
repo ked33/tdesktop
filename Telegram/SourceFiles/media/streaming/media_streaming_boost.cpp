@@ -530,6 +530,102 @@ int64 SmartKeepWindowTill(
 	return clamped;
 }
 
+namespace {
+
+[[nodiscard]] bool RangesOverlapOrNear(
+		int64 a0,
+		int64 a1,
+		int64 b0,
+		int64 b1,
+		int64 nearGap) {
+	if (a0 < 0 || a1 <= a0 || b0 < 0 || b1 <= b0) {
+		return false;
+	}
+	return (a0 <= b1 + nearGap) && (b0 <= a1 + nearGap);
+}
+
+void ExpandRange(int64 &start, int64 &till, int64 add0, int64 add1) {
+	if (start < 0 || till <= start) {
+		start = add0;
+		till = add1;
+		return;
+	}
+	start = std::min(start, add0);
+	till = std::max(till, add1);
+}
+
+} // namespace
+
+bool SmartOffsetInDualKeep(int64 offset, const SmartDualKeep &keep) {
+	if (offset < 0) {
+		return false;
+	}
+	if (keep.start0 >= 0
+		&& keep.till0 > keep.start0
+		&& offset >= keep.start0
+		&& offset < keep.till0) {
+		return true;
+	}
+	if (keep.start1 >= 0
+		&& keep.till1 > keep.start1
+		&& offset >= keep.start1
+		&& offset < keep.till1) {
+		return true;
+	}
+	return false;
+}
+
+void SmartClearDualKeep(SmartDualKeep &keep) {
+	keep = SmartDualKeep();
+}
+
+void SmartNoteDualKeepOffset(
+		SmartDualKeep &keep,
+		int64 offset,
+		int64 guard,
+		int64 span,
+		int64 fileSize) {
+	if (offset < 0 || fileSize <= 0 || guard < 0 || span < 0) {
+		return;
+	}
+	const auto add0 = std::max<int64>(0, offset - guard);
+	const auto add1 = std::min(fileSize, offset + std::max(span, int64(1)) + guard);
+	if (add0 >= add1) {
+		return;
+	}
+	constexpr auto kNearGap = int64(1024) * 1024;
+	if (RangesOverlapOrNear(
+			keep.start0,
+			keep.till0,
+			add0,
+			add1,
+			kNearGap)) {
+		ExpandRange(keep.start0, keep.till0, add0, add1);
+		keep.lastSlot = 0;
+		return;
+	}
+	if (RangesOverlapOrNear(
+			keep.start1,
+			keep.till1,
+			add0,
+			add1,
+			kNearGap)) {
+		ExpandRange(keep.start1, keep.till1, add0, add1);
+		keep.lastSlot = 1;
+		return;
+	}
+	// Replace the slot not touched last (LRU-ish for two streams).
+	if (keep.lastSlot == 0) {
+		keep.start1 = add0;
+		keep.till1 = add1;
+		keep.lastSlot = 1;
+	} else {
+		keep.start0 = add0;
+		keep.till0 = add1;
+		keep.lastSlot = 0;
+	}
+}
+
 QString SmartPolicySelfCheck() {
 	const auto rate = AveragePlaybackBytesPerSecond(773795309, 636934);
 	if (rate < 1'100'000 || rate > 1'300'000) {
@@ -581,6 +677,20 @@ QString SmartPolicySelfCheck() {
 	const auto keep = SmartKeepWindowTill(1000, 2000, 10, 128 * 1024, 1 << 30);
 	if (keep < 1000 + 10 * 128 * 1024) {
 		return QStringLiteral("keep-window-expand");
+	}
+	SmartDualKeep dual;
+	SmartNoteDualKeepOffset(dual, 100 * 1024 * 1024, 2 * 1024 * 1024, 128 * 1024, 1 << 30);
+	SmartNoteDualKeepOffset(dual, 150 * 1024 * 1024, 2 * 1024 * 1024, 128 * 1024, 1 << 30);
+	if (!SmartOffsetInDualKeep(100 * 1024 * 1024, dual)
+		|| !SmartOffsetInDualKeep(150 * 1024 * 1024, dual)) {
+		return QStringLiteral("dual-keep-two-streams");
+	}
+	if (SmartOffsetInDualKeep(125 * 1024 * 1024, dual)) {
+		return QStringLiteral("dual-keep-gap-not-covered");
+	}
+	SmartClearDualKeep(dual);
+	if (SmartOffsetInDualKeep(100 * 1024 * 1024, dual)) {
+		return QStringLiteral("dual-keep-clear");
 	}
 	return QString();
 }
