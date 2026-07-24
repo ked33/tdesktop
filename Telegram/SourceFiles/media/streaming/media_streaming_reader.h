@@ -341,6 +341,8 @@ private:
 	bool _smartCatchupLogged = false;
 	bool _smartUnderPlaybackSkipLogged = false;
 	crl::time _smartCatchupLogLastTime = 0;
+	crl::time _smartUnderPlaybackSkipLogLastTime = 0;
+	crl::time _smartForceCancelLogLastTime = 0;
 	int _smartCatchupLogPreload = -1;
 	int _smartCatchupLogRequests = -1;
 

@@ -1475,6 +1475,8 @@ void Reader::stopStreaming(bool stillActive) {
 		_smartCatchupLogged = false;
 		_smartUnderPlaybackSkipLogged = false;
 		_smartCatchupLogLastTime = 0;
+		_smartUnderPlaybackSkipLogLastTime = 0;
+		_smartForceCancelLogLastTime = 0;
 		_smartCatchupLogPreload = -1;
 		_smartCatchupLogRequests = -1;
 		_smartPreloadRecoveryUntil.store(0, std::memory_order_release);
@@ -1897,10 +1899,15 @@ Reader::FillState Reader::fill(
 						.arg(qlonglong(till))
 						.arg(_loadingOffsets.empty() ? 0 : 1)
 						.arg(DownloadBoostLevel()));
+					// Dual A/V AVIO jumps are common in steady play; only force
+					// during seek recovery so streams do not cancel each other.
+					const auto forceJump = smartStreamingEnabled()
+						&& (crl::now() < _smartSeekRecoveryUntil.load(
+							std::memory_order_acquire));
 					cancelLoadOutsideWindow(
 						uint32(start),
 						uint32(till),
-						true);
+						forceJump);
 				}
 			}
 		}
@@ -2488,8 +2495,11 @@ void Reader::cancelLoadOutsideWindow(
 	// - still inside seek recovery (old parts must yield to the new position).
 	// bufferPressure alone used to skip cancel and made frequent seeks worse.
 	if (!force && underPlayback && !seekRecovery) {
-		if (!_smartUnderPlaybackSkipLogged) {
+		if (!_smartUnderPlaybackSkipLogged
+			|| now >= _smartUnderPlaybackSkipLogLastTime
+				+ kSmartCatchupLogMinInterval) {
 			_smartUnderPlaybackSkipLogged = true;
+			_smartUnderPlaybackSkipLogLastTime = now;
 			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader cancel outside "
 				"window skipped by under-playback start=%1 till=%2 "
 				"throughput=%3 playback=%4 boost=%5.")
@@ -2502,9 +2512,7 @@ void Reader::cancelLoadOutsideWindow(
 		}
 		return;
 	}
-	if (underPlayback && (force || seekRecovery)) {
-		_smartUnderPlaybackSkipLogged = false;
-	} else if (!underPlayback) {
+	if (!underPlayback) {
 		_smartUnderPlaybackSkipLogged = false;
 	}
 	if (!force
@@ -2559,9 +2567,14 @@ void Reader::cancelLoadOutsideWindow(
 		}
 	}
 	if (cancelled || selective || pinned) {
-		// Force path is rare (new seek window / jump); keep one DEBUG line.
-		// Steady cancels stay VERBOSE to avoid thrash spam.
-		if (force) {
+		// Force+seekRecovery is the real "new seek" signal; rate-limit other
+		// force cancels. Steady path stays VERBOSE.
+		const auto logForceDebug = force
+			&& (seekRecovery
+				|| now >= _smartForceCancelLogLastTime
+					+ kSmartCatchupLogMinInterval);
+		if (logForceDebug) {
+			_smartForceCancelLogLastTime = now;
 			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader cancel outside "
 				"window force=%1 start=%2 till=%3 cancelled=%4 selective=%5 "
 				"pinned=%6 seekRecovery=%7 boost=%8.")
@@ -2574,7 +2587,8 @@ void Reader::cancelLoadOutsideWindow(
 				.arg(seekRecovery ? 1 : 0)
 				.arg(DownloadBoostLevel()));
 		} else {
-			VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader cancel outside window start=%1 till=%2 cancelled=%3 selective=%4 pinned=%5 boost=%6.")
+			VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader cancel outside window force=%1 start=%2 till=%3 cancelled=%4 selective=%5 pinned=%6 boost=%7.")
+				.arg(force ? 1 : 0)
 				.arg(qulonglong(windowStart))
 				.arg(qulonglong(windowTill))
 				.arg(cancelled)
