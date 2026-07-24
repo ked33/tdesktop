@@ -53,6 +53,9 @@ constexpr auto kSmartSeekPrefetchMaximum = int64(16) * 1024 * 1024;
 constexpr auto kSmartSeekUrgentMinimum = int64(2) * 1024 * 1024;
 constexpr auto kSmartSeekUrgentMaximum = int64(4) * 1024 * 1024;
 constexpr auto kSmartCancelLogMinInterval = crl::time(1000);
+// After seek grace, require this much sustained low speed before Throttle
+// (Smart non-Premium never uses Throttle; this guards other boost levels).
+constexpr auto kSmartThrottleConfirmSamples = 3;
 
 using PartsMap = base::flat_map<uint32, QByteArray>;
 
@@ -1230,6 +1233,9 @@ Reader::Reader(
 					std::memory_order_relaxed);
 				break;
 			}
+			if (next != SpeedState::Throttle) {
+				_throttleConfirmCount = 0;
+			}
 			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: adaptive state=%1 boost=%2 speed=%3 ema=%4 preloadPercent=%5 limitPercent=%6 throttled=%7.")
 				.arg(int(next))
 				.arg(DownloadBoostLevel())
@@ -1240,6 +1246,9 @@ Reader::Reader(
 				.arg(_speedIsThrottled.load(std::memory_order_relaxed) ? 1 : 0));
 		};
 
+		// Non-Premium Smart: DC concurrency + bitrate floor own catch-up.
+		// Throttle from seek-cancel dips only creates false low-speed state.
+		const auto smartNonPremiumAdaptive = smartStreamingEnabled();
 		switch (_speedState) {
 		case SpeedState::Burst:
 			if (_burstSpeedEma <= kBurstLeave) {
@@ -1247,20 +1256,22 @@ Reader::Reader(
 			}
 			break;
 		case SpeedState::Throttle:
-			if (_burstSpeedEma >= kThrottleLeave) {
+			if (smartNonPremiumAdaptive
+				|| _burstSpeedEma >= kThrottleLeave) {
 				apply(SpeedState::Normal);
 			}
 			break;
 		case SpeedState::Normal:
 			if (_burstSpeedEma >= kBurstEnter) {
 				apply(SpeedState::Burst);
-			} else if (_burstSpeedEma <= kThrottleEnter
-				&& !(smartStreamingEnabled()
-					&& crl::now() < _smartSeekRecoveryUntil.load(
-						std::memory_order_relaxed))) {
-				// Seek bootstrap cancels inflate low speed samples; do not
-				// enter Throttle until local seek recovery ends.
-				apply(SpeedState::Throttle);
+			} else if (!smartNonPremiumAdaptive
+				&& _burstSpeedEma <= kThrottleEnter) {
+				++_throttleConfirmCount;
+				if (_throttleConfirmCount >= kSmartThrottleConfirmSamples) {
+					apply(SpeedState::Throttle);
+				}
+			} else {
+				_throttleConfirmCount = 0;
 			}
 			break;
 		}
@@ -1410,6 +1421,7 @@ void Reader::notifySmartStreamingSeek() {
 		_speedState = SpeedState::Normal;
 		_burstSpeedEma = 0.0;
 		_burstSpeedInitialized = false;
+		_throttleConfirmCount = 0;
 		_adaptivePreloadPercent.store(100, std::memory_order_relaxed);
 		_adaptiveLimitPercent.store(100, std::memory_order_relaxed);
 		_speedIsThrottled.store(false, std::memory_order_relaxed);
@@ -2038,9 +2050,13 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	const auto streamThroughput = _streamThroughputBytesPerSecond.load(
 		std::memory_order_relaxed);
 	const auto underPlayback = smartNonPremium
-		&& smartPlaybackRate > 0
-		&& streamThroughput > 0
-		&& streamThroughput < smartPlaybackRate;
+		&& SmartIsUnderPlayback(smartPlaybackRate, streamThroughput);
+	// Keep catch-up recovery armed while pressure or under-playback lasts.
+	if (smartNonPremium && (bufferPressure || underPlayback)) {
+		_smartPreloadRecoveryUntil.store(
+			now + kSmartPreloadRecoveryDuration,
+			std::memory_order_release);
+	}
 	const auto recoveryPreloadPercent = [&] {
 		if (!smartNonPremium) {
 			return 0;
@@ -2174,6 +2190,19 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 			floorParts,
 			std::max(floorParts, neededParts));
 	}
+	// Grow the active seek keep-window with steady preload so cancelOutside
+	// does not kill next-slice catch-up after urgent is done.
+	if (seekPrefetchActive
+		&& _seekPrefetchBackgroundActive
+		&& smartNonPremium
+		&& preloadParts > 0) {
+		_seekPrefetchWindowTill = SmartKeepWindowTill(
+			int64(offset),
+			_seekPrefetchWindowTill,
+			preloadParts,
+			kPartSize,
+			size());
+	}
 	auto requestsLimit = std::clamp(
 		(limitBase * _adaptiveLimitPercent.load(
 			std::memory_order_relaxed)) / 100,
@@ -2189,6 +2218,14 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		requestsLimit = std::min(
 			requestsLimit,
 			smartRequestLimit);
+	}
+	// While catching up outside server limited/recovery, use the full Smart
+	// DC budget. Never raise above recovery clamps (FLOOD-safe).
+	if (smartNonPremium
+		&& !serverLimited
+		&& !serverRecovering
+		&& (underPlayback || bufferPressure)) {
+		requestsLimit = std::max(requestsLimit, smartRequestLimit);
 	}
 	const auto serverPhase = serverLimited
 		? 1
@@ -2346,18 +2383,25 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 				= std::numeric_limits<uint32>::max();
 			const auto guard = kGuardParts * kPartSize;
 			const auto startBelow = int64(minOff) - guard;
+			const auto keepTill = SmartKeepWindowTill(
+				int64(offset),
+				seekPrefetchActive
+					? seekPrefetchWindowTill
+					: (int64(maxOff) + kPartSize + guard),
+				preloadParts,
+				kPartSize,
+				size());
 			const auto windowStart = seekPrefetchActive
 				? uint32(seekPrefetchWindowStart)
 				: (startBelow > 0)
 				? uint32(startBelow)
 				: uint32(0);
-			const auto tillAbove = int64(maxOff) + kPartSize + guard;
-			const auto windowTill = seekPrefetchActive
-				? uint32(seekPrefetchWindowTill)
-				: (tillAbove >= int64(kUintMax))
+			const auto windowTill = (keepTill >= int64(kUintMax))
 				? kUintMax
-				: uint32(tillAbove);
-			cancelLoadOutsideWindow(windowStart, windowTill);
+				: uint32(std::max<int64>(0, keepTill));
+			if (windowStart < windowTill) {
+				cancelLoadOutsideWindow(windowStart, windowTill);
+			}
 		}
 	}
 	for (const auto offset : result.offsetsFromLoader.values()) {
@@ -2385,10 +2429,24 @@ void Reader::cancelLoadOutsideWindow(uint32 windowStart, uint32 windowTill) {
 	Expects(windowStart < windowTill);
 
 	const auto preserveSent = smartStreamingEnabled();
+	const auto now = crl::now();
 	const auto serverLimited = (DownloadBoostLevel() == 6)
 		&& !_premiumSession
-		&& (crl::now() < _serverLimitedUntil.load(
-			std::memory_order_relaxed));
+		&& (now < _serverLimitedUntil.load(std::memory_order_relaxed));
+	const auto catchUp = preserveSent
+		&& (_smartBufferPressure.load(std::memory_order_acquire)
+			|| SmartIsUnderPlayback(
+				_loader->smartStreamingPlaybackRate(),
+				_streamThroughputBytesPerSecond.load(
+					std::memory_order_relaxed)));
+	// Catch-up needs every useful part; cancel/requeue wastes scarce bandwidth.
+	if (catchUp) {
+		VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader cancel outside window skipped by catch-up start=%1 till=%2 boost=%3.")
+			.arg(qulonglong(windowStart))
+			.arg(qulonglong(windowTill))
+			.arg(DownloadBoostLevel()));
+		return;
+	}
 	if (!preserveSent
 		&& (serverLimited
 			|| _speedIsThrottled.load(std::memory_order_relaxed))) {

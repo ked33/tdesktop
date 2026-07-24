@@ -73,6 +73,17 @@ using BoostProfiles = std::array<BoostProfile, 7>;
 [[nodiscard]] int64 SmartSeekBootstrapWaitMs(
 	int playbackBytesPerSecond,
 	int64 backgroundBufferMs);
+// True when measured throughput cannot sustain playback (catch-up mode).
+[[nodiscard]] bool SmartIsUnderPlayback(
+	int playbackBytesPerSecond,
+	int throughputBytesPerSecond);
+// Expand a seek/cancel keep-window so steady preload is not cancelled.
+[[nodiscard]] int64 SmartKeepWindowTill(
+	int64 readOffset,
+	int64 existingTill,
+	int preloadParts,
+	int partSize,
+	int64 fileSize);
 [[nodiscard]] QString SmartPolicySelfCheck();
 
 } // namespace Media::Streaming

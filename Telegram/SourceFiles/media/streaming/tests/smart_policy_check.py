@@ -91,6 +91,23 @@ def test_formulas() -> None:
 	assert boot_wait(400 * 1024, buf) == 2000
 	# remoteRequests alone must not imply urgent ready
 	assert not urgent_ready(0, 19, 384696320, 387317760)
+
+	def under_playback(playback: int, thr: int) -> bool:
+		return playback > 0 and thr > 0 and thr < playback
+
+	def keep_till(
+			read_off: int,
+			existing: int,
+			parts: int,
+			part: int,
+			file_size: int) -> int:
+		want = read_off + max(parts, 0) * part
+		return min(file_size, max(existing, want))
+
+	assert under_playback(rate, rate // 2)
+	assert not under_playback(rate, rate + 1)
+	assert not under_playback(rate, 0)
+	assert keep_till(1000, 2000, 10, 128 * 1024, 1 << 30) >= 1000 + 10 * 128 * 1024
 	print("OK formulas", {"rate": rate, "bufferMs": buf, "parts": p})
 
 
@@ -123,6 +140,22 @@ def test_source_structure() -> None:
 				/ "download_manager_mtproto.cpp"
 			).read_text(encoding="utf-8"),
 			"high-bitrate excess capacity ratio",
+		),
+		(
+			"SmartIsUnderPlayback" in reader
+			and "SmartKeepWindowTill" in reader,
+			"under-playback catch-up helpers used",
+		),
+		(
+			"smartNonPremiumAdaptive" in reader
+			or "never uses Throttle" in reader
+			or "Smart non-Premium never" in reader
+			or "smartNonPremiumAdaptive" in reader,
+			"smart disables false throttle path",
+		),
+		(
+			"skipped by catch-up" in reader,
+			"cancel skipped during catch-up",
 		),
 		(
 			"kSmartCancelLogMinInterval" in reader,
