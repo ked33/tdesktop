@@ -311,6 +311,7 @@ private:
 	std::atomic<bool> _smartBufferPressure = false;
 	std::atomic<crl::time> _smartSeekRecoveryUntil = 0;
 	std::atomic<crl::time> _smartSeekPressureLocalUntil = 0;
+	std::atomic<crl::time> _smartPressureStickySince = 0;
 	std::atomic<crl::time> _smartPreloadRecoveryUntil = 0;
 	std::atomic<int> _smartPreloadRecoveryLoggedPercent = 0;
 	std::atomic<int> _serverObservedWaitMs = 0;
