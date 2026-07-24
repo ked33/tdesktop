@@ -108,6 +108,52 @@ def test_formulas() -> None:
 	assert not under_playback(rate, rate + 1)
 	assert not under_playback(rate, 0)
 	assert keep_till(1000, 2000, 10, 128 * 1024, 1 << 30) >= 1000 + 10 * 128 * 1024
+
+	# Dual-keep: two far A/V envelopes stay separate; mid gap not covered.
+	class Dual:
+		def __init__(self):
+			self.s0 = self.t0 = self.s1 = self.t1 = -1
+			self.last = 0
+
+	def in_dual(d, off):
+		if d.s0 >= 0 and d.t0 > d.s0 and d.s0 <= off < d.t0:
+			return True
+		if d.s1 >= 0 and d.t1 > d.s1 and d.s1 <= off < d.t1:
+			return True
+		return False
+
+	def note(d, off, guard=2 * 1024 * 1024, span=128 * 1024, size=1 << 30):
+		a0 = max(0, off - guard)
+		a1 = min(size, off + span + guard)
+		near = 1024 * 1024
+		def overlap(s, t):
+			return s >= 0 and t > s and a0 <= t + near and s <= a1 + near
+		if overlap(d.s0, d.t0):
+			d.s0, d.t0 = min(d.s0, a0) if d.s0 >= 0 else a0, max(d.t0, a1) if d.t0 > 0 else a1
+			if d.s0 < 0:
+				d.s0, d.t0 = a0, a1
+			else:
+				d.s0, d.t0 = min(d.s0, a0), max(d.t0, a1)
+			d.last = 0
+			return
+		if overlap(d.s1, d.t1):
+			if d.s1 < 0:
+				d.s1, d.t1 = a0, a1
+			else:
+				d.s1, d.t1 = min(d.s1, a0), max(d.t1, a1)
+			d.last = 1
+			return
+		if d.last == 0:
+			d.s1, d.t1, d.last = a0, a1, 1
+		else:
+			d.s0, d.t0, d.last = a0, a1, 0
+
+	d = Dual()
+	note(d, 100 * 1024 * 1024)
+	note(d, 150 * 1024 * 1024)
+	assert in_dual(d, 100 * 1024 * 1024)
+	assert in_dual(d, 150 * 1024 * 1024)
+	assert not in_dual(d, 125 * 1024 * 1024)
 	print("OK formulas", {"rate": rate, "bufferMs": buf, "parts": p})
 
 
@@ -163,15 +209,21 @@ def test_source_structure() -> None:
 			"sparse Smart catch-up debug snapshot",
 		),
 		(
-			"forceJump" in reader
-			and "Dual A/V AVIO jumps" in reader,
-			"seek-jump force only in seek recovery",
+			"skipped dual-keep recovery" in reader,
+			"seek recovery skips dual-stream jump cancel",
 		),
 		(
-			"_smartForceCancelLogLastTime" in (
+			"SmartNoteDualKeepOffset" in reader
+			and "SmartOffsetInDualKeep" in reader,
+			"dual-keep protect on cancel",
+		),
+		(
+			"Always rate-limit force DEBUG" in reader
+			or "kSmartCatchupLogMinInterval" in reader
+			and "_smartForceCancelLogLastTime" in (
 				ROOT / "media_streaming_reader.h"
 			).read_text(encoding="utf-8"),
-			"force cancel debug rate-limited",
+			"force cancel debug always rate-limited",
 		),
 		(
 			"force-cancel on a new seek window" in reader

@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "media/streaming/media_streaming_boost.h"
 #include "media/streaming/media_streaming_common.h"
 #include "media/streaming/media_streaming_loader.h"
 #include "base/bytes.h"
@@ -238,6 +239,7 @@ private:
 		uint32 windowStart,
 		uint32 windowTill,
 		bool force = false);
+	void noteDualKeepRead(int64 offset, int64 span);
 	[[nodiscard]] crl::time smartStreamingBackgroundBuffer() const;
 	void syncSmartStreamingBufferPressure(crl::time now);
 	void consumePendingSeekPrefetch();
@@ -345,6 +347,7 @@ private:
 	crl::time _smartForceCancelLogLastTime = 0;
 	int _smartCatchupLogPreload = -1;
 	int _smartCatchupLogRequests = -1;
+	SmartDualKeep _dualKeep;
 
 	Slices _slices;
 
