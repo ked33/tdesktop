@@ -1222,24 +1222,86 @@ void File::Context::logFatal(
 	}
 }
 
+void File::Context::rememberStreams(
+		const Stream &video,
+		const Stream &audio) {
+	if (video.codec) {
+		_streamCache.videoIndex = video.index;
+		_streamCache.videoDuration = video.duration;
+		_streamCache.videoTimeBase = video.timeBase;
+	}
+	if (audio.codec) {
+		_streamCache.audioIndex = audio.index;
+		_streamCache.audioDuration = audio.duration;
+		_streamCache.audioTimeBase = audio.timeBase;
+	}
+}
+
+SoftSeekStreamCache File::Context::streamCache() const {
+	return _streamCache;
+}
+
+void File::Context::setStreamCache(const SoftSeekStreamCache &cache) {
+	_streamCache = cache;
+}
+
+bool File::Context::seekUsingCache(
+		not_null<AVFormatContext*> format,
+		StartOptions options) {
+	if (!options.seekable || !options.position || !_streamCache.usable()) {
+		return false;
+	}
+	auto probe = Stream();
+	if (_streamCache.videoIndex >= 0) {
+		probe.index = _streamCache.videoIndex;
+		probe.duration = _streamCache.videoDuration;
+		probe.timeBase = _streamCache.videoTimeBase;
+	} else {
+		probe.index = _streamCache.audioIndex;
+		probe.duration = _streamCache.audioDuration;
+		probe.timeBase = _streamCache.audioTimeBase;
+	}
+	if (probe.index < 0
+		|| probe.index >= int(format->nb_streams)
+		|| probe.duration <= 1) {
+		return false;
+	}
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File soft seek early demux "
+		"position=%1 stream=%2.")
+		.arg(qlonglong(options.position))
+		.arg(probe.index));
+	seekToPosition(format, probe, options, options.position);
+	return !unroll();
+}
+
 Stream File::Context::initStream(
 		not_null<AVFormatContext*> format,
 		AVMediaType type,
 		Mode mode,
-		StartOptions options) {
+		StartOptions options,
+		int preferredIndex) {
 	auto result = Stream();
-	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream enter type=%1 hwAllow=%2 sequentialOpen=%3 streamCount=%4.")
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream enter type=%1 hwAllow=%2 sequentialOpen=%3 streamCount=%4 preferred=%5.")
 		.arg(int(type))
 		.arg(options.hwAllow ? 1 : 0)
 		.arg(options.sequentialOpen ? 1 : 0)
-		.arg(format->nb_streams));
-	const auto index = result.index = av_find_best_stream(
-		format,
-		type,
-		-1,
-		-1,
-		nullptr,
-		0);
+		.arg(format->nb_streams)
+		.arg(preferredIndex));
+	auto index = preferredIndex;
+	if (index < 0
+		|| index >= int(format->nb_streams)
+		|| !format->streams[index]
+		|| !format->streams[index]->codecpar
+		|| format->streams[index]->codecpar->codec_type != type) {
+		index = av_find_best_stream(
+			format,
+			type,
+			-1,
+			-1,
+			nullptr,
+			0);
+	}
+	result.index = index;
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream best stream type=%1 index=%2.")
 		.arg(int(type))
 		.arg(index));
@@ -1637,6 +1699,7 @@ void File::Context::start(StartOptions options) {
 		.arg(audio.codec ? 1 : 0)
 		.arg(video.index)
 		.arg(audio.index));
+	rememberStreams(video, audio);
 	if (!_delegate->fileReady(header, std::move(video), std::move(audio))) {
 		return fail(Error::OpenFailed);
 	}
@@ -1685,19 +1748,28 @@ void File::Context::startWithFormat(
 	_debugWaitingCount = 0;
 
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File soft seek start "
-		"position=%1 durationOverride=%2 hwAllow=%3 remote=%4 size=%5.")
+		"position=%1 durationOverride=%2 hwAllow=%3 remote=%4 size=%5 "
+		"cache=%6.")
 		.arg(qlonglong(options.position))
 		.arg(qlonglong(options.durationOverride))
 		.arg(options.hwAllow ? 1 : 0)
 		.arg(_source->isRemoteLoader() ? 1 : 0)
-		.arg(qlonglong(_size)));
+		.arg(qlonglong(_size))
+		.arg(_streamCache.usable() ? 1 : 0));
+
+	// Seek demuxer before codec open so range prefetch can start earlier.
+	const auto earlySeek = seekUsingCache(_format.get(), options);
+	if (unroll()) {
+		return;
+	}
 
 	const auto mode = _delegate->fileOpenMode();
 	auto video = initStream(
 		_format.get(),
 		AVMEDIA_TYPE_VIDEO,
 		mode,
-		options);
+		options,
+		_streamCache.videoIndex);
 	if (unroll()) {
 		return;
 	}
@@ -1705,7 +1777,8 @@ void File::Context::startWithFormat(
 		_format.get(),
 		AVMEDIA_TYPE_AUDIO,
 		mode,
-		options);
+		options,
+		_streamCache.audioIndex);
 	if (unroll()) {
 		return;
 	}
@@ -1728,7 +1801,9 @@ void File::Context::startWithFormat(
 	if (_source->isRemoteLoader()) {
 		sendFullInCache(true);
 	}
-	if (options.seekable && (video.codec || audio.codec)) {
+	if (!earlySeek
+		&& options.seekable
+		&& (video.codec || audio.codec)) {
 		seekToPosition(
 			_format.get(),
 			video.codec ? video : audio,
@@ -1744,16 +1819,18 @@ void File::Context::startWithFormat(
 	if (audio.codec) {
 		_queuedPackets[audio.index].reserve(kMaxQueuedPackets);
 	}
+	rememberStreams(video, audio);
 	const auto header = _source->headerSize();
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File soft seek ready "
 		"header=%1 hasVideo=%2 hasAudio=%3 videoIndex=%4 audioIndex=%5 "
-		"position=%6.")
+		"position=%6 earlySeek=%7.")
 		.arg(header)
 		.arg(video.codec ? 1 : 0)
 		.arg(audio.codec ? 1 : 0)
 		.arg(video.index)
 		.arg(audio.index)
-		.arg(qlonglong(options.position)));
+		.arg(qlonglong(options.position))
+		.arg(earlySeek ? 1 : 0));
 	if (!_delegate->fileReady(header, std::move(video), std::move(audio))) {
 		return fail(Error::OpenFailed);
 	}
@@ -1916,6 +1993,7 @@ FFmpeg::FormatPointer File::detachFormatForSoftSeek() {
 		_thread.join();
 	}
 	auto format = _context->takeFormat();
+	_streamCache = _context->streamCache();
 	_source->stopStreaming(true);
 	_context.reset();
 	if (!format) {
@@ -1934,11 +2012,13 @@ void File::resumeSoftSeek(
 	Expects(!_context.has_value());
 
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File soft seek resume "
-		"position=%1 seekable=%2.")
+		"position=%1 seekable=%2 cache=%3.")
 		.arg(qlonglong(options.position))
-		.arg(options.seekable ? 1 : 0));
+		.arg(options.seekable ? 1 : 0)
+		.arg(_streamCache.usable() ? 1 : 0));
 	_source->startStreaming();
 	_context.emplace(delegate, _source.get(), _seekMapCache.get());
+	_context->setStreamCache(_streamCache);
 	_thread = std::thread([
 		=,
 		context = &*_context,
