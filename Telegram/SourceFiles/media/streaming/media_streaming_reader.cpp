@@ -41,6 +41,8 @@ constexpr auto kSmartSeekLocalRecoveryDuration = 15 * crl::time(1000);
 // Pressure stays local only while the urgent seek window fills. Long freezes
 // block DC catch-up after first frame on high-bitrate streams.
 constexpr auto kSmartSeekPressureLocalDuration = 4 * crl::time(1000);
+// Once pressure latches true, ignore early clears to stop thrash toggles.
+constexpr auto kSmartPressureMinHoldDuration = 2 * crl::time(1000);
 // Up to ~2 slices of 128KB parts (16MB) so high-bitrate streams can bank
 // more than the current-slice remainder when throughput briefly exceeds rate.
 constexpr auto kSmartMaxPreloadParts = 128;
@@ -1368,10 +1370,31 @@ void Reader::setSmartStreamingBufferPressure(bool pressure) {
 		&& !_streamingActive.load(std::memory_order_acquire)) {
 		return;
 	}
+	const auto now = crl::now();
+	if (!pressure && smartStreamingEnabled()) {
+		const auto current = _smartBufferPressure.load(
+			std::memory_order_acquire);
+		if (current) {
+			const auto since = _smartPressureStickySince.load(
+				std::memory_order_acquire);
+			if (since
+				&& now < since + kSmartPressureMinHoldDuration) {
+				// Hysteresis: ignore premature clear while still catching up.
+				return;
+			}
+		}
+	}
+	if (pressure) {
+		const auto was = _smartBufferPressure.load(std::memory_order_acquire);
+		if (!was) {
+			_smartPressureStickySince.store(now, std::memory_order_release);
+		}
+	} else {
+		_smartPressureStickySince.store(0, std::memory_order_release);
+	}
 	const auto previous = _smartBufferPressure.exchange(
 		pressure,
 		std::memory_order_acq_rel);
-	const auto now = crl::now();
 	const auto recoveryBuffer = smartStreamingRecoveryBuffer();
 	if (pressure || previous) {
 		_smartPreloadRecoveryUntil.store(
@@ -1484,6 +1507,7 @@ void Reader::stopStreaming(bool stillActive) {
 		_smartPreloadRecoveryUntil.store(0, std::memory_order_release);
 		_smartSeekRecoveryUntil.store(0, std::memory_order_release);
 		_smartSeekPressureLocalUntil.store(0, std::memory_order_release);
+		_smartPressureStickySince.store(0, std::memory_order_release);
 		_smartPreloadRecoveryLoggedPercent.store(
 			0,
 			std::memory_order_relaxed);
