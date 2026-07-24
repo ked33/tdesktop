@@ -31,6 +31,20 @@ struct StartOptions {
 	bool sequentialOpen = false;
 };
 
+// Survives soft-seek context rebuild so we can seek before re-opening codecs.
+struct SoftSeekStreamCache {
+	int videoIndex = -1;
+	int audioIndex = -1;
+	crl::time videoDuration = 0;
+	crl::time audioDuration = 0;
+	AVRational videoTimeBase = { 0, 1 };
+	AVRational audioTimeBase = { 0, 1 };
+
+	[[nodiscard]] bool usable() const {
+		return (videoIndex >= 0) || (audioIndex >= 0);
+	}
+};
+
 class File final {
 public:
 	explicit File(std::shared_ptr<FileSource> source);
@@ -116,12 +130,19 @@ private:
 			not_null<AVFormatContext *> format,
 			AVMediaType type,
 			Mode mode,
-			StartOptions options);
+			StartOptions options,
+			int preferredIndex = -1);
 		void seekToPosition(
 			not_null<AVFormatContext *> format,
 			const Stream &stream,
 			StartOptions options,
 			crl::time position);
+		void rememberStreams(const Stream &video, const Stream &audio);
+		[[nodiscard]] SoftSeekStreamCache streamCache() const;
+		void setStreamCache(const SoftSeekStreamCache &cache);
+		bool seekUsingCache(
+			not_null<AVFormatContext*> format,
+			StartOptions options);
 
 		// TODO base::expected.
 		[[nodiscard]] auto readPacket()
@@ -146,6 +167,7 @@ private:
 		std::optional<bool> _fullInCache;
 		crl::semaphore _semaphore;
 		std::atomic<bool> _interrupted = false;
+		SoftSeekStreamCache _streamCache;
 
 		FFmpeg::FormatPointer _format;
 
@@ -154,6 +176,7 @@ private:
 	std::optional<Context> _context;
 	std::shared_ptr<FileSource> _source;
 	std::unique_ptr<Mp4SeekMapCache> _seekMapCache;
+	SoftSeekStreamCache _streamCache;
 	std::thread _thread;
 
 };

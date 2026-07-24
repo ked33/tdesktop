@@ -601,8 +601,8 @@ bool Player::trySoftSeek(
 	}
 
 	_file->notifySmartStreamingSeek();
+	// Keep playback-rate estimate during soft seek so Smart floors stay warm.
 	_file->setSmartStreamingBufferPressure(false);
-	_file->setSmartStreamingPlaybackRate(0);
 
 	// 1) Join demuxer thread and keep AVFormatContext.
 	auto format = _file->detachFormatForSoftSeek();
