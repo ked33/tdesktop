@@ -507,6 +507,29 @@ int64 SmartSeekBootstrapWaitMs(
 	return std::min(backgroundBufferMs, bootstrap);
 }
 
+bool SmartIsUnderPlayback(
+		int playbackBytesPerSecond,
+		int throughputBytesPerSecond) {
+	return (playbackBytesPerSecond > 0)
+		&& (throughputBytesPerSecond > 0)
+		&& (throughputBytesPerSecond < playbackBytesPerSecond);
+}
+
+int64 SmartKeepWindowTill(
+		int64 readOffset,
+		int64 existingTill,
+		int preloadParts,
+		int partSize,
+		int64 fileSize) {
+	if (readOffset < 0 || partSize <= 0 || fileSize <= 0) {
+		return existingTill;
+	}
+	const auto parts = std::max(preloadParts, 0);
+	const auto wantTill = readOffset + int64(parts) * int64(partSize);
+	const auto clamped = std::min(fileSize, std::max(existingTill, wantTill));
+	return clamped;
+}
+
 QString SmartPolicySelfCheck() {
 	const auto rate = AveragePlaybackBytesPerSecond(773795309, 636934);
 	if (rate < 1'100'000 || rate > 1'300'000) {
@@ -545,6 +568,19 @@ QString SmartPolicySelfCheck() {
 	}
 	if (SmartSeekBootstrapWaitMs(400 * 1024, buffer) != 2000) {
 		return QStringLiteral("bootstrap-wait-normal");
+	}
+	if (!SmartIsUnderPlayback(rate, rate / 2)) {
+		return QStringLiteral("under-playback-true");
+	}
+	if (SmartIsUnderPlayback(rate, rate + 1)) {
+		return QStringLiteral("under-playback-false");
+	}
+	if (SmartIsUnderPlayback(rate, 0)) {
+		return QStringLiteral("under-playback-zero-thr");
+	}
+	const auto keep = SmartKeepWindowTill(1000, 2000, 10, 128 * 1024, 1 << 30);
+	if (keep < 1000 + 10 * 128 * 1024) {
+		return QStringLiteral("keep-window-expand");
 	}
 	return QString();
 }
