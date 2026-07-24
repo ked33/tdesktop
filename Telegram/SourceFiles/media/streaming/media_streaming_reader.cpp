@@ -1413,6 +1413,7 @@ void Reader::notifySmartStreamingSeek() {
 		const auto recoveryUntil = now + kSmartSeekLocalRecoveryDuration;
 		const auto pressureLocalUntil = now
 			+ kSmartSeekPressureLocalDuration;
+		SmartClearDualKeep(_dualKeep);
 		_smartSeekRecoveryUntil.store(
 			recoveryUntil,
 			std::memory_order_release);
@@ -1479,6 +1480,7 @@ void Reader::stopStreaming(bool stillActive) {
 		_smartForceCancelLogLastTime = 0;
 		_smartCatchupLogPreload = -1;
 		_smartCatchupLogRequests = -1;
+		SmartClearDualKeep(_dualKeep);
 		_smartPreloadRecoveryUntil.store(0, std::memory_order_release);
 		_smartSeekRecoveryUntil.store(0, std::memory_order_release);
 		_smartSeekPressureLocalUntil.store(0, std::memory_order_release);
@@ -1879,6 +1881,12 @@ Reader::FillState Reader::fill(
 		_seekCancelEnabledLastFill = true;
 		const auto previous = _seekCancelLastOffset;
 		_seekCancelLastOffset = offset;
+		if (smartStreamingEnabled()) {
+			noteDualKeepRead(offset, int64(buffer.size()));
+			if (previous >= 0) {
+				noteDualKeepRead(previous, int64(buffer.size()));
+			}
+		}
 		if (previous >= 0 && !_loadingOffsets.empty()) {
 			const auto delta = (offset >= previous)
 				? (offset - previous)
@@ -1891,23 +1899,32 @@ Reader::FillState Reader::fill(
 					fileSize,
 					offset + buffer.size() + guard);
 				if (start < till) {
-					VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader seek jump cancel previous=%1 offset=%2 delta=%3 windowStart=%4 windowTill=%5 loadingActive=%6 boost=%7.")
-						.arg(qlonglong(previous))
-						.arg(qlonglong(offset))
-						.arg(qlonglong(delta))
-						.arg(qlonglong(start))
-						.arg(qlonglong(till))
-						.arg(_loadingOffsets.empty() ? 0 : 1)
-						.arg(DownloadBoostLevel()));
-					// Dual A/V AVIO jumps are common in steady play; only force
-					// during seek recovery so streams do not cancel each other.
-					const auto forceJump = smartStreamingEnabled()
+					const auto seekRecovery = smartStreamingEnabled()
 						&& (crl::now() < _smartSeekRecoveryUntil.load(
 							std::memory_order_acquire));
-					cancelLoadOutsideWindow(
-						uint32(start),
-						uint32(till),
-						forceJump);
+					// During seek recovery, dual A/V jumps must not cancel
+					// each other — dual-keep already tracks both envelopes.
+					// Only install-window force cancel clears the old position.
+					if (seekRecovery) {
+						VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader seek jump cancel skipped dual-keep recovery previous=%1 offset=%2 delta=%3 boost=%4.")
+							.arg(qlonglong(previous))
+							.arg(qlonglong(offset))
+							.arg(qlonglong(delta))
+							.arg(DownloadBoostLevel()));
+					} else {
+						VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader seek jump cancel previous=%1 offset=%2 delta=%3 windowStart=%4 windowTill=%5 loadingActive=%6 boost=%7.")
+							.arg(qlonglong(previous))
+							.arg(qlonglong(offset))
+							.arg(qlonglong(delta))
+							.arg(qlonglong(start))
+							.arg(qlonglong(till))
+							.arg(_loadingOffsets.empty() ? 0 : 1)
+							.arg(DownloadBoostLevel()));
+						cancelLoadOutsideWindow(
+							uint32(start),
+							uint32(till),
+							false);
+					}
 				}
 			}
 		}
@@ -2473,6 +2490,21 @@ void Reader::cancelLoadInRange(uint32 from, uint32 till) {
 	}
 }
 
+void Reader::noteDualKeepRead(int64 offset, int64 span) {
+	if (!smartStreamingEnabled() || offset < 0) {
+		return;
+	}
+	const auto guard = std::max<int64>(
+		StreamingSeekCancelGuardBytes(),
+		int64(2) * 1024 * 1024);
+	SmartNoteDualKeepOffset(
+		_dualKeep,
+		offset,
+		guard,
+		std::max(span, int64(kPartSize)),
+		size());
+}
+
 void Reader::cancelLoadOutsideWindow(
 		uint32 windowStart,
 		uint32 windowTill,
@@ -2529,12 +2561,22 @@ void Reader::cancelLoadOutsideWindow(
 	auto cancelled = 0;
 	auto selective = 0;
 	auto pinned = 0;
+	auto dualKept = 0;
+	const auto protectDual = preserveSent && !force;
 	const auto cancelOne = [&](int64 offset) {
 		if (_pinnedTailOffsets.contains(offset)) {
 			if (!preserveSent) {
 				_loadingOffsets.add(offset);
 			}
 			++pinned;
+			return;
+		}
+		// Keep both A/V envelopes alive unless this is a forced seek install.
+		if (protectDual && SmartOffsetInDualKeep(offset, _dualKeep)) {
+			if (preserveSent) {
+				_loadingOffsets.add(offset);
+			}
+			++dualKept;
 			return;
 		}
 		if (!_downloaderOffsetsRequested.contains(uint32(offset))) {
@@ -2566,34 +2608,34 @@ void Reader::cancelLoadOutsideWindow(
 			cancelOne(off);
 		}
 	}
-	if (cancelled || selective || pinned) {
-		// Force+seekRecovery is the real "new seek" signal; rate-limit other
-		// force cancels. Steady path stays VERBOSE.
+	if (cancelled || selective || pinned || dualKept) {
+		// Always rate-limit force DEBUG (including seekRecovery).
 		const auto logForceDebug = force
-			&& (seekRecovery
-				|| now >= _smartForceCancelLogLastTime
-					+ kSmartCatchupLogMinInterval);
+			&& (now >= _smartForceCancelLogLastTime
+				+ kSmartCatchupLogMinInterval);
 		if (logForceDebug) {
 			_smartForceCancelLogLastTime = now;
 			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader cancel outside "
 				"window force=%1 start=%2 till=%3 cancelled=%4 selective=%5 "
-				"pinned=%6 seekRecovery=%7 boost=%8.")
+				"pinned=%6 dualKept=%7 seekRecovery=%8 boost=%9.")
 				.arg(1)
 				.arg(qulonglong(windowStart))
 				.arg(qulonglong(windowTill))
 				.arg(cancelled)
 				.arg(selective)
 				.arg(pinned)
+				.arg(dualKept)
 				.arg(seekRecovery ? 1 : 0)
 				.arg(DownloadBoostLevel()));
 		} else {
-			VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader cancel outside window force=%1 start=%2 till=%3 cancelled=%4 selective=%5 pinned=%6 boost=%7.")
+			VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader cancel outside window force=%1 start=%2 till=%3 cancelled=%4 selective=%5 pinned=%6 dualKept=%7 boost=%8.")
 				.arg(force ? 1 : 0)
 				.arg(qulonglong(windowStart))
 				.arg(qulonglong(windowTill))
 				.arg(cancelled)
 				.arg(selective)
 				.arg(pinned)
+				.arg(dualKept)
 				.arg(DownloadBoostLevel()));
 		}
 	}
@@ -2648,8 +2690,9 @@ void Reader::consumePendingSeekPrefetch() {
 	const auto now = crl::now();
 	const auto serverRecovering = now < _serverRecoveryUntil.load(
 		std::memory_order_relaxed);
-	// Always force-cancel on a new seek window so stale parts cannot keep
-	// competing with the urgent path (even if buffer pressure is high).
+	// New seek position: drop dual A/V envelopes from the previous place,
+	// then force-cancel outside the new window.
+	SmartClearDualKeep(_dualKeep);
 	if (StreamingSeekCancelEnabled()) {
 		cancelLoadOutsideWindow(
 			uint32(windowStart),
