@@ -338,6 +338,11 @@ private:
 	int _seekCancelLogQueued = 0;
 	int _seekCancelLogSentCompleted = 0;
 	crl::time _seekCancelLogLastTime = 0;
+	bool _smartCatchupLogged = false;
+	bool _smartUnderPlaybackSkipLogged = false;
+	crl::time _smartCatchupLogLastTime = 0;
+	int _smartCatchupLogPreload = -1;
+	int _smartCatchupLogRequests = -1;
 
 	Slices _slices;
 

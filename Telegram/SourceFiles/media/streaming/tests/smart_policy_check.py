@@ -158,6 +158,16 @@ def test_source_structure() -> None:
 			"cancel skipped only for under-playback",
 		),
 		(
+			"Smart catch-up" in reader
+			and "kSmartCatchupLogMinInterval" in reader,
+			"sparse Smart catch-up debug snapshot",
+		),
+		(
+			"Reader cancel outside window force=" in reader
+			or "force=%1 start=" in reader,
+			"force cancel debug line",
+		),
+		(
 			"force-cancel on a new seek window" in reader
 			or "force)," in reader
 			or "bool force" in (
