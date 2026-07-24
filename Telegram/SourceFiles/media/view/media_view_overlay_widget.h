@@ -466,9 +466,6 @@ private:
 	void initStreamingThumbnail();
 	void markStreamedReady();
 	void streamingReady(Streaming::Information &&info);
-	void maybeShowHighBitrateToast(
-		not_null<DocumentData*> video,
-		crl::time duration);
 	[[nodiscard]] bool createStreamingObjects();
 	void handleStreamingUpdate(Streaming::Update &&update);
 	void handleStreamingError(Streaming::Error &&error);
@@ -746,7 +743,6 @@ private:
 	bool _showAsPip = false;
 	crl::time _automaticQualitySwitchAllowedAt = 0;
 	bool _automaticQualityToastShown = false;
-	bool _highBitrateToastShown = false;
 
 	Qt::Orientations _flip;
 
