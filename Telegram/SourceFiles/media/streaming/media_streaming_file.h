@@ -54,11 +54,9 @@ public:
 	File &operator=(const File &other) = delete;
 
 	void start(not_null<FileDelegate*> delegate, StartOptions options);
-	// Soft seek helpers: join reader + detach format, then resume without
-	// avformat_find_stream_info. Caller must destroy tracks between detach
-	// and resume (main-thread track ownership).
 	[[nodiscard]] bool canSoftSeek() const;
-	[[nodiscard]] FFmpeg::FormatPointer detachFormatForSoftSeek();
+	[[nodiscard]] FFmpeg::FormatPointer detachFormatForSoftSeek(
+		crl::time position = 0);
 	void resumeSoftSeek(
 		not_null<FileDelegate*> delegate,
 		FFmpeg::FormatPointer format,
@@ -172,6 +170,8 @@ private:
 		FFmpeg::FormatPointer _format;
 
 	};
+
+	void primeSoftSeekPrefetch(crl::time position);
 
 	std::optional<Context> _context;
 	std::shared_ptr<FileSource> _source;

@@ -1979,7 +1979,7 @@ bool File::canSoftSeek() const {
 		&& _context->readyForSoftSeek();
 }
 
-FFmpeg::FormatPointer File::detachFormatForSoftSeek() {
+FFmpeg::FormatPointer File::detachFormatForSoftSeek(crl::time position) {
 	if (!canSoftSeek()) {
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File soft seek detach "
 			"rejected joinable=%1 hasContext=%2.")
@@ -1987,20 +1987,85 @@ FFmpeg::FormatPointer File::detachFormatForSoftSeek() {
 			.arg(_context.has_value() ? 1 : 0));
 		return nullptr;
 	}
-	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File soft seek detach begin."));
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File soft seek detach begin "
+		"position=%1.")
+		.arg(qlonglong(position)));
 	_context->interrupt();
 	if (_thread.joinable()) {
 		_thread.join();
 	}
 	auto format = _context->takeFormat();
 	_streamCache = _context->streamCache();
-	_source->stopStreaming(true);
+	_source->continueStreamingForSoftSeek();
+	if (format && position > 0) {
+		primeSoftSeekPrefetch(position);
+	}
 	_context.reset();
 	if (!format) {
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File soft seek detach "
 			"aborted no format."));
 	}
 	return format;
+}
+
+void File::primeSoftSeekPrefetch(crl::time position) {
+	if (!_source->smartStreamingEnabled()
+		|| !_streamCache.usable()
+		|| !_seekMapCache
+		|| !_seekMapCache->ready
+		|| !_seekMapCache->track
+		|| position <= 0) {
+		return;
+	}
+	auto probe = Stream();
+	if (_streamCache.videoIndex >= 0) {
+		probe.index = _streamCache.videoIndex;
+		probe.duration = _streamCache.videoDuration;
+		probe.timeBase = _streamCache.videoTimeBase;
+	} else {
+		probe.index = _streamCache.audioIndex;
+		probe.duration = _streamCache.audioDuration;
+		probe.timeBase = _streamCache.audioTimeBase;
+	}
+	if (probe.index < 0 || probe.duration <= 1) {
+		return;
+	}
+	const auto fileSize = _source->size();
+	if (_seekMapCache->fileSize != fileSize
+		|| _seekMapCache->streamDuration != probe.duration) {
+		return;
+	}
+	std::atomic<bool> noInterrupt = false;
+	const auto resolved = ResolveMp4SeekMap(
+		_source.get(),
+		probe,
+		noInterrupt,
+		_seekMapCache.get(),
+		position);
+	if (!resolved.point || !resolved.cacheHit) {
+		return;
+	}
+	const auto sampleOffset = resolved.point->sampleOffset;
+	if (sampleOffset < 0 || sampleOffset >= fileSize) {
+		return;
+	}
+	const auto start = std::max<int64>(
+		0,
+		sampleOffset - kSeekPrefetchBackAmount);
+	const auto urgentOffset = std::max<int64>(
+		0,
+		sampleOffset - kSeekPrefetchUrgentBackAmount);
+	const auto amount = std::min<int64>(
+		fileSize - start,
+		kSeekPrefetchBackAmount + kSeekPrefetchAheadAmount);
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File soft seek prime "
+		"position=%1 sampleOffset=%2 start=%3 amount=%4 urgent=%5.")
+		.arg(qlonglong(position))
+		.arg(qlonglong(sampleOffset))
+		.arg(qlonglong(start))
+		.arg(qlonglong(amount))
+		.arg(qlonglong(urgentOffset)));
+	_source->primeSeekPrefetch(start, amount, urgentOffset);
 }
 
 void File::resumeSoftSeek(
