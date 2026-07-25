@@ -242,6 +242,8 @@ private:
 		uint32 windowTill,
 		bool force = false);
 	void noteDualKeepRead(int64 offset, int64 span);
+	[[nodiscard]] bool offsetInSeekUrgentWindow(int64 offset) const;
+	void topUpSeekUrgentLoads(int requestLimit);
 	[[nodiscard]] crl::time smartStreamingBackgroundBuffer() const;
 	void syncSmartStreamingBufferPressure(crl::time now);
 	void consumePendingSeekPrefetch();

@@ -2245,6 +2245,8 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 			profile.smartMinimumPreload,
 			smartPreloadCap)
 		: 0;
+	const auto seekUrgentPhase = seekPrefetchActive
+		&& !_seekPrefetchBackgroundActive;
 	const auto seekPrefetchTill = _seekPrefetchBackgroundActive
 		? seekPrefetchWindowTill
 		: std::max(
@@ -2261,16 +2263,16 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	// percent has tapered to 0.
 	const auto steadyBitrateFloor = (smartNonPremium
 		&& !serverLimited
-		&& smartTargetPreloadParts > 0)
+		&& smartTargetPreloadParts > 0
+		&& !(seekLocalRecovery && seekUrgentPhase))
 		? smartTargetPreloadParts
 		: 0;
-	const auto stagedSmartPreloadParts = (seekPrefetchActive
-		&& !_seekPrefetchBackgroundActive)
+	const auto stagedSmartPreloadParts = seekUrgentPhase
 		? 0
 		: std::max(smartTargetPreloadParts, steadyBitrateFloor);
-	const auto localRecoveryPreloadParts = std::max(
-		stagedSmartPreloadParts,
-		seekPrefetchParts);
+	const auto localRecoveryPreloadParts = seekUrgentPhase
+		? seekPrefetchParts
+		: std::max(stagedSmartPreloadParts, seekPrefetchParts);
 	const auto adaptivePreloadPercent = _adaptivePreloadPercent.load(
 		std::memory_order_relaxed);
 	const auto preloadPercent = std::max(
@@ -2284,7 +2286,9 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		preloadMinimum,
 		preloadCeiling);
 	preloadParts = std::max(preloadParts, localRecoveryPreloadParts);
-	if (serverLimited) {
+	if (seekLocalRecovery && seekUrgentPhase) {
+		preloadParts = std::max(1, seekPrefetchParts);
+	} else if (serverLimited) {
 		preloadParts = std::min(
 			preloadParts,
 			std::max(profile.smartMinimumPreload, seekPrefetchParts));
@@ -2445,7 +2449,7 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		(void)requestOffset;
 		++remoteRequests;
 	}
-	if (seekPrefetchActive && !_seekPrefetchBackgroundActive) {
+	if (seekUrgentPhase) {
 		const auto urgentTill = _seekPrefetchUrgentWindowTill;
 		const auto urgentStart = _seekPrefetchUrgentWindowStart;
 		auto urgentHits = 0;
@@ -2458,11 +2462,13 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 				}
 			}
 		}
-		const auto urgentReady = SmartSeekUrgentWindowReady(
-			urgentHits,
-			urgentParts,
-			int64(offset),
-			urgentTill);
+		const auto urgentReady = seekLocalRecovery
+			? (urgentParts > 0 && urgentHits >= urgentParts)
+			: SmartSeekUrgentWindowReady(
+				urgentHits,
+				urgentParts,
+				int64(offset),
+				urgentTill);
 		if (urgentReady) {
 			_seekPrefetchBackgroundActive = true;
 			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader seek prefetch "
@@ -2524,8 +2530,13 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		putToCache(std::move(result.toCache));
 	}
 	auto checkPriority = true;
-	consumePendingTailPrefetch();
-	if (StreamingSeekCancelEnabled() && !_loadingOffsets.empty()) {
+	if (!(seekLocalRecovery && seekUrgentPhase)) {
+		consumePendingTailPrefetch();
+	}
+	const auto allowSoftCancel = StreamingSeekCancelEnabled()
+		&& !_loadingOffsets.empty()
+		&& !(seekLocalRecovery && seekUrgentPhase);
+	if (allowSoftCancel) {
 		auto minOff = std::numeric_limits<uint32>::max();
 		auto maxOff = uint32(0);
 		auto hasAny = false;
@@ -2544,11 +2555,16 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 				= std::numeric_limits<uint32>::max();
 			const auto guard = kGuardParts * kPartSize;
 			const auto startBelow = int64(minOff) - guard;
+			const auto keepBase = seekPrefetchActive
+				? (_seekPrefetchBackgroundActive
+					? seekPrefetchWindowTill
+					: std::max(
+						_seekPrefetchUrgentWindowTill,
+						int64(maxOff) + kPartSize))
+				: (int64(maxOff) + kPartSize + guard);
 			const auto keepTill = SmartKeepWindowTill(
 				int64(offset),
-				seekPrefetchActive
-					? seekPrefetchWindowTill
-					: (int64(maxOff) + kPartSize + guard),
+				keepBase,
 				preloadParts,
 				kPartSize,
 				size());
@@ -2571,6 +2587,9 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 			checkPriority = false;
 		}
 		loadAtOffset(offset);
+	}
+	if (seekLocalRecovery && seekUrgentPhase) {
+		topUpSeekUrgentLoads(requestsLimit);
 	}
 	return result.state;
 }
@@ -2599,6 +2618,59 @@ void Reader::noteDualKeepRead(int64 offset, int64 span) {
 		guard,
 		std::max(span, int64(kPartSize)),
 		size());
+}
+
+bool Reader::offsetInSeekUrgentWindow(int64 offset) const {
+	return (_seekPrefetchUrgentWindowStart >= 0)
+		&& (_seekPrefetchUrgentWindowTill > _seekPrefetchUrgentWindowStart)
+		&& (offset >= _seekPrefetchUrgentWindowStart)
+		&& (offset < _seekPrefetchUrgentWindowTill);
+}
+
+void Reader::topUpSeekUrgentLoads(int requestLimit) {
+	if (requestLimit <= 0
+		|| _seekPrefetchUrgentWindowStart < 0
+		|| _seekPrefetchUrgentWindowTill
+			<= _seekPrefetchUrgentWindowStart) {
+		return;
+	}
+	const auto limit = std::clamp(requestLimit, 1, int(kLoadFromRemoteMax));
+	const auto fileSize = size();
+	const auto urgentTill = std::min(
+		_seekPrefetchUrgentWindowTill,
+		int64(fileSize));
+	if (urgentTill <= _seekPrefetchUrgentWindowStart) {
+		return;
+	}
+	const auto loading = _loadingOffsets.valuesInRange(
+		_seekPrefetchUrgentWindowStart,
+		urgentTill);
+	auto active = int(loading.size());
+	if (active >= limit) {
+		return;
+	}
+	auto requested = 0;
+	for (auto part = _seekPrefetchUrgentWindowStart;
+		part < urgentTill && active < limit;
+		part += kPartSize) {
+		if (_slices.hasPart(uint32(part)) || loading.contains(part)) {
+			continue;
+		}
+		if (_loadingOffsets.add(part)) {
+			_loader->load(part);
+			++active;
+			++requested;
+		}
+	}
+	if (requested > 0) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader seek urgent top-up "
+			"requested=%1 active=%2 limit=%3 urgentStart=%4 urgentTill=%5.")
+			.arg(requested)
+			.arg(active)
+			.arg(limit)
+			.arg(qlonglong(_seekPrefetchUrgentWindowStart))
+			.arg(qlonglong(urgentTill)));
+	}
 }
 
 void Reader::cancelLoadOutsideWindow(
@@ -2658,6 +2730,7 @@ void Reader::cancelLoadOutsideWindow(
 	auto selective = 0;
 	auto pinned = 0;
 	auto dualKept = 0;
+	auto urgentKept = 0;
 	const auto protectDual = preserveSent && !force;
 	const auto cancelOne = [&](int64 offset) {
 		if (_pinnedTailOffsets.contains(offset)) {
@@ -2665,6 +2738,12 @@ void Reader::cancelLoadOutsideWindow(
 				_loadingOffsets.add(offset);
 			}
 			++pinned;
+			return;
+		}
+		if (preserveSent && offsetInSeekUrgentWindow(offset)) {
+			_loadingOffsets.add(offset);
+			_seekCancellationOffsets.remove(offset);
+			++urgentKept;
 			return;
 		}
 		// Keep both A/V envelopes alive unless this is a forced seek install.
@@ -2704,8 +2783,7 @@ void Reader::cancelLoadOutsideWindow(
 			cancelOne(off);
 		}
 	}
-	if (cancelled || selective || pinned || dualKept) {
-		// Always rate-limit force DEBUG (including seekRecovery).
+	if (cancelled || selective || pinned || dualKept || urgentKept) {
 		const auto logForceDebug = force
 			&& (now >= _smartForceCancelLogLastTime
 				+ kSmartCatchupLogMinInterval);
@@ -2713,7 +2791,8 @@ void Reader::cancelLoadOutsideWindow(
 			_smartForceCancelLogLastTime = now;
 			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader cancel outside "
 				"window force=%1 start=%2 till=%3 cancelled=%4 selective=%5 "
-				"pinned=%6 dualKept=%7 seekRecovery=%8 boost=%9.")
+				"pinned=%6 dualKept=%7 urgentKept=%8 seekRecovery=%9 "
+				"boost=%10.")
 				.arg(1)
 				.arg(qulonglong(windowStart))
 				.arg(qulonglong(windowTill))
@@ -2721,10 +2800,13 @@ void Reader::cancelLoadOutsideWindow(
 				.arg(selective)
 				.arg(pinned)
 				.arg(dualKept)
+				.arg(urgentKept)
 				.arg(seekRecovery ? 1 : 0)
 				.arg(DownloadBoostLevel()));
 		} else {
-			VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader cancel outside window force=%1 start=%2 till=%3 cancelled=%4 selective=%5 pinned=%6 dualKept=%7 boost=%8.")
+			VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader cancel outside "
+				"window force=%1 start=%2 till=%3 cancelled=%4 selective=%5 "
+				"pinned=%6 dualKept=%7 urgentKept=%8 boost=%9.")
 				.arg(force ? 1 : 0)
 				.arg(qulonglong(windowStart))
 				.arg(qulonglong(windowTill))
@@ -2732,6 +2814,7 @@ void Reader::cancelLoadOutsideWindow(
 				.arg(selective)
 				.arg(pinned)
 				.arg(dualKept)
+				.arg(urgentKept)
 				.arg(DownloadBoostLevel()));
 		}
 	}
@@ -2790,6 +2873,10 @@ void Reader::consumePendingSeekPrefetch() {
 		&& (_seekPrefetchWindowTill == windowTill)
 		&& (_seekPrefetchUrgentWindowStart == urgent.first)
 		&& (_seekPrefetchUrgentWindowTill == urgent.second);
+	_seekPrefetchWindowStart = windowStart;
+	_seekPrefetchWindowTill = windowTill;
+	_seekPrefetchUrgentWindowStart = urgent.first;
+	_seekPrefetchUrgentWindowTill = urgent.second;
 	if (!sameWindow) {
 		SmartClearDualKeep(_dualKeep);
 		if (StreamingSeekCancelEnabled()) {
@@ -2799,10 +2886,6 @@ void Reader::consumePendingSeekPrefetch() {
 				true);
 		}
 	}
-	_seekPrefetchWindowStart = windowStart;
-	_seekPrefetchWindowTill = windowTill;
-	_seekPrefetchUrgentWindowStart = urgent.first;
-	_seekPrefetchUrgentWindowTill = urgent.second;
 	const auto countHits = [&](int64 start, int64 till) {
 		auto result = 0;
 		for (auto offset = start; offset < till; offset += kPartSize) {
