@@ -18,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <mutex>
 #include <vector>
 
 namespace Media {
@@ -1144,7 +1145,7 @@ int File::Context::read(bytes::span buffer) {
 			_delegate->fileWaitingForData();
 		}
 		_semaphore.acquire();
-		if (_interrupted) {
+		if (_interrupted || hasPendingSoftSeek()) {
 			return AVERROR_EXTERNAL;
 		} else if (const auto error = _source->streamingError()) {
 			fail(*error);
@@ -1551,7 +1552,7 @@ std::variant<FFmpeg::Packet, FFmpeg::AvErrorWrap> File::Context::readPacket() {
 
 	auto result = FFmpeg::Packet();
 	error = av_read_frame(_format.get(), &result.fields());
-	if (unroll()) {
+	if (unroll() || hasPendingSoftSeek()) {
 		return FFmpeg::AvErrorWrap();
 	} else if (!error) {
 		return result;
@@ -1726,6 +1727,221 @@ bool File::Context::readyForSoftSeek() const {
 		&& !_interrupted.load(std::memory_order_acquire);
 }
 
+bool File::Context::canInPlaceSoftSeek() const {
+	return readyForSoftSeek() && !_readTillEnd;
+}
+
+uint64_t File::Context::requestSoftSeek(StartOptions options) {
+	if (!canInPlaceSoftSeek()) {
+		return 0;
+	}
+	const auto gen = _softSeekRequestGen.fetch_add(1, std::memory_order_acq_rel) + 1;
+	{
+		const auto lock = std::lock_guard(_softSeekMutex);
+		_softSeekOptions = options;
+		_softSeekRequestStarted = crl::now();
+	}
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File in-place soft seek "
+		"request gen=%1 position=%2.")
+		.arg(qulonglong(gen))
+		.arg(qlonglong(options.position)));
+	wake();
+	_softSeekBarrier.release();
+	return gen;
+}
+
+void File::Context::releaseSoftSeekTrackBarrier(uint64_t generation) {
+	if (!generation) {
+		return;
+	}
+	auto expected = _softSeekBarrierGen.load(std::memory_order_acquire);
+	while (expected < generation
+		&& !_softSeekBarrierGen.compare_exchange_weak(
+			expected,
+			generation,
+			std::memory_order_release,
+			std::memory_order_acquire)) {
+	}
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File in-place soft seek "
+		"barrier release gen=%1.")
+		.arg(qulonglong(generation)));
+	_softSeekBarrier.release();
+}
+
+bool File::Context::hasPendingSoftSeek() const {
+	const auto requested = _softSeekRequestGen.load(std::memory_order_acquire);
+	return requested > _softSeekHandledGen;
+}
+
+bool File::Context::reopenCodecsAfterSoftSeek(StartOptions options) {
+	if (unroll() || !_format) {
+		return false;
+	}
+	const auto mode = _delegate->fileOpenMode();
+	auto video = initStream(
+		_format.get(),
+		AVMEDIA_TYPE_VIDEO,
+		mode,
+		options,
+		_streamCache.videoIndex);
+	if (unroll()) {
+		return false;
+	}
+	auto audio = initStream(
+		_format.get(),
+		AVMEDIA_TYPE_AUDIO,
+		mode,
+		options,
+		_streamCache.audioIndex);
+	if (unroll()) {
+		return false;
+	}
+	if (_source->smartStreamingEnabled()) {
+		const auto duration = std::max(
+			(video.codec && video.duration != kDurationUnavailable)
+				? video.duration
+				: crl::time(0),
+			(audio.codec && audio.duration != kDurationUnavailable)
+				? audio.duration
+				: crl::time(0));
+		if (duration > 1) {
+			const auto bytesPerSecond = int(std::clamp(
+				double(_size) * 1000. / double(duration),
+				0.,
+				double(64 * 1024 * 1024)));
+			_source->setSmartStreamingPlaybackRate(bytesPerSecond);
+		}
+	}
+	if (_source->isRemoteLoader()) {
+		sendFullInCache(true);
+	}
+	if (video.codec) {
+		_queuedPackets[video.index].reserve(kMaxQueuedPackets);
+	}
+	if (audio.codec) {
+		_queuedPackets[audio.index].reserve(kMaxQueuedPackets);
+	}
+	rememberStreams(video, audio);
+	const auto header = _source->headerSize();
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File in-place soft seek "
+		"fileReady header=%1 hasVideo=%2 hasAudio=%3 position=%4.")
+		.arg(header)
+		.arg(video.codec ? 1 : 0)
+		.arg(audio.codec ? 1 : 0)
+		.arg(qlonglong(options.position)));
+	if (!_delegate->fileReady(header, std::move(video), std::move(audio))) {
+		fail(Error::OpenFailed);
+		return false;
+	}
+	return true;
+}
+
+bool File::Context::applyPendingSoftSeekIfAny() {
+	if (!hasPendingSoftSeek() || unroll() || !_format) {
+		return false;
+	}
+
+	while (hasPendingSoftSeek() && !unroll() && _format) {
+		const auto gen = _softSeekRequestGen.load(std::memory_order_acquire);
+		if (gen <= _softSeekHandledGen) {
+			return false;
+		}
+		StartOptions options;
+		crl::time requestedAt = 0;
+		{
+			const auto lock = std::lock_guard(_softSeekMutex);
+			options = _softSeekOptions;
+			requestedAt = _softSeekRequestStarted;
+		}
+		_softSeekHandledGen = gen;
+
+		const auto applyStarted = crl::now();
+		_queuedPackets.clear();
+		_readTillEnd = false;
+		_pendingSeekPrefetchPosition = 0;
+		_debugReadCalls = 0;
+		_debugWaitingCount = 0;
+
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File in-place soft seek "
+			"apply gen=%1 position=%2 waitMs=%3.")
+			.arg(qulonglong(gen))
+			.arg(qlonglong(options.position))
+			.arg(qlonglong(std::max(crl::time(0), applyStarted - requestedAt))));
+
+		const auto earlySeek = seekUsingCache(_format.get(), options);
+		if (unroll()) {
+			return true;
+		}
+		if (!earlySeek
+			&& options.seekable
+			&& _streamCache.usable()) {
+			auto probe = Stream();
+			if (_streamCache.videoIndex >= 0) {
+				probe.index = _streamCache.videoIndex;
+				probe.duration = _streamCache.videoDuration;
+				probe.timeBase = _streamCache.videoTimeBase;
+			} else {
+				probe.index = _streamCache.audioIndex;
+				probe.duration = _streamCache.audioDuration;
+				probe.timeBase = _streamCache.audioTimeBase;
+			}
+			if (probe.index >= 0 && probe.duration > 1) {
+				seekToPosition(
+					_format.get(),
+					probe,
+					options,
+					options.position);
+			}
+		}
+		if (unroll()) {
+			return true;
+		}
+
+		const auto seekDone = crl::now();
+		_softSeekAppliedGen.store(gen, std::memory_order_release);
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File in-place soft seek "
+			"applied gen=%1 earlySeek=%2 seekMs=%3.")
+			.arg(qulonglong(gen))
+			.arg(earlySeek ? 1 : 0)
+			.arg(qlonglong(seekDone - applyStarted)));
+		_delegate->fileSoftSeekApplied(gen);
+
+		while (!unroll()) {
+			const auto barrier = _softSeekBarrierGen.load(
+				std::memory_order_acquire);
+			if (barrier >= gen) {
+				break;
+			}
+			const auto latest = _softSeekRequestGen.load(
+				std::memory_order_acquire);
+			if (latest > gen) {
+				VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File in-place soft "
+					"seek superseded gen=%1 by=%2.")
+					.arg(qulonglong(gen))
+					.arg(qulonglong(latest)));
+				break;
+			}
+			_softSeekBarrier.acquire();
+		}
+		if (unroll()) {
+			return true;
+		}
+		if (_softSeekRequestGen.load(std::memory_order_acquire) > gen) {
+			continue;
+		}
+
+		if (!reopenCodecsAfterSoftSeek(options)) {
+			return true;
+		}
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File in-place soft seek "
+			"ready gen=%1 totalMs=%2.")
+			.arg(qulonglong(gen))
+			.arg(qlonglong(crl::now() - applyStarted)));
+		return true;
+	}
+	return false;
+}
+
 FFmpeg::FormatPointer File::Context::takeFormat() {
 	return base::take(_format);
 }
@@ -1837,8 +2053,11 @@ void File::Context::startWithFormat(
 }
 
 void File::Context::readNextPacket() {
+	if (applyPendingSoftSeekIfAny() || unroll()) {
+		return;
+	}
 	auto result = readPacket();
-	if (unroll()) {
+	if (unroll() || hasPendingSoftSeek()) {
 		return;
 	} else if (const auto packet = std::get_if<FFmpeg::Packet>(&result)) {
 		const auto index = packet->fields().stream_index;
@@ -1854,7 +2073,10 @@ void File::Context::readNextPacket() {
 	} else {
 		// Still trying to read by drain.
 		Assert(v::is<FFmpeg::AvErrorWrap>(result));
-		Assert(v::get<FFmpeg::AvErrorWrap>(result).code() == AVERROR_EOF);
+		const auto &wrap = v::get<FFmpeg::AvErrorWrap>(result);
+		if (wrap.code() != AVERROR_EOF) {
+			return;
+		}
 		processQueuedPackets(SleepPolicy::Allowed);
 		if (!finished()) {
 			handleEndOfFile();
@@ -1885,13 +2107,22 @@ void File::Context::handleEndOfFile() {
 }
 
 void File::Context::processQueuedPackets(SleepPolicy policy) {
+	if (hasPendingSoftSeek()) {
+		_queuedPackets.clear();
+		return;
+	}
 	const auto more = _delegate->fileProcessPackets(_queuedPackets);
 	if (!more && policy == SleepPolicy::Allowed) {
 		do {
+			if (hasPendingSoftSeek() || unroll()) {
+				break;
+			}
 			_source->startSleep(&_semaphore);
 			_semaphore.acquire();
 			_source->stopSleep();
-		} while (!unroll() && !_delegate->fileReadMore());
+		} while (!unroll()
+			&& !hasPendingSoftSeek()
+			&& !_delegate->fileReadMore());
 	}
 }
 
@@ -1902,6 +2133,7 @@ void File::Context::interrupt() {
 		.arg(_readTillEnd ? 1 : 0));
 	_interrupted = true;
 	_semaphore.release();
+	_softSeekBarrier.release();
 }
 
 void File::Context::wake() {
@@ -1961,6 +2193,9 @@ void File::start(not_null<FileDelegate*> delegate, StartOptions options) {
 		crl::toggle_fp_exceptions(true);
 		context->start(options);
 		while (!context->finished()) {
+			if (context->applyPendingSoftSeekIfAny()) {
+				continue;
+			}
 			context->readNextPacket();
 		}
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File thread exit interrupted=%1 failed=%2 readTillEnd=%3.")
@@ -1977,6 +2212,30 @@ bool File::canSoftSeek() const {
 	return _thread.joinable()
 		&& _context.has_value()
 		&& _context->readyForSoftSeek();
+}
+
+bool File::canInPlaceSoftSeek() const {
+	return _thread.joinable()
+		&& _context.has_value()
+		&& _context->canInPlaceSoftSeek()
+		&& !_context->finished();
+}
+
+uint64_t File::requestInPlaceSoftSeek(StartOptions options) {
+	if (!canInPlaceSoftSeek()) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File in-place soft seek "
+			"rejected joinable=%1 hasContext=%2.")
+			.arg(_thread.joinable() ? 1 : 0)
+			.arg(_context.has_value() ? 1 : 0));
+		return 0;
+	}
+	return _context->requestSoftSeek(options);
+}
+
+void File::releaseSoftSeekTrackBarrier(uint64_t generation) {
+	if (_context.has_value()) {
+		_context->releaseSoftSeekTrackBarrier(generation);
+	}
 }
 
 FFmpeg::FormatPointer File::detachFormatForSoftSeek(crl::time position) {
@@ -2092,6 +2351,9 @@ void File::resumeSoftSeek(
 		crl::toggle_fp_exceptions(true);
 		context->startWithFormat(std::move(format), options);
 		while (!context->finished()) {
+			if (context->applyPendingSoftSeekIfAny()) {
+				continue;
+			}
 			context->readNextPacket();
 		}
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File soft-seek thread exit "
