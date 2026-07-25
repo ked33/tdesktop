@@ -108,6 +108,7 @@ private:
 
 		void interrupt();
 		void wake();
+		void waitWhileIdleAtEnd();
 		[[nodiscard]] bool interrupted() const;
 		[[nodiscard]] bool failed() const;
 		[[nodiscard]] bool finished() const;
