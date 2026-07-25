@@ -1125,6 +1125,13 @@ int File::Context::read(bytes::span buffer) {
 		const auto result = _source->fill(_offset, buffer, &_semaphore);
 		if (result == FileSource::FillState::Success) {
 			break;
+		} else if (result == FileSource::FillState::Failed) {
+			if (const auto error = _source->streamingError()) {
+				fail(*error);
+			} else {
+				fail(Error::LoadFailed);
+			}
+			return AVERROR_EXTERNAL;
 		} else if (result == FileSource::FillState::WaitingRemote) {
 			++_debugWaitingCount;
 			if ((_debugWaitingCount <= 8) || !(_debugWaitingCount % 25)) {
@@ -1145,7 +1152,10 @@ int File::Context::read(bytes::span buffer) {
 			_delegate->fileWaitingForData();
 		}
 		_semaphore.acquire();
-		if (_interrupted || hasPendingSoftSeek()) {
+		if (_interrupted) {
+			return AVERROR_EXTERNAL;
+		} else if (hasPendingSoftSeek()) {
+			_avioAbortForSoftSeek.store(true, std::memory_order_release);
 			return AVERROR_EXTERNAL;
 		} else if (const auto error = _source->streamingError()) {
 			fail(*error);
@@ -1552,11 +1562,32 @@ std::variant<FFmpeg::Packet, FFmpeg::AvErrorWrap> File::Context::readPacket() {
 
 	auto result = FFmpeg::Packet();
 	error = av_read_frame(_format.get(), &result.fields());
+	const auto softSeekAbort = _avioAbortForSoftSeek.exchange(
+		false,
+		std::memory_order_acq_rel);
 	if (unroll() || hasPendingSoftSeek()) {
+		return FFmpeg::AvErrorWrap();
+	} else if (softSeekAbort && error) {
+		// AVIO aborted a blocked fill for in-place soft seek. By the time
+		// av_read_frame returns, the seek may already be handled, so
+		// hasPendingSoftSeek() is false — do not treat as InvalidData.
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File av_read_frame "
+			"soft-seek AVIO abort ignored offset=%1 size=%2 code=%3.")
+			.arg(qlonglong(_offset))
+			.arg(qlonglong(_size))
+			.arg(error.code()));
 		return FFmpeg::AvErrorWrap();
 	} else if (!error) {
 		return result;
-	} else if (error.code() != AVERROR_EOF) {
+	} else if (error.code() == AVERROR_EOF) {
+		return error;
+	} else if (error.code() == AVERROR_EXTERNAL && _offset >= _size) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File av_read_frame "
+			"EXTERNAL at end treated as EOF offset=%1 size=%2.")
+			.arg(qlonglong(_offset))
+			.arg(qlonglong(_size)));
+		return FFmpeg::AvErrorWrap(AVERROR_EOF);
+	} else {
 		logFatal(qstr("av_read_frame"), error);
 	}
 	return error;
@@ -1854,6 +1885,7 @@ bool File::Context::applyPendingSoftSeekIfAny() {
 			requestedAt = _softSeekRequestStarted;
 		}
 		_softSeekHandledGen = gen;
+		_avioAbortForSoftSeek.store(false, std::memory_order_release);
 
 		const auto applyStarted = crl::now();
 		_queuedPackets.clear();
@@ -1895,6 +1927,9 @@ bool File::Context::applyPendingSoftSeekIfAny() {
 		}
 		if (unroll()) {
 			return true;
+		}
+		if (_format) {
+			avformat_flush(_format.get());
 		}
 
 		const auto seekDone = crl::now();

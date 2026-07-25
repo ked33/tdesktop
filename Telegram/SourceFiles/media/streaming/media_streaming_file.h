@@ -176,6 +176,7 @@ private:
 		std::optional<bool> _fullInCache;
 		crl::semaphore _semaphore;
 		std::atomic<bool> _interrupted = false;
+		std::atomic<bool> _avioAbortForSoftSeek = false;
 		SoftSeekStreamCache _streamCache;
 
 		std::mutex _softSeekMutex;
