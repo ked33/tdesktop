@@ -2786,14 +2786,18 @@ void Reader::consumePendingSeekPrefetch() {
 	const auto now = crl::now();
 	const auto serverRecovering = now < _serverRecoveryUntil.load(
 		std::memory_order_relaxed);
-	// New seek position: drop dual A/V envelopes from the previous place,
-	// then force-cancel outside the new window.
-	SmartClearDualKeep(_dualKeep);
-	if (StreamingSeekCancelEnabled()) {
-		cancelLoadOutsideWindow(
-			uint32(windowStart),
-			uint32(windowTill),
-			true);
+	const auto sameWindow = (_seekPrefetchWindowStart == windowStart)
+		&& (_seekPrefetchWindowTill == windowTill)
+		&& (_seekPrefetchUrgentWindowStart == urgent.first)
+		&& (_seekPrefetchUrgentWindowTill == urgent.second);
+	if (!sameWindow) {
+		SmartClearDualKeep(_dualKeep);
+		if (StreamingSeekCancelEnabled()) {
+			cancelLoadOutsideWindow(
+				uint32(windowStart),
+				uint32(windowTill),
+				true);
+		}
 	}
 	_seekPrefetchWindowStart = windowStart;
 	_seekPrefetchWindowTill = windowTill;
@@ -3013,8 +3017,7 @@ bool Reader::processLoadedParts() {
 		const auto now = crl::now();
 		const auto pending = int(_seekCancellationOffsets.size());
 		const auto due = (_seekCancelLogLastTime == 0)
-			|| (now >= _seekCancelLogLastTime + kSmartCancelLogMinInterval)
-			|| (pending == 0);
+			|| (now >= _seekCancelLogLastTime + kSmartCancelLogMinInterval);
 		if (due) {
 			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader seek cancel "
 				"queued=%1 sentCompleted=%2 pending=%3.")
