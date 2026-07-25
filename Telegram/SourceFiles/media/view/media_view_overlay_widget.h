@@ -270,7 +270,7 @@ private:
 	void smtcSeek(crl::time position) override;
 
 	void playbackPauseResume();
-	void playbackToggleFullScreen();
+	void playbackToggleFullScreen(bool allowBeforeReady = false);
 	void playbackPauseOnCall();
 	void playbackResumeOnCall();
 	void playbackPauseMusic();
