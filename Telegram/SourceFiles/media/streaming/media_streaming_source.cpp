@@ -98,6 +98,17 @@ public:
 		_reader->stopStreaming(stillActive);
 	}
 
+	void continueStreamingForSoftSeek() override {
+		_reader->continueStreamingForSoftSeek();
+	}
+
+	void primeSeekPrefetch(
+			int64 offset,
+			int64 amount,
+			int64 urgentOffset) override {
+		_reader->primeSeekPrefetch(offset, amount, urgentOffset);
+	}
+
 	void setLoaderPriority(int priority) override {
 		_reader->setLoaderPriority(priority);
 	}
