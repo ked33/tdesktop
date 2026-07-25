@@ -1759,7 +1759,7 @@ bool File::Context::readyForSoftSeek() const {
 }
 
 bool File::Context::canInPlaceSoftSeek() const {
-	return readyForSoftSeek() && !_readTillEnd;
+	return readyForSoftSeek();
 }
 
 uint64_t File::Context::requestSoftSeek(StartOptions options) {
@@ -2175,6 +2175,15 @@ void File::Context::wake() {
 	_semaphore.release();
 }
 
+void File::Context::waitWhileIdleAtEnd() {
+	if (unroll() || hasPendingSoftSeek()) {
+		return;
+	}
+	_source->startSleep(&_semaphore);
+	_semaphore.acquire();
+	_source->stopSleep();
+}
+
 bool File::Context::interrupted() const {
 	return _interrupted;
 }
@@ -2227,8 +2236,12 @@ void File::start(not_null<FileDelegate*> delegate, StartOptions options) {
 	_thread = std::thread([=, context = &*_context] {
 		crl::toggle_fp_exceptions(true);
 		context->start(options);
-		while (!context->finished()) {
+		while (!context->interrupted() && !context->failed()) {
 			if (context->applyPendingSoftSeekIfAny()) {
+				continue;
+			}
+			if (context->finished()) {
+				context->waitWhileIdleAtEnd();
 				continue;
 			}
 			context->readNextPacket();
@@ -2252,8 +2265,7 @@ bool File::canSoftSeek() const {
 bool File::canInPlaceSoftSeek() const {
 	return _thread.joinable()
 		&& _context.has_value()
-		&& _context->canInPlaceSoftSeek()
-		&& !_context->finished();
+		&& _context->canInPlaceSoftSeek();
 }
 
 uint64_t File::requestInPlaceSoftSeek(StartOptions options) {
@@ -2264,7 +2276,12 @@ uint64_t File::requestInPlaceSoftSeek(StartOptions options) {
 			.arg(_context.has_value() ? 1 : 0));
 		return 0;
 	}
-	return _context->requestSoftSeek(options);
+	const auto gen = _context->requestSoftSeek(options);
+	if (gen && options.position > 0) {
+		_streamCache = _context->streamCache();
+		primeSoftSeekPrefetch(options.position);
+	}
+	return gen;
 }
 
 void File::releaseSoftSeekTrackBarrier(uint64_t generation) {
@@ -2385,8 +2402,12 @@ void File::resumeSoftSeek(
 	]() mutable {
 		crl::toggle_fp_exceptions(true);
 		context->startWithFormat(std::move(format), options);
-		while (!context->finished()) {
+		while (!context->interrupted() && !context->failed()) {
 			if (context->applyPendingSoftSeekIfAny()) {
+				continue;
+			}
+			if (context->finished()) {
+				context->waitWhileIdleAtEnd();
 				continue;
 			}
 			context->readNextPacket();
