@@ -604,8 +604,7 @@ bool Player::trySoftSeek(
 	// Keep playback-rate estimate during soft seek so Smart floors stay warm.
 	_file->setSmartStreamingBufferPressure(false);
 
-	// 1) Join demuxer thread and keep AVFormatContext.
-	auto format = _file->detachFormatForSoftSeek();
+	auto format = _file->detachFormatForSoftSeek(options.position);
 	if (!format) {
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player soft seek "
 			"detach failed, using hard path position=%1.")
