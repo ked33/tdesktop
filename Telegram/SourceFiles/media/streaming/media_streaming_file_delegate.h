@@ -35,6 +35,10 @@ public:
 		base::flat_map<int, std::vector<FFmpeg::Packet>> &packets) = 0;
 	// Also returns true after fileProcessEndOfFile() if looping is desired.
 	[[nodiscard]] virtual bool fileReadMore() = 0;
+
+	virtual void fileSoftSeekApplied(uint64_t generation) {
+		(void)generation;
+	}
 };
 
 } // namespace Streaming

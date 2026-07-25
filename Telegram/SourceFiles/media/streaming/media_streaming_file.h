@@ -14,6 +14,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/bytes.h"
 #include "base/weak_ptr.h"
 
+#include <atomic>
+#include <mutex>
 #include <thread>
 
 namespace Media {
@@ -55,6 +57,9 @@ public:
 
 	void start(not_null<FileDelegate*> delegate, StartOptions options);
 	[[nodiscard]] bool canSoftSeek() const;
+	[[nodiscard]] bool canInPlaceSoftSeek() const;
+	[[nodiscard]] uint64_t requestInPlaceSoftSeek(StartOptions options);
+	void releaseSoftSeekTrackBarrier(uint64_t generation);
 	[[nodiscard]] FFmpeg::FormatPointer detachFormatForSoftSeek(
 		crl::time position = 0);
 	void resumeSoftSeek(
@@ -92,6 +97,11 @@ private:
 			StartOptions options);
 		void readNextPacket();
 		[[nodiscard]] bool readyForSoftSeek() const;
+		[[nodiscard]] bool canInPlaceSoftSeek() const;
+		[[nodiscard]] uint64_t requestSoftSeek(StartOptions options);
+		void releaseSoftSeekTrackBarrier(uint64_t generation);
+		[[nodiscard]] bool hasPendingSoftSeek() const;
+		[[nodiscard]] bool applyPendingSoftSeekIfAny();
 		[[nodiscard]] FFmpeg::FormatPointer takeFormat();
 		[[nodiscard]] SoftSeekStreamCache streamCache() const;
 		void setStreamCache(const SoftSeekStreamCache &cache);
@@ -149,6 +159,7 @@ private:
 
 		void handleEndOfFile();
 		void sendFullInCache(bool force = false);
+		[[nodiscard]] bool reopenCodecsAfterSoftSeek(StartOptions options);
 
 		const not_null<FileDelegate*> _delegate;
 		const not_null<FileSource*> _source;
@@ -166,6 +177,15 @@ private:
 		crl::semaphore _semaphore;
 		std::atomic<bool> _interrupted = false;
 		SoftSeekStreamCache _streamCache;
+
+		std::mutex _softSeekMutex;
+		StartOptions _softSeekOptions;
+		std::atomic<uint64_t> _softSeekRequestGen = 0;
+		std::atomic<uint64_t> _softSeekAppliedGen = 0;
+		std::atomic<uint64_t> _softSeekBarrierGen = 0;
+		uint64_t _softSeekHandledGen = 0;
+		crl::semaphore _softSeekBarrier;
+		crl::time _softSeekRequestStarted = 0;
 
 		FFmpeg::FormatPointer _format;
 

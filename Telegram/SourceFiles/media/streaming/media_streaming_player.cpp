@@ -595,8 +595,96 @@ bool Player::trySoftSeek(
 		|| options.loop
 		|| (options.mode != _options.mode)
 		|| (options.hwAllowed != _options.hwAllowed)
-		|| (options.position == _options.position)
-		|| !_file->canSoftSeek()) {
+		|| (options.position == _options.position)) {
+		return false;
+	}
+
+	if (_file->canInPlaceSoftSeek()) {
+		_file->notifySmartStreamingSeek();
+		_file->setSmartStreamingBufferPressure(false);
+
+		savePreviousReceivedTill(options, previousReceivedTill);
+		_options = options;
+		if (!Media::Audio::SupportsSpeedControl()) {
+			_options.speed = 1.;
+		}
+		_stage = Stage::Initializing;
+		_pausedByUser = _pausedByWaitingForData = _paused = false;
+		_renderFrameTimer.cancel();
+		_nextFrameTime = kTimeUnknown;
+		_audioFinished = false;
+		_videoFinished = false;
+		_pauseReading = false;
+		_readTillEnd = false;
+		_loopingShift = 0;
+		_durationByPackets = 0;
+		_durationByLastAudioPacket = 0;
+		_durationByLastVideoPacket = 0;
+		_lastFailure = std::nullopt;
+		updateSmartStreamingPlaybackRate();
+
+		const auto gen = _file->requestInPlaceSoftSeek({
+			.position = _options.position,
+			.durationOverride = options.durationOverride,
+			.seekable = true,
+			.hwAllow = _options.hwAllowed,
+			.sequentialOpen = false,
+		});
+		if (gen) {
+			_softSeekGeneration = gen;
+			_softSeekInPlace = true;
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player in-place soft "
+				"seek request gen=%1 position=%2 previousReceived=%3 "
+				"speed=%4 remote=%5 boost=%6 loadAhead=%7 waitBuffer=%8.")
+				.arg(qulonglong(gen))
+				.arg(qlonglong(_options.position))
+				.arg(qlonglong(_previousReceivedTill))
+				.arg(_options.speed, 0, 'f', 2)
+				.arg(_remoteLoader ? 1 : 0)
+				.arg(PlaybackDebugBoostLevel())
+				.arg(qlonglong(loadInAdvanceFor()))
+				.arg(qlonglong(waitingForDataBuffer())));
+			return true;
+		}
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player in-place soft seek "
+			"request failed, falling back to join soft seek position=%1.")
+			.arg(qlonglong(options.position)));
+	}
+
+	return tryJoinSoftSeek(options, previousReceivedTill);
+}
+
+void Player::fileSoftSeekApplied(uint64_t generation) {
+	crl::on_main(&_sessionGuard, [=] {
+		applySoftSeekTrackBarrier(generation);
+	});
+}
+
+void Player::applySoftSeekTrackBarrier(uint64_t generation) {
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player soft seek track "
+		"barrier gen=%1 pending=%2 inPlace=%3 stage=%4.")
+		.arg(qulonglong(generation))
+		.arg(qulonglong(_softSeekGeneration))
+		.arg(_softSeekInPlace ? 1 : 0)
+		.arg(int(_stage)));
+
+	if (_softSeekInPlace && generation == _softSeekGeneration) {
+		_sessionLifetime = rpl::lifetime();
+		_audio = nullptr;
+		_video = nullptr;
+		invalidate_weak_ptrs(&_sessionGuard);
+		const auto header = _information.headerSize;
+		_information = Information();
+		_information.headerSize = header;
+		_softSeekInPlace = false;
+	}
+	_file->releaseSoftSeekTrackBarrier(generation);
+}
+
+bool Player::tryJoinSoftSeek(
+		const PlaybackOptions &options,
+		crl::time previousReceivedTill) {
+	if (!_file->canSoftSeek()) {
 		return false;
 	}
 
@@ -612,7 +700,9 @@ bool Player::trySoftSeek(
 		return false;
 	}
 
-	// 2) Destroy tracks only after the old file thread has joined.
+	_softSeekInPlace = false;
+	_softSeekGeneration = 0;
+
 	_sessionLifetime = rpl::lifetime();
 	_audio = nullptr;
 	_video = nullptr;
@@ -640,7 +730,7 @@ bool Player::trySoftSeek(
 	}
 	_stage = Stage::Initializing;
 	updateSmartStreamingPlaybackRate();
-	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player soft seek "
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player join soft seek "
 		"position=%1 previousReceived=%2 speed=%3 remote=%4 boost=%5 "
 		"loadAhead=%6 waitBuffer=%7.")
 		.arg(qlonglong(_options.position))
@@ -651,7 +741,6 @@ bool Player::trySoftSeek(
 		.arg(qlonglong(loadInAdvanceFor()))
 		.arg(qlonglong(waitingForDataBuffer())));
 
-	// 3) Resume demuxer without avformat_find_stream_info.
 	_file->resumeSoftSeek(delegate(), std::move(format), {
 		.position = _options.position,
 		.durationOverride = options.durationOverride,
@@ -1000,6 +1089,11 @@ void Player::stop(bool stillActive) {
 
 	_file->setSmartStreamingBufferPressure(false);
 	_file->setSmartStreamingPlaybackRate(0);
+	if (_softSeekInPlace && _softSeekGeneration) {
+		_file->releaseSoftSeekTrackBarrier(_softSeekGeneration);
+	}
+	_softSeekInPlace = false;
+	_softSeekGeneration = 0;
 	_file->stop(stillActive);
 	_sessionLifetime = rpl::lifetime();
 	_stage = Stage::Uninitialized;

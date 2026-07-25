@@ -112,6 +112,7 @@ private:
 		base::flat_map<int, std::vector<FFmpeg::Packet>> &packets) override;
 	void fileProcessEndOfFile() override;
 	bool fileReadMore() override;
+	void fileSoftSeekApplied(uint64_t generation) override;
 
 	// Called from the main thread.
 	void streamReady(Information &&information);
@@ -119,6 +120,10 @@ private:
 	void start();
 	void stop(bool stillActive);
 	[[nodiscard]] bool trySoftSeek(
+		const PlaybackOptions &options,
+		crl::time previousReceivedTill);
+	void applySoftSeekTrackBarrier(uint64_t generation);
+	[[nodiscard]] bool tryJoinSoftSeek(
 		const PlaybackOptions &options,
 		crl::time previousReceivedTill);
 	void provideStartInformation();
@@ -203,6 +208,8 @@ private:
 	bool _audioFinished = false;
 	bool _videoFinished = false;
 	bool _remoteLoader = false;
+	uint64_t _softSeekGeneration = 0;
+	bool _softSeekInPlace = false;
 
 	crl::time _startedTime = kTimeUnknown;
 	crl::time _pausedTime = kTimeUnknown;
