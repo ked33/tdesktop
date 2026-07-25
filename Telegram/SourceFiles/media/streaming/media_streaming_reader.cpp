@@ -37,6 +37,8 @@ constexpr auto kSmartPreloadRecoveryFullPercent = 100;
 constexpr auto kSmartPreloadRecoveryTaperPercent = 75;
 constexpr auto kSmartSeekPrefetchTargetDuration = crl::time(8000);
 constexpr auto kSmartSeekUrgentTargetDuration = crl::time(2000);
+constexpr auto kSmartSeekPrefetchHighBitrateDuration = crl::time(12000);
+constexpr auto kSmartSeekUrgentHighBitrateDuration = crl::time(3000);
 constexpr auto kSmartSeekLocalRecoveryDuration = 15 * crl::time(1000);
 // Pressure stays local only while the urgent seek window fills. Long freezes
 // block DC catch-up after first frame on high-bitrate streams.
@@ -52,8 +54,10 @@ constexpr auto kSmartServerRecoveryWaitMargin = 2 * crl::time(1000);
 constexpr auto kSmartServerRecoveryMaximumDuration = 20 * crl::time(1000);
 constexpr auto kSmartSeekPrefetchMinimum = int64(4) * 1024 * 1024;
 constexpr auto kSmartSeekPrefetchMaximum = int64(16) * 1024 * 1024;
+constexpr auto kSmartSeekPrefetchHighBitrateMaximum = int64(20) * 1024 * 1024;
 constexpr auto kSmartSeekUrgentMinimum = int64(2) * 1024 * 1024;
 constexpr auto kSmartSeekUrgentMaximum = int64(4) * 1024 * 1024;
+constexpr auto kSmartSeekUrgentHighBitrateMaximum = int64(8) * 1024 * 1024;
 constexpr auto kSmartCancelLogMinInterval = crl::time(1000);
 // Sparse Smart diagnostics: state transitions + at most one snapshot / interval.
 constexpr auto kSmartCatchupLogMinInterval = 2 * crl::time(1000);
@@ -1468,6 +1472,59 @@ void Reader::startStreaming() {
 	refreshLoaderPriority();
 }
 
+void Reader::continueStreamingForSoftSeek() {
+	Expects(_sleeping == nullptr);
+
+	_waiting.store(nullptr, std::memory_order_release);
+	if (_cacheHelper && _cacheHelper->waiting != nullptr) {
+		QMutexLocker lock(&_cacheHelper->mutex);
+		_cacheHelper->waiting.store(nullptr, std::memory_order_release);
+	}
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader soft seek continue "
+		"streaming keep-loads active=%1.")
+		.arg(_streamingActive.load(std::memory_order_acquire) ? 1 : 0));
+}
+
+void Reader::primeSeekPrefetch(
+		int64 offset,
+		int64 amount,
+		int64 urgentOffset) {
+	if (!_streamingActive.load(std::memory_order_acquire)
+		|| !smartStreamingEnabled()) {
+		return;
+	}
+	prefetch(offset, amount, urgentOffset);
+	consumePendingSeekPrefetch();
+	const auto urgentStart = _seekPrefetchUrgentWindowStart;
+	const auto urgentTill = _seekPrefetchUrgentWindowTill;
+	if (urgentStart < 0 || urgentTill <= urgentStart) {
+		return;
+	}
+	const auto &profile = BoostProfileFor(DownloadBoostLevel());
+	const auto requestLimit = std::clamp(
+		_loader->smartStreamingRequestLimit(),
+		profile.smartMinimumRequestLimit,
+		profile.smartMaximumRequestLimit);
+	auto requested = 0;
+	for (auto part = urgentStart;
+		part < urgentTill && requested < requestLimit;
+		part += kPartSize) {
+		if (_slices.hasPart(uint32(part))) {
+			continue;
+		}
+		loadAtOffset(uint32(part));
+		++requested;
+	}
+	if (requested > 0) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader soft seek prime "
+			"urgentStart=%1 urgentTill=%2 requested=%3 limit=%4.")
+			.arg(qlonglong(urgentStart))
+			.arg(qlonglong(urgentTill))
+			.arg(requested)
+			.arg(requestLimit));
+	}
+}
+
 void Reader::stopStreaming(bool stillActive) {
 	Expects(_sleeping == nullptr);
 
@@ -2040,22 +2097,35 @@ void Reader::prefetch(
 		return;
 	}
 	const auto playback = _loader->smartStreamingPlaybackRate();
+	const auto highBitrate = IsHighBitratePlaybackRate(playback);
 	auto urgentAmount = kSmartSeekUrgentMinimum;
 	if (playback > 0) {
 		const auto recoveryBuffer = smartStreamingBackgroundBuffer();
+		const auto prefetchDuration = highBitrate
+			? kSmartSeekPrefetchHighBitrateDuration
+			: kSmartSeekPrefetchTargetDuration;
+		const auto prefetchMaximum = highBitrate
+			? kSmartSeekPrefetchHighBitrateMaximum
+			: kSmartSeekPrefetchMaximum;
+		const auto urgentDuration = highBitrate
+			? kSmartSeekUrgentHighBitrateDuration
+			: kSmartSeekUrgentTargetDuration;
+		const auto urgentMaximum = highBitrate
+			? kSmartSeekUrgentHighBitrateMaximum
+			: kSmartSeekUrgentMaximum;
 		const auto target = BytesForDuration(
 			playback,
 			std::max(
 				recoveryBuffer,
-				kSmartSeekPrefetchTargetDuration));
+				prefetchDuration));
 		amount = std::clamp(
 			std::max(amount, target),
 			kSmartSeekPrefetchMinimum,
-			kSmartSeekPrefetchMaximum);
+			prefetchMaximum);
 		urgentAmount = std::clamp(
-			BytesForDuration(playback, kSmartSeekUrgentTargetDuration),
+			BytesForDuration(playback, urgentDuration),
 			kSmartSeekUrgentMinimum,
-			kSmartSeekUrgentMaximum);
+			urgentMaximum);
 	}
 	amount = std::min(amount, size() - offset);
 	urgentAmount = std::min(urgentAmount, size() - urgentOffset);

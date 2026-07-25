@@ -52,6 +52,13 @@ public:
 	virtual void tryRemoveLoaderAsync() = 0;
 	virtual void startStreaming() = 0;
 	virtual void stopStreaming(bool stillActive = false) = 0;
+	virtual void continueStreamingForSoftSeek() {
+	}
+	virtual void primeSeekPrefetch(
+		int64 offset,
+		int64 amount,
+		int64 urgentOffset) {
+	}
 	virtual void setLoaderPriority(int priority) = 0;
 	virtual void setSmartStreamingBufferPressure(bool) {
 	}

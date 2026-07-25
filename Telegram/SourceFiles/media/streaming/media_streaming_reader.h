@@ -80,6 +80,8 @@ public:
 	// Main thread.
 	void startStreaming();
 	void stopStreaming(bool stillActive = false);
+	void continueStreamingForSoftSeek();
+	void primeSeekPrefetch(int64 offset, int64 amount, int64 urgentOffset);
 	[[nodiscard]] rpl::producer<LoadedPart> partsForDownloader() const;
 	void loadForDownloader(
 		not_null<Storage::StreamedFileDownloader*> downloader,
