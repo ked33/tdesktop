@@ -5934,11 +5934,11 @@ int OverlayWidget::storiesTopNotchSkip() {
 	return topNotchSkip();
 }
 
-void OverlayWidget::playbackToggleFullScreen() {
+void OverlayWidget::playbackToggleFullScreen(bool allowBeforeReady) {
 	Expects(_streamed != nullptr);
 
 	if (_stories
-		|| !videoShown()
+		|| (!videoShown() && !allowBeforeReady)
 		|| (!_streamed->controls && !_fullScreenVideo)) {
 		return;
 	}
@@ -8194,7 +8194,7 @@ bool OverlayWidget::handleDoubleClick(
 	} else if (!_streamed) {
 		return false;
 	} else {
-		playbackToggleFullScreen();
+		playbackToggleFullScreen(true);
 		if (base::take(_videoPlaybackToggledOnLastRelease)) {
 			playbackPauseResume();
 		}
