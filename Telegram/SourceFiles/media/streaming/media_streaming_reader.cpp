@@ -353,7 +353,9 @@ void Reader::Slice::processCacheData(PartsMap &&data) {
 }
 
 void Reader::Slice::addPart(uint32 offset, QByteArray bytes) {
-	Expects(!parts.contains(offset));
+	if (parts.contains(offset)) {
+		return;
+	}
 
 	parts.emplace(offset, std::move(bytes));
 	if (flags & Flag::LoadedFromCache) {
@@ -2998,6 +3000,9 @@ bool Reader::processLoadedParts() {
 		if (cancellationRequested) {
 			++sentCompleted;
 		}
+		if (_slices.hasPart(part.offset)) {
+			continue;
+		}
 		_slices.processPart(
 			part.offset,
 			std::move(part.bytes));
@@ -3037,6 +3042,9 @@ bool Reader::checkForSomethingMoreReceived() {
 }
 
 void Reader::loadAtOffset(uint32 offset) {
+	if (offset >= uint32(size()) || _slices.hasPart(offset)) {
+		return;
+	}
 	if (_loadingOffsets.add(offset)) {
 		_loader->load(offset);
 	}
