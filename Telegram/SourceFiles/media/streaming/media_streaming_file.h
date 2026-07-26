@@ -31,6 +31,7 @@ struct StartOptions {
 	bool seekable = true;
 	bool hwAllow = false;
 	bool sequentialOpen = false;
+	uint64 trackGeneration = 0;
 };
 
 // Survives soft-seek context rebuild so we can seek before re-opening codecs.
@@ -61,7 +62,8 @@ public:
 	[[nodiscard]] uint64_t requestInPlaceSoftSeek(StartOptions options);
 	void releaseSoftSeekTrackBarrier(uint64_t generation);
 	[[nodiscard]] FFmpeg::FormatPointer detachFormatForSoftSeek(
-		crl::time position = 0);
+		crl::time position = 0,
+		uint64 generation = 0);
 	void resumeSoftSeek(
 		not_null<FileDelegate*> delegate,
 		FFmpeg::FormatPointer format,
@@ -79,6 +81,8 @@ public:
 
 	[[nodiscard]] int64 size() const;
 	[[nodiscard]] rpl::producer<SpeedEstimate> speedEstimate() const;
+	[[nodiscard]] SeekPrefetchProgress seekPrefetchProgress(
+		uint64 generation) const;
 
 	~File();
 
@@ -128,7 +132,12 @@ private:
 		void prefetchAroundOffset(
 			int64 offset,
 			crl::time position,
-			bool mapped);
+			bool mapped,
+			uint64 generation,
+			const std::array<
+				SeekPrefetchRange,
+				SeekPrefetchRequest::kCriticalRangeLimit> &criticalRanges,
+			int criticalRangeCount);
 
 		[[nodiscard]] bool unroll() const;
 		void logError(QLatin1String method);
@@ -169,7 +178,9 @@ private:
 		base::flat_map<int, std::vector<FFmpeg::Packet>> _queuedPackets;
 		int64 _offset = 0;
 		int64 _size = 0;
+		uint64 _trackGeneration = 0;
 		crl::time _pendingSeekPrefetchPosition = 0;
+		uint64 _pendingSeekPrefetchGeneration = 0;
 		bool _failed = false;
 		bool _readTillEnd = false;
 		int _debugReadCalls = 0;
@@ -193,7 +204,7 @@ private:
 
 	};
 
-	void primeSoftSeekPrefetch(crl::time position);
+	void primeSoftSeekPrefetch(crl::time position, uint64 generation);
 
 	std::optional<Context> _context;
 	std::shared_ptr<FileSource> _source;
