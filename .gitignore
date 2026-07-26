@@ -79,3 +79,5 @@ mpv.log
 .gitignore
 我的修改.md
 .claude
+.codex
+.agents
