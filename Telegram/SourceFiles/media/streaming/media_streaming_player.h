@@ -98,14 +98,42 @@ private:
 		Ready,
 		Started,
 	};
+	enum class SeekPath {
+		Hard,
+		InPlace,
+		Join,
+	};
+	enum class SeekOutcome {
+		Ready,
+		FileError,
+		TrackError,
+		Stopped,
+		Superseded,
+	};
+	struct SeekTiming {
+		uint64 generation = 0;
+		crl::time startedAt = 0;
+		crl::time videoReadyAt = kTimeUnknown;
+		crl::time audioReadyAt = kTimeUnknown;
+		crl::time overallReadyAt = kTimeUnknown;
+		crl::time position = 0;
+		SeekPath path = SeekPath::Hard;
+		int staleCallbacks = 0;
+		bool hasVideo = false;
+		bool hasAudio = false;
+	};
 
 	// Thread-safe.
 	not_null<FileDelegate*> delegate();
 
 	// FileDelegate methods are called only from the File thread.
 	Mode fileOpenMode() override;
-	bool fileReady(int headerSize, Stream &&video, Stream &&audio) override;
-	void fileError(Error error) override;
+	bool fileReady(
+		uint64 generation,
+		int headerSize,
+		Stream &&video,
+		Stream &&audio) override;
+	void fileError(uint64 generation, Error error) override;
 	void fileWaitingForData() override;
 	void fileFullInCache(bool fullInCache) override;
 	bool fileProcessPackets(
@@ -115,17 +143,32 @@ private:
 	void fileSoftSeekApplied(uint64_t generation) override;
 
 	// Called from the main thread.
-	void streamReady(Information &&information);
-	void streamFailed(Error error);
+	void streamReady(
+		uint64 generation,
+		bool hasVideo,
+		bool hasAudio,
+		Information &&information);
+	void streamFailed(uint64 generation, Error error);
 	void start();
 	void stop(bool stillActive);
+	[[nodiscard]] uint64 startTrackGeneration();
+	void beginSeekTiming(
+		uint64 generation,
+		crl::time startedAt,
+		crl::time position,
+		SeekPath path);
+	void finishSeekTiming(SeekOutcome outcome);
+	void noteStaleTrackCallback(uint64 generation);
 	[[nodiscard]] bool trySoftSeek(
 		const PlaybackOptions &options,
-		crl::time previousReceivedTill);
+		crl::time previousReceivedTill,
+		crl::time startedAt);
 	void applySoftSeekTrackBarrier(uint64_t generation);
 	[[nodiscard]] bool tryJoinSoftSeek(
 		const PlaybackOptions &options,
-		crl::time previousReceivedTill);
+		crl::time previousReceivedTill,
+		crl::time startedAt,
+		uint64 trackGeneration);
 	void provideStartInformation();
 	void fail(Error error);
 	void checkVideoStep();
@@ -195,6 +238,7 @@ private:
 	// Belongs to the File thread while File is active.
 	bool _readTillEnd = false;
 	bool _waitingForData = false;
+	uint64 _fileGeneration = 0;
 
 	std::atomic<bool> _pauseReading = false;
 
@@ -208,8 +252,10 @@ private:
 	bool _audioFinished = false;
 	bool _videoFinished = false;
 	bool _remoteLoader = false;
+	std::atomic<uint64> _trackGeneration = 0;
 	uint64_t _softSeekGeneration = 0;
 	bool _softSeekInPlace = false;
+	std::optional<SeekTiming> _seekTiming;
 
 	crl::time _startedTime = kTimeUnknown;
 	crl::time _pausedTime = kTimeUnknown;

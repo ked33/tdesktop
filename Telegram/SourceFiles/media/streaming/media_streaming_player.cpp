@@ -256,7 +256,18 @@ Mode Player::fileOpenMode() {
 	return _options.mode;
 }
 
-bool Player::fileReady(int headerSize, Stream &&video, Stream &&audio) {
+bool Player::fileReady(
+		uint64 generation,
+		int headerSize,
+		Stream &&video,
+		Stream &&audio) {
+	if (generation != _trackGeneration.load(std::memory_order_acquire)) {
+		crl::on_main(&_sessionGuard, [=] {
+			noteStaleTrackCallback(generation);
+		});
+		return true;
+	}
+	_fileGeneration = generation;
 	_waitingForData = false;
 	_file->setSmartStreamingBufferPressure(false);
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player fileReady header=%1 incomingVideo=%2 incomingAudio=%3 mode=%4 seekable=%5 sequential=%6 hw=%7 remote=%8 boost=%9.")
@@ -270,18 +281,6 @@ bool Player::fileReady(int headerSize, Stream &&video, Stream &&audio) {
 		.arg(_remoteLoader ? 1 : 0)
 		.arg(PlaybackDebugBoostLevel()));
 
-	const auto weak = base::make_weak(&_sessionGuard);
-	const auto ready = [=](const Information &data) {
-		crl::on_main(weak, [=, data = data]() mutable {
-			data.headerSize = headerSize;
-			streamReady(std::move(data));
-		});
-	};
-	const auto error = [=](Error error) {
-		crl::on_main(weak, [=] {
-			streamFailed(error);
-		});
-	};
 	const auto mode = _options.mode;
 	if ((mode != Mode::Audio && mode != Mode::Both)
 		|| audio.duration == kDurationUnavailable) {
@@ -290,6 +289,24 @@ bool Player::fileReady(int headerSize, Stream &&video, Stream &&audio) {
 	if (mode != Mode::Video && mode != Mode::Both) {
 		video = Stream();
 	}
+	const auto hasVideo = (video.codec != nullptr);
+	const auto hasAudio = (audio.codec != nullptr);
+	const auto weak = base::make_weak(&_sessionGuard);
+	const auto ready = [=](const Information &data) {
+		crl::on_main(weak, [=, data = data]() mutable {
+			data.headerSize = headerSize;
+			streamReady(
+				generation,
+				hasVideo,
+				hasAudio,
+				std::move(data));
+		});
+	};
+	const auto error = [=](Error error) {
+		crl::on_main(weak, [=] {
+			streamFailed(generation, error);
+		});
+	};
 	if (audio.duration == kDurationUnavailable) {
 		LOG(("Streaming Error: Audio stream with unknown duration."));
 		return false;
@@ -349,7 +366,13 @@ bool Player::fileReady(int headerSize, Stream &&video, Stream &&audio) {
 	return true;
 }
 
-void Player::fileError(Error error) {
+void Player::fileError(uint64 generation, Error error) {
+	if (generation != _trackGeneration.load(std::memory_order_acquire)) {
+		crl::on_main(&_sessionGuard, [=] {
+			noteStaleTrackCallback(generation);
+		});
+		return;
+	}
 	_waitingForData = false;
 	_file->setSmartStreamingBufferPressure(false);
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player fileError error=%1 stage=%2.")
@@ -357,6 +380,11 @@ void Player::fileError(Error error) {
 		.arg(int(_stage)));
 
 	crl::on_main(&_sessionGuard, [=] {
+		if (generation != _trackGeneration.load(std::memory_order_acquire)) {
+			noteStaleTrackCallback(generation);
+			return;
+		}
+		finishSeekTiming(SeekOutcome::FileError);
 		fail(error);
 	});
 }
@@ -483,7 +511,7 @@ bool Player::fileReadMore() {
 		if (duration == kDurationUnavailable) {
 			LOG(("Streaming Error: "
 				"Couldn't find out the real stream duration."));
-			fileError(Error::InvalidData);
+			fileError(_fileGeneration, Error::InvalidData);
 			return false;
 		}
 		_loopingShift += duration;
@@ -493,7 +521,29 @@ bool Player::fileReadMore() {
 	return !_readTillEnd && !_pauseReading;
 }
 
-void Player::streamReady(Information &&information) {
+void Player::streamReady(
+		uint64 generation,
+		bool hasVideo,
+		bool hasAudio,
+		Information &&information) {
+	if (generation != _trackGeneration.load(std::memory_order_acquire)
+		|| _stage != Stage::Initializing) {
+		noteStaleTrackCallback(generation);
+		return;
+	}
+	if (_seekTiming && _seekTiming->generation == generation) {
+		const auto now = crl::now();
+		_seekTiming->hasVideo = hasVideo;
+		_seekTiming->hasAudio = hasAudio;
+		if (information.video.state.duration != kTimeUnknown
+			&& _seekTiming->videoReadyAt == kTimeUnknown) {
+			_seekTiming->videoReadyAt = now;
+		}
+		if (information.audio.state.duration != kTimeUnknown
+			&& _seekTiming->audioReadyAt == kTimeUnknown) {
+			_seekTiming->audioReadyAt = now;
+		}
+	}
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player streamReady header=%1 videoDuration=%2 audioDuration=%3 stage=%4 audioState=%5 videoState=%6.")
 		.arg(information.headerSize)
 		.arg(qlonglong(information.video.state.duration))
@@ -505,7 +555,12 @@ void Player::streamReady(Information &&information) {
 	provideStartInformation();
 }
 
-void Player::streamFailed(Error error) {
+void Player::streamFailed(uint64 generation, Error error) {
+	if (generation != _trackGeneration.load(std::memory_order_acquire)) {
+		noteStaleTrackCallback(generation);
+		return;
+	}
+	finishSeekTiming(SeekOutcome::TrackError);
 	fail(error);
 }
 
@@ -519,7 +574,7 @@ int Player::durationByPacket(
 	}
 	const auto result = DurationByPacket(packet, track.streamTimeBase());
 	if (result < 0) {
-		fileError(Error::InvalidData);
+		fileError(_fileGeneration, Error::InvalidData);
 		return 0;
 	}
 
@@ -539,7 +594,7 @@ void Player::setDurationByPackets() {
 	} else {
 		LOG(("Streaming Error: Bad total duration by packets: %1"
 			).arg(duration));
-		fileError(Error::InvalidData);
+		fileError(_fileGeneration, Error::InvalidData);
 	}
 }
 
@@ -556,6 +611,10 @@ void Player::provideStartInformation() {
 	} else {
 		_stage = Stage::Ready;
 		updateSmartStreamingPlaybackRate();
+		if (_seekTiming) {
+			_seekTiming->overallReadyAt = crl::now();
+			finishSeekTiming(SeekOutcome::Ready);
+		}
 
 		if (_audio && _audioFinished) {
 			// Audio was stopped before it was ready.
@@ -583,9 +642,96 @@ void Player::fail(Error error) {
 	stopGuarded();
 }
 
+uint64 Player::startTrackGeneration() {
+	return _trackGeneration.fetch_add(1, std::memory_order_acq_rel) + 1;
+}
+
+void Player::beginSeekTiming(
+		uint64 generation,
+		crl::time startedAt,
+		crl::time position,
+		SeekPath path) {
+	finishSeekTiming(SeekOutcome::Superseded);
+	_seekTiming = SeekTiming{
+		.generation = generation,
+		.startedAt = startedAt,
+		.position = position,
+		.path = path,
+	};
+}
+
+void Player::finishSeekTiming(SeekOutcome outcome) {
+	if (!_seekTiming) {
+		return;
+	}
+	const auto timing = *base::take(_seekTiming);
+	const auto now = crl::now();
+	const auto elapsed = [&](crl::time value) {
+		return (value == kTimeUnknown)
+			? crl::time(-1)
+			: std::max(crl::time(0), value - timing.startedAt);
+	};
+	const auto path = [&] {
+		switch (timing.path) {
+		case SeekPath::Hard: return u"hard"_q;
+		case SeekPath::InPlace: return u"in-place"_q;
+		case SeekPath::Join: return u"join"_q;
+		}
+		Unexpected("SeekPath value.");
+	}();
+	const auto result = [&] {
+		switch (outcome) {
+		case SeekOutcome::Ready: return u"ready"_q;
+		case SeekOutcome::FileError: return u"file-error"_q;
+		case SeekOutcome::TrackError: return u"track-error"_q;
+		case SeekOutcome::Stopped: return u"stopped"_q;
+		case SeekOutcome::Superseded: return u"superseded"_q;
+		}
+		Unexpected("SeekOutcome value.");
+	}();
+	const auto progress = _file->seekPrefetchProgress(timing.generation);
+	const auto criticalMs = progress.criticalReadyAt
+		? std::max(crl::time(0), progress.criticalReadyAt - timing.startedAt)
+		: crl::time(-1);
+	const auto criticalWaitMs = progress.criticalReadyAt
+		&& progress.requestedAt
+		? std::max(
+			crl::time(0),
+			progress.criticalReadyAt - progress.requestedAt)
+		: crl::time(-1);
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player seek summary "
+		"gen=%1 position=%2 path=%3 outcome=%4 totalMs=%5 criticalMs=%6 "
+		"criticalWaitMs=%7 videoMs=%8 audioMs=%9 overallMs=%10 "
+		"criticalParts=%11 cacheHits=%12 staleCallbacks=%13.")
+		.arg(qulonglong(timing.generation))
+		.arg(qlonglong(timing.position))
+		.arg(path)
+		.arg(result)
+		.arg(qlonglong(std::max(crl::time(0), now - timing.startedAt)))
+		.arg(qlonglong(criticalMs))
+		.arg(qlonglong(criticalWaitMs))
+		.arg(qlonglong(timing.hasVideo
+			? elapsed(timing.videoReadyAt)
+			: crl::time(-1)))
+		.arg(qlonglong(timing.hasAudio
+			? elapsed(timing.audioReadyAt)
+			: crl::time(-1)))
+		.arg(qlonglong(elapsed(timing.overallReadyAt)))
+		.arg(progress.criticalParts)
+		.arg(progress.criticalCacheHits)
+		.arg(timing.staleCallbacks));
+}
+
+void Player::noteStaleTrackCallback(uint64 generation) {
+	if (_seekTiming && _seekTiming->generation != generation) {
+		++_seekTiming->staleCallbacks;
+	}
+}
+
 bool Player::trySoftSeek(
 		const PlaybackOptions &options,
-		crl::time previousReceivedTill) {
+		crl::time previousReceivedTill,
+		crl::time startedAt) {
 	if (!_remoteLoader
 		|| !_file->smartStreamingEnabled()
 		|| _stage == Stage::Uninitialized
@@ -598,6 +744,7 @@ bool Player::trySoftSeek(
 		|| (options.position == _options.position)) {
 		return false;
 	}
+	const auto trackGeneration = startTrackGeneration();
 
 	if (_file->canInPlaceSoftSeek()) {
 		_file->notifySmartStreamingSeek();
@@ -629,10 +776,16 @@ bool Player::trySoftSeek(
 			.seekable = true,
 			.hwAllow = _options.hwAllowed,
 			.sequentialOpen = false,
+			.trackGeneration = trackGeneration,
 		});
 		if (gen) {
 			_softSeekGeneration = gen;
 			_softSeekInPlace = true;
+			beginSeekTiming(
+				trackGeneration,
+				startedAt,
+				_options.position,
+				SeekPath::InPlace);
 			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player in-place soft "
 				"seek request gen=%1 position=%2 previousReceived=%3 "
 				"speed=%4 remote=%5 boost=%6 loadAhead=%7 waitBuffer=%8.")
@@ -651,7 +804,11 @@ bool Player::trySoftSeek(
 			.arg(qlonglong(options.position)));
 	}
 
-	return tryJoinSoftSeek(options, previousReceivedTill);
+	return tryJoinSoftSeek(
+		options,
+		previousReceivedTill,
+		startedAt,
+		trackGeneration);
 }
 
 void Player::fileSoftSeekApplied(uint64_t generation) {
@@ -683,7 +840,9 @@ void Player::applySoftSeekTrackBarrier(uint64_t generation) {
 
 bool Player::tryJoinSoftSeek(
 		const PlaybackOptions &options,
-		crl::time previousReceivedTill) {
+		crl::time previousReceivedTill,
+		crl::time startedAt,
+		uint64 trackGeneration) {
 	if (!_file->canSoftSeek()) {
 		return false;
 	}
@@ -692,13 +851,20 @@ bool Player::tryJoinSoftSeek(
 	// Keep playback-rate estimate during soft seek so Smart floors stay warm.
 	_file->setSmartStreamingBufferPressure(false);
 
-	auto format = _file->detachFormatForSoftSeek(options.position);
+	auto format = _file->detachFormatForSoftSeek(
+		options.position,
+		trackGeneration);
 	if (!format) {
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player soft seek "
 			"detach failed, using hard path position=%1.")
 			.arg(qlonglong(options.position)));
 		return false;
 	}
+	beginSeekTiming(
+		trackGeneration,
+		startedAt,
+		options.position,
+		SeekPath::Join);
 
 	_softSeekInPlace = false;
 	_softSeekGeneration = 0;
@@ -747,6 +913,7 @@ bool Player::tryJoinSoftSeek(
 		.seekable = true,
 		.hwAllow = _options.hwAllowed,
 		.sequentialOpen = false,
+		.trackGeneration = trackGeneration,
 	});
 	return true;
 }
@@ -758,17 +925,24 @@ void Player::play(const PlaybackOptions &options) {
 	Expects(!options.loop || (options.mode != Mode::Both));
 
 	const auto previous = getCurrentReceivedTill(computeTotalDuration());
+	const auto seekStarted = crl::now();
 	const auto notifySeek = (_stage != Stage::Uninitialized)
 		&& options.seekable
 		&& (options.position != _options.position);
 
-	if (trySoftSeek(options, previous)) {
+	if (trySoftSeek(options, previous, seekStarted)) {
 		return;
 	}
 
 	stop(true);
+	const auto trackGeneration = startTrackGeneration();
 	if (notifySeek) {
 		_file->notifySmartStreamingSeek();
+		beginSeekTiming(
+			trackGeneration,
+			seekStarted,
+			options.position,
+			SeekPath::Hard);
 	}
 	_lastFailure = std::nullopt;
 
@@ -802,6 +976,7 @@ void Player::play(const PlaybackOptions &options) {
 		.seekable = _options.seekable,
 		.hwAllow = (_options.sequentialOpen ? false : _options.hwAllowed),
 		.sequentialOpen = _options.sequentialOpen,
+		.trackGeneration = trackGeneration,
 	});
 }
 
@@ -1087,6 +1262,10 @@ void Player::stop(bool stillActive) {
 		.arg(_video ? 1 : 0)
 		.arg(_lastFailure.has_value() ? 1 : 0));
 
+	startTrackGeneration();
+	finishSeekTiming(stillActive
+		? SeekOutcome::Superseded
+		: SeekOutcome::Stopped);
 	_file->setSmartStreamingBufferPressure(false);
 	_file->setSmartStreamingPlaybackRate(0);
 	if (_softSeekInPlace && _softSeekGeneration) {
