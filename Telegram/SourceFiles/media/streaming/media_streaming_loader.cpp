@@ -54,14 +54,6 @@ bool PriorityQueue::empty() const {
 	return _data.empty();
 }
 
-bool PriorityQueue::contains(int64 value) const {
-	return ranges::find(_data, value, &Entry::value) != end(_data);
-}
-
-int PriorityQueue::size() const {
-	return int(_data.size());
-}
-
 std::optional<int64> PriorityQueue::front() const {
 	return _data.empty()
 		? std::nullopt

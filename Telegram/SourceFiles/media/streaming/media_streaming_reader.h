@@ -248,17 +248,15 @@ private:
 		bool force = false);
 	void noteDualKeepRead(int64 offset, int64 span);
 	[[nodiscard]] bool offsetInSeekCriticalParts(int64 offset) const;
-	[[nodiscard]] int topUpSeekCriticalLoads(
-		int requestLimit,
-		int queueLimit);
+	[[nodiscard]] int topUpSeekCriticalLoads(int requestLimit);
 	bool updateSeekPrefetchCriticalProgress();
 	[[nodiscard]] crl::time smartStreamingBackgroundBuffer() const;
 	void syncSmartStreamingBufferPressure(crl::time now);
 	void publishSeekPrefetch(SeekPrefetchRequest request);
 	void consumePendingSeekPrefetch();
-	void consumePendingTailPrefetch(int queueLimit);
+	void consumePendingTailPrefetch();
 	void cancelStreamingLoads(bool preserveSent = false);
-	[[nodiscard]] bool loadAtOffset(uint32 offset, int queueLimit);
+	void loadAtOffset(uint32 offset);
 	void checkLoadWillBeFirst(uint32 offset);
 	bool processLoadedParts();
 
@@ -351,8 +349,6 @@ private:
 	std::atomic<int> _seekCancelGeneration = 0;
 	int _seekCancelObservedGeneration = 0;
 	int64 _seekCancelLastOffset = -1;
-	int64 _seekQueueReconcileOffset = -1;
-	crl::time _seekQueueReconcileLastTime = 0;
 	bool _seekCancelEnabledLastFill = false;
 
 	PriorityQueue _loadingOffsets;
