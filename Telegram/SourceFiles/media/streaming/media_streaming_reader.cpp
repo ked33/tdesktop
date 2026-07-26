@@ -58,10 +58,6 @@ constexpr auto kSmartSeekPrefetchHighBitrateMaximum = int64(20) * 1024 * 1024;
 constexpr auto kSmartSeekUrgentMinimum = int64(2) * 1024 * 1024;
 constexpr auto kSmartSeekUrgentMaximum = int64(4) * 1024 * 1024;
 constexpr auto kSmartSeekUrgentHighBitrateMaximum = int64(8) * 1024 * 1024;
-constexpr auto kSmartSeekCriticalPredictiveParts = 32;
-constexpr auto kSmartLocalQueueMultiplier = 2;
-constexpr auto kSmartQueueReconcileParts = 4;
-constexpr auto kSmartQueueReconcileMinInterval = crl::time(500);
 constexpr auto kSmartCancelLogMinInterval = crl::time(1000);
 // Sparse Smart diagnostics: state transitions + at most one snapshot / interval.
 constexpr auto kSmartCatchupLogMinInterval = 2 * crl::time(1000);
@@ -101,13 +97,6 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 [[nodiscard]] int64 StreamingTailPrefetchBytes() {
 	return int64(BoostProfileFor(DownloadBoostLevel()).tailPrefetchParts)
 		* kPartSize;
-}
-
-[[nodiscard]] int SmartSeekBackgroundRequestReserve(int requestsLimit) {
-	if (requestsLimit >= 6) {
-		return 2;
-	}
-	return (requestsLimit >= 2) ? 1 : 0;
 }
 
 // Burst-mode adaptive preload multiplier: 100 = base depth, 200 = 2x.
@@ -1531,8 +1520,6 @@ void Reader::stopStreaming(bool stillActive) {
 		_seekPrefetchCriticalOrder.clear();
 		_seekPrefetchActiveGeneration = 0;
 		_seekPrefetchBackgroundActive = false;
-		_seekQueueReconcileOffset = -1;
-		_seekQueueReconcileLastTime = 0;
 		const auto lock = std::lock_guard(_seekPrefetchRequestMutex);
 		_seekPrefetchConsumedSequence = _seekPrefetchRequestSequence;
 	}
@@ -1571,8 +1558,6 @@ void Reader::stopStreaming(bool stillActive) {
 		_seekPrefetchCriticalOrder.clear();
 		_seekPrefetchActiveGeneration = 0;
 		_seekPrefetchBackgroundActive = false;
-		_seekQueueReconcileOffset = -1;
-		_seekQueueReconcileLastTime = 0;
 		_seekPrefetchProgressGeneration.store(0, std::memory_order_relaxed);
 		_seekPrefetchProgressRequestedAt.store(0, std::memory_order_relaxed);
 		_seekPrefetchCriticalReadyAt.store(0, std::memory_order_relaxed);
@@ -2011,8 +1996,6 @@ Reader::FillState Reader::fill(
 	} else if (_seekCancelEnabledLastFill) {
 		_seekCancelEnabledLastFill = false;
 		_seekCancelLastOffset = -1;
-		_seekQueueReconcileOffset = -1;
-		_seekQueueReconcileLastTime = 0;
 	}
 
 	// Sample forward-consumption rate (bytes of video consumed per second of
@@ -2306,7 +2289,7 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 			(seekPrefetchWindowTill - int64(offset) + kPartSize - 1)
 				/ kPartSize,
 			smartPreloadCap))
-		: 0;
+		: (seekCriticalPhase ? 1 : 0);
 	// Steady bitrate floor: keep adaptive/recovery depth from collapsing
 	// under the parts needed for recoveryBuffer, even when recovery
 	// percent has tapered to 0.
@@ -2320,7 +2303,7 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		? 0
 		: std::max(smartTargetPreloadParts, steadyBitrateFloor);
 	const auto localRecoveryPreloadParts = seekCriticalPhase
-		? preloadMinimum
+		? 1
 		: std::max(stagedSmartPreloadParts, seekPrefetchParts);
 	const auto adaptivePreloadPercent = _adaptivePreloadPercent.load(
 		std::memory_order_relaxed);
@@ -2336,7 +2319,7 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		preloadCeiling);
 	preloadParts = std::max(preloadParts, localRecoveryPreloadParts);
 	if (seekCriticalPhase) {
-		preloadParts = preloadMinimum;
+		preloadParts = 1;
 	} else if (serverLimited) {
 		preloadParts = std::min(
 			preloadParts,
@@ -2492,23 +2475,11 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 			.arg(serverRequests)
 			.arg(serverState.penalty));
 	}
-	const auto backgroundRequestReserve = seekCriticalPhase
-		? SmartSeekBackgroundRequestReserve(requestsLimit)
-		: 0;
-	const auto localQueueLimit = smartNonPremium
-		? requestsLimit * kSmartLocalQueueMultiplier
-		: std::numeric_limits<int>::max();
 	const auto activeCriticalLoads = seekCriticalPhase
-		? topUpSeekCriticalLoads(
-			requestsLimit - backgroundRequestReserve,
-			localQueueLimit - backgroundRequestReserve)
+		? topUpSeekCriticalLoads(requestsLimit)
 		: 0;
 	const auto regularRequestLimit = seekCriticalPhase
-		? std::max(
-			backgroundRequestReserve,
-			requestsLimit - std::min(
-				activeCriticalLoads,
-				requestsLimit))
+		? std::max(0, requestsLimit - activeCriticalLoads)
 		: requestsLimit;
 	auto result = _slices.fill(
 		offset,
@@ -2565,24 +2536,11 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	}
 	auto checkPriority = true;
 	if (!seekCriticalPhase) {
-		consumePendingTailPrefetch(localQueueLimit);
+		consumePendingTailPrefetch();
 	}
-	auto reconcileDelta = std::numeric_limits<int64>::max();
-	if (_seekQueueReconcileOffset >= 0) {
-		reconcileDelta = (int64(offset) >= _seekQueueReconcileOffset)
-			? (int64(offset) - _seekQueueReconcileOffset)
-			: (_seekQueueReconcileOffset - int64(offset));
-	}
-	const auto queueReconcileDue = !smartNonPremium
-		|| ((_seekQueueReconcileLastTime == 0
-			|| now >= _seekQueueReconcileLastTime
-				+ kSmartQueueReconcileMinInterval)
-			&& reconcileDelta
-				>= int64(kSmartQueueReconcileParts) * kPartSize);
 	const auto allowSoftCancel = StreamingSeekCancelEnabled()
 		&& !_loadingOffsets.empty()
-		&& !seekCriticalPhase
-		&& queueReconcileDue;
+		&& !seekCriticalPhase;
 	if (allowSoftCancel) {
 		auto minOff = std::numeric_limits<uint32>::max();
 		auto maxOff = uint32(0);
@@ -2621,27 +2579,15 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 				: uint32(std::max<int64>(0, keepTill));
 			if (windowStart < windowTill) {
 				cancelLoadOutsideWindow(windowStart, windowTill);
-				_seekQueueReconcileOffset = offset;
-				_seekQueueReconcileLastTime = now;
 			}
 		}
 	}
-	auto regularRequests = 0;
 	for (const auto offset : result.offsetsFromLoader.values()) {
-		if (regularRequests >= regularRequestLimit) {
-			break;
-		}
-		++regularRequests;
-		const auto canQueue = _loadingOffsets.contains(offset)
-			|| (_loadingOffsets.size() < localQueueLimit);
-		if (checkPriority
-			&& canQueue
-			&& !_seekCancellationOffsets.contains(offset)) {
+		if (checkPriority) {
 			checkLoadWillBeFirst(offset);
-		}
-		if (loadAtOffset(offset, localQueueLimit)) {
 			checkPriority = false;
 		}
+		loadAtOffset(offset);
 	}
 	return result.state;
 }
@@ -2676,11 +2622,8 @@ bool Reader::offsetInSeekCriticalParts(int64 offset) const {
 	return _seekPrefetchCriticalParts.contains(offset);
 }
 
-int Reader::topUpSeekCriticalLoads(
-		int requestLimit,
-		int queueLimit) {
+int Reader::topUpSeekCriticalLoads(int requestLimit) {
 	if (requestLimit <= 0
-		|| queueLimit <= 0
 		|| _seekPrefetchBackgroundActive
 		|| _seekPrefetchCriticalParts.empty()) {
 		return 0;
@@ -2689,14 +2632,8 @@ int Reader::topUpSeekCriticalLoads(
 	const auto loading = _loadingOffsets.valuesInRange(
 		0,
 		std::numeric_limits<int64>::max());
-	auto active = 0;
-	for (const auto part : _seekPrefetchCriticalOrder) {
-		if (loading.contains(part)
-			&& !_seekCancellationOffsets.contains(part)) {
-			++active;
-		}
-	}
-	if (active >= limit || _loadingOffsets.size() >= queueLimit) {
+	auto active = int(loading.size());
+	if (active >= limit) {
 		return active;
 	}
 	auto requested = 0;
@@ -2705,16 +2642,15 @@ int Reader::topUpSeekCriticalLoads(
 		if (active >= limit) {
 			break;
 		}
-		if (_slices.hasPart(uint32(part))
-			|| loading.contains(part)
-			|| _seekCancellationOffsets.contains(part)) {
+		if (_slices.hasPart(uint32(part)) || loading.contains(part)) {
 			continue;
 		}
 		if (!priorityChecked) {
 			checkLoadWillBeFirst(uint32(part));
 			priorityChecked = true;
 		}
-		if (loadAtOffset(uint32(part), queueLimit)) {
+		if (_loadingOffsets.add(part)) {
+			_loader->load(part);
 			++active;
 			++requested;
 		}
@@ -2929,8 +2865,6 @@ void Reader::consumePendingSeekPrefetch() {
 		_seekPrefetchCriticalOrder.clear();
 		_seekPrefetchActiveGeneration = 0;
 		_seekPrefetchBackgroundActive = false;
-		_seekQueueReconcileOffset = -1;
-		_seekQueueReconcileLastTime = 0;
 	};
 	const auto amount = request.amount;
 	const auto requestedOffset = request.offset;
@@ -2997,14 +2931,9 @@ void Reader::consumePendingSeekPrefetch() {
 	for (auto i = 0; i != validCriticalRanges; ++i) {
 		criticalCursors[i] = criticalWindows[i].first;
 	}
-	while (int(criticalParts.size())
-		< kSmartSeekCriticalPredictiveParts) {
+	while (true) {
 		auto added = false;
 		for (auto i = 0; i != validCriticalRanges; ++i) {
-			if (int(criticalParts.size())
-				>= kSmartSeekCriticalPredictiveParts) {
-				break;
-			}
 			auto &cursor = criticalCursors[i];
 			if (cursor >= criticalWindows[i].second) {
 				continue;
@@ -3037,8 +2966,6 @@ void Reader::consumePendingSeekPrefetch() {
 	_seekPrefetchCriticalOrder = std::move(criticalOrder);
 	_seekPrefetchActiveGeneration = requestGeneration;
 	_seekPrefetchBackgroundActive = false;
-	_seekQueueReconcileOffset = criticalWindows[0].first;
-	_seekQueueReconcileLastTime = now;
 	if (!sameWindow) {
 		SmartClearDualKeep(_dualKeep);
 		if (StreamingSeekCancelEnabled()) {
@@ -3104,7 +3031,7 @@ void Reader::consumePendingSeekPrefetch() {
 		.arg(qulonglong(requestGeneration)));
 }
 
-void Reader::consumePendingTailPrefetch(int queueLimit) {
+void Reader::consumePendingTailPrefetch() {
 	const auto tail = _pendingTailPrefetchBytes.exchange(
 		0,
 		std::memory_order_acq_rel);
@@ -3130,29 +3057,11 @@ void Reader::consumePendingTailPrefetch(int queueLimit) {
 	const auto clamped = std::min(tail, fileSize);
 	const auto tailStart = fileSize - clamped;
 	const auto alignedStart = (tailStart / kPartSize) * kPartSize;
-	const auto loading = _loadingOffsets.valuesInRange(
-		alignedStart,
-		fileSize);
 	auto requested = 0;
-	auto deferred = false;
 	for (auto off = alignedStart; off < fileSize; off += kPartSize) {
-		if (_slices.hasPart(uint32(off))
-			|| (loading.contains(off)
-				&& !_seekCancellationOffsets.contains(off))) {
-			_pinnedTailOffsets.emplace(off);
-		} else if (loadAtOffset(uint32(off), queueLimit)) {
-			_pinnedTailOffsets.emplace(off);
-			++requested;
-		} else {
-			deferred = true;
-		}
-	}
-	if (deferred) {
-		_pendingTailPrefetchBytes.store(
-			std::max<int64>(
-				_pendingTailPrefetchBytes.load(std::memory_order_relaxed),
-				tail),
-			std::memory_order_release);
+		_pinnedTailOffsets.emplace(off);
+		loadAtOffset(uint32(off));
+		++requested;
 	}
 	if (requested) {
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader tail prefetch start=%1 bytes=%2 requested=%3 size=%4 boost=%5.")
@@ -3326,21 +3235,13 @@ bool Reader::checkForSomethingMoreReceived() {
 	return result1 || result2;
 }
 
-bool Reader::loadAtOffset(uint32 offset, int queueLimit) {
-	if (offset >= uint32(size())
-		|| _slices.hasPart(offset)
-		|| _seekCancellationOffsets.contains(offset)) {
-		return false;
-	}
-	const auto alreadyLoading = _loadingOffsets.contains(offset);
-	if (!alreadyLoading && _loadingOffsets.size() >= queueLimit) {
-		return false;
+void Reader::loadAtOffset(uint32 offset) {
+	if (offset >= uint32(size()) || _slices.hasPart(offset)) {
+		return;
 	}
 	if (_loadingOffsets.add(offset)) {
 		_loader->load(offset);
-		return true;
 	}
-	return false;
 }
 
 void Reader::finalizeCache() {
