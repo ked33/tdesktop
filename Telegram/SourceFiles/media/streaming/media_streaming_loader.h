@@ -82,6 +82,8 @@ public:
 	bool remove(int64 value);
 	void resetPriorities();
 	[[nodiscard]] bool empty() const;
+	[[nodiscard]] bool contains(int64 value) const;
+	[[nodiscard]] int size() const;
 	[[nodiscard]] std::optional<int64> front() const;
 	[[nodiscard]] std::optional<int64> take();
 	[[nodiscard]] base::flat_set<int64> valuesInRange(
