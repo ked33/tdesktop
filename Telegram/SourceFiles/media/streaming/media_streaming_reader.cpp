@@ -1556,10 +1556,10 @@ void Reader::stopStreaming(bool stillActive) {
 		_seekCancelLogSentCompleted = 0;
 		_seekCancelLogLastTime = 0;
 		_smartCatchupLogged = false;
+		_smartUnderPlaybackSkipLogged = false;
 		_smartCatchupLogLastTime = 0;
+		_smartUnderPlaybackSkipLogLastTime = 0;
 		_smartForceCancelLogLastTime = 0;
-		_smartUrgentTopUpLogLastTime = 0;
-		_smartUrgentTopUpLogPending = 0;
 		_smartCatchupLogPreload = -1;
 		_smartCatchupLogRequests = -1;
 		SmartClearDualKeep(_dualKeep);
@@ -2662,29 +2662,15 @@ void Reader::topUpSeekUrgentLoads(int requestLimit) {
 			++requested;
 		}
 	}
-	if (requested <= 0) {
-		return;
+	if (requested > 0) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader seek urgent top-up "
+			"requested=%1 active=%2 limit=%3 urgentStart=%4 urgentTill=%5.")
+			.arg(requested)
+			.arg(active)
+			.arg(limit)
+			.arg(qlonglong(_seekPrefetchUrgentWindowStart))
+			.arg(qlonglong(urgentTill)));
 	}
-	_smartUrgentTopUpLogPending += requested;
-	const auto now = crl::now();
-	const auto due = (requested >= 3)
-		|| (_smartUrgentTopUpLogLastTime == 0)
-		|| (now >= _smartUrgentTopUpLogLastTime
-			+ kSmartCatchupLogMinInterval);
-	if (!due) {
-		return;
-	}
-	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader seek urgent top-up "
-		"requested=%1 pending=%2 active=%3 limit=%4 urgentStart=%5 "
-		"urgentTill=%6.")
-		.arg(requested)
-		.arg(_smartUrgentTopUpLogPending)
-		.arg(active)
-		.arg(limit)
-		.arg(qlonglong(_seekPrefetchUrgentWindowStart))
-		.arg(qlonglong(urgentTill)));
-	_smartUrgentTopUpLogPending = 0;
-	_smartUrgentTopUpLogLastTime = now;
 }
 
 void Reader::cancelLoadOutsideWindow(
@@ -2700,10 +2686,35 @@ void Reader::cancelLoadOutsideWindow(
 		&& (now < _serverLimitedUntil.load(std::memory_order_relaxed));
 	const auto seekRecovery = preserveSent
 		&& (now < _smartSeekRecoveryUntil.load(std::memory_order_acquire));
-	// Do not skip cancel when thr < playback. Logs showed that path leaves
-	// stale outside-window loads alive after seek recovery expires and sticks
-	// DC slots to the wrong byte range. Force installs already never skipped;
-	// soft cancel must also prune so urgent/prime can reclaim request slots.
+	const auto underPlayback = preserveSent
+		&& SmartIsUnderPlayback(
+			_loader->smartStreamingPlaybackRate(),
+			_streamThroughputBytesPerSecond.load(std::memory_order_relaxed));
+	// Only skip cancel during *steady* under-playback. Never skip when:
+	// - force (new seek window install), or
+	// - still inside seek recovery (old parts must yield to the new position).
+	// bufferPressure alone used to skip cancel and made frequent seeks worse.
+	if (!force && underPlayback && !seekRecovery) {
+		if (!_smartUnderPlaybackSkipLogged
+			|| now >= _smartUnderPlaybackSkipLogLastTime
+				+ kSmartCatchupLogMinInterval) {
+			_smartUnderPlaybackSkipLogged = true;
+			_smartUnderPlaybackSkipLogLastTime = now;
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader cancel outside "
+				"window skipped by under-playback start=%1 till=%2 "
+				"throughput=%3 playback=%4 boost=%5.")
+				.arg(qulonglong(windowStart))
+				.arg(qulonglong(windowTill))
+				.arg(_streamThroughputBytesPerSecond.load(
+					std::memory_order_relaxed))
+				.arg(_loader->smartStreamingPlaybackRate())
+				.arg(DownloadBoostLevel()));
+		}
+		return;
+	}
+	if (!underPlayback) {
+		_smartUnderPlaybackSkipLogged = false;
+	}
 	if (!force
 		&& !preserveSent
 		&& (serverLimited
@@ -2715,21 +2726,17 @@ void Reader::cancelLoadOutsideWindow(
 		return;
 	}
 
-	// Force + seek recovery: hard-cancel outside the new window, including
-	// already-sent MTP requests. cancelForSeek only drops queued parts and
-	// leaves in-flight old-window traffic occupying the Smart request limit.
-	const auto hardDropOutside = force && seekRecovery && preserveSent;
-
 	auto cancelled = 0;
 	auto selective = 0;
 	auto pinned = 0;
 	auto dualKept = 0;
 	auto urgentKept = 0;
-	auto downloaderKept = 0;
-	const auto protectDual = preserveSent && !force && !hardDropOutside;
+	const auto protectDual = preserveSent && !force;
 	const auto cancelOne = [&](int64 offset) {
 		if (_pinnedTailOffsets.contains(offset)) {
-			_loadingOffsets.add(offset);
+			if (!preserveSent) {
+				_loadingOffsets.add(offset);
+			}
 			++pinned;
 			return;
 		}
@@ -2739,6 +2746,7 @@ void Reader::cancelLoadOutsideWindow(
 			++urgentKept;
 			return;
 		}
+		// Keep both A/V envelopes alive unless this is a forced seek install.
 		if (protectDual && SmartOffsetInDualKeep(offset, _dualKeep)) {
 			if (preserveSent) {
 				_loadingOffsets.add(offset);
@@ -2746,32 +2754,21 @@ void Reader::cancelLoadOutsideWindow(
 			++dualKept;
 			return;
 		}
-		if (_downloaderOffsetsRequested.contains(uint32(offset))) {
-			if (hardDropOutside) {
-				_loadingOffsets.add(offset);
+		if (!_downloaderOffsetsRequested.contains(uint32(offset))) {
+			if (preserveSent) {
+				if (_seekCancellationOffsets.emplace(offset).second) {
+					_loader->cancelForSeek(offset);
+					++selective;
+				}
+			} else {
+				_seekCancellationOffsets.remove(offset);
+				_loader->cancel(offset);
+				++cancelled;
 			}
-			++downloaderKept;
-			return;
-		}
-		if (hardDropOutside) {
-			_seekCancellationOffsets.remove(offset);
-			_loader->cancel(offset);
-			++cancelled;
-			return;
-		}
-		if (preserveSent) {
-			if (_seekCancellationOffsets.emplace(offset).second) {
-				_loader->cancelForSeek(offset);
-				++selective;
-			}
-		} else {
-			_seekCancellationOffsets.remove(offset);
-			_loader->cancel(offset);
-			++cancelled;
 		}
 	};
 	const auto offsetsInRange = [&](int64 from, int64 till) {
-		return (preserveSent && !hardDropOutside)
+		return preserveSent
 			? _loadingOffsets.valuesInRange(from, till)
 			: _loadingOffsets.takeInRange(from, till);
 	};
@@ -2786,12 +2783,7 @@ void Reader::cancelLoadOutsideWindow(
 			cancelOne(off);
 		}
 	}
-	if (cancelled
-		|| selective
-		|| pinned
-		|| dualKept
-		|| urgentKept
-		|| downloaderKept) {
+	if (cancelled || selective || pinned || dualKept || urgentKept) {
 		const auto logForceDebug = force
 			&& (now >= _smartForceCancelLogLastTime
 				+ kSmartCatchupLogMinInterval);
@@ -2799,8 +2791,8 @@ void Reader::cancelLoadOutsideWindow(
 			_smartForceCancelLogLastTime = now;
 			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader cancel outside "
 				"window force=%1 start=%2 till=%3 cancelled=%4 selective=%5 "
-				"pinned=%6 dualKept=%7 urgentKept=%8 downloader=%9 "
-				"hardDrop=%10 seekRecovery=%11 boost=%12.")
+				"pinned=%6 dualKept=%7 urgentKept=%8 seekRecovery=%9 "
+				"boost=%10.")
 				.arg(1)
 				.arg(qulonglong(windowStart))
 				.arg(qulonglong(windowTill))
@@ -2809,14 +2801,12 @@ void Reader::cancelLoadOutsideWindow(
 				.arg(pinned)
 				.arg(dualKept)
 				.arg(urgentKept)
-				.arg(downloaderKept)
-				.arg(hardDropOutside ? 1 : 0)
 				.arg(seekRecovery ? 1 : 0)
 				.arg(DownloadBoostLevel()));
 		} else {
 			VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader cancel outside "
 				"window force=%1 start=%2 till=%3 cancelled=%4 selective=%5 "
-				"pinned=%6 dualKept=%7 urgentKept=%8 hardDrop=%9 boost=%10.")
+				"pinned=%6 dualKept=%7 urgentKept=%8 boost=%9.")
 				.arg(force ? 1 : 0)
 				.arg(qulonglong(windowStart))
 				.arg(qulonglong(windowTill))
@@ -2825,7 +2815,6 @@ void Reader::cancelLoadOutsideWindow(
 				.arg(pinned)
 				.arg(dualKept)
 				.arg(urgentKept)
-				.arg(hardDropOutside ? 1 : 0)
 				.arg(DownloadBoostLevel()));
 		}
 	}
