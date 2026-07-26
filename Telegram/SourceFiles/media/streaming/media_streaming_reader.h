@@ -10,10 +10,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_boost.h"
 #include "media/streaming/media_streaming_common.h"
 #include "media/streaming/media_streaming_loader.h"
+#include "media/streaming/media_streaming_source.h"
 #include "base/bytes.h"
 #include "base/timer.h"
 #include "base/weak_ptr.h"
 #include "base/thread_safe_wrap.h"
+
+#include <mutex>
 
 namespace Storage {
 class StreamedFileDownloader;
@@ -60,7 +63,9 @@ public:
 		int64 offset,
 		bytes::span buffer,
 		not_null<crl::semaphore*> notify);
-	void prefetch(int64 offset, int64 amount, int64 urgentOffset);
+	void prefetch(SeekPrefetchRequest request);
+	[[nodiscard]] SeekPrefetchProgress seekPrefetchProgress(
+		uint64 generation) const;
 	[[nodiscard]] std::optional<Error> streamingError() const;
 	void headerDone();
 	[[nodiscard]] int headerSize() const;
@@ -81,7 +86,7 @@ public:
 	void startStreaming();
 	void stopStreaming(bool stillActive = false);
 	void continueStreamingForSoftSeek();
-	void primeSeekPrefetch(int64 offset, int64 amount, int64 urgentOffset);
+	void primeSeekPrefetch(SeekPrefetchRequest request);
 	[[nodiscard]] rpl::producer<LoadedPart> partsForDownloader() const;
 	void loadForDownloader(
 		not_null<Storage::StreamedFileDownloader*> downloader,
@@ -242,10 +247,12 @@ private:
 		uint32 windowTill,
 		bool force = false);
 	void noteDualKeepRead(int64 offset, int64 span);
-	[[nodiscard]] bool offsetInSeekUrgentWindow(int64 offset) const;
-	void topUpSeekUrgentLoads(int requestLimit);
+	[[nodiscard]] bool offsetInSeekCriticalParts(int64 offset) const;
+	[[nodiscard]] int topUpSeekCriticalLoads(int requestLimit);
+	bool updateSeekPrefetchCriticalProgress();
 	[[nodiscard]] crl::time smartStreamingBackgroundBuffer() const;
 	void syncSmartStreamingBufferPressure(crl::time now);
+	void publishSeekPrefetch(SeekPrefetchRequest request);
 	void consumePendingSeekPrefetch();
 	void consumePendingTailPrefetch();
 	void cancelStreamingLoads(bool preserveSent = false);
@@ -286,17 +293,22 @@ private:
 	std::atomic<crl::semaphore*> _sleeping = nullptr;
 	std::atomic<bool> _stopStreamingAsync = false;
 	std::atomic<int64> _pendingTailPrefetchBytes = 0;
-	std::atomic<int64> _seekPrefetchOffset = -1;
-	std::atomic<int64> _seekPrefetchBytes = 0;
-	std::atomic<int64> _seekPrefetchUrgentOffset = -1;
-	std::atomic<int64> _seekPrefetchUrgentBytes = 0;
-	std::atomic<uint64> _seekPrefetchGeneration = 0;
+	std::mutex _seekPrefetchRequestMutex;
+	SeekPrefetchRequest _pendingSeekPrefetch;
+	crl::time _pendingSeekPrefetchRequestedAt = 0;
+	uint64 _seekPrefetchRequestSequence = 0;
+	uint64 _seekPrefetchConsumedSequence = 0;
 	int64 _seekPrefetchWindowStart = -1;
 	int64 _seekPrefetchWindowTill = -1;
-	int64 _seekPrefetchUrgentWindowStart = -1;
-	int64 _seekPrefetchUrgentWindowTill = -1;
-	uint64 _seekPrefetchConsumedGeneration = 0;
+	base::flat_set<int64> _seekPrefetchCriticalParts;
+	std::vector<int64> _seekPrefetchCriticalOrder;
+	uint64 _seekPrefetchActiveGeneration = 0;
 	bool _seekPrefetchBackgroundActive = false;
+	std::atomic<uint64> _seekPrefetchProgressGeneration = 0;
+	std::atomic<crl::time> _seekPrefetchProgressRequestedAt = 0;
+	std::atomic<crl::time> _seekPrefetchCriticalReadyAt = 0;
+	std::atomic<int> _seekPrefetchCriticalPartCount = 0;
+	std::atomic<int> _seekPrefetchCriticalCacheHits = 0;
 
 	// Adaptive scheduling driven by speedEstimate (main thread updates,
 	// streaming thread reads). 100 = static baseline.

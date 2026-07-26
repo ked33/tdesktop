@@ -21,10 +21,11 @@ class FileDelegate {
 public:
 	[[nodiscard]] virtual Mode fileOpenMode() = 0;
 	[[nodiscard]] virtual bool fileReady(
+		uint64 generation,
 		int headerSize,
 		Stream &&video,
 		Stream &&audio) = 0;
-	virtual void fileError(Error error) = 0;
+	virtual void fileError(uint64 generation, Error error) = 0;
 	virtual void fileWaitingForData() = 0;
 	virtual void fileFullInCache(bool fullInCache) = 0;
 
