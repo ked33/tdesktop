@@ -636,6 +636,7 @@ template <typename Stop>
 		not_null<FileSource*> source,
 		int64 offset,
 		int size,
+		not_null<crl::semaphore*> notify,
 		Stop &&stop) {
 	if ((offset < 0)
 		|| (size <= 0)
@@ -643,28 +644,24 @@ template <typename Stop>
 		return std::nullopt;
 	}
 	auto result = QByteArray(size, Qt::Uninitialized);
-	auto wait = crl::semaphore();
 	auto buffer = bytes::span(
 		reinterpret_cast<bytes::type*>(result.data()),
 		size);
-	while (true) {
-		if (stop()) {
-			return std::nullopt;
-		}
-		const auto state = source->fill(offset, buffer, &wait);
-		if (state == FileSource::FillState::Success) {
-			return result;
-		} else if (state == FileSource::FillState::Failed) {
-			return std::nullopt;
-		}
-		wait.acquire();
+	if (stop()) {
+		return std::nullopt;
 	}
+	const auto state = source->fill(offset, buffer, notify);
+	if (state != FileSource::FillState::Success) {
+		return std::nullopt;
+	}
+	return result;
 }
 
 [[nodiscard]] Mp4SeekMapBuildResult BuildMp4SeekTrack(
 		not_null<FileSource*> source,
 		const Stream &stream,
-		const std::atomic<bool> &interrupted) {
+		const std::atomic<bool> &interrupted,
+		not_null<crl::semaphore*> notify) {
 	auto result = Mp4SeekMapBuildResult();
 	result.diagnostic.headerSize = source->headerSize();
 	const auto fileSize = source->size();
@@ -681,6 +678,7 @@ template <typename Stop>
 			source,
 			offset,
 			bytesToRead,
+			notify,
 			[&] { return interrupted.load(); });
 		if (!atomHeader) {
 			result.diagnostic.failure
@@ -718,6 +716,7 @@ template <typename Stop>
 			source,
 			atom->offset,
 			int(atom->size),
+			notify,
 			[&] { return interrupted.load(); });
 		if (!moovBytes) {
 			result.diagnostic.failure = Mp4SeekMapFailure::MoovReadFailed;
@@ -983,7 +982,8 @@ template <typename Stop>
 		const Stream &stream,
 		const std::atomic<bool> &interrupted,
 		not_null<Mp4SeekMapCache*> cache,
-		crl::time position) {
+		crl::time position,
+		crl::semaphore *notify) {
 	auto result = Mp4SeekMapResolution();
 	const auto fileSize = source->size();
 	const auto cacheMatches = cache->ready
@@ -995,9 +995,15 @@ template <typename Stop>
 	if (cacheMatches) {
 		result.cacheHit = true;
 		result.diagnostic = cache->diagnostic;
+	} else if (!notify) {
+		return result;
 	} else {
 		const auto started = crl::now();
-		auto built = BuildMp4SeekTrack(source, stream, interrupted);
+		auto built = BuildMp4SeekTrack(
+			source,
+			stream,
+			interrupted,
+			not_null<crl::semaphore*>(notify));
 		result.buildDuration = crl::now() - started;
 		result.diagnostic = built.diagnostic;
 		if (!interrupted.load()
@@ -1674,7 +1680,8 @@ void File::Context::seekToPosition(
 			stream,
 			_interrupted,
 			_seekMapCache,
-			position);
+			position,
+			&_semaphore);
 		if (!resolved.point) {
 			if (!unroll() && resolved.logFailure) {
 				LogMp4SeekMapFailure(
@@ -2570,7 +2577,8 @@ void File::primeSoftSeekPrefetch(crl::time position, uint64 generation) {
 		probe,
 		noInterrupt,
 		_seekMapCache.get(),
-		position);
+		position,
+		nullptr);
 	if (!resolved.point || !resolved.cacheHit) {
 		return;
 	}

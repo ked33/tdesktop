@@ -167,6 +167,10 @@ def test_source_structure() -> None:
 	player = (ROOT / "media_streaming_player.cpp").read_text(encoding="utf-8")
 	boost = (ROOT / "media_streaming_boost.cpp").read_text(encoding="utf-8")
 	boost_h = (ROOT / "media_streaming_boost.h").read_text(encoding="utf-8")
+	read_source_bytes = file[
+		file.index("[[nodiscard]] std::optional<QByteArray> ReadSourceBytes("):
+		file.index("[[nodiscard]] Mp4SeekMapBuildResult BuildMp4SeekTrack(")
+	]
 	checks = [
 		(
 			"topUpSeekCriticalLoads" in reader
@@ -194,6 +198,27 @@ def test_source_structure() -> None:
 			and "criticalRanges" in file
 			and "audioTargetSample" in file,
 			"MP4 seek map covers video and audio critical ranges",
+		),
+		(
+			".acquire()" not in read_source_bytes
+			and "while (" not in read_source_bytes
+			and "state != FileSource::FillState::Success" in read_source_bytes
+			and "source->fill(offset, buffer, notify)" in read_source_bytes,
+			"seek map source reads return when data is unavailable",
+		),
+		(
+			"else if (!notify)" in file
+			and re.search(
+				r"_seekMapCache,\s*position,\s*&_semaphore",
+				file,
+			)
+			is not None
+			and re.search(
+				r"_seekMapCache\.get\(\),\s*position,\s*nullptr",
+				file,
+			)
+			is not None,
+			"seek map uses context wake and cache-only prime paths",
 		),
 		(
 			"uint64 generation" in file_delegate
