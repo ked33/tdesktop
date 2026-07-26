@@ -402,7 +402,12 @@ void PrefetchSmartSeekIfCurrent(
 		int64 offset) {
 	const auto guard = std::lock_guard(entry->smartStateMutex);
 	if (decision.generation == entry->smartPlaybackGeneration) {
-		reader->prefetch(offset, kSmartSeekPrefetchFallback, offset);
+		reader->prefetch({
+			.generation = decision.generation,
+			.offset = offset,
+			.amount = kSmartSeekPrefetchFallback,
+			.fallbackUrgentOffset = offset,
+		});
 	}
 }
 

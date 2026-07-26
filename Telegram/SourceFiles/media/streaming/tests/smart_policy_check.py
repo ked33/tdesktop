@@ -159,12 +159,48 @@ def test_formulas() -> None:
 
 def test_source_structure() -> None:
 	reader = (ROOT / "media_streaming_reader.cpp").read_text(encoding="utf-8")
+	reader_h = (ROOT / "media_streaming_reader.h").read_text(encoding="utf-8")
+	file = (ROOT / "media_streaming_file.cpp").read_text(encoding="utf-8")
+	file_delegate = (ROOT / "media_streaming_file_delegate.h").read_text(
+		encoding="utf-8"
+	)
+	player = (ROOT / "media_streaming_player.cpp").read_text(encoding="utf-8")
 	boost = (ROOT / "media_streaming_boost.cpp").read_text(encoding="utf-8")
 	boost_h = (ROOT / "media_streaming_boost.h").read_text(encoding="utf-8")
 	checks = [
 		(
-			"SmartSeekUrgentWindowReady" in reader,
-			"reader uses SmartSeekUrgentWindowReady",
+			"topUpSeekCriticalLoads" in reader
+			and "updateSeekPrefetchCriticalProgress" in reader,
+			"reader schedules complete seek-critical parts",
+		),
+		(
+			"_seekPrefetchUrgentWindow" not in reader
+			and "_seekPrefetchUrgentWindow" not in reader_h,
+			"removed obsolete contiguous urgent window",
+		),
+		(
+			"publishSeekPrefetch" in reader
+			and "_seekPrefetchRequestMutex" in reader_h
+			and "_pendingSeekPrefetch" in reader_h,
+			"seek prefetch publishes one locked request snapshot",
+		),
+		(
+			"regularRequestLimit" in reader
+			and "requestsLimit - activeCriticalLoads" in reader,
+			"critical and regular loads share one request budget",
+		),
+		(
+			"audioTrack" in file
+			and "criticalRanges" in file
+			and "audioTargetSample" in file,
+			"MP4 seek map covers video and audio critical ranges",
+		),
+		(
+			"uint64 generation" in file_delegate
+			and "_delegate->fileReady(" in file
+			and "_delegate->fileError(_trackGeneration" in file
+			and "generation != _trackGeneration.load" in player,
+			"file and track callbacks preserve seek generation",
 		),
 		(
 			"result.state == FillState::Success || remoteRequests > 0"
@@ -219,10 +255,10 @@ def test_source_structure() -> None:
 		),
 		(
 			"Always rate-limit force DEBUG" in reader
-			or "kSmartCatchupLogMinInterval" in reader
-			and "_smartForceCancelLogLastTime" in (
-				ROOT / "media_streaming_reader.h"
-			).read_text(encoding="utf-8"),
+			or (
+				"kSmartCatchupLogMinInterval" in reader
+				and "_smartForceCancelLogLastTime" in reader_h
+			),
 			"force cancel debug always rate-limited",
 		),
 		(
@@ -268,7 +304,7 @@ def test_source_structure() -> None:
 				reader,
 			)
 			is not None,
-			"tail prefetch deferred during urgent",
+			"tail prefetch deferred during seek-critical phase",
 		),
 	]
 	failed = [msg for ok, msg in checks if not ok]

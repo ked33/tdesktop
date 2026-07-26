@@ -51,11 +51,13 @@ public:
 		return FillState::Failed;
 	}
 
-	void prefetch(
-			int64 offset,
-			int64 amount,
-			int64 urgentOffset) override {
-		_reader->prefetch(offset, amount, urgentOffset);
+	void prefetch(SeekPrefetchRequest request) override {
+		_reader->prefetch(std::move(request));
+	}
+
+	[[nodiscard]] SeekPrefetchProgress seekPrefetchProgress(
+			uint64 generation) const override {
+		return _reader->seekPrefetchProgress(generation);
 	}
 
 	[[nodiscard]] std::optional<Error> streamingError() const override {
@@ -102,11 +104,8 @@ public:
 		_reader->continueStreamingForSoftSeek();
 	}
 
-	void primeSeekPrefetch(
-			int64 offset,
-			int64 amount,
-			int64 urgentOffset) override {
-		_reader->primeSeekPrefetch(offset, amount, urgentOffset);
+	void primeSeekPrefetch(SeekPrefetchRequest request) override {
+		_reader->primeSeekPrefetch(std::move(request));
 	}
 
 	void setLoaderPriority(int priority) override {
