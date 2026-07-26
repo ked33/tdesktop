@@ -75,6 +75,10 @@ def boot_wait(playback: int, bg: int) -> int:
 	return min(bg, b)
 
 
+def seek_background_reserve(requests: int) -> int:
+	return 2 if requests >= 6 else 1 if requests >= 2 else 0
+
+
 def test_formulas() -> None:
 	rate = avg_rate(773795309, 636934)
 	assert 1_100_000 <= rate <= 1_300_000, rate
@@ -89,6 +93,10 @@ def test_formulas() -> None:
 	assert urgent_ready(5, 20, 1000, 1000)
 	assert boot_wait(rate, buf) == 4000
 	assert boot_wait(400 * 1024, buf) == 2000
+	assert seek_background_reserve(2) == 1
+	assert seek_background_reserve(5) == 1
+	assert seek_background_reserve(6) == 2
+	assert seek_background_reserve(10) == 2
 	# remoteRequests alone must not imply urgent ready
 	assert not urgent_ready(0, 19, 384696320, 387317760)
 
@@ -167,11 +175,21 @@ def test_source_structure() -> None:
 	player = (ROOT / "media_streaming_player.cpp").read_text(encoding="utf-8")
 	boost = (ROOT / "media_streaming_boost.cpp").read_text(encoding="utf-8")
 	boost_h = (ROOT / "media_streaming_boost.h").read_text(encoding="utf-8")
+	loader = (ROOT / "media_streaming_loader.cpp").read_text(encoding="utf-8")
+	loader_h = (ROOT / "media_streaming_loader.h").read_text(encoding="utf-8")
+	loader_mtproto = (ROOT / "media_streaming_loader_mtproto.cpp").read_text(
+		encoding="utf-8"
+	)
+	non_premium = (
+		ROOT.parent.parent / "storage" / "storage_non_premium_delay.h"
+	).read_text(encoding="utf-8")
 	checks = [
 		(
 			"topUpSeekCriticalLoads" in reader
-			and "updateSeekPrefetchCriticalProgress" in reader,
-			"reader schedules complete seek-critical parts",
+			and "updateSeekPrefetchCriticalProgress" in reader
+			and "kSmartSeekCriticalPredictiveParts = 32" in reader
+			and "while (int(criticalParts.size())" in reader,
+			"reader rolls through a bounded predictive critical set",
 		),
 		(
 			"_seekPrefetchUrgentWindow" not in reader
@@ -185,9 +203,49 @@ def test_source_structure() -> None:
 			"seek prefetch publishes one locked request snapshot",
 		),
 		(
-			"regularRequestLimit" in reader
-			and "requestsLimit - activeCriticalLoads" in reader,
-			"critical and regular loads share one request budget",
+			"SmartSeekBackgroundRequestReserve" in reader
+			and "backgroundRequestReserve" in reader
+			and "requestsLimit - backgroundRequestReserve" in reader
+			and "regularRequests >= regularRequestLimit" in reader,
+			"critical and regular loads share a budget with background reserve",
+		),
+		(
+			"kSmartLocalQueueMultiplier = 2" in reader
+			and "_loadingOffsets.size() >= queueLimit" in reader
+			and "PriorityQueue::size() const" in loader
+			and "[[nodiscard]] int size() const;" in loader_h
+			and "[[nodiscard]] bool contains(int64 value) const;" in loader_h,
+			"local scheduling queue is capped independently from cache target",
+		),
+		(
+			"kSmartQueueReconcileParts = 4" in reader
+			and "kSmartQueueReconcileMinInterval" in reader
+			and "queueReconcileDue" in reader,
+			"steady queue reconciliation is debounced",
+		),
+		(
+			"_seekCancellationOffsets.contains(offset)" in reader,
+			"cancel-pending offsets are not requeued",
+		),
+		(
+			"preloadParts = 1;" not in reader
+			and "? preloadMinimum" in reader,
+			"critical scheduling keeps the Smart preload floor",
+		),
+		(
+			"haveSentRequestForOffset(offset)" in loader_mtproto
+			and re.search(
+				r"cancelForSeek\(int64 offset\).*?"
+				r"haveSentRequestForOffset\(offset\).*?return;",
+				loader_mtproto,
+				re.DOTALL,
+			)
+			is not None,
+			"seek cancellation preserves sent requests",
+		),
+		(
+			"kNonPremiumMaximumRequestLimit = 10" in non_premium,
+			"non-Premium maximum request limit remains 10",
 		),
 		(
 			"audioTrack" in file
