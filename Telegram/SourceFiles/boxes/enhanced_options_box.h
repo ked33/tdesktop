@@ -107,6 +107,26 @@ private:
 
 };
 
+class MessageMediaSizeBox : public Ui::BoxContent {
+public:
+	MessageMediaSizeBox(QWidget *parent);
+
+	[[nodiscard]] static QString SizeLabel();
+
+protected:
+	void prepare() override;
+	void setInnerFocus() override;
+	void resizeEvent(QResizeEvent *e) override;
+
+private:
+	void reset();
+	void save();
+
+	object_ptr<Ui::InputField> _emojiSize = { nullptr };
+	object_ptr<Ui::InputField> _stickerSize = { nullptr };
+
+};
+
 class RadioController : public Ui::BoxContent {
 public:
 	RadioController(QWidget *parent);

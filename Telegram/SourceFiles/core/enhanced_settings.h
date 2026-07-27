@@ -10,6 +10,16 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 
 namespace EnhancedSettings {
 
+	inline constexpr auto kMessageEmojiSizeMinimum = 50;
+	inline constexpr auto kMessageEmojiSizeDefault = 112;
+	inline constexpr auto kMessageEmojiSizeMaximum = 112;
+	inline constexpr auto kMessageStickerSizeMinimum = 50;
+	inline constexpr auto kMessageStickerSizeDefault = 256;
+	inline constexpr auto kMessageStickerSizeMaximum = 256;
+
+	[[nodiscard]] int MessageEmojiSize();
+	[[nodiscard]] int MessageStickerSize();
+
 	class Manager : public QObject {
 	Q_OBJECT
 

@@ -29,6 +29,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <algorithm>
 #include <array>
 
+namespace {
+
+[[nodiscard]] QString PixelRangeLabel(int minimum, int maximum) {
+	return u"%1-%2 px"_q.arg(minimum).arg(maximum);
+}
+
+} // namespace
+
 NetBoostBox::NetBoostBox(QWidget *parent) {
 }
 
@@ -562,6 +570,149 @@ void AlwaysDeleteBox::save() {
 	SetEnhancedValue("always_delete_for", _optionGroup->current());
 	EnhancedSettings::Write();
 	closeBox();
+}
+
+MessageMediaSizeBox::MessageMediaSizeBox(QWidget *parent)
+: _emojiSize(
+	this,
+	st::defaultInputField,
+	tr::lng_settings_message_media_size_placeholder())
+, _stickerSize(
+	this,
+	st::defaultInputField,
+	tr::lng_settings_message_media_size_placeholder()) {
+}
+
+QString MessageMediaSizeBox::SizeLabel() {
+	return u"%1 px / %2 px"_q
+		.arg(EnhancedSettings::MessageEmojiSize())
+		.arg(EnhancedSettings::MessageStickerSize());
+}
+
+void MessageMediaSizeBox::prepare() {
+	setTitle(tr::lng_settings_message_media_size());
+
+	addButton(tr::lng_settings_message_media_size_reset(), [=] { reset(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+	addButton(tr::lng_settings_save(), [=] { save(); });
+
+	_emojiSize->setText(QString::number(EnhancedSettings::MessageEmojiSize()));
+	_stickerSize->setText(QString::number(
+		EnhancedSettings::MessageStickerSize()));
+	_emojiSize->setMaxLength(3);
+	_stickerSize->setMaxLength(3);
+
+	auto y = st::boxOptionListPadding.top();
+	const auto emojiLabel = Ui::CreateChild<Ui::FlatLabel>(
+		this,
+		tr::lng_settings_message_emoji_size(
+			tr::now,
+			lt_size,
+			PixelRangeLabel(
+				EnhancedSettings::kMessageEmojiSizeMinimum,
+				EnhancedSettings::kMessageEmojiSizeMaximum)),
+		st::boxLabel);
+	emojiLabel->moveToLeft(st::boxPadding.left(), y);
+	y += emojiLabel->height() + st::boxMediumSkip;
+	_emojiSize->moveToLeft(st::boxPadding.left(), y);
+	y += _emojiSize->height() + st::boxMediumSkip;
+
+	const auto stickerLabel = Ui::CreateChild<Ui::FlatLabel>(
+		this,
+		tr::lng_settings_message_sticker_size(
+			tr::now,
+			lt_size,
+			PixelRangeLabel(
+				EnhancedSettings::kMessageStickerSizeMinimum,
+				EnhancedSettings::kMessageStickerSizeMaximum)),
+		st::boxLabel);
+	stickerLabel->moveToLeft(st::boxPadding.left(), y);
+	y += stickerLabel->height() + st::boxMediumSkip;
+	_stickerSize->moveToLeft(st::boxPadding.left(), y);
+	y += _stickerSize->height() + st::boxOptionListPadding.bottom();
+
+	setDimensions(st::boxWidth, y);
+}
+
+void MessageMediaSizeBox::setInnerFocus() {
+	_emojiSize->setFocusFast();
+}
+
+void MessageMediaSizeBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+
+	const auto innerWidth = width()
+		- st::boxPadding.left()
+		- st::boxPadding.right();
+	_emojiSize->resize(innerWidth, _emojiSize->height());
+	_stickerSize->resize(innerWidth, _stickerSize->height());
+	_emojiSize->moveToLeft(st::boxPadding.left(), _emojiSize->y());
+	_stickerSize->moveToLeft(st::boxPadding.left(), _stickerSize->y());
+}
+
+void MessageMediaSizeBox::reset() {
+	_emojiSize->hideError();
+	_stickerSize->hideError();
+	_emojiSize->setText(QString::number(
+		EnhancedSettings::kMessageEmojiSizeDefault));
+	_stickerSize->setText(QString::number(
+		EnhancedSettings::kMessageStickerSizeDefault));
+}
+
+void MessageMediaSizeBox::save() {
+	_emojiSize->hideError();
+	_stickerSize->hideError();
+
+	auto emojiOk = false;
+	const auto emojiSize = _emojiSize->getLastText().trimmed().toInt(
+		&emojiOk);
+	if (!emojiOk
+		|| emojiSize < EnhancedSettings::kMessageEmojiSizeMinimum
+		|| emojiSize > EnhancedSettings::kMessageEmojiSizeMaximum) {
+		Ui::Toast::Show(tr::lng_settings_message_emoji_size_invalid(
+			tr::now,
+			lt_size,
+			PixelRangeLabel(
+				EnhancedSettings::kMessageEmojiSizeMinimum,
+				EnhancedSettings::kMessageEmojiSizeMaximum)));
+		_emojiSize->showError();
+		return;
+	}
+
+	auto stickerOk = false;
+	const auto stickerSize = _stickerSize->getLastText().trimmed().toInt(
+		&stickerOk);
+	if (!stickerOk
+		|| stickerSize < EnhancedSettings::kMessageStickerSizeMinimum
+		|| stickerSize > EnhancedSettings::kMessageStickerSizeMaximum) {
+		Ui::Toast::Show(tr::lng_settings_message_sticker_size_invalid(
+			tr::now,
+			lt_size,
+			PixelRangeLabel(
+				EnhancedSettings::kMessageStickerSizeMinimum,
+				EnhancedSettings::kMessageStickerSizeMaximum)));
+		_stickerSize->showError();
+		return;
+	}
+
+	if (emojiSize == EnhancedSettings::MessageEmojiSize()
+		&& stickerSize == EnhancedSettings::MessageStickerSize()) {
+		closeBox();
+		return;
+	}
+
+	const auto apply = [=](Fn<void()> &&) {
+		SetEnhancedValue("message_emoji_size", emojiSize);
+		SetEnhancedValue("message_sticker_size", stickerSize);
+		EnhancedSettings::Write();
+		Core::Restart();
+	};
+	getDelegate()->show(Ui::MakeConfirmBox({
+		.text = tr::lng_settings_message_media_size_restart(tr::now),
+		.confirmed = apply,
+		.confirmText = tr::lng_settings_restart_now(tr::now),
+		.cancelText = tr::lng_cancel(tr::now),
+	}));
 }
 
 RadioController::RadioController(QWidget *parent)

@@ -28,8 +28,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/power_saving.h"
 #include "ui/ui_utility.h"
 #include "core/application.h"
-#include "core/core_settings.h"
 #include "core/click_handler_types.h"
+#include "core/core_settings.h"
+#include "core/enhanced_settings.h"
 #include "window/window_session_controller.h"
 #include "data/data_session.h"
 #include "data/data_document.h"
@@ -243,14 +244,16 @@ bool Sticker::readyToDrawAnimationFrame() {
 
 QSize Sticker::Size() {
 	const auto side = std::min(st::maxStickerSize, kMaxSizeFixed);
+	auto configured = EnhancedSettings::MessageStickerSize();
 	if (OptionStickerSize.value() > 0) [[unlikely]] {
-		const auto scaled = std::clamp(
-			style::ConvertScale(OptionStickerSize.value()),
-			style::ConvertScale(50),
-			side);
-		return { scaled, scaled };
+		configured = OptionStickerSize.value();
 	}
-	return { side, side };
+	const auto scaled = std::clamp(
+		style::ConvertScale(configured),
+		style::ConvertScale(
+			EnhancedSettings::kMessageStickerSizeMinimum),
+		side);
+	return { scaled, scaled };
 }
 
 QSize Sticker::Size(not_null<DocumentData*> document) {
@@ -276,7 +279,11 @@ QSize Sticker::MessageEffectSize() {
 
 QSize Sticker::EmojiSize() {
 	const auto side = std::min(st::maxAnimatedEmojiSize, kMaxEmojiSizeFixed);
-	return { side, side };
+	const auto scaled = std::clamp(
+		style::ConvertScale(EnhancedSettings::MessageEmojiSize()),
+		style::ConvertScale(EnhancedSettings::kMessageEmojiSizeMinimum),
+		side);
+	return { scaled, scaled };
 }
 
 void Sticker::draw(

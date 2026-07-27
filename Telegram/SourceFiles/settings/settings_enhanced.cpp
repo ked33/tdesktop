@@ -211,6 +211,16 @@ namespace Settings {
 			Core::Restart();
 		}, container->lifetime());
 
+		auto messageMediaSizeButton = AddButtonWithLabel(
+			inner,
+			tr::lng_settings_message_media_size(),
+			rpl::single(MessageMediaSizeBox::SizeLabel()),
+			st::settingsButtonNoIcon);
+		messageMediaSizeButton->setColorOverride(QColor(255, 0, 0));
+		messageMediaSizeButton->addClickHandler([=] {
+			Ui::show(Box<MessageMediaSizeBox>());
+		});
+
 		AddButtonWithIcon(
 				inner,
 				tr::lng_settings_show_repeater_option(),
