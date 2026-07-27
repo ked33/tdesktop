@@ -37,6 +37,11 @@ namespace EnhancedSettings {
 					gEnhancedOptions.insert(key, value);
 				}
 			};
+			const auto ensureInt = [](const QString &key, int value) {
+				if (!gEnhancedOptions.contains(key)) {
+					gEnhancedOptions.insert(key, value);
+				}
+			};
 			const auto migrateBool = [](const QString &from, const QString &to) {
 				if (!gEnhancedOptions.contains(to) && gEnhancedOptions.contains(from)) {
 					gEnhancedOptions.insert(to, gEnhancedOptions.value(from).toBool());
@@ -71,6 +76,8 @@ namespace EnhancedSettings {
 			ensureBool(qsl("show_message_context_select"), true);
 			ensureBool(qsl("show_message_context_reschedule"), true);
 			ensureBool(qsl("keep_selected_messages_across_chats"), false);
+			ensureInt(qsl("message_emoji_size"), kMessageEmojiSizeDefault);
+			ensureInt(qsl("message_sticker_size"), kMessageStickerSizeDefault);
 			ensureBool(qsl("search_main_and_archive"), true);
 			ensureString(qsl("mpv_path"), QString());
 			ensureString(
@@ -199,6 +206,22 @@ namespace EnhancedSettings {
 		std::unique_ptr<Manager> Data;
 
 	} // namespace
+
+	int MessageEmojiSize() {
+		const auto size = GetEnhancedInt(qsl("message_emoji_size"));
+		return (size >= kMessageEmojiSizeMinimum
+			&& size <= kMessageEmojiSizeMaximum)
+			? size
+			: kMessageEmojiSizeDefault;
+	}
+
+	int MessageStickerSize() {
+		const auto size = GetEnhancedInt(qsl("message_sticker_size"));
+		return (size >= kMessageStickerSizeMinimum
+			&& size <= kMessageStickerSizeMaximum)
+			? size
+			: kMessageStickerSizeDefault;
+	}
 
 	Manager::Manager() {
 		_jsonWriteTimer.setSingleShot(true);
@@ -433,6 +456,8 @@ namespace EnhancedSettings {
 		settings.insert(qsl("show_message_context_select"), true);
 		settings.insert(qsl("show_message_context_reschedule"), true);
 		settings.insert(qsl("keep_selected_messages_across_chats"), false);
+		settings.insert(qsl("message_emoji_size"), kMessageEmojiSizeDefault);
+		settings.insert(qsl("message_sticker_size"), kMessageStickerSizeDefault);
 		settings.insert(qsl("show_json"), false);
 		settings.insert(qsl("hide_counter"), false);
 		settings.insert(qsl("translate_to_tc"), false);
@@ -530,6 +555,8 @@ namespace EnhancedSettings {
 		settings.insert(qsl("show_message_context_select"), GetEnhancedBool("show_message_context_select"));
 		settings.insert(qsl("show_message_context_reschedule"), GetEnhancedBool("show_message_context_reschedule"));
 		settings.insert(qsl("keep_selected_messages_across_chats"), GetEnhancedBool("keep_selected_messages_across_chats"));
+		settings.insert(qsl("message_emoji_size"), MessageEmojiSize());
+		settings.insert(qsl("message_sticker_size"), MessageStickerSize());
 		settings.insert(qsl("show_json"), GetEnhancedBool("show_json"));
 		settings.insert(qsl("hide_counter"), GetEnhancedBool("hide_counter"));
 		settings.insert(qsl("translate_to_tc"), GetEnhancedBool("translate_to_tc"));
