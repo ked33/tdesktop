@@ -171,6 +171,8 @@ private:
 		uint64 trackGeneration);
 	void provideStartInformation();
 	void fail(Error error);
+	void clearFrameRenderSchedule();
+	void renderFrameTimerFired();
 	void checkVideoStep();
 	void checkNextFrameRender();
 	void checkNextFrameAvailability();
@@ -261,6 +263,7 @@ private:
 	crl::time _pausedTime = kTimeUnknown;
 	crl::time _currentFrameTime = kTimeUnknown;
 	crl::time _nextFrameTime = kTimeUnknown;
+	uint64 _renderFrameGeneration = 0;
 	base::Timer _renderFrameTimer;
 	rpl::event_stream<Update, Error> _updates;
 	rpl::event_stream<bool> _fullInCache;

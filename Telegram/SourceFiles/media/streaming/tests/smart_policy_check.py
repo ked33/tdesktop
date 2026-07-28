@@ -165,12 +165,38 @@ def test_source_structure() -> None:
 		encoding="utf-8"
 	)
 	player = (ROOT / "media_streaming_player.cpp").read_text(encoding="utf-8")
+	player_h = (ROOT / "media_streaming_player.h").read_text(encoding="utf-8")
 	boost = (ROOT / "media_streaming_boost.cpp").read_text(encoding="utf-8")
 	boost_h = (ROOT / "media_streaming_boost.h").read_text(encoding="utf-8")
 	read_source_bytes = file[
 		file.index("[[nodiscard]] std::optional<QByteArray> ReadSourceBytes("):
 		file.index("[[nodiscard]] Mp4SeekMapBuildResult BuildMp4SeekTrack(")
 	]
+	render_timer = player[
+		player.index("void Player::renderFrameTimerFired() {"):
+		player.index("void Player::checkNextFrameRender() {")
+	]
+	next_frame_render = player[
+		player.index("void Player::checkNextFrameRender() {"):
+		player.index("void Player::checkNextFrameAvailability() {")
+	]
+	seek_barrier = player[
+		player.index("void Player::applySoftSeekTrackBarrier("):
+		player.index("bool Player::tryJoinSoftSeek(")
+	]
+	in_place_seek = player[
+		player.index("bool Player::trySoftSeek("):
+		player.index("void Player::fileSoftSeekApplied(")
+	]
+	join_seek = player[
+		player.index("bool Player::tryJoinSoftSeek("):
+		player.index("void Player::play(")
+	]
+	video_step = player[
+		player.index("void Player::checkVideoStep() {"):
+		player.index("void Player::stop(bool stillActive) {")
+	]
+	stop = player[player.index("void Player::stop(bool stillActive) {"):]
 	checks = [
 		(
 			"topUpSeekCriticalLoads" in reader
@@ -226,6 +252,31 @@ def test_source_structure() -> None:
 			and "_delegate->fileError(_trackGeneration" in file
 			and "generation != _trackGeneration.load" in player,
 			"file and track callbacks preserve seek generation",
+		),
+		(
+			"void clearFrameRenderSchedule();" in player_h
+			and "void renderFrameTimerFired();" in player_h
+			and "uint64 _renderFrameGeneration = 0;" in player_h
+			and "_renderFrameTimer([=] { renderFrameTimerFired(); })" in player,
+			"render timer retains its track generation",
+		),
+		(
+			"generation != _trackGeneration.load" in render_timer
+			and "clearFrameRenderSchedule();" in render_timer
+			and "if (_stage != Stage::Started || !_video)" in next_frame_render
+			and "_renderFrameGeneration = generation;" in next_frame_render,
+			"stale render timers are dropped before video access",
+		),
+		(
+			"clearFrameRenderSchedule();" in seek_barrier
+			and "if (_stage != Stage::Started || !_video)" in video_step,
+			"seek barriers and old callbacks clear frame scheduling",
+		),
+		(
+			"clearFrameRenderSchedule();" in in_place_seek
+			and "clearFrameRenderSchedule();" in join_seek
+			and "clearFrameRenderSchedule();" in stop,
+			"all seek and stop transitions clear frame scheduling",
 		),
 		(
 			"result.state == FillState::Success || remoteRequests > 0"
