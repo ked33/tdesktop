@@ -1338,11 +1338,11 @@ int File::Context::read(bytes::span buffer) {
 		_semaphore.acquire();
 		if (_interrupted) {
 			return AVERROR_EXTERNAL;
-		} else if (hasPendingSoftSeek()) {
-			_avioAbortForSoftSeek.store(true, std::memory_order_release);
-			return AVERROR_EXTERNAL;
 		} else if (const auto error = _source->streamingError()) {
 			fail(*error);
+			return AVERROR_EXTERNAL;
+		} else if (hasPendingSoftSeek()) {
+			_avioAbortForSoftSeek.store(true, std::memory_order_release);
 			return AVERROR_EXTERNAL;
 		}
 	}
@@ -1785,6 +1785,8 @@ std::variant<FFmpeg::Packet, FFmpeg::AvErrorWrap> File::Context::readPacket() {
 		return FFmpeg::AvErrorWrap();
 	} else if (!error) {
 		return result;
+	} else if (const auto sourceError = _source->streamingError()) {
+		fail(*sourceError);
 	} else if (error.code() == AVERROR_EOF) {
 		return error;
 	} else if (error.code() == AVERROR_EXTERNAL && _offset >= _size) {
@@ -2086,6 +2088,22 @@ bool File::Context::applyPendingSoftSeekIfAny() {
 	if (!hasPendingSoftSeek() || unroll() || !_format) {
 		return false;
 	}
+	const auto resetAvioReadState = [&] {
+		if (!_format || !_format->pb) {
+			return;
+		}
+		const auto error = _format->pb->error;
+		const auto eofReached = _format->pb->eof_reached;
+		_format->pb->error = 0;
+		_format->pb->eof_reached = 0;
+		if (error || eofReached) {
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File soft seek "
+				"AVIO state reset error=%1 eof=%2 offset=%3.")
+				.arg(error)
+				.arg(eofReached)
+				.arg(qlonglong(_offset)));
+		}
+	};
 
 	while (hasPendingSoftSeek() && !unroll() && _format) {
 		const auto gen = _softSeekRequestGen.load(std::memory_order_acquire);
@@ -2101,6 +2119,7 @@ bool File::Context::applyPendingSoftSeekIfAny() {
 		}
 		_softSeekHandledGen = gen;
 		_trackGeneration = options.trackGeneration;
+		resetAvioReadState();
 		_avioAbortForSoftSeek.store(false, std::memory_order_release);
 
 		const auto applyStarted = crl::now();
@@ -2147,6 +2166,7 @@ bool File::Context::applyPendingSoftSeekIfAny() {
 		}
 		if (_format) {
 			avformat_flush(_format.get());
+			resetAvioReadState();
 		}
 
 		const auto seekDone = crl::now();

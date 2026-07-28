@@ -172,6 +172,18 @@ def test_source_structure() -> None:
 		file.index("[[nodiscard]] std::optional<QByteArray> ReadSourceBytes("):
 		file.index("[[nodiscard]] Mp4SeekMapBuildResult BuildMp4SeekTrack(")
 	]
+	read_callback = file[
+		file.index("int File::Context::read(bytes::span buffer) {"):
+		file.index("int64_t File::Context::seek(")
+	]
+	read_packet = file[
+		file.index("File::Context::readPacket() {"):
+		file.index("void File::Context::start(")
+	]
+	soft_seek = file[
+		file.index("bool File::Context::applyPendingSoftSeekIfAny() {"):
+		file.index("FFmpeg::FormatPointer File::Context::takeFormat()")
+	]
 	render_timer = player[
 		player.index("void Player::renderFrameTimerFired() {"):
 		player.index("void Player::checkNextFrameRender() {")
@@ -224,6 +236,29 @@ def test_source_structure() -> None:
 			and "criticalRanges" in file
 			and "audioTargetSample" in file,
 			"MP4 seek map covers video and audio critical ranges",
+		),
+		(
+			re.search(
+				r"if \(_interrupted\).*?streamingError\(\).*?hasPendingSoftSeek\(\)",
+				read_callback,
+				re.DOTALL,
+			)
+			is not None,
+			"source errors win over intentional soft-seek AVIO aborts",
+		),
+		(
+			"_format->pb->error = 0;" in soft_seek
+			and "_format->pb->eof_reached = 0;" in soft_seek
+			and soft_seek.count("resetAvioReadState();") == 2
+			and "avformat_flush(_format.get());" in soft_seek,
+			"soft seek clears sticky AVIO error and EOF state",
+		),
+		(
+			read_packet.index("_source->streamingError()")
+			< read_packet.index("error.code() == AVERROR_EOF")
+			and "error.code() == AVERROR_EXTERNAL && _offset >= _size"
+			in read_packet,
+			"real source errors stay fatal and EXTERNAL EOF stays bounded",
 		),
 		(
 			".acquire()" not in read_source_bytes
