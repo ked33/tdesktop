@@ -101,23 +101,47 @@ Player::Player(std::shared_ptr<Reader> reader)
 Player::Player(std::shared_ptr<FileSource> source)
 : _file(std::make_unique<File>(std::move(source)))
 , _remoteLoader(_file->isRemoteLoader())
-, _renderFrameTimer([=] { checkNextFrameRender(); }) {
+, _renderFrameTimer([=] { renderFrameTimerFired(); }) {
 }
 
 not_null<FileDelegate*> Player::delegate() {
 	return static_cast<FileDelegate*>(this);
 }
 
+void Player::clearFrameRenderSchedule() {
+	_renderFrameTimer.cancel();
+	_nextFrameTime = kTimeUnknown;
+	_renderFrameGeneration = 0;
+}
+
+void Player::renderFrameTimerFired() {
+	const auto generation = base::take(_renderFrameGeneration);
+	if (generation != _trackGeneration.load(std::memory_order_acquire)) {
+		clearFrameRenderSchedule();
+		return;
+	}
+	checkNextFrameRender();
+}
+
 void Player::checkNextFrameRender() {
+	if (_stage != Stage::Started || !_video) {
+		clearFrameRenderSchedule();
+		return;
+	}
 	Expects(_nextFrameTime != kTimeUnknown);
 
 	const auto now = crl::now();
 	if (now < _nextFrameTime) {
-		if (!_renderFrameTimer.isActive()) {
+		const auto generation = _trackGeneration.load(std::memory_order_acquire);
+		if (!_renderFrameTimer.isActive()
+			|| _renderFrameGeneration != generation) {
+			_renderFrameTimer.cancel();
+			_renderFrameGeneration = generation;
 			_renderFrameTimer.callOnce(_nextFrameTime - now);
 		}
 	} else {
 		_renderFrameTimer.cancel();
+		_renderFrameGeneration = 0;
 		renderFrame(now);
 	}
 }
@@ -757,8 +781,7 @@ bool Player::trySoftSeek(
 		}
 		_stage = Stage::Initializing;
 		_pausedByUser = _pausedByWaitingForData = _paused = false;
-		_renderFrameTimer.cancel();
-		_nextFrameTime = kTimeUnknown;
+		clearFrameRenderSchedule();
 		_audioFinished = false;
 		_videoFinished = false;
 		_pauseReading = false;
@@ -827,6 +850,7 @@ void Player::applySoftSeekTrackBarrier(uint64_t generation) {
 
 	if (_softSeekInPlace && generation == _softSeekGeneration) {
 		_sessionLifetime = rpl::lifetime();
+		clearFrameRenderSchedule();
 		_audio = nullptr;
 		_video = nullptr;
 		invalidate_weak_ptrs(&_sessionGuard);
@@ -874,8 +898,7 @@ bool Player::tryJoinSoftSeek(
 	_video = nullptr;
 	invalidate_weak_ptrs(&_sessionGuard);
 	_pausedByUser = _pausedByWaitingForData = _paused = false;
-	_renderFrameTimer.cancel();
-	_nextFrameTime = kTimeUnknown;
+	clearFrameRenderSchedule();
 	_audioFinished = false;
 	_videoFinished = false;
 	_pauseReading = false;
@@ -1245,6 +1268,10 @@ void Player::start() {
 }
 
 void Player::checkVideoStep() {
+	if (_stage != Stage::Started || !_video) {
+		clearFrameRenderSchedule();
+		return;
+	}
 	if (_nextFrameTime == kFrameDisplayTimeAlreadyDone) {
 		return;
 	} else if (_nextFrameTime != kTimeUnknown) {
@@ -1280,8 +1307,7 @@ void Player::stop(bool stillActive) {
 	_video = nullptr;
 	invalidate_weak_ptrs(&_sessionGuard);
 	_pausedByUser = _pausedByWaitingForData = _paused = false;
-	_renderFrameTimer.cancel();
-	_nextFrameTime = kTimeUnknown;
+	clearFrameRenderSchedule();
 	_audioFinished = false;
 	_videoFinished = false;
 	_pauseReading = false;
