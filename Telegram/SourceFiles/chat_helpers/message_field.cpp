@@ -47,6 +47,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
 #include "main/main_session.h"
+#include "settings/settings_common.h"
 #include "settings/sections/settings_premium.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
@@ -55,6 +56,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_credits.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_menu_icons.h"
+#include "styles/style_premium.h"
 #include "styles/style_settings.h"
 #include "base/qt/qt_common_adapters.h"
 
