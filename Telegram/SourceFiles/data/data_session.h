@@ -1057,6 +1057,7 @@ private:
 	void applyDialog(
 		Folder *requestFolder,
 		const MTPDdialogCommunity &data);
+	void checkPinnedCommunityLoaded(not_null<ChannelData*> channel);
 
 	const Messages *messagesList(PeerId peerId) const;
 	not_null<Messages*> messagesListForInsert(PeerId peerId);
@@ -1362,6 +1363,8 @@ private:
 	std::optional<base::flat_map<
 		not_null<ChannelData*>,
 		ChannelId>> _postponedMonoforumLinkedIds;
+
+	base::flat_set<ChannelId> _pinnedCommunitiesNotLoaded;
 
 	// This one from `channel`, not `channelFull`.
 	base::flat_map<not_null<const ChannelData*>, int> _commonStarsPerMessage;
