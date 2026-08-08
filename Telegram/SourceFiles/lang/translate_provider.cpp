@@ -14,8 +14,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_peer.h"
 #include "data/data_session.h"
 #include "history/history_item.h"
+#include "lang/translate_backend.h"
+#include "lang/translate_google_provider.h"
 #include "lang/translate_mtproto_provider.h"
 #include "lang/translate_url_provider.h"
+#include "main/main_session.h"
 #include "platform/platform_translate_provider.h"
 
 namespace {
@@ -42,7 +45,10 @@ std::unique_ptr<TranslateProvider> CreateTranslateProvider(
 		&& Platform::IsTranslateProviderAvailable()) {
 		return Platform::CreateTranslateProvider();
 	}
-	return CreateMTProtoTranslateProvider(session);
+	if (Lang::TranslateBackend::UsingTelegram(session)) {
+		return CreateMTProtoTranslateProvider(session);
+	}
+	return CreateGoogleTranslateProvider(session);
 }
 
 TranslateProviderRequest PrepareTranslateProviderRequest(

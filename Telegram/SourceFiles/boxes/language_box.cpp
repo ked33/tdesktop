@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_cloud_manager.h"
 #include "lang/lang_instance.h"
 #include "lang/lang_keys.h"
+#include "lang/translate_backend.h"
 #include "main/main_session.h"
 #include "platform/platform_translate_provider.h"
 #include "settings/settings_common.h"
@@ -1611,6 +1612,61 @@ void LanguageBox::setupTop(not_null<Ui::VerticalLayout*> container) {
 
 	using namespace rpl::mappers;
 	auto premium = Data::AmPremiumValue(&_controller->session());
+	auto freeGoogle = rpl::single(
+		Lang::TranslateBackend::UnlocksChatTranslateWithoutPremium()
+	) | rpl::then(
+		Lang::TranslateBackend::changes(
+		) | rpl::map([] {
+			return Lang::TranslateBackend::UnlocksChatTranslateWithoutPremium();
+		})
+	);
+	auto chatTranslateAllowed = rpl::combine(
+		rpl::duplicate(premium),
+		std::move(freeGoogle),
+		_1 || _2
+	) | rpl::distinct_until_changed();
+
+	const auto telegramProviderTurnOff = lifetime().make_state<
+		rpl::event_stream<bool>
+	>();
+	const auto telegramProvider = container->add(object_ptr<Ui::SettingsButton>(
+		container,
+		rpl::single(u"Telegram translation (Premium)"_q),
+		st::settingsButtonNoIconLocked
+	))->toggleOn(rpl::merge(
+		rpl::single(
+			Lang::TranslateBackend::PrefersTelegram()
+		) | rpl::then(
+			Lang::TranslateBackend::changes(
+			) | rpl::map([] {
+				return Lang::TranslateBackend::PrefersTelegram();
+			})
+		),
+		telegramProviderTurnOff->events()));
+	std::move(premium) | rpl::on_next([=](bool value) {
+		telegramProvider->setToggleLocked(!value);
+		if (!value && Lang::TranslateBackend::PrefersTelegram()) {
+			Lang::TranslateBackend::SetPrefersTelegram(false);
+		}
+	}, telegramProvider->lifetime());
+	telegramProvider->toggledValue(
+	) | rpl::filter([=](bool checked) {
+		if (checked && !_controller->session().premium()) {
+			ShowPremiumPreviewToBuy(
+				_controller,
+				PremiumFeature::RealTimeTranslation);
+			telegramProviderTurnOff->fire(false);
+			return false;
+		}
+		return checked != Lang::TranslateBackend::PrefersTelegram();
+	}) | rpl::on_next([=](bool checked) {
+		Lang::TranslateBackend::SetPrefersTelegram(checked);
+	}, telegramProvider->lifetime());
+	Ui::AddDividerText(
+		container,
+		rpl::single(
+			u"Default is Google (no Premium). Telegram official translation requires Premium."_q));
+
 	const auto translateChat = container->add(object_ptr<Ui::SettingsButton>(
 		container,
 		tr::lng_translate_settings_chat(),
@@ -1618,24 +1674,27 @@ void LanguageBox::setupTop(not_null<Ui::VerticalLayout*> container) {
 	))->toggleOn(rpl::merge(
 		rpl::combine(
 			Core::App().settings().translateChatEnabledValue(),
-			rpl::duplicate(premium),
+			rpl::duplicate(chatTranslateAllowed),
 			_1 && _2),
 		_translateChatTurnOff.events()));
 	_translateChatsToggle = translateChat;
-	std::move(premium) | rpl::on_next([=](bool value) {
-		translateChat->setToggleLocked(!value);
+	std::move(
+		chatTranslateAllowed
+	) | rpl::on_next([=](bool allowed) {
+		translateChat->setToggleLocked(!allowed);
 	}, translateChat->lifetime());
 
 	translateChat->toggledValue(
 	) | rpl::filter([=](bool checked) {
-		const auto premium = _controller->session().premium();
-		if (checked && !premium) {
+		const auto allowed = _controller->session().premium()
+			|| Lang::TranslateBackend::UnlocksChatTranslateWithoutPremium();
+		if (checked && !allowed) {
 			ShowPremiumPreviewToBuy(
 				_controller,
 				PremiumFeature::RealTimeTranslation);
 			_translateChatTurnOff.fire(false);
 		}
-		return premium
+		return allowed
 			&& (checked != Core::App().settings().translateChatEnabled());
 	}) | rpl::on_next([=](bool checked) {
 		Core::App().settings().setTranslateChatEnabled(checked);

@@ -25,6 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/random.h"
 #include "base/openssl_help.h"
 #include "lang/lang_keys.h"
+#include "lang/translate_backend.h"
 #include "lottie/lottie_icon.h"
 #include "ui/boxes/confirm_box.h"
 #include "base/random.h"
@@ -1238,8 +1239,9 @@ void Filler::addExportChat() {
 }
 
 void Filler::addTranslate() {
+	const auto freeGoogle = Lang::TranslateBackend::UnlocksChatTranslateWithoutPremium();
 	if (_peer->translationFlag() != PeerData::TranslationFlag::Disabled
-		|| !_peer->session().premium()
+		|| !(_peer->session().premium() || freeGoogle)
 		|| !Core::App().settings().translateChatEnabled()) {
 		return;
 	}
