@@ -1105,7 +1105,13 @@ void Gif::paintTimestampMark(
 	if (edge > 0) {
 		p.setBrush(st::windowBgActive);
 
-		p.setClipRect(rthumb.x(), top, edge, line);
+		p.save();
+		p.setClipRect(
+			rthumb.x(),
+			top,
+			edge,
+			line,
+			Qt::IntersectClip);
 		p.drawRoundedRect(
 			rthumb.x(),
 			top - 2 * radiusl,
@@ -1113,11 +1119,13 @@ void Gif::paintTimestampMark(
 			line + 2 * radiusl,
 			radiusl,
 			radiusl);
+		p.restore();
 	}
 	if (const auto width = rthumb.width() - edge; width > 0) {
 		const auto left = rthumb.x() + edge;
 		p.setBrush(st::mediaviewPlaybackProgressFg);
-		p.setClipRect(left, top, width, line);
+		p.save();
+		p.setClipRect(left, top, width, line, Qt::IntersectClip);
 		p.drawRoundedRect(
 			left - radiusr,
 			top - 2 * radiusr,
@@ -1125,6 +1133,7 @@ void Gif::paintTimestampMark(
 			line + 2 * radiusr,
 			radiusr,
 			radiusr);
+		p.restore();
 	}
 	p.restore();
 }

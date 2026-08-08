@@ -103,6 +103,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "menu/menu_item_rate_transcribe_session.h"
 #include "menu/menu_timecode_action.h"
 #include "menu/menu_sponsored.h"
+#include "iv/iv_rich_message_html_export.h"
 #include "core/application.h"
 #include "facades.h"
 #include "apiwrap.h"
@@ -3787,6 +3788,14 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 						items,
 						this);
 				}
+				if (selectedState.count > 0
+					&& !hasCopyRestrictionForSelected()) {
+					Iv::AddSaveRichMessageHtmlAction(
+						_menu,
+						controller,
+						selectedItemsForExport(),
+						this);
+				}
 				if (GetEnhancedBool("show_message_context_select")) {
 					_menu->addAction(tr::lng_context_clear_selection(tr::now), [=] {
 						_widget->clearSelected();
@@ -4283,6 +4292,14 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 						_menu,
 						controller,
 						items,
+						this);
+				}
+				if (selectedState.count > 0
+					&& !hasCopyRestrictionForSelected()) {
+					Iv::AddSaveRichMessageHtmlAction(
+						_menu,
+						controller,
+						selectedItemsForExport(),
 						this);
 				}
 				if (GetEnhancedBool("show_message_context_select")) {
