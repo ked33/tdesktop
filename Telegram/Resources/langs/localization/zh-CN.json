@@ -1,12 +1,12 @@
 {
     "lng_intro_about2": "欢迎使用 64Gram Desktop。\n它快速且安全。",
-
     "lng_settings_enhanced": "增强设置",
     "lng_settings_network": "网络",
     "lng_settings_net_upload_speed_boost": "上传速度提升",
     "lng_settings_net_download_speed_boost": "优化在线播放",
     "lng_settings_online_playback_debug_logs": "将在线播放调试日志写入 log.txt",
     "lng_settings_show_message_id": "显示消息 ID",
+    "lng_settings_label_channel_user": "标注频道身份发言",
     "lng_settings_message_media_size": "表情和贴纸尺寸",
     "lng_settings_message_media_size_placeholder": "像素尺寸",
     "lng_settings_message_media_size_reset": "恢复默认尺寸",
@@ -54,10 +54,8 @@
     "lng_media_viewer_volume_osd": "音量 {percent}%",
     "lng_settings_screen_shot_mode": "截图模式",
     "lng_settings_restart_hint": "警告：修改标红的选项后，需重启应用才会生效。",
-
     "lng_settings_skip_message": "跳转到下一个未读聊天",
     "lng_settings_skip_message_desc": "注意：允许使用 ALT+↑/↓ 快捷键跳转到下一个未读聊天",
-
     "lng_settings_experimental_tabbed_panel_show_on_click": "点击后显示标签面板",
     "lng_settings_experimental_tabbed_panel_show_on_click_desc": "仅在点击后显示表情 / 贴纸 / GIF 面板。",
     "lng_settings_experimental_forum_hide_chats_list": "在论坛中隐藏聊天列表",
@@ -137,7 +135,6 @@
     "lng_settings_experimental_qscroller_desc": "提供惯性滚动和越界滚动效果。",
     "lng_settings_experimental_ffmpeg_multithread": "多线程视频解码",
     "lng_settings_experimental_ffmpeg_multithread_desc": "允许 FFmpeg 使用线程池进行解码，通常每个 CPU 线程对应一个解码线程。",
-
     "lng_net_speed_boost_title": "网络加速",
     "lng_net_speed_boost_desc": "警告：在较慢网络中将此参数调得过高，可能会让情况更糟。请自行承担风险。",
     "lng_net_download_speed_boost_desc": "警告：更高档位会把媒体下载策略调向更快的视频打开速度、更快的拖动后恢复速度和更稳定的播放。其中“极限”档会更激进地偏向峰值吞吐，因此稳定性可能更差；“智能”档会根据实时吞吐自动在保守、正常和突发预读之间切换，适合存在周期性限速的网络。请自行承担风险。",
@@ -145,7 +142,6 @@
     "lng_radio_controller_desc": "注意：电台控制器是一个用于控制音乐流播放会话的实验性机器人。",
     "lng_auto_unmute_desc": "注意：加入语音聊天后会自动取消静音。",
     "lng_settings_hide_messages_desc": "注意：这并不是真正隐藏！消息仍然可以查看，但文字会转换为剧透格式，媒体不会自动下载。",
-
     "lng_net_speed_boost_default": "已禁用",
     "lng_net_speed_boost_slight": "轻度",
     "lng_net_speed_boost_medium": "中等",
@@ -153,7 +149,6 @@
     "lng_net_speed_boost_aggressive": "激进",
     "lng_net_speed_boost_extreme": "极限",
     "lng_net_speed_boost_smart": "智能",
-
     "lng_settings_online_playback_parameters_title": "优化在线播放参数配置",
     "lng_settings_online_playback_parameters_reset": "还原当前档位",
     "lng_settings_online_playback_parameters_saved_restart": "参数已保存。需要重启 Telegram 才会应用新的在线播放参数。",
@@ -197,21 +192,16 @@
     "lng_online_playback_error_smart_dc_initial_max": "智能 DC 初始并发不能大于智能 DC 最大并发。",
     "lng_online_playback_error_smart_capacity_min": "智能容量回落下限不能小于智能 DC 最小并发。",
     "lng_online_playback_error_smart_capacity_max": "智能容量回落下限不能大于智能 DC 最大并发。",
-
     "lng_net_boost_restart_desc": "你需要重启应用才能更改网络加速。\n\n现在重启吗？",
     "lng_show_messages_id_desc": "警告：更改会在重启后立即生效。",
-
     "lng_chat_restriction_reason": "限制原因",
     "lng_copy_restriction_reason": "复制限制原因",
-
     "lng_context_copy_callback_data": "复制回调数据",
     "lng_context_forward_selected_no_quote": "转发所选内容（不带引用）",
     "lng_selected_forward_no_quote": "转发（不带引用）",
     "lng_context_forward_msg_old_selected": "转发所选内容（经典）",
     "lng_selected_forward_emoji_classic": "📠（经典）",
-
     "lng_message_id": "消息 ID：",
-
     "lng_admin_log_banned_send_stickers2": "发送贴纸",
     "lng_admin_log_banned_send_gifs": "发送 GIF",
     "lng_admin_log_banned_send_games": "发送游戏",
@@ -220,7 +210,6 @@
     "lng_rights_chat_send_gifs": "发送 GIF",
     "lng_rights_chat_send_games": "发送游戏",
     "lng_rights_chat_use_inline": "使用内联机器人",
-
     "lng_media_selected_gif#one": "{count} 个 GIF",
     "lng_media_selected_gif#other": "{count} 个 GIF",
     "lng_media_type_gifs": "GIF",
@@ -228,23 +217,18 @@
     "lng_profile_gifs#other": "{count} 个 GIF",
     "lng_profile_gifs_header": "GIF",
     "lng_media_gif_empty": "这里还没有 GIF",
-
     "lng_create_supergroup_title": "新建超级群组",
     "lng_action_group_migrate": "该群组已升级为超级群组",
     "lng_sure_upgrade_group": "你确定要将此群组升级为超级群组吗？",
     "lng_chat_upgrade_warning": "注意：此操作无法撤销",
-
     "lng_user_not_found": "404 - 未找到用户。\n注意：你必须先“见过”该用户，才能打开此链接。",
-
     "lng_settings_always_delete_for": "始终默认删除对象",
     "lng_settings_delete_disabled": "已禁用",
     "lng_settings_delete_for_group": "群组",
     "lng_settings_delete_for_person": "个人",
     "lng_settings_delete_for_both": "两者都选",
-
     "lng_title_forward_as_copy": "复制到...",
     "lng_title_multiple_forward": "转发到...",
-
     "lng_context_forward_msg": "多选转发",
     "lng_context_forward_msg_old": "单条转发",
     "lng_context_show_messages_from": "查看该用户消息",
@@ -256,14 +240,11 @@
     "lng_context_forward": "转发",
     "lng_context_view_as_json": "查看为 JSON",
     "lng_context_delete_own_messages": "删除自己发送的消息",
-
     "lng_settings_enable_hd_video": "更高视频码率",
     "lng_hd_video_hint": "视频码率已更改！如果你已经加入语音聊天，请重新加入。",
-
     "lng_bitrate_controller": "音频码率",
     "lng_bitrate_controller_desc": "警告：将此参数调高可能会影响慢速网络用户。",
     "lng_bitrate_controller_hint": "音频码率已更改！如果你已经加入语音聊天，请重新加入。",
-
     "lng_bitrate_controller_default": "默认（32 Kbps）",
     "lng_bitrate_controller_64k": "64 Kbps",
     "lng_bitrate_controller_96k": "96 Kbps",
@@ -272,23 +253,17 @@
     "lng_bitrate_controller_192k": "192 Kbps",
     "lng_bitrate_controller_256k": "256 Kbps",
     "lng_bitrate_controller_320k": "320 Kbps",
-
     "lng_pinned_message_show": "显示置顶消息",
     "lng_pinned_message_hide": "隐藏置顶消息",
     "lng_pinned_message_view": "查看置顶消息",
     "lng_go_to_first_message": "跳转到首条消息",
     "lng_go_to_random_id_message": "跳转到随机消息",
-
     "lng_proxy_remove_all": "删除所有代理",
-
     "lng_copy_profile_id": "ID 已复制到剪贴板。",
-
     "lng_group_requests_ban": "封禁",
     "lng_sure_delete_own_messages#one": "你确定要删除你在此聊天中发送的 {count} 条消息吗？\n\n此操作无法撤销。",
     "lng_sure_delete_own_messages#other": "你确定要删除你在此聊天中发送的 {count} 条消息吗？\n\n此操作无法撤销。",
-
     "lng_blocked_user_hint": "[被拉黑用户的消息]\n",
-
     "lng_context_details": "详情",
     "lng_context_details_views": "浏览量",
     "lng_context_details_shares": "转发数",
@@ -307,7 +282,6 @@
     "lng_context_details_quality": "清晰度",
     "lng_context_details_pack_owner": "包作者",
     "lng_video_quality_auto_lowered": "网络吞吐不足，已自动降低视频清晰度以保持流畅播放",
-
     "lng_context_stream_in_mpv": "mpv 播放",
     "lng_context_stream_in_mpv_not_found": "未在 PATH 中找到 mpv。",
     "lng_context_stream_in_mpv_failed": "启动 mpv 在线播放失败。",
@@ -352,5 +326,6 @@
     "lng_settings_code_block_bg_color_invalid": "请输入有效的颜色代码，例如 #495a7b。",
     "lng_settings_search_message_highlight_bg_color": "搜索跳转消息关键词高亮背景色",
     "lng_settings_search_message_highlight_bg_color_placeholder": "#3482d555",
-    "lng_settings_search_message_highlight_bg_color_invalid": "请输入有效的颜色代码，例如 #3482d555。"
-	}
+    "lng_settings_search_message_highlight_bg_color_invalid": "请输入有效的颜色代码，例如 #3482d555。",
+    "lng_channel_badge": "频道"
+}
