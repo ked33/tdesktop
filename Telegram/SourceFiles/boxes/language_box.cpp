@@ -1667,6 +1667,29 @@ void LanguageBox::setupTop(not_null<Ui::VerticalLayout*> container) {
 		rpl::single(
 			u"Default is Google (no Premium). Telegram official translation requires Premium."_q));
 
+	const auto keepProtectedFormat = container->add(object_ptr<Ui::SettingsButton>(
+		container,
+		rpl::single(u"Preserve links & code (Google)"_q),
+		st::settingsButtonNoIcon
+	))->toggleOn(rpl::single(
+		Lang::TranslateBackend::KeepProtectedFormat()
+	) | rpl::then(
+		Lang::TranslateBackend::changes(
+		) | rpl::map([] {
+			return Lang::TranslateBackend::KeepProtectedFormat();
+		})
+	));
+	keepProtectedFormat->toggledValue(
+	) | rpl::filter([](bool checked) {
+		return checked != Lang::TranslateBackend::KeepProtectedFormat();
+	}) | rpl::on_next([](bool checked) {
+		Lang::TranslateBackend::SetKeepProtectedFormat(checked);
+	}, keepProtectedFormat->lifetime());
+	Ui::AddDividerText(
+		container,
+		rpl::single(
+			u"Protects URLs and code blocks in Google translations. Long messages may fall back to plain text."_q));
+
 	const auto translateChat = container->add(object_ptr<Ui::SettingsButton>(
 		container,
 		tr::lng_translate_settings_chat(),
