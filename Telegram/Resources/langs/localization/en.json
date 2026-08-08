@@ -6,6 +6,7 @@
     "lng_settings_net_upload_speed_boost": "Upload speed boost",
     "lng_settings_net_download_speed_boost": "Optimize online playback",
     "lng_settings_show_message_id": "Show message ID",
+    "lng_settings_label_channel_user": "Label channel-as-sender messages",
     "lng_settings_message_media_size": "Emoji and sticker size",
     "lng_settings_message_media_size_placeholder": "Size in pixels",
     "lng_settings_message_media_size_reset": "Reset to defaults",
