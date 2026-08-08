@@ -22,6 +22,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item_components.h"
 #include "history/view/history_view_element.h"
 #include "iv/iv_rich_page.h"
+#include "lang/translate_backend.h"
 #include "lang/translate_provider.h"
 #include "main/main_session.h"
 #include "spellcheck/platform/platform_language.h"
@@ -66,12 +67,37 @@ void TranslateTracker::setup() {
 		return (data.value & ChannelDataFlag::AutoTranslation);
 	}) | rpl::distinct_until_changed();
 
-	using namespace rpl::mappers;
+	auto freeGoogleValue = rpl::single(
+		Lang::TranslateBackend::UnlocksChatTranslateWithoutPremium()
+	) | rpl::then(
+		Lang::TranslateBackend::changes(
+		) | rpl::map([] {
+			return Lang::TranslateBackend::UnlocksChatTranslateWithoutPremium();
+		})
+	);
+
 	_trackingLanguage = rpl::combine(
 		Core::App().settings().translateChatEnabledValue(),
 		Data::AmPremiumValue(&_history->session()),
 		std::move(autoTranslationValue),
-		_1 && (_2 || _3));
+		std::move(freeGoogleValue),
+		[](
+			bool enabled,
+			bool premium,
+			bool autoTranslation,
+			bool freeGoogle) {
+			return enabled && (premium || autoTranslation || freeGoogle);
+		}
+	) | rpl::distinct_until_changed();
+
+	Lang::TranslateBackend::changes(
+	) | rpl::on_next([=] {
+		if (_requestInProcess) {
+			cancelSentRequest();
+		}
+		_provider = Ui::CreateTranslateProvider(&_history->session());
+	}, _lifetime);
+
 	_trackingLanguage.value() | rpl::on_next([=](bool tracking) {
 		_trackingLifetime.destroy();
 		if (tracking) {

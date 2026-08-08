@@ -63,7 +63,7 @@ private:
 	void switchTranslation(not_null<HistoryItem*> item, LanguageId id);
 
 	const not_null<History*> _history;
-	const std::unique_ptr<Ui::TranslateProvider> _provider;
+	std::unique_ptr<Ui::TranslateProvider> _provider;
 	MTP::Sender _api;
 	rpl::variable<bool> _trackingLanguage = false;
 	base::flat_map<FullMsgId, ItemForRecognize> _itemsForRecognize;
