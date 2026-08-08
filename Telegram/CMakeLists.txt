@@ -1396,10 +1396,14 @@ PRIVATE
     lang/lang_translator.h
     lang/translate_backend.cpp
     lang/translate_backend.h
+    lang/translate_cache.cpp
+    lang/translate_cache.h
     lang/translate_google_provider.cpp
     lang/translate_google_provider.h
     lang/translate_mtproto_provider.cpp
     lang/translate_mtproto_provider.h
+    lang/translate_protect.cpp
+    lang/translate_protect.h
     lang/translate_provider.cpp
     lang/translate_provider.h
     lang/translate_url_provider.cpp

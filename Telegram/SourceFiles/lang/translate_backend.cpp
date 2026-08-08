@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/translate_backend.h"
 
 #include "core/enhanced_settings.h"
+#include "lang/translate_cache.h"
 #include "main/main_session.h"
 #include "settings.h"
 
@@ -43,6 +44,24 @@ void SetPrefersTelegram(bool preferTelegram) {
 	ChangedStream().fire({});
 }
 
+bool KeepProtectedFormat() {
+	if (!gEnhancedOptions.contains(kKeepProtectedFormatKey)) {
+		return true;
+	}
+	return GetEnhancedBool(kKeepProtectedFormatKey);
+}
+
+void SetKeepProtectedFormat(bool enabled) {
+	if (KeepProtectedFormat() == enabled
+		&& gEnhancedOptions.contains(kKeepProtectedFormatKey)) {
+		return;
+	}
+	SetEnhancedValue(kKeepProtectedFormatKey, enabled);
+	EnhancedSettings::Write();
+	TranslateCache::Clear();
+	ChangedStream().fire({});
+}
+
 bool UsingTelegram(not_null<Main::Session*> session) {
 	return PrefersTelegram() && session->premium();
 }
@@ -56,3 +75,4 @@ rpl::producer<> changes() {
 }
 
 } // namespace Lang::TranslateBackend
+

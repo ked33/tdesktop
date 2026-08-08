@@ -19,9 +19,14 @@ namespace Lang::TranslateBackend {
 inline constexpr auto kProviderKey = "translation_provider";
 inline constexpr auto kProviderGoogle = "google";
 inline constexpr auto kProviderTelegram = "telegram";
+inline constexpr auto kKeepProtectedFormatKey
+	= "translation_keep_protected_format";
 
 [[nodiscard]] bool PrefersTelegram();
 void SetPrefersTelegram(bool preferTelegram);
+
+[[nodiscard]] bool KeepProtectedFormat();
+void SetKeepProtectedFormat(bool enabled);
 
 [[nodiscard]] bool UsingTelegram(not_null<Main::Session*> session);
 [[nodiscard]] bool UnlocksChatTranslateWithoutPremium();
