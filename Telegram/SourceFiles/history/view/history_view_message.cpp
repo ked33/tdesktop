@@ -1064,6 +1064,16 @@ void Message::refreshRightBadge() {
 			return { QString(), BadgeRole::User, false };
 		}
 		if (!user) {
+			if (GetEnhancedBool("label_channel_user")) {
+				if (const auto fromChannel = item->from()->asChannel()
+					; fromChannel && fromChannel->isBroadcast()) {
+					return {
+						tr::lng_channel_badge(tr::now),
+						BadgeRole::User,
+						true,
+					};
+				}
+			}
 			return { QString(), BadgeRole::User, false };
 		}
 		const auto info = channel->mgInfo.get();

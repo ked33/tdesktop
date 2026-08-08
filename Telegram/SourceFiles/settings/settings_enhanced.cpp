@@ -211,6 +211,20 @@ namespace Settings {
 			Core::Restart();
 		}, container->lifetime());
 
+		AddButtonWithIcon(
+				inner,
+				tr::lng_settings_label_channel_user(),
+				st::settingsButtonNoIcon
+		)->toggleOn(
+				rpl::single(GetEnhancedBool("label_channel_user"))
+		)->toggledChanges(
+		) | rpl::filter([=](bool toggled) {
+			return (toggled != GetEnhancedBool("label_channel_user"));
+		}) | rpl::on_next([=](bool toggled) {
+			SetEnhancedValue("label_channel_user", toggled);
+			EnhancedSettings::Write();
+		}, container->lifetime());
+
 		auto messageMediaSizeButton = AddButtonWithLabel(
 			inner,
 			tr::lng_settings_message_media_size(),

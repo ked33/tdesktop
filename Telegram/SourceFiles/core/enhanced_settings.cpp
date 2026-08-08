@@ -101,6 +101,7 @@ namespace EnhancedSettings {
 			}
 
 			ensureBool(qsl("media_viewer_wheel_control_enabled"), false);
+			ensureBool(qsl("label_channel_user"), true);
 		}
 
 		QString DefaultFilePath() {
@@ -478,6 +479,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("preview_brightness_enabled"), false);
 		settings.insert(qsl("preview_brightness"), 70);
 		settings.insert(qsl("media_viewer_wheel_control_enabled"), false);
+		settings.insert(qsl("label_channel_user"), true);
 
 		auto document = QJsonDocument();
 		document.setObject(settings);
@@ -603,6 +605,9 @@ namespace EnhancedSettings {
 		settings.insert(
 			qsl("media_viewer_wheel_control_enabled"),
 			GetEnhancedBool("media_viewer_wheel_control_enabled"));
+		settings.insert(
+			qsl("label_channel_user"),
+			GetEnhancedBool("label_channel_user"));
 
 		auto document = QJsonDocument();
 		document.setObject(settings);
