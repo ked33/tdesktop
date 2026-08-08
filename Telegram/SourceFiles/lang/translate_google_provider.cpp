@@ -8,6 +8,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/translate_google_provider.h"
 
 #include "boxes/GoogleAppTranslator.h"
+#include "lang/translate_backend.h"
+#include "lang/translate_cache.h"
+#include "lang/translate_protect.h"
 #include "main/main_session.h"
 #include "settings.h"
 
@@ -43,25 +46,52 @@ public:
 			});
 			return;
 		}
-		const auto text = request.text.text;
+
+		const auto original = request.text;
 		const auto toCode = ResolveTargetCode(to);
+		const auto keepFormat = Lang::TranslateBackend::KeepProtectedFormat();
+		const auto cacheKey = Lang::TranslateCache::MakeKey(
+			original.text,
+			toCode,
+			keepFormat);
+
+		if (auto cached = Lang::TranslateCache::Get(cacheKey)) {
+			done(TranslateProviderResult{
+				.text = std::move(*cached),
+			});
+			return;
+		}
+
 		crl::async([=] {
+			auto engineText = original.text;
+			auto spans = std::vector<Lang::TranslateProtect::Span>();
+			if (keepFormat) {
+				auto protectedText = Lang::TranslateProtect::Protect(original);
+				if (protectedText.used) {
+					engineText = std::move(protectedText.text);
+					spans = std::move(protectedText.spans);
+				}
+			}
+
 			const auto engine = GoogleAppTranslator::instance()->translate(
-				text,
+				engineText,
 				u"auto"_q,
 				toCode);
-			const auto ok = !engine.isError && !engine.translation.isEmpty();
-			const auto translated = engine.translation;
-			crl::on_main([=] {
-				if (!ok) {
+			if (engine.isError || engine.translation.isEmpty()) {
+				crl::on_main([=] {
 					done(TranslateProviderResult{
 						.error = TranslateProviderError::Unknown,
 					});
-					return;
-				}
-				done(TranslateProviderResult{
-					.text = TextWithEntities{ translated },
 				});
+				return;
+			}
+
+			const auto result = (!spans.empty())
+				? Lang::TranslateProtect::Restore(engine.translation, spans)
+				: TextWithEntities{ engine.translation };
+			Lang::TranslateCache::Put(cacheKey, result);
+			crl::on_main([=] {
+				done(TranslateProviderResult{ .text = result });
 			});
 		});
 	}
