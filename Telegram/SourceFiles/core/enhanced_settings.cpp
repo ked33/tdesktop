@@ -104,6 +104,7 @@ namespace EnhancedSettings {
 			ensureBool(qsl("label_channel_user"), true);
 			ensureBool(qsl("translate_to_tc"), false);
 			ensureString(qsl("translation_provider"), qsl("google"));
+			ensureBool(qsl("translation_keep_protected_format"), true);
 		}
 
 		QString DefaultFilePath() {
@@ -465,6 +466,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("hide_counter"), false);
 		settings.insert(qsl("translate_to_tc"), false);
 		settings.insert(qsl("translation_provider"), qsl("google"));
+		settings.insert(qsl("translation_keep_protected_format"), true);
 		settings.insert(qsl("hide_stories"), false);
 		settings.insert(qsl("screenshot_mode"), false);
 		settings.insert(qsl("mpv_path"), "");
@@ -570,6 +572,10 @@ namespace EnhancedSettings {
 			GetEnhancedString("translation_provider").isEmpty()
 				? qsl("google")
 				: GetEnhancedString("translation_provider"));
+		settings.insert(
+			qsl("translation_keep_protected_format"),
+			!gEnhancedOptions.contains(qsl("translation_keep_protected_format"))
+				|| GetEnhancedBool("translation_keep_protected_format"));
 		settings.insert(qsl("hide_stories"), GetEnhancedBool("hide_stories"));
 		settings.insert(qsl("screenshot_mode"), GetEnhancedBool("screenshot_mode"));
 		settings.insert(qsl("mpv_path"), GetEnhancedString("mpv_path"));
