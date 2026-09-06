@@ -167,7 +167,7 @@ void LargeEmoji::paintCustom(
 	const auto outer = Ui::Text::AdjustCustomEmojiSize(inner);
 	const auto skip = (inner - outer) / 2;
 	//const auto preview = context.imageStyle()->msgServiceBg->c;
-	auto &textst = context.st->messageStyle(false, false);
+	const auto &textst = context.st->messageStyle(false, false);
 	const auto color = PreviewBrightnessColor(context.selected()
 		? context.st->msgStickerOverlay()->c
 		: QColor(0, 0, 0, 0));

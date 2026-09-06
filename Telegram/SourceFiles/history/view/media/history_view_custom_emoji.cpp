@@ -269,7 +269,7 @@ void CustomEmoji::paintCustom(
 		_parent->history()->owner().registerHeavyViewPart(_parent);
 	}
 	//const auto preview = context.imageStyle()->msgServiceBg->c;
-	auto &textst = context.st->messageStyle(false, false);
+	const auto &textst = context.st->messageStyle(false, false);
 	const auto paused = context.paused || On(PowerSaving::kEmojiChat);
 	const auto color = PreviewBrightnessColor(context.selected()
 		? context.st->msgStickerOverlay()->c

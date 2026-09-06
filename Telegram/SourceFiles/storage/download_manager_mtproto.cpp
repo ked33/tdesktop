@@ -660,7 +660,7 @@ void DownloadManagerMtproto::checkSendNextAfterSuccess(MTP::DcId dcId) {
 }
 
 bool DownloadManagerMtproto::trySendNextPart(MTP::DcId dcId, Queue &queue) {
-	auto &balanceData = _balanceData[dcId];
+	const auto &balanceData = _balanceData[dcId];
 	const auto delay = nonPremiumDelayState(dcId);
 	const auto now = crl::now();
 	if (now < delay.limitedUntil) {

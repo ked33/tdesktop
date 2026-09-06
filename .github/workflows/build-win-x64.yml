@@ -70,9 +70,9 @@ jobs:
             !${{ env.LibrariesPath }}\[qQ]t[_-]*
             ${{ env.LibrariesPath }}\cache_keys\*
             !${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
-          key: win64-libs-${{ env.CACHE_KEY }}
+          key: win64-libs-debug-${{ env.CACHE_KEY }}
           restore-keys: |
-            win64-libs-
+            win64-libs-debug-
 
       - name: Cache Qt
         uses: actions/cache@v5
@@ -80,9 +80,9 @@ jobs:
           path: |
             ${{ env.LibrariesPath }}\[qQ]t[_-]*
             ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
-          key: win64-qt-${{ env.CACHE_KEY }}
+          key: win64-qt-debug-${{ env.CACHE_KEY }}
           restore-keys: |
-            win64-qt-
+            win64-qt-debug-
 
       - name: Set up sccache
         uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696
@@ -110,7 +110,7 @@ jobs:
         shell: cmd
         run: |
           cd /d %TBUILD%
-          %REPO_NAME%\Telegram\build\prepare\win.bat silent
+          %REPO_NAME%\Telegram\build\prepare\win.bat silent skip-release
 
       - name: Configure project
         shell: cmd
@@ -124,17 +124,27 @@ jobs:
           configure.bat -G "Ninja Multi-Config" ^
             -D TDESKTOP_API_ID=%TDESKTOP_API_ID% ^
             -D TDESKTOP_API_HASH=%TDESKTOP_API_HASH% ^
-            -D CMAKE_CONFIGURATION_TYPES=Release ^
+            -DCMAKE_BUILD_TYPE=Debug ^
+            -DCMAKE_CONFIGURATION_TYPES=Debug ^
+            -DDESKTOP_APP_TEST_APPS=ON ^
             -D CMAKE_COMPILE_WARNING_AS_ERROR=OFF ^
             -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= ^
             -D CMAKE_C_COMPILER_LAUNCHER=sccache ^
             -D CMAKE_CXX_COMPILER_LAUNCHER=sccache
 
-      - name: Build Telegram (Release)
+      - name: Build Telegram (Debug)
         shell: cmd
         run: |
           cd /d %TBUILD%\%REPO_NAME%\out
-          cmake --build . --config Release --target Telegram --parallel
+          cmake --build . --config Debug --target Telegram --parallel
+
+      - name: Run update verifier
+        shell: cmd
+        run: |
+          cd /d %TBUILD%\%REPO_NAME%\out
+          if not exist "Debug\test_update_verify.exe" exit /b 1
+          "Debug\test_update_verify.exe"
+          exit /b %errorlevel%
 
       - name: Show sccache statistics
         if: always()
@@ -153,7 +163,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: Telegram-x64
-          path: ${{ env.TBUILD }}\${{ env.REPO_NAME }}\out\Release\Telegram.exe
+          name: Telegram-x64-Debug
+          path: ${{ env.TBUILD }}\${{ env.REPO_NAME }}\out\Debug\Telegram.exe
           if-no-files-found: error
           compression-level: 0

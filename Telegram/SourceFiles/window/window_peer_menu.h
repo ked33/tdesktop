@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -56,6 +56,7 @@ using PeerTypes = base::flags<PeerType>;
 } // namespace InlineBots
 
 namespace Main {
+class Session;
 class SessionShow;
 } // namespace Main
 
@@ -94,17 +95,6 @@ void AddSenderUserpicModerateAction(
 	not_null<SessionController*> controller,
 	HistoryItem *moderateItem,
 	const PeerMenuCallback &addAction);
-
-void MenuAddMarkAsReadAllChatsAction(
-	not_null<Main::Session*> session,
-	std::shared_ptr<Ui::Show> show,
-	const PeerMenuCallback &addAction);
-
-void MenuAddMarkAsReadChatListAction(
-	not_null<Window::SessionController*> controller,
-	Fn<not_null<Dialogs::MainList*>()> &&list,
-	const PeerMenuCallback &addAction,
-	Fn<Dialogs::UnreadState()> customUnreadState = nullptr);
 
 void PeerMenuHidePinnedMessage(not_null<PeerData*> peer);
 void PeerMenuUnhidePinnedMessage(not_null<PeerData*> peer);
@@ -263,6 +253,13 @@ void ToggleMessagePinned(
 	not_null<Window::SessionNavigation*> navigation,
 	FullMsgId itemId,
 	bool pin);
+[[nodiscard]] MessageIdsList MessagesToUnpin(
+	not_null<Main::Session*> session,
+	const MessageIdsList &items);
+void UnpinMessages(
+	not_null<Window::SessionNavigation*> navigation,
+	MessageIdsList items,
+	Fn<void()> onConfirmed = nullptr);
 void TogglePinnedThread(
 	not_null<Window::SessionController*> controller,
 	not_null<Dialogs::Entry*> entry,
@@ -277,10 +274,6 @@ void HidePinnedBar(
 void UnpinAllMessages(
 	not_null<Window::SessionNavigation*> navigation,
 	not_null<Data::Thread*> thread);
-
-[[nodiscard]] bool IsUnreadThread(not_null<Data::Thread*> thread);
-void MarkAsReadThread(not_null<Data::Thread*> thread);
-void MarkAsReadChatList(not_null<Dialogs::MainList*> list);
 
 void AddSeparatorAndShiftUp(const PeerMenuCallback &addAction);
 

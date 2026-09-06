@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -368,6 +368,13 @@ rpl::producer<bool> IsContactValue(not_null<UserData*> user) {
 	) | rpl::map([=] {
 		return user->isContact();
 	});
+}
+
+bool CanReportBot(not_null<UserData*> user) {
+	return user->isBot()
+		&& !user->isSelf()
+		&& !user->isSupport()
+		&& !user->isVerifyCodes();
 }
 
 [[nodiscard]] rpl::producer<QString> InviteToChatButton(
