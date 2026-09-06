@@ -1739,7 +1739,7 @@ void ChatWidget::setupComposeControls() {
 			return;
 		}
 		if (request.mode == Request::Mode::Edit && !request.currentId) {
-			(void)_inner->lastMessageEditRequestNotify();
+			_inner->lastMessageEditRequestNotify();
 			return;
 		}
 		const auto itemId = _inner->editableMessageIdByDirection(
