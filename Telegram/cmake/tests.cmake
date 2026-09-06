@@ -53,3 +53,18 @@ if (APPLE)
             "$<TARGET_FILE_DIR:test_text>/Contents/Resources/"
     )
 endif()
+
+add_executable(test_mp4_header)
+init_target(test_mp4_header "(tests)")
+
+target_include_directories(test_mp4_header PRIVATE ${src_loc})
+
+nice_target_sources(test_mp4_header ${src_loc}
+PRIVATE
+    media/streaming/media_streaming_mp4_header.h
+    test/test_mp4_header.cpp
+)
+
+set_target_properties(test_mp4_header PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
+add_dependencies(Telegram test_mp4_header)
