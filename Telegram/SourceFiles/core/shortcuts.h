@@ -20,6 +20,8 @@ enum class Command {
 	Minimize,
 	Quit,
 	GlobalSearch,
+	ReopenClosedWindow,
+	CloseOtherWindows,
 
 	MediaPlay,
 	MediaPause,
@@ -72,6 +74,7 @@ enum class Command {
 	SendSilentMessage,
 	ScheduleMessage,
 	ComposeAiApplyInPlace,
+	ShowRichEditor,
 	ToggleWebPagePreview,
 
 	RecordVoice,

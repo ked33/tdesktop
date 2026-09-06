@@ -410,7 +410,12 @@ void ScheduledWidget::setupComposeControls() {
 				const auto spoiler = data.spoilered;
 				auto &options = data.options;
 				options.scheduleRepeatPeriod = item->scheduleRepeatPeriod();
-				edit(item, options, saveEditMsgRequestId, spoiler);
+				edit(
+					item,
+					options,
+					saveEditMsgRequestId,
+					spoiler,
+					data.videoCover);
 			}
 		}
 	}, lifetime());
@@ -472,6 +477,9 @@ void ScheduledWidget::setupComposeControls() {
 		_composeControls->scrollKeyEvents(),
 		_inner->scrollKeyEvents()
 	) | rpl::on_next([=](not_null<QKeyEvent*> e) {
+		if (_composeControls->requestEditableMessageNavigation(e)) {
+			return;
+		}
 		_scroll->keyPressEvent(e);
 	}, lifetime());
 
@@ -479,6 +487,10 @@ void ScheduledWidget::setupComposeControls() {
 	) | rpl::on_next([=](
 			ComposeControls::EditableMessageNavigationRequest request) {
 		using Request = ComposeControls::EditableMessageNavigationRequest;
+		if (request.mode == Request::Mode::Edit && !request.currentId) {
+			(void)_inner->lastMessageEditRequestNotify();
+			return;
+		}
 		const auto itemId = _inner->editableMessageIdByDirection(
 			request.currentId,
 			request.direction == Request::Direction::Newer);
@@ -496,6 +508,7 @@ void ScheduledWidget::setupComposeControls() {
 		}
 	}, lifetime());
 
+	_composeControls->setPasteToastParent(_scroll.data());
 	_composeControls->setMimeDataHook([=](
 		not_null<const QMimeData*> data,
 		Ui::InputField::MimeAction action) {
@@ -797,7 +810,8 @@ void ScheduledWidget::edit(
 		not_null<HistoryItem*> item,
 		Api::SendOptions options,
 		mtpRequestId *const saveEditMsgRequestId,
-		bool spoilered) {
+		bool spoilered,
+		Api::VideoCoverEdit videoCover) {
 	if (*saveEditMsgRequestId) {
 		return;
 	}
@@ -867,7 +881,8 @@ void ScheduledWidget::edit(
 		options,
 		crl::guard(this, done),
 		crl::guard(this, fail),
-		spoilered);
+		spoilered,
+		videoCover);
 
 	_composeControls->hidePanelsAnimated();
 	_composeControls->focus();
@@ -888,6 +903,7 @@ bool ScheduledWidget::sendExistingDocument(
 
 	Api::SendExistingDocument(std::move(messageToSend), document);
 
+	_composeControls->clearFieldAfterStickerSend();
 	_composeControls->hidePanelsAnimated();
 	_composeControls->focus();
 	return true;
@@ -1103,19 +1119,27 @@ bool ScheduledWidget::returnTabbedSelector() {
 }
 
 std::shared_ptr<Window::SectionMemento> ScheduledWidget::createMemento() {
+	auto result = createIdentityMementoTyped();
+	saveState(result.get());
+	return result;
+}
+
+auto ScheduledWidget::createIdentityMemento()
+-> std::shared_ptr<Window::SectionMemento> {
+	return createIdentityMementoTyped();
+}
+
+auto ScheduledWidget::createIdentityMementoTyped()
+-> std::shared_ptr<ScheduledMemento> {
 	if (_forumTopic) {
 		if (const auto forum = history()->asForum()) {
 			const auto rootId = _forumTopic->topicRootId();
 			if (const auto topic = forum->topicFor(rootId)) {
-				auto result = std::make_shared<ScheduledMemento>(topic);
-				saveState(result.get());
-				return result;
+				return std::make_shared<ScheduledMemento>(topic);
 			}
 		}
 	}
-	auto result = std::make_shared<ScheduledMemento>(history());
-	saveState(result.get());
-	return result;
+	return std::make_shared<ScheduledMemento>(history());
 }
 
 void ScheduledWidget::saveState(not_null<ScheduledMemento*> memento) {
