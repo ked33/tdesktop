@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item_components.h"
 #include "main/main_session.h"
 #include "media/streaming/media_streaming_boost.h"
+#include "media/streaming/media_streaming_mp4_header.h"
 #include "media/streaming/media_streaming_reader.h"
 #include "logs.h"
 #include "settings.h"
@@ -32,7 +33,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QStandardPaths>
 #include <QtCore/QUuid>
 #include <QtCore/QUrl>
-#include <QtEndian>
 #include <QtNetwork/QHostAddress>
 #include <QtNetwork/QTcpServer>
 #include <QtNetwork/QTcpSocket>
@@ -54,13 +54,13 @@ using Mpv::OpenResult;
 
 namespace {
 
+using Mp4Layout = Mp4::Layout;
+
 constexpr auto kPathPrefix = "/mpv/";
 constexpr auto kPathPrefixLength = 5;
 constexpr auto kHeadersLimit = 64 * 1024;
 constexpr auto kReadChunkSize = 256 * 1024;
 constexpr auto kInitialReadChunkSize = 64 * 1024;
-constexpr auto kMp4ProbeInitialSize = 256 * 1024;
-constexpr auto kMp4ProbeMaxSize = 4 * 1024 * 1024;
 constexpr auto kMp4LayoutWaitTimeout = 4000;
 constexpr auto kMp4LayoutWaitStep = 10;
 constexpr auto kCleanupInterval = 60 * crl::time(1000);
@@ -113,11 +113,11 @@ constexpr auto kMpvLoaderPriority = 2;
 		const QString &url) {
 	auto lavfOptions = u"ignore_editlist=1"_q;
 	if (LooksLikeMp4Stream(document)) {
-		// With range support, the MOV demuxer scans past the first mdat
-		// unless it reaches EOF or has a complete fragment index.
-		// A front moov may be followed by many mdat atoms, so opening
-		// then walks the whole remote file. IGNIDX stops that scan while
+		// IGNIDX stops the MOV demuxer at the first mdat during open,
 		// retaining the moov sample tables needed for indexed seeking.
+		// The HTTP server also extends that mdat for a regular front
+		// moov, so seeking to later samples does not scan intervening
+		// root atoms left unparsed by IGNIDX.
 		lavfOptions += u",fflags=+ignidx"_q;
 	}
 	auto result = QStringList{
@@ -186,16 +186,10 @@ struct Entry {
 	std::atomic<bool> removeWhenIdle = false;
 	std::atomic<bool> headerFinalized = false;
 	std::atomic<int> mp4Layout = 0;
+	Mp4::HeaderPatch mp4HeaderPatch;
 	std::atomic<std::uint64_t> latestSeekGeneration = 0;
 	std::mutex fillMutex;
 	std::mutex seekFillMutex;
-};
-
-enum class Mp4Layout {
-	Unknown = 0,
-	Fragmented = 1,
-	Regular = 2,
-	LargeFrontMoov = 3,
 };
 
 [[nodiscard]] QString StreamingErrorDebugString(std::optional<Error> error) {
@@ -516,71 +510,6 @@ enum class Mp4Layout {
 	}
 }
 
-[[nodiscard]] quint64 ReadMp4AtomSize(
-		const QByteArray &data,
-		int offset,
-		int *headerSize) {
-	const auto sizeRaw = qFromBigEndian<quint32>(
-		reinterpret_cast<const uchar*>(data.constData() + offset));
-	if (sizeRaw != 1) {
-		*headerSize = 8;
-		return sizeRaw;
-	}
-	if (offset + 16 > data.size()) {
-		*headerSize = 0;
-		return 0;
-	}
-	*headerSize = 16;
-	return qFromBigEndian<quint64>(
-		reinterpret_cast<const uchar*>(data.constData() + offset + 8));
-}
-
-[[nodiscard]] Mp4Layout DetectMp4Layout(const QByteArray &data) {
-	constexpr auto kLargeFrontMoovThreshold = quint64(2 * 1024 * 1024);
-	if (data.size() < 16) {
-		return Mp4Layout::Unknown;
-	}
-	auto offset = 0;
-	auto sawMoov = false;
-	while (offset + 8 <= data.size()) {
-		auto headerSize = 0;
-		const auto atomSize = ReadMp4AtomSize(data, offset, &headerSize);
-		if ((headerSize == 0) || (atomSize < quint64(headerSize))) {
-			return Mp4Layout::Unknown;
-		}
-		const auto type = QByteArray::fromRawData(
-			data.constData() + offset + 4, 4);
-		if (type == QByteArray("moov", 4)) {
-			sawMoov = true;
-			if (atomSize >= kLargeFrontMoovThreshold) {
-				return Mp4Layout::LargeFrontMoov;
-			}
-			const auto payloadOffset = offset + headerSize;
-			const auto available = std::max(data.size() - payloadOffset, 0);
-			const auto payloadSize = int(std::min(
-				atomSize - quint64(headerSize),
-				quint64(available)));
-			if (payloadSize > 0) {
-				const auto payload = QByteArray::fromRawData(
-					data.constData() + payloadOffset,
-					payloadSize);
-				if (payload.contains("mvex")) {
-					return Mp4Layout::Fragmented;
-				}
-			}
-		} else if (type == QByteArray("moof", 4)) {
-			return sawMoov ? Mp4Layout::Fragmented : Mp4Layout::Regular;
-		} else if (type == QByteArray("mdat", 4)) {
-			return Mp4Layout::Regular;
-		}
-		if (atomSize > quint64(data.size() - offset)) {
-			return Mp4Layout::Unknown;
-		}
-		offset += int(atomSize);
-	}
-	return Mp4Layout::Unknown;
-}
-
 class DescriptorServer final : public QTcpServer {
 public:
 	explicit DescriptorServer(std::function<void(qintptr)> accepted)
@@ -799,41 +728,27 @@ private:
 			// for range requests, so probing and playback reads do
 			// not compete for the primary reader's download window.
 			if (entry->mp4Layout.load() == 0
-				&& range.range.from == 0
-				&& range.satisfiable) {
-				auto probeActual = int(std::min(
-					int64(kMp4ProbeInitialSize), entry->size));
-				const auto probeMax = int(std::min(
-					int64(kMp4ProbeMaxSize), entry->size));
-				auto detected = Mp4Layout::Unknown;
-				{
-					const auto lock = std::unique_lock(entry->fillMutex);
-					while (true) {
-						auto probe = QByteArray(probeActual, Qt::Uninitialized);
-						if (!FillBuffer(
+				&& range.range.from == 0) {
+				const auto lock = std::unique_lock(entry->fillMutex);
+				if (entry->mp4Layout.load() == 0) {
+					const auto header = Mp4::ProbeForStreaming(
+						entry->size,
+						[&](std::int64_t offset, std::span<char> buffer) {
+							return FillBuffer(
 								entry->reader.get(),
-								0,
+								offset,
 								bytes::span(
-									reinterpret_cast<bytes::type*>(probe.data()),
-									probeActual))) {
-							detected = Mp4Layout::Regular;
-							break;
-						}
-						detected = DetectMp4Layout(probe);
-						if (detected != Mp4Layout::Unknown
-							|| probeActual >= probeMax) {
-							break;
-						}
-						probeActual = std::min(probeActual * 2, probeMax);
-					}
-					if (detected == Mp4Layout::Unknown) {
-						detected = Mp4Layout::Regular;
-					}
-					entry->mp4Layout.store(int(detected));
-					MPV_STREAMING_LOG(("MPV Streaming (Special): Detected MP4 layout: %1 for token %2 after probing %3 bytes.")
-						.arg(int(detected))
+									reinterpret_cast<bytes::type*>(buffer.data()),
+									buffer.size()));
+						});
+					entry->mp4HeaderPatch = header.patch;
+					entry->mp4Layout.store(int(header.layout));
+					MPV_STREAMING_LOG(("MPV Streaming (Special): Detected MP4 layout: %1 "
+						"for token %2, header patch offset=%3 size=%4.")
+						.arg(int(header.layout))
 						.arg(request.token)
-						.arg(probeActual));
+						.arg(qlonglong(header.patch.offset))
+						.arg(header.patch.size));
 				}
 			}
 			if ((range.range.from > 0)
@@ -849,6 +764,7 @@ private:
 				return;
 			}
 			const auto layout = Mp4Layout(entry->mp4Layout.load());
+			const auto headerPatch = entry->mp4HeaderPatch;
 			const auto compatibilitySequentialRequest =
 				(layout == Mp4Layout::Fragmented);
 			const auto isolatedSeekRequest =
@@ -999,6 +915,9 @@ private:
 					supersededSeek = true;
 					break;
 				}
+				headerPatch.apply(
+					offset,
+					std::span(buffer.data(), std::size_t(buffer.size())));
 				if (!WriteAll(socket, buffer.constData(), buffer.size())) {
 					const auto error = socket.error();
 					if (error != QAbstractSocket::RemoteHostClosedError) {

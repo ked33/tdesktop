@@ -182,6 +182,14 @@ jobs:
           "Release\test_update_verify.exe"
           exit /b %errorlevel%
 
+      - name: Run MP4 header regression
+        shell: cmd
+        run: |
+          cd /d %TBUILD%\%REPO_NAME%\out
+          if not exist "Release\test_mp4_header.exe" exit /b 1
+          "Release\test_mp4_header.exe"
+          exit /b %errorlevel%
+
       - name: Show sccache statistics
         if: always()
         shell: pwsh
