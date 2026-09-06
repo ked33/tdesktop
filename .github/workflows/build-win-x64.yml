@@ -53,16 +53,18 @@ jobs:
           } > CACHE_KEY.txt
           echo "CACHE_KEY=$(sha256sum CACHE_KEY.txt | awk '{ print $1 }')" >> $GITHUB_ENV
 
-      - name: Cache third-party
-        uses: actions/cache@v5
+      - name: Restore third-party cache
+        id: cache_third_party
+        uses: actions/cache/restore@v5
         with:
           path: ${{ env.TBUILD }}\ThirdParty
           key: win64-third-party-${{ env.CACHE_KEY }}
           restore-keys: |
             win64-third-party-
 
-      - name: Cache libraries
-        uses: actions/cache@v5
+      - name: Restore libraries cache
+        id: cache_libraries
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ env.LibrariesPath }}\*
@@ -74,8 +76,9 @@ jobs:
           restore-keys: |
             win64-libs-debug-
 
-      - name: Cache Qt
-        uses: actions/cache@v5
+      - name: Restore Qt cache
+        id: cache_qt
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ env.LibrariesPath }}\[qQ]t[_-]*
@@ -107,10 +110,42 @@ jobs:
           nuget sources Add -Source https://api.nuget.org/v3/index.json & exit 0
 
       - name: Prepare third-party libraries
+        id: prepare_libraries
         shell: cmd
         run: |
           cd /d %TBUILD%
           %REPO_NAME%\Telegram\build\prepare\win.bat silent skip-release
+
+      - name: Save third-party cache
+        if: steps.prepare_libraries.outcome == 'success' && steps.cache_third_party.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: ${{ env.TBUILD }}\ThirdParty
+          key: ${{ steps.cache_third_party.outputs.cache-primary-key }}
+
+      - name: Save libraries cache
+        if: steps.prepare_libraries.outcome == 'success' && steps.cache_libraries.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\*
+            !${{ env.LibrariesPath }}\cache_keys
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\*
+            !${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: ${{ steps.cache_libraries.outputs.cache-primary-key }}
+
+      - name: Save Qt cache
+        if: steps.prepare_libraries.outcome == 'success' && steps.cache_qt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: ${{ steps.cache_qt.outputs.cache-primary-key }}
 
       - name: Configure project
         shell: cmd

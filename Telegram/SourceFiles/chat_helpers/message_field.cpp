@@ -1529,7 +1529,6 @@ void SelectTextInFieldWithMargins(
 	const auto inner = field->document()->toPlainText();
 	const auto fieldPos = [&](int externalPos, bool snapToEnd) {
 		const auto extData = plain.constData();
-		const auto extEnd = extData + plain.size();
 		const auto inData = inner.constData();
 		const auto inLen = inner.size();
 		auto ext = extData;
