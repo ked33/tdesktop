@@ -488,7 +488,7 @@ void ScheduledWidget::setupComposeControls() {
 			ComposeControls::EditableMessageNavigationRequest request) {
 		using Request = ComposeControls::EditableMessageNavigationRequest;
 		if (request.mode == Request::Mode::Edit && !request.currentId) {
-			(void)_inner->lastMessageEditRequestNotify();
+			_inner->lastMessageEditRequestNotify();
 			return;
 		}
 		const auto itemId = _inner->editableMessageIdByDirection(

@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/call_delayed.h"
 #include "boxes/delete_messages_box.h"
 #include "boxes/send_files_box.h"
+#include "chat_helpers/message_field.h"
 #include "chat_helpers/tabbed_selector.h"
 #include "core/file_utilities.h"
 #include "data/components/welcome_messages.h"
@@ -344,7 +345,7 @@ void WelcomeMessagesWidget::setupComposeControls() {
 			ComposeControls::EditableMessageNavigationRequest request) {
 		using Request = ComposeControls::EditableMessageNavigationRequest;
 		if (request.mode == Request::Mode::Edit && !request.currentId) {
-			(void)_inner->lastMessageEditRequestNotify();
+			_inner->lastMessageEditRequestNotify();
 			return;
 		}
 		const auto itemId = _inner->editableMessageIdByDirection(
