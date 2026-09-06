@@ -469,7 +469,7 @@ public:
 	void editMessageRequestNotify(
 		FullMsgId item,
 		TextSelection selection = {}) const;
-	[[nodiscard]] bool lastMessageEditRequestNotify() const;
+	void lastMessageEditRequestNotify() const;
 	[[nodiscard]] FullMsgId editableMessageIdByDirection(
 		FullMsgId currentId,
 		bool newer) const;
