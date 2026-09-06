@@ -189,7 +189,10 @@ void InnerWidget::enumerateUserpics(Method method) {
 
 		// Call method on a userpic for all messages that have it and for those who are not showing it
 		// because of their attachment to the next message if they are bottom-most visible.
-		if (view->displayFromPhoto() || (view->hasFromPhoto() && itembottom >= _visibleBottom)) {
+		if (view->displayFromPhoto()
+			|| (view->hasFromPhoto()
+				&& view->isAttachedToNext()
+				&& itembottom >= _visibleBottom)) {
 			if (lowestAttachedItemTop < 0) {
 				lowestAttachedItemTop = itemtop + view->marginTop();
 			}
@@ -1090,7 +1093,7 @@ void InnerWidget::preloadMore(Direction direction) {
 
 		requestId = 0;
 
-		auto &results = result.c_channels_adminLogResults();
+		const auto &results = result.c_channels_adminLogResults();
 		_channel->owner().processUsers(results.vusers());
 		_channel->owner().processChats(results.vchats());
 		if (!loadedFlag) {

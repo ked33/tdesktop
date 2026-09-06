@@ -1824,7 +1824,7 @@ void File::Context::start(StartOptions options) {
 		&Context::Read,
 		nullptr,
 		options.seekable ? &Context::Seek : nullptr,
-		(options.seekable && !options.sequentialOpen));
+		{ .seekableOnOpen = options.seekable && !options.sequentialOpen });
 	if (!format) {
 		return fail(Error::OpenFailed);
 	}

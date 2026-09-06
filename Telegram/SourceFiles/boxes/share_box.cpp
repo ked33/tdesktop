@@ -15,6 +15,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_account.h"
 #include "ui/boxes/confirm_box.h"
 #include "apiwrap.h"
+
+#include "settings.h"
 #include "ui/widgets/chat_filters_tabs_strip.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/multi_select.h"
@@ -494,7 +496,7 @@ void ShareBox::peopleDone(
 	if (_peopleRequest == requestId) {
 		switch (result.type()) {
 		case mtpc_contacts_found: {
-			auto &found = result.c_contacts_found();
+			const auto &found = result.c_contacts_found();
 			_descriptor.session->data().processUsers(found.vusers());
 			_descriptor.session->data().processChats(found.vchats());
 			_inner->peopleReceived(
@@ -1824,8 +1826,13 @@ ShareBox::CountMessagesCallback ShareBox::DefaultForwardCountMessages(
 		not_null<History*> history,
 		MessageIdsList msgIds) {
 	return [=](const TextWithTags &comment) {
-		const auto items = history->owner().idsToItems(msgIds);
-		return int(items.size()) + (comment.empty() ? 0 : 1);
+		const auto ranges = CollectForwardRanges(
+			history->owner().idsToItems(msgIds));
+		auto count = comment.empty() ? 0 : 1;
+		for (const auto &range : ranges) {
+			count += int(range.items.size());
+		}
+		return count;
 	};
 }
 
@@ -1843,6 +1850,7 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 		base::flat_set<mtpRequestId> requests;
 		mtpRequestId nextRequestKey = 0;
 		FnMut<void()> submitCallback;
+		bool failed = false;
 	};
 	const auto state = std::make_shared<State>(std::move(successCallback));
 	return [=](
@@ -1854,8 +1862,15 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 		if (!state->requests.empty()) {
 			return; // Share clicked already.
 		}
+		state->failed = false;
 
-		const auto items = history->owner().idsToItems(msgIds);
+		const auto ranges = CollectForwardRanges(
+			history->owner().idsToItems(msgIds),
+			GetEnhancedBool("keep_selected_messages_across_chats"));
+		auto items = std::vector<not_null<HistoryItem*>>();
+		for (const auto &range : ranges) {
+			items.insert(items.end(), range.items.begin(), range.items.end());
+		}
 		const auto existingIds = history->owner().itemsToIds(items);
 		if (existingIds.empty() || result.empty()) {
 			return;
@@ -1878,40 +1893,22 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 		}
 
 		using Flag = MTPmessages_ForwardMessages::Flag;
-		auto commonSendFlags = MTPmessages_ForwardMessages::Flags(0);
-		if (no_quote) {
-			commonSendFlags = (options.scheduled ? Flag::f_schedule_date : Flag(0)) | Flag::f_drop_author;
-		} else {
-			commonSendFlags = Flag(0)
-				| Flag::f_with_my_score
-				| (options.scheduled ? Flag::f_schedule_date : Flag(0))
+		const auto commonSendFlags = (no_quote ? Flag(0) : Flag::f_with_my_score)
+			| (options.scheduled ? Flag::f_schedule_date : Flag(0))
 			| ((options.scheduled && options.scheduleRepeatPeriod)
 				? Flag::f_schedule_repeat_period
 				: Flag(0))
-				| ((forwardOptions != Data::ForwardOptions::PreserveInfo)
-					? Flag::f_drop_author
-					: Flag(0))
-				| ((forwardOptions == Data::ForwardOptions::NoNamesAndCaptions)
-					? Flag::f_drop_media_captions
+			| ((no_quote || forwardOptions != Data::ForwardOptions::PreserveInfo)
+				? Flag::f_drop_author
 				: Flag(0))
-			| (videoTimestamp.has_value()
-				? Flag::f_video_timestamp
-					: Flag(0));
-		}
+			| ((!no_quote
+				&& forwardOptions == Data::ForwardOptions::NoNamesAndCaptions)
+				? Flag::f_drop_media_captions
+				: Flag(0))
+			| (videoTimestamp.has_value() ? Flag::f_video_timestamp : Flag(0));
 
-		struct ForwardGroup final {
-			not_null<PeerData*> fromPeer;
-			QVector<MTPint> ids;
-		};
-		auto groups = std::vector<ForwardGroup>();
-		groups.reserve(items.size());
-		for (const auto item : items) {
-			const auto fromPeer = item->history()->peer;
-			if (groups.empty() || groups.back().fromPeer != fromPeer) {
-				groups.push_back({ fromPeer, QVector<MTPint>() });
-			}
-			groups.back().ids.push_back(MTP_int(item->id));
-		}
+		state->failed = false;
+		auto submitted = false;
 		auto &api = history->session().api();
 		auto &histories = history->owner().histories();
 		const auto donePhraseArgs = CreateForwardedMessagePhraseArgs(
@@ -1949,9 +1946,12 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 			const auto sublistPeer = needNewTopic
 				? nullptr
 				: thread->maybeSublistPeer();
-			for (const auto &group : groups) {
-				const auto fromPeer = group.fromPeer;
-				const auto mtpMsgIds = group.ids;
+			for (const auto &range : ranges) {
+				const auto fromPeer = range.items.front()->history()->peer;
+				const auto mtpMsgIds = ForwardRangeIds(&history->session(), range);
+				if (mtpMsgIds.isEmpty()) {
+					continue;
+				}
 				const auto msgCount = int(mtpMsgIds.size());
 				const auto starsPaid = std::min(
 					msgCount * peer->starsPerMessageChecked(),
@@ -1969,7 +1969,8 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 					| (starsPaid ? Flag::f_allow_paid_stars : Flag())
 					| (sublistPeer ? Flag::f_reply_to : Flag())
 					| (options.suggest ? Flag::f_suggested_post : Flag())
-					| (options.effectId ? Flag::f_effect : Flag());
+					| (options.effectId ? Flag::f_effect : Flag())
+					| (range.fromEphemeral ? Flag::f_from_ephemeral : Flag(0));
 				auto buildMessage = [=](
 						not_null<History*> history,
 						FullReplyTo replyTo)
@@ -2026,16 +2027,19 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 					if (state->requests.empty()) {
 						if (show->valid()) {
 							show->hideLayer();
-							ShowForwardedMessageToast(
-								show,
-								&history->session(),
-								donePhraseArgs);
+							if (!state->failed) {
+								ShowForwardedMessageToast(
+									show,
+									&history->session(),
+									donePhraseArgs);
+							}
 						}
 					}
 				};
 				const auto requestFail = [=](
 						const MTP::Error &error,
 						mtpRequestId requestKey) {
+					state->failed = true;
 					const auto type = error.type();
 					if (type.startsWith(
 							u"ALLOW_PAYMENT_REQUIRED_"_q)) {
@@ -2059,6 +2063,7 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 				};
 				const auto requestKey = ++state->nextRequestKey;
 				state->requests.insert(requestKey);
+				submitted = true;
 				histories.sendPreparedMessage(
 					threadHistory,
 					FullReplyTo{ .topicRootId = topicRootId },
@@ -2074,9 +2079,12 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 					});
 			}
 		}
-		if (state->requests.empty()) {
-			if (show->valid()) {
-				show->hideLayer();
+		if (!submitted) {
+			return;
+		}
+		if (state->requests.empty() && show->valid()) {
+			show->hideLayer();
+			if (!state->failed) {
 				ShowForwardedMessageToast(
 					show,
 					&history->session(),
