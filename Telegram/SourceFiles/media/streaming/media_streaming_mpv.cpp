@@ -140,10 +140,21 @@ constexpr auto kSmartSeekPrefetchFallback = int64(4) * 1024 * 1024;
 		document->duration());
 }
 
-[[nodiscard]] QStringList LaunchArguments(const QString &url) {
+[[nodiscard]] QStringList LaunchArguments(
+		not_null<DocumentData*> document,
+		const QString &url) {
+	auto lavfOptions = u"ignore_editlist=1"_q;
+	if (LooksLikeMp4Stream(document)) {
+		// With range support, the MOV demuxer scans past the first mdat
+		// unless it reaches EOF or has a complete fragment index.
+		// A front moov may be followed by many mdat atoms, so opening
+		// then walks the whole remote file. IGNIDX stops that scan while
+		// retaining the moov sample tables needed for indexed seeking.
+		lavfOptions += u",fflags=+ignidx"_q;
+	}
 	auto result = QStringList{
-		QStringLiteral("--force-window=immediate"),
-		QStringLiteral("--demuxer-lavf-o=ignore_editlist=1"),
+		u"--force-window=immediate"_q,
+		u"--demuxer-lavf-o=%1"_q.arg(lavfOptions),
 	};
 	const auto &profile = BoostProfileFor(DownloadBoostLevel());
 	if (MpvStreamingBoostEnabled() && profile.mpvCacheMaxMb > 0) {
@@ -1370,12 +1381,12 @@ private:
 
 [[nodiscard]] bool StartManagedPlayer(
 		const QString &program,
-		const QString &target,
+		const QStringList &arguments,
 		const QString &token) {
 	auto process = std::make_unique<QProcess>();
 	const auto raw = process.get();
 	raw->setProgram(program);
-	raw->setArguments(LaunchArguments(target));
+	raw->setArguments(arguments);
 	raw->setWorkingDirectory(QFileInfo(program).absolutePath());
 	raw->setProcessEnvironment(LaunchEnvironment());
 	raw->setStandardOutputFile(QProcess::nullDevice());
@@ -1417,9 +1428,10 @@ private:
 	MPV_STREAMING_LOG(("MPV Streaming: Launching '%1' with URL %2.")
 		.arg(program)
 		.arg(launch.url));
+	const auto arguments = LaunchArguments(document, launch.url);
 	MPV_STREAMING_LOG(("MPV Streaming: Launch arguments: %1.")
-		.arg(LaunchArguments(launch.url).join(QStringLiteral(" "))));
-	if (!StartManagedPlayer(program, launch.url, launch.token)) {
+		.arg(arguments.join(u" "_q)));
+	if (!StartManagedPlayer(program, arguments, launch.token)) {
 		MPV_STREAMING_LOG(("MPV Streaming: Failed to start player '%1'.")
 			.arg(program));
 		Server::instance().remove(launch.token);
