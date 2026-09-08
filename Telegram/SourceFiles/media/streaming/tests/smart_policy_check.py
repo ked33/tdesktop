@@ -264,7 +264,9 @@ def test_source_structure() -> None:
 			".acquire()" not in read_source_bytes
 			and "while (" not in read_source_bytes
 			and "state != FileSource::FillState::Success" in read_source_bytes
-			and "source->fill(offset, buffer, notify)" in read_source_bytes,
+			and "source->fill(offset, buffer, notify, ReadMode::Probe)"
+			in read_source_bytes
+			and "mode == ReadMode::Required" in reader,
 			"seek map source reads return when data is unavailable",
 		),
 		(

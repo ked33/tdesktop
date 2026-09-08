@@ -510,7 +510,8 @@ QString TransferDiagnostics::snapshot(crl::time now) {
 		+ (u"preload_parts=%1 request_limit=%2 playback_bps=%3 speed_bps=%4 "
 			"latency_ms=%5 jitter_ms=%6 speed_unreliable=%7 "
 			"pressure_requested=%8 pressure_local=%9 pressure_forwarded=%10 "
-			"pressure_age_ms=%11 limited_remaining_ms=%12 recovery_remaining_ms=%13"_q
+			"pressure_age_ms=%11 limited_remaining_ms=%12 recovery_remaining_ms=%13 "
+			"no_progress_ms=%14 read_stalled=%15"_q
 		).arg(s.preloadParts)
 			.arg(s.requestLimit)
 			.arg(s.playbackRate)
@@ -524,6 +525,8 @@ QString TransferDiagnostics::snapshot(crl::time now) {
 			.arg(qlonglong(s.pressureSince ? now - s.pressureSince : 0))
 			.arg(qlonglong(std::max(crl::time(0), s.server.limitedUntil - now)))
 			.arg(qlonglong(std::max(crl::time(0), s.server.recoveryUntil - now)))
+			.arg(s.speed.noProgressMs)
+			.arg(s.speed.stalled ? 1 : 0)
 		+ (u" bridge_play_id=%1 http_completed=%2 http_written_bytes=%3 "
 			"http_background_read_bytes=%4 http_failed=%5 http_disconnected=%6 "
 			"http_superseded=%7"_q)
