@@ -126,7 +126,8 @@ public:
 	[[nodiscard]] int resolveVideoQuality() const;
 	[[nodiscard]] int resolveOriginalVideoQuality() const;
 	[[nodiscard]] Media::VideoQuality initialPlaybackVideoQuality(
-		Media::VideoQuality request) const;
+		Media::VideoQuality request,
+		bool preferOriginal = false) const;
 	[[nodiscard]] auto resolveQualities(HistoryItem *context) const
 		-> const std::vector<not_null<DocumentData*>> &;
 	[[nodiscard]] not_null<DocumentData*> chooseQuality(

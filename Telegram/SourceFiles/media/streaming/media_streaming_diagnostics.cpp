@@ -102,6 +102,14 @@ struct RequestTiming {
 	bool retainedForSeek = false;
 };
 
+struct DemuxSeekTiming {
+	uint64 generation = 0;
+	crl::time position = 0;
+	crl::time startedAt = 0;
+	int firstPackets = 0;
+	int targetPackets = 0;
+};
+
 struct TransferState {
 	crl::time startedAt = crl::now();
 	bool partial = false;
@@ -135,6 +143,7 @@ struct TransferState {
 	int playbackRate = 0;
 	ServerDelay server;
 	SpeedEstimate speed = { .unreliable = true };
+	std::optional<DemuxSeekTiming> demuxSeek;
 	crl::time lastBridgeReport = 0;
 	int64 bridgeRequests = 0;
 	int64 bridgeWritten = 0;
@@ -219,6 +228,68 @@ TransferDiagnostics::~TransferDiagnostics() = default;
 
 uint64 TransferDiagnostics::id() const {
 	return _impl->id;
+}
+
+std::pair<int64, int64> TransferDiagnostics::byteTotals() const {
+	const auto lock = std::lock_guard(_impl->mutex);
+	const auto epoch = CaptureEpoch.load(std::memory_order_acquire);
+	if (!(epoch & 1) || epoch != _impl->epoch || !_impl->state) {
+		return { -1, -1 };
+	}
+	return { _impl->state->payloadBytes, _impl->state->suppliedBytes };
+}
+
+void TransferDiagnostics::demuxSeekStarted(
+		uint64 generation,
+		crl::time position) {
+	_impl->update([&](TransferState &s) {
+		s.demuxSeek = DemuxSeekTiming{
+			.generation = generation,
+			.position = position,
+			.startedAt = crl::now(),
+		};
+	});
+}
+
+void TransferDiagnostics::demuxPacket(
+		uint64 generation,
+		bool video,
+		crl::time position,
+		int64 offset,
+		int size,
+		bool keyframe) {
+	_impl->update([&](TransferState &s) {
+		if (!s.demuxSeek || s.demuxSeek->generation != generation) {
+			return;
+		}
+		auto &seek = *s.demuxSeek;
+		const auto bit = video ? 1 : 2;
+		const auto first = !(seek.firstPackets & bit);
+		const auto target = position != kTimeUnknown
+			&& position >= seek.position
+			&& !(seek.targetPackets & bit);
+		if (!first && !target) {
+			return;
+		}
+		seek.firstPackets |= bit;
+		if (target) {
+			seek.targetPackets |= bit;
+		}
+		LOG((u"Video Playback: demux_packet reader_id=%1 seek_gen=%2 "
+			"track=%3 target_ms=%4 position_ms=%5 offset=%6 size=%7 "
+			"keyframe=%8 first=%9 target_reached=%10 elapsed_ms=%11"_q)
+			.arg(qulonglong(id()))
+			.arg(qulonglong(generation))
+			.arg(video ? u"video"_q : u"audio"_q)
+			.arg(qlonglong(seek.position))
+			.arg(qlonglong(position == kTimeUnknown ? -1 : position))
+			.arg(qlonglong(offset))
+			.arg(size)
+			.arg(keyframe ? 1 : 0)
+			.arg(first ? 1 : 0)
+			.arg(target ? 1 : 0)
+			.arg(qlonglong(crl::now() - seek.startedAt)));
+	});
 }
 
 void TransferDiagnostics::queued(int64 offset) {
@@ -418,7 +489,8 @@ QString TransferDiagnostics::snapshot(crl::time now) {
 		+ (u"queued=%1 sent=%2 requests_complete=%3 dispatched=%4 received=%5 "
 			"cancelled_queued=%6 cancelled_sent=%7 untracked_completions=%8 "
 			"oldest_queue_ms=%9 oldest_sent_ms=%10 max_queue_ms=%11 max_request_ms=%12 "
-			"cache_wait_ms=%13 remote_wait_ms=%14 read_wait_ms=%15 "_q
+			"cache_wait_ms=%13 remote_wait_ms=%14 read_wait_ms=%15 "
+			"read_offset=%16 "_q
 		).arg(s.requestsComplete ? queued : -1)
 			.arg(s.requestsComplete ? sent : -1)
 			.arg(s.requestsComplete ? 1 : 0)
@@ -434,6 +506,7 @@ QString TransferDiagnostics::snapshot(crl::time now) {
 			.arg(qlonglong(s.cacheWaitMs + (s.waitingCache ? waitMs : 0)))
 			.arg(qlonglong(s.remoteWaitMs + (s.waitingCache ? 0 : waitMs)))
 			.arg(qlonglong(waitMs))
+			.arg(qlonglong(s.waitingOffset))
 		+ (u"preload_parts=%1 request_limit=%2 playback_bps=%3 speed_bps=%4 "
 			"latency_ms=%5 jitter_ms=%6 speed_unreliable=%7 "
 			"pressure_requested=%8 pressure_local=%9 pressure_forwarded=%10 "
@@ -491,6 +564,7 @@ struct PresentationTiming {
 	crl::time position = 0;
 	crl::time pausedMs = 0;
 	crl::time pauseSince = 0;
+	std::pair<int64, int64> initialBytes = { -1, -1 };
 	bool seek = false;
 };
 
@@ -585,6 +659,12 @@ struct PlaybackDiagnostics::Impl {
 		const auto paused = timing.pausedMs
 			+ (timing.pauseSince ? now - timing.pauseSince : 0);
 		const auto elapsed = now - timing.startedAt;
+		const auto totals = transfer
+			? transfer->byteTotals()
+			: std::pair<int64, int64>{ -1, -1 };
+		const auto delta = [](int64 initial, int64 current) {
+			return (initial >= 0 && current >= initial) ? current - initial : -1;
+		};
 		const auto shown = (position != kTimeUnknown);
 		if (timing.seek) {
 			if (shown) {
@@ -596,7 +676,8 @@ struct PlaybackDiagnostics::Impl {
 		}
 		LOG((u"Video Playback: presentation play_id=%1 capture=%2 request=%3 "
 			"seek_gen=%4 kind=%5 outcome=%6 target_ms=%7 shown_position_ms=%8 "
-			"elapsed_ms=%9 ready_ms=%10 user_pause_ms=%11 active_ms=%12"_q
+			"elapsed_ms=%9 ready_ms=%10 user_pause_ms=%11 active_ms=%12 "
+			"downloaded_bytes=%13 read_bytes=%14"_q
 			).arg(qulonglong(id))
 			.arg(qulonglong(capture))
 			.arg(qulonglong(timing.sequence))
@@ -608,7 +689,9 @@ struct PlaybackDiagnostics::Impl {
 			.arg(qlonglong(elapsed))
 			.arg(qlonglong(timing.readyAt ? timing.readyAt - timing.startedAt : -1))
 			.arg(qlonglong(paused))
-			.arg(qlonglong(elapsed - paused)));
+			.arg(qlonglong(elapsed - paused))
+			.arg(qlonglong(delta(timing.initialBytes.first, totals.first)))
+			.arg(qlonglong(delta(timing.initialBytes.second, totals.second))));
 	}
 
 	void report(const char *event) {
@@ -697,12 +780,19 @@ void PlaybackDiagnostics::requested(
 	_impl->complete("superseded");
 	auto &s = *_impl->state;
 	s.framePosition = kTimeUnknown;
+	s.audio = TrackState();
+	s.video = TrackState();
+	s.paused = false;
+	s.waiting = false;
+	s.presented = false;
 	s.speed = SupportsSpeedControl() ? options.speed : 1.;
 	s.pending = PresentationTiming{
 		.sequence = ++_impl->sequence,
 		.startedAt = startedAt,
 		.position = options.seekable ? options.position : 0,
-		.pauseSince = s.paused ? startedAt : 0,
+		.initialBytes = _impl->transfer
+			? _impl->transfer->byteTotals()
+			: std::pair<int64, int64>{ -1, -1 },
 		.seek = seek,
 	};
 	LOG((u"Video Playback: presentation_request play_id=%1 capture=%2 "

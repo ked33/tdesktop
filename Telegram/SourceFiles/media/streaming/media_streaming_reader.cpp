@@ -1018,6 +1018,7 @@ Reader::Reader(
 , _premiumSession(_loader->premiumSession())
 , _cache(cache)
 , _cacheHelper(cache ? InitCacheHelper(_loader->baseCacheKey()) : nullptr)
+, _smartPressureReleaseTimer([=] { updateSmartStreamingBufferPressure(); })
 , _slices(_loader->size(), _cacheHelper != nullptr) {
 	_loader->setDiagnostics(_diagnostics);
 	_loader->parts(
@@ -1386,32 +1387,33 @@ void Reader::syncSmartStreamingBufferPressure(crl::time now) {
 }
 
 void Reader::setSmartStreamingBufferPressure(bool pressure) {
-	_diagnostics->pressureRequested(pressure);
-	if (pressure
-		&& !_streamingActive.load(std::memory_order_acquire)) {
-		return;
+	{
+		const auto lock = std::lock_guard(_smartPressureMutex);
+		if (pressure
+			&& (!_streamingActive.load(std::memory_order_acquire)
+				|| _stopStreamingAsync.load(std::memory_order_acquire))) {
+			return;
+		}
+		_smartBufferPressureRequested = pressure;
+		_diagnostics->pressureRequested(pressure);
 	}
+	updateSmartStreamingBufferPressure();
+}
+
+void Reader::updateSmartStreamingBufferPressure() {
+	const auto lock = std::lock_guard(_smartPressureMutex);
 	const auto now = crl::now();
-	if (!pressure && smartStreamingEnabled()) {
-		const auto current = _smartBufferPressure.load(
-			std::memory_order_acquire);
-		if (current) {
-			const auto since = _smartPressureStickySince.load(
-				std::memory_order_acquire);
-			if (since
-				&& now < since + kSmartPressureMinHoldDuration) {
-				// Hysteresis: ignore premature clear while still catching up.
-				return;
-			}
-		}
-	}
-	if (pressure) {
-		const auto was = _smartBufferPressure.load(std::memory_order_acquire);
-		if (!was) {
-			_smartPressureStickySince.store(now, std::memory_order_release);
-		}
-	} else {
-		_smartPressureStickySince.store(0, std::memory_order_release);
+	const auto active = _streamingActive.load(std::memory_order_acquire)
+		&& !_stopStreamingAsync.load(std::memory_order_acquire);
+	const auto current = _smartBufferPressure.load(std::memory_order_acquire);
+	const auto held = current
+		&& smartStreamingEnabled()
+		&& now < _smartPressureStickySince + kSmartPressureMinHoldDuration;
+	const auto pressure = active && (_smartBufferPressureRequested || held);
+	if (pressure && !current) {
+		_smartPressureStickySince = now;
+	} else if (!pressure) {
+		_smartPressureStickySince = 0;
 	}
 	const auto previous = _smartBufferPressure.exchange(
 		pressure,
@@ -1441,6 +1443,22 @@ void Reader::setSmartStreamingBufferPressure(bool pressure) {
 				pressureLocalUntil - now,
 				crl::time(0)))));
 	}
+	crl::on_main(this, [=] { refreshSmartPressureReleaseTimer(); });
+}
+
+void Reader::refreshSmartPressureReleaseTimer() {
+	const auto lock = std::lock_guard(_smartPressureMutex);
+	if (_smartBufferPressureRequested
+		|| !_smartBufferPressure.load(std::memory_order_acquire)
+		|| !_streamingActive.load(std::memory_order_acquire)
+		|| _stopStreamingAsync.load(std::memory_order_acquire)) {
+		_smartPressureReleaseTimer.cancel();
+		return;
+	}
+	const auto remaining = smartStreamingEnabled()
+		? _smartPressureStickySince + kSmartPressureMinHoldDuration - crl::now()
+		: crl::time(0);
+	_smartPressureReleaseTimer.callOnce(std::max(remaining, crl::time(1)));
 }
 
 void Reader::setSmartStreamingPlaybackRate(int bytesPerSecond) {
@@ -1557,7 +1575,6 @@ void Reader::stopStreaming(bool stillActive) {
 		_smartPreloadRecoveryUntil.store(0, std::memory_order_release);
 		_smartSeekRecoveryUntil.store(0, std::memory_order_release);
 		_smartSeekPressureLocalUntil.store(0, std::memory_order_release);
-		_smartPressureStickySince.store(0, std::memory_order_release);
 		_smartPreloadRecoveryLoggedPercent.store(
 			0,
 			std::memory_order_relaxed);
@@ -2182,7 +2199,9 @@ void Reader::publishSeekPrefetch(SeekPrefetchRequest request) {
 	request.criticalRangeCount = criticalRangeCount;
 	const auto requestedAt = crl::now();
 	const auto lock = std::lock_guard(_seekPrefetchRequestMutex);
-	if (!_streamingActive.load(std::memory_order_acquire)) {
+	if (!_streamingActive.load(std::memory_order_acquire)
+		|| (request.generation
+			&& request.generation < _pendingSeekPrefetch.generation)) {
 		return;
 	}
 	_pendingSeekPrefetch = std::move(request);

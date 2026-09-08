@@ -336,8 +336,7 @@ bool Document::checkSwitchToLowerQuality() {
 	} else if (predictive
 		&& now < _qualityRiskSince + kSwitchQualityDownRiskDuration) {
 		return false;
-	} else if (predictive
-		&& _lastQualitySwitchRequest
+	} else if (_lastQualitySwitchRequest
 		&& now < _lastQualitySwitchRequest
 			+ kSwitchQualityDownRequestCooldown) {
 		return false;
@@ -384,7 +383,7 @@ bool Document::checkSwitchToLowerQuality() {
 		&& state.receivedTill != kTimeUnknown)
 		? std::max(state.receivedTill - state.position, crl::time(0))
 		: crl::time(0);
-	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: quality downgrade "
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: quality downgrade request "
 		"reason=%1 currentSize=%2 targetSize=%3 targetHeight=%4 "
 		"throughput=%5 safe=%6 latency=%7 jitter=%8 bufferMs=%9.")
 		.arg(waiting ? u"waiting"_q : u"predicted"_q)

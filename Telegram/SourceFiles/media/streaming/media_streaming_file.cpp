@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/algorithm.h"
 #include "ffmpeg/ffmpeg_utility.h"
 #include "media/streaming/media_streaming_debug.h"
+#include "media/streaming/media_streaming_diagnostics.h"
 #include "media/streaming/media_streaming_file_delegate.h"
 #include "media/streaming/media_streaming_loader.h"
 
@@ -32,9 +33,60 @@ constexpr auto kSequentialOpenAnalyzeDuration = int64(3) * AV_TIME_BASE;
 constexpr auto kSeekPrefetchBackAmount = int64(2) * 1024 * 1024;
 constexpr auto kSeekPrefetchAheadAmount = int64(8) * 1024 * 1024;
 constexpr auto kSeekPrefetchUrgentBackAmount = int64(256) * 1024;
+constexpr auto kSeekPrefetchMaximumPreroll = crl::time(30000);
 constexpr auto kMp4TopLevelAtomHeaderSize = 16;
 constexpr auto kMp4SeekMapMaximumMoovSize = int64(kMaxSingleReadAmount);
 constexpr auto kMp4SeekMapMaximumTopLevelAtoms = 64;
+
+struct DemuxSeekRange {
+	SeekPrefetchRange bytes;
+	crl::time position = 0;
+};
+
+[[nodiscard]] std::optional<DemuxSeekRange> ResolveDemuxSeekRange(
+		not_null<AVStream*> stream,
+		crl::time from,
+		crl::time till,
+		int64 fileSize) {
+	if (stream->time_base.num <= 0 || stream->time_base.den <= 0) {
+		return std::nullopt;
+	}
+	const auto timestamp = FFmpeg::TimeToPts(from, stream->time_base);
+	const auto target = FFmpeg::TimeToPts(till, stream->time_base);
+	const auto entry = avformat_index_get_entry_from_timestamp(
+		stream,
+		timestamp,
+		AVSEEK_FLAG_BACKWARD);
+	if (!entry
+		|| entry->timestamp == AV_NOPTS_VALUE
+		|| entry->timestamp > timestamp
+		|| entry->pos < 0) {
+		return std::nullopt;
+	}
+	const auto first = *entry;
+	const auto last = avformat_index_get_entry_from_timestamp(
+		stream,
+		target,
+		AVSEEK_FLAG_ANY);
+	if (!last
+		|| last->timestamp < target
+		|| last->pos < first.pos
+		|| last->pos >= fileSize) {
+		return std::nullopt;
+	}
+	const auto size = std::max(int(last->size), 1);
+	if (size > fileSize - last->pos) {
+		return std::nullopt;
+	}
+	const auto amount = last->pos + size - first.pos;
+	if (amount > kSeekPrefetchAheadAmount) {
+		return std::nullopt;
+	}
+	return DemuxSeekRange{
+		.bytes = { .offset = first.pos, .amount = amount },
+		.position = FFmpeg::PtsToTime(first.timestamp, stream->time_base),
+	};
+}
 
 [[nodiscard]] bool UnreliableFormatDuration(
 		not_null<AVFormatContext*> format,
@@ -1227,6 +1279,7 @@ void File::Context::prefetchAroundOffset(
 			SeekPrefetchRequest::kCriticalRangeLimit> &criticalRanges,
 		int criticalRangeCount) {
 	if (!_source->smartStreamingEnabled()
+		|| hasPendingSoftSeek()
 		|| offset < 0
 		|| offset >= _size) {
 		return;
@@ -1268,7 +1321,99 @@ void File::Context::prefetchAroundOffset(
 		.arg(qlonglong(amount))
 		.arg(qlonglong(urgentOffset))
 		.arg(mapped ? 1 : 0)
-		.arg(mapped ? u"map"_q : u"read"_q));
+		.arg(mapped ? u"map"_q : u"packet"_q));
+}
+
+bool File::Context::prefetchFromIndex(
+		not_null<AVFormatContext*> format,
+		const Stream &stream,
+		StartOptions options,
+		crl::time position) {
+	if (!_source->smartStreamingEnabled()
+		|| !IsMp4LikeFormat(format)
+		|| stream.index < 0
+		|| stream.index >= int(format->nb_streams)
+		|| unroll()
+		|| hasPendingSoftSeek()) {
+		return false;
+	}
+	const auto primary = ResolveDemuxSeekRange(
+		format->streams[stream.index],
+		position,
+		position,
+		_size);
+	if (!primary) {
+		return false;
+	}
+	auto ranges = std::array<
+		SeekPrefetchRange,
+		SeekPrefetchRequest::kCriticalRangeLimit>();
+	ranges[0] = primary->bytes;
+	auto count = 1;
+	const auto audio = av_find_best_stream(
+		format,
+		AVMEDIA_TYPE_AUDIO,
+		-1,
+		-1,
+		nullptr,
+		0);
+	if (audio >= 0 && audio != stream.index) {
+		const auto secondary = ResolveDemuxSeekRange(
+			format->streams[audio],
+			std::max(primary->position, crl::time(0)),
+			position,
+			_size);
+		if (secondary) {
+			ranges[count++] = secondary->bytes;
+		}
+	}
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File seek index target=%1 "
+		"stream=%2 entries=%3 offset=%4 amount=%5 preroll=%6 "
+		"audioOffset=%7 criticalRanges=%8 gen=%9.")
+		.arg(qlonglong(position))
+		.arg(stream.index)
+		.arg(avformat_index_get_entries_count(format->streams[stream.index]))
+		.arg(qlonglong(primary->bytes.offset))
+		.arg(qlonglong(primary->bytes.amount))
+		.arg(qlonglong(position - primary->position))
+		.arg(qlonglong(count > 1 ? ranges[1].offset : -1))
+		.arg(count)
+		.arg(qulonglong(options.trackGeneration)));
+	prefetchAroundOffset(
+		primary->bytes.offset,
+		position,
+		true,
+		options.trackGeneration,
+		ranges,
+		count);
+	return true;
+}
+
+void File::Context::prefetchForPacket(const AVPacket &packet) {
+	if (!_pendingSeekPrefetchPosition
+		|| !_format
+		|| packet.pos < 0
+		|| hasPendingSoftSeek()) {
+		return;
+	}
+	const auto index = (_streamCache.videoIndex >= 0)
+		? _streamCache.videoIndex
+		: _streamCache.audioIndex;
+	if (packet.stream_index != index
+		|| index < 0
+		|| index >= int(_format->nb_streams)) {
+		return;
+	}
+	const auto position = FFmpeg::PtsToTime(
+		(packet.pts != AV_NOPTS_VALUE) ? packet.pts : packet.dts,
+		_format->streams[index]->time_base);
+	if (position == kTimeUnknown
+		|| position < _pendingSeekPrefetchPosition - kSeekPrefetchMaximumPreroll) {
+		return;
+	}
+	const auto target = base::take(_pendingSeekPrefetchPosition);
+	const auto generation = base::take(_pendingSeekPrefetchGeneration);
+	prefetchAroundOffset(packet.pos, target, false, generation, {}, 0);
 }
 
 int File::Context::read(bytes::span buffer) {
@@ -1279,6 +1424,12 @@ int File::Context::read(bytes::span buffer) {
 
 	if (unroll()) {
 		return AVERROR_EXTERNAL;
+	} else if (const auto error = _source->streamingError()) {
+		fail(*error);
+		return AVERROR_EXTERNAL;
+	} else if (hasPendingSoftSeek()) {
+		_avioAbortForSoftSeek.store(true, std::memory_order_release);
+		return AVERROR_EXTERNAL;
 	} else if (amount > kMaxSingleReadAmount) {
 		LOG(("Streaming Error: Read callback asked for too much data: %1"
 			).arg(amount));
@@ -1286,17 +1437,6 @@ int File::Context::read(bytes::span buffer) {
 	} else if (!amount) {
 		return AVERROR_EOF;
 	}
-	if (const auto position = base::take(_pendingSeekPrefetchPosition)) {
-		const auto generation = base::take(_pendingSeekPrefetchGeneration);
-		prefetchAroundOffset(
-			requestedOffset,
-			position,
-			false,
-			generation,
-			{},
-			0);
-	}
-
 	buffer = buffer.subspan(0, amount);
 	if (_debugReadCalls < 12) {
 		VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: AVIO read enter offset=%1 amount=%2 requested=%3 size=%4.")
@@ -1443,7 +1583,7 @@ void File::Context::setStreamCache(const SoftSeekStreamCache &cache) {
 bool File::Context::seekUsingCache(
 		not_null<AVFormatContext*> format,
 		StartOptions options) {
-	if (!options.seekable || !options.position || !_streamCache.usable()) {
+	if (!options.seekable || !_streamCache.usable()) {
 		return false;
 	}
 	auto probe = Stream();
@@ -1589,7 +1729,10 @@ void File::Context::seekToPosition(
 		crl::time position) {
 	auto error = FFmpeg::AvErrorWrap();
 
-	if (!position) {
+	if (const auto diagnostics = _source->diagnostics()) {
+		diagnostics->demuxSeekStarted(options.trackGeneration, position);
+	}
+	if (!position && !_format) {
 		return;
 	} else if (stream.duration == kDurationUnavailable) {
 		// Seek in files with unknown duration is not supported.
@@ -1601,11 +1744,15 @@ void File::Context::seekToPosition(
 	_pendingSeekPrefetchPosition = 0;
 	_pendingSeekPrefetchGeneration = 0;
 	auto mappedPrefetchOffset = int64(-1);
+	auto indexedPrefetch = false;
 	auto mappedCriticalRanges = std::array<
 		SeekPrefetchRange,
 		SeekPrefetchRequest::kCriticalRangeLimit>();
 	auto mappedCriticalRangeCount = 0;
 	const auto tryByteSeek = [&](int64 offset, const char *name) {
+		if (unroll() || hasPendingSoftSeek()) {
+			return false;
+		}
 		error = av_seek_frame(
 			format,
 			-1,
@@ -1624,18 +1771,32 @@ void File::Context::seekToPosition(
 		return false;
 	};
 	const auto trySeek = [&](int flags, const char *name) {
+		if (unroll() || hasPendingSoftSeek()) {
+			return false;
+		}
+		if (mappedPrefetchOffset < 0 && !indexedPrefetch) {
+			indexedPrefetch = prefetchFromIndex(format, stream, options, position);
+		}
+		const auto started = crl::now();
+		const auto bytesRead = format->pb ? format->pb->bytes_read : 0;
 		error = av_seek_frame(
 			format,
 			stream.index,
 			timestamp,
 			flags);
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File seek attempt "
-			"target=%1 flags=%2 name=%3 result=%4 error=%5.")
+			"target=%1 flags=%2 name=%3 result=%4 error=%5 elapsedMs=%6 "
+			"readBytes=%7 offset=%8 indexEntries=%9 gen=%10.")
 			.arg(qlonglong(position))
 			.arg(flags)
 			.arg(QString::fromLatin1(name))
 			.arg(error.code())
-			.arg(error.text()));
+			.arg(error.text())
+			.arg(qlonglong(crl::now() - started))
+			.arg(qlonglong(format->pb ? format->pb->bytes_read - bytesRead : 0))
+			.arg(qlonglong(_offset))
+			.arg(avformat_index_get_entries_count(format->streams[stream.index]))
+			.arg(qulonglong(options.trackGeneration)));
 		if (!error) {
 			if (mappedPrefetchOffset >= 0) {
 				prefetchAroundOffset(
@@ -1645,11 +1806,13 @@ void File::Context::seekToPosition(
 					options.trackGeneration,
 					mappedCriticalRanges,
 					mappedCriticalRangeCount);
-			} else if (_source->smartStreamingEnabled()) {
+			} else if (_source->smartStreamingEnabled()
+				&& !indexedPrefetch
+				&& !prefetchFromIndex(format, stream, options, position)) {
 				_pendingSeekPrefetchPosition = position;
 				_pendingSeekPrefetchGeneration = options.trackGeneration;
 				VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File seek "
-					"prefetch deferred target=%1 currentOffset=%2.")
+					"prefetch deferred target=%1 currentOffset=%2 until=packet.")
 					.arg(qlonglong(position))
 					.arg(qlonglong(_offset)));
 			}
@@ -1658,6 +1821,9 @@ void File::Context::seekToPosition(
 		return false;
 	};
 	const auto tryMappedSeek = [&](bool explicitSeek) {
+		if (unroll() || hasPendingSoftSeek()) {
+			return false;
+		}
 		if (!IsMp4LikeFormat(format)) {
 			const auto diagnostic = Mp4SeekMapDiagnostic{
 				.failure = Mp4SeekMapFailure::FormatUnsupported,
@@ -1760,7 +1926,9 @@ void File::Context::seekToPosition(
 	} else if (trySeek(AVSEEK_FLAG_BACKWARD, "backward")) {
 		return;
 	}
-	return logFatal(qstr("av_seek_frame"), error);
+	if (!unroll() && !hasPendingSoftSeek()) {
+		logFatal(qstr("av_seek_frame"), error);
+	}
 }
 
 std::variant<FFmpeg::Packet, FFmpeg::AvErrorWrap> File::Context::readPacket() {
@@ -1979,11 +2147,12 @@ uint64_t File::Context::requestSoftSeek(StartOptions options) {
 	if (!canInPlaceSoftSeek()) {
 		return 0;
 	}
-	const auto gen = _softSeekRequestGen.fetch_add(1, std::memory_order_acq_rel) + 1;
+	auto gen = uint64_t(0);
 	{
 		const auto lock = std::lock_guard(_softSeekMutex);
 		_softSeekOptions = options;
 		_softSeekRequestStarted = crl::now();
+		gen = _softSeekRequestGen.fetch_add(1, std::memory_order_acq_rel) + 1;
 	}
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File in-place soft seek "
 		"request gen=%1 position=%2.")
@@ -2106,14 +2275,15 @@ bool File::Context::applyPendingSoftSeekIfAny() {
 	};
 
 	while (hasPendingSoftSeek() && !unroll() && _format) {
-		const auto gen = _softSeekRequestGen.load(std::memory_order_acquire);
-		if (gen <= _softSeekHandledGen) {
-			return false;
-		}
+		auto gen = uint64_t(0);
 		StartOptions options;
 		crl::time requestedAt = 0;
 		{
 			const auto lock = std::lock_guard(_softSeekMutex);
+			gen = _softSeekRequestGen.load(std::memory_order_acquire);
+			if (gen <= _softSeekHandledGen) {
+				return false;
+			}
 			options = _softSeekOptions;
 			requestedAt = _softSeekRequestStarted;
 		}
@@ -2139,6 +2309,8 @@ bool File::Context::applyPendingSoftSeekIfAny() {
 		const auto earlySeek = seekUsingCache(_format.get(), options);
 		if (unroll()) {
 			return true;
+		} else if (hasPendingSoftSeek()) {
+			continue;
 		}
 		if (!earlySeek
 			&& options.seekable
@@ -2163,6 +2335,9 @@ bool File::Context::applyPendingSoftSeekIfAny() {
 		}
 		if (unroll()) {
 			return true;
+		}
+		if (hasPendingSoftSeek()) {
+			continue;
 		}
 		if (_format) {
 			avformat_flush(_format.get());
@@ -2343,6 +2518,19 @@ void File::Context::readNextPacket() {
 		if (i == end(_queuedPackets)) {
 			return;
 		}
+		const auto &fields = packet->fields();
+		if (const auto diagnostics = _source->diagnostics()) {
+			diagnostics->demuxPacket(
+				_trackGeneration,
+				index == _streamCache.videoIndex,
+				FFmpeg::PtsToTime(
+					(fields.pts != AV_NOPTS_VALUE) ? fields.pts : fields.dts,
+					_format->streams[index]->time_base),
+				fields.pos,
+				fields.size,
+				(fields.flags & AV_PKT_FLAG_KEY) != 0);
+		}
+		prefetchForPacket(fields);
 		i->second.push_back(std::move(*packet));
 		if (i->second.size() == kMaxQueuedPackets) {
 			processQueuedPackets(SleepPolicy::Allowed);

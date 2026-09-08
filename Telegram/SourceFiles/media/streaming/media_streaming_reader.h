@@ -252,6 +252,8 @@ private:
 	[[nodiscard]] int topUpSeekCriticalLoads(int requestLimit);
 	bool updateSeekPrefetchCriticalProgress();
 	[[nodiscard]] crl::time smartStreamingBackgroundBuffer() const;
+	void updateSmartStreamingBufferPressure();
+	void refreshSmartPressureReleaseTimer();
 	void syncSmartStreamingBufferPressure(crl::time now);
 	void publishSeekPrefetch(SeekPrefetchRequest request);
 	void consumePendingSeekPrefetch();
@@ -327,9 +329,12 @@ private:
 	std::atomic<int> _streamJitterMs = 0;
 	std::atomic<int> _smartBufferTargetLoggedMs = 0;
 	std::atomic<bool> _smartBufferPressure = false;
+	bool _smartBufferPressureRequested = false;
+	std::mutex _smartPressureMutex;
+	crl::time _smartPressureStickySince = 0;
+	base::Timer _smartPressureReleaseTimer;
 	std::atomic<crl::time> _smartSeekRecoveryUntil = 0;
 	std::atomic<crl::time> _smartSeekPressureLocalUntil = 0;
-	std::atomic<crl::time> _smartPressureStickySince = 0;
 	std::atomic<crl::time> _smartPreloadRecoveryUntil = 0;
 	std::atomic<int> _smartPreloadRecoveryLoggedPercent = 0;
 	std::atomic<int> _serverObservedWaitMs = 0;

@@ -13,6 +13,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_origin.h"
 #include "storage/download_manager_mtproto.h"
 
+#include <vector>
+
 namespace Media {
 namespace Streaming {
 
@@ -59,6 +61,7 @@ private:
 		crl::time start = 0;
 		crl::time end = 0;
 		int64 offset = 0;
+		int64 received = 0;
 	};
 
 	bool readyToRequest() const override;
@@ -69,6 +72,8 @@ private:
 	void cancelForOffset(int64 offset);
 	void addToQueueWithPriority();
 
+	void finishStats(int64 offset, int64 received);
+	void clearStats();
 	void checkStats();
 
 	const not_null<Storage::DownloadManagerMtproto*> _owner;

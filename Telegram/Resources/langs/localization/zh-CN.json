@@ -4,6 +4,8 @@
     "lng_settings_network": "网络",
     "lng_settings_net_upload_speed_boost": "上传速度提升",
     "lng_settings_net_download_speed_boost": "优化在线播放",
+    "lng_settings_video_player_prefer_original": "内置播放器默认播放原画质",
+    "lng_settings_video_player_prefer_original_about": "打开视频时选择原文件，播放中仍可手动切换画质。下次打开视频时生效，可能增加流量消耗。",
     "lng_settings_online_playback_debug_logs": "将在线播放调试日志写入 log.txt",
     "lng_settings_show_message_id": "显示消息 ID",
     "lng_settings_label_channel_user": "标注频道身份发言",
