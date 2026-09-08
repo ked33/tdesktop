@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_boost.h"
 #include "media/streaming/media_streaming_common.h"
 #include "media/streaming/media_streaming_debug.h"
+#include "media/streaming/media_streaming_diagnostics.h"
 #include "media/streaming/media_streaming_loader.h"
 #include "settings.h"
 #include "storage/cache/storage_cache_database.h"
@@ -1011,10 +1012,14 @@ Reader::Reader(
 	std::unique_ptr<Loader> loader,
 	Storage::Cache::Database *cache)
 : _loader(std::move(loader))
+, _diagnostics(std::make_shared<TransferDiagnostics>(
+	_loader->size(),
+	_loader->serverDelayState().dcId))
 , _premiumSession(_loader->premiumSession())
 , _cache(cache)
 , _cacheHelper(cache ? InitCacheHelper(_loader->baseCacheKey()) : nullptr)
 , _slices(_loader->size(), _cacheHelper != nullptr) {
+	_loader->setDiagnostics(_diagnostics);
 	_loader->parts(
 	) | rpl::on_next([=](LoadedPart &&part) {
 		if (_attachedDownloader && !part.cancelled) {
@@ -1036,6 +1041,7 @@ Reader::Reader(
 	}, _lifetime);
 
 	const auto applyServerDelay = [=](ServerDelay delay) {
+		_diagnostics->serverDelay(delay);
 		if (_premiumSession) {
 			return;
 		}
@@ -1132,6 +1138,7 @@ Reader::Reader(
 	// for boost level 0 and atomics stay at 100/100.
 	_loader->speedEstimate(
 	) | rpl::on_next([=](SpeedEstimate estimate) {
+		_diagnostics->speed(estimate);
 		if (DownloadBoostLevel() == 0
 			|| estimate.unreliable
 			|| estimate.bytesPerSecond <= 0) {
@@ -1358,6 +1365,7 @@ void Reader::syncSmartStreamingBufferPressure(crl::time now) {
 			&& playbackReady
 			&& (!smart || now >= pressureLocalUntil);
 		_loader->setSmartStreamingBufferPressure(forwarded);
+		_diagnostics->pressureForwarded(pressure, forwarded);
 
 		const auto currentNow = crl::now();
 		const auto currentPressure = _smartBufferPressure.load(
@@ -1378,6 +1386,7 @@ void Reader::syncSmartStreamingBufferPressure(crl::time now) {
 }
 
 void Reader::setSmartStreamingBufferPressure(bool pressure) {
+	_diagnostics->pressureRequested(pressure);
 	if (pressure
 		&& !_streamingActive.load(std::memory_order_acquire)) {
 		return;
@@ -1510,6 +1519,7 @@ void Reader::primeSeekPrefetch(SeekPrefetchRequest request) {
 void Reader::stopStreaming(bool stillActive) {
 	Expects(_sleeping == nullptr);
 
+	_diagnostics->readStopped();
 	_stopStreamingAsync = false;
 	_waiting.store(nullptr, std::memory_order_release);
 	if (_cacheHelper && _cacheHelper->waiting != nullptr) {
@@ -1577,6 +1587,7 @@ void Reader::stopStreaming(bool stillActive) {
 		refreshLoaderPriority();
 		cancelStreamingLoads();
 		_seekCancellationOffsets.clear();
+		_diagnostics->report("streaming-stopped");
 		processDownloaderRequests();
 	}
 }
@@ -1917,6 +1928,10 @@ int64 Reader::size() const {
 	return _loader->size();
 }
 
+std::shared_ptr<TransferDiagnostics> Reader::diagnostics() const {
+	return _diagnostics;
+}
+
 std::optional<Error> Reader::streamingError() const {
 	return _streamingError;
 }
@@ -2048,16 +2063,19 @@ Reader::FillState Reader::fill(
 	};
 	const auto done = [&] {
 		clearWaiting();
+		_diagnostics->read(offset, buffer.size(), true, false);
 		return FillState::Success;
 	};
 	const auto failed = [&] {
 		clearWaiting();
+		_diagnostics->readStopped();
 		notify->release();
 		return FillState::Failed;
 	};
 
 	checkForSomethingMoreReceived();
 	if (_streamingError) {
+		_diagnostics->readStopped();
 		return FillState::Failed;
 	}
 
@@ -2070,7 +2088,15 @@ Reader::FillState Reader::fill(
 		startWaiting();
 	} while (checkForSomethingMoreReceived());
 
-	return _streamingError ? failed() : lastResult;
+	if (_streamingError) {
+		return failed();
+	}
+	_diagnostics->read(
+		offset,
+		buffer.size(),
+		false,
+		lastResult == FillState::WaitingCache);
+	return lastResult;
 }
 
 void Reader::prefetch(SeekPrefetchRequest request) {
@@ -2487,6 +2513,7 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 	const auto regularRequestLimit = seekCriticalPhase
 		? std::max(0, requestsLimit - activeCriticalLoads)
 		: requestsLimit;
+	_diagnostics->policy(preloadParts, requestsLimit, smartPlaybackRate);
 	auto result = _slices.fill(
 		offset,
 		buffer,
@@ -3158,6 +3185,7 @@ bool Reader::processCacheResults() {
 		return false;
 	}
 	for (auto &[sliceNumber, result] : loaded) {
+		_diagnostics->cacheLoaded(result);
 		_slices.processCacheResult(sliceNumber, std::move(result));
 	}
 	if (!sizes.empty()) {
@@ -3264,6 +3292,8 @@ void Reader::finalizeCache() {
 }
 
 Reader::~Reader() {
+	_diagnostics->readStopped();
+	_diagnostics->report("reader-destroyed");
 	finalizeCache();
 }
 

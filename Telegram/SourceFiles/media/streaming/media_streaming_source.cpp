@@ -22,6 +22,10 @@ public:
 		return _reader->size();
 	}
 
+	[[nodiscard]] std::shared_ptr<TransferDiagnostics> diagnostics() const override {
+		return _reader->diagnostics();
+	}
+
 	[[nodiscard]] bool isRemoteLoader() const override {
 		return _reader->isRemoteLoader();
 	}

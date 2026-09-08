@@ -23,9 +23,11 @@ public:
 		const StorageFileLocation &location,
 		int64 size,
 		Data::FileOrigin origin);
+	~LoaderMtproto() override;
 
 	[[nodiscard]] Storage::Cache::Key baseCacheKey() const override;
 	[[nodiscard]] int64 size() const override;
+	void setDiagnostics(std::shared_ptr<TransferDiagnostics> diagnostics) override;
 
 	void load(int64 offset) override;
 	void cancel(int64 offset) override;
@@ -71,6 +73,7 @@ private:
 
 	const not_null<Storage::DownloadManagerMtproto*> _owner;
 	const int64 _size = 0;
+	std::shared_ptr<TransferDiagnostics> _diagnostics;
 	int _priority = 0;
 	std::atomic<int> _smartRequestLimit =
 		Storage::kNonPremiumInitialRequestLimit;

@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "apiwrap.h"
 #include "main/main_session.h"
+#include "media/streaming/media_streaming_diagnostics.h"
 #include "storage/streamed_file_downloader.h"
 #include "storage/cache/storage_cache_types.h"
 
@@ -54,6 +55,13 @@ LoaderMtproto::LoaderMtproto(
 	}, _lifetime);
 }
 
+LoaderMtproto::~LoaderMtproto() {
+	if (_diagnostics) {
+		_diagnostics->cancelAll();
+		_diagnostics->report("loader-destroyed");
+	}
+}
+
 Storage::Cache::Key LoaderMtproto::baseCacheKey() const {
 	return v::get<StorageFileLocation>(
 		location().data
@@ -64,12 +72,20 @@ int64 LoaderMtproto::size() const {
 	return _size;
 }
 
+void LoaderMtproto::setDiagnostics(
+		std::shared_ptr<TransferDiagnostics> diagnostics) {
+	_diagnostics = std::move(diagnostics);
+}
+
 void LoaderMtproto::load(int64 offset) {
 	crl::on_main(this, [=] {
 		if (_downloader) {
 			auto bytes = _downloader->readLoadedPart(offset);
 			if (!bytes.isEmpty()) {
 				cancelForOffset(offset);
+				if (_diagnostics) {
+					_diagnostics->reused(bytes.size());
+				}
 				_parts.fire({ offset, std::move(bytes) });
 				return;
 			}
@@ -77,6 +93,9 @@ void LoaderMtproto::load(int64 offset) {
 		if (haveSentRequestForOffset(offset)) {
 			return;
 		} else if (_requested.add(offset)) {
+			if (_diagnostics) {
+				_diagnostics->queued(offset);
+			}
 			addToQueueWithPriority();
 		}
 	});
@@ -98,6 +117,9 @@ void LoaderMtproto::stop() {
 		_smartPlaybackRate.store(0, std::memory_order_release);
 		_owner->setSmartStreamingBufferPressure(this, false);
 		_owner->setSmartStreamingPlaybackRate(this, 0);
+		if (_diagnostics) {
+			_diagnostics->cancelAll();
+		}
 		cancelAllRequests();
 		_requested.clear();
 		removeFromQueue();
@@ -121,8 +143,14 @@ void LoaderMtproto::cancel(int64 offset) {
 void LoaderMtproto::cancelForSeek(int64 offset) {
 	crl::on_main(this, [=] {
 		if (haveSentRequestForOffset(offset)) {
+			if (_diagnostics) {
+				_diagnostics->retainedForSeek(offset);
+			}
 			return;
 		} else if (_requested.remove(offset)) {
+			if (_diagnostics) {
+				_diagnostics->cancelled(offset, false);
+			}
 			_parts.fire({
 				.offset = offset,
 				.cancelled = true,
@@ -133,12 +161,17 @@ void LoaderMtproto::cancelForSeek(int64 offset) {
 
 void LoaderMtproto::cancelForOffset(int64 offset) {
 	if (haveSentRequestForOffset(offset)) {
+		if (_diagnostics) {
+			_diagnostics->cancelled(offset, true);
+		}
 		cancelRequestForOffset(offset);
 		if (!_requested.empty()) {
 			addToQueueWithPriority();
 		}
-	} else {
-		_requested.remove(offset);
+	} else if (_requested.remove(offset)) {
+		if (_diagnostics) {
+			_diagnostics->cancelled(offset, false);
+		}
 	}
 }
 
@@ -180,12 +213,18 @@ int64 LoaderMtproto::takeNextRequestOffset() {
 		_firstRequestStart = time;
 	}
 	_stats.push_back({ .start = crl::now(), .offset = *offset });
+	if (_diagnostics) {
+		_diagnostics->dispatched(*offset);
+	}
 
 	Ensures(offset.has_value());
 	return *offset;
 }
 
 bool LoaderMtproto::feedPart(int64 offset, const QByteArray &bytes) {
+	if (_diagnostics) {
+		_diagnostics->received(offset, bytes.size());
+	}
 	const auto time = crl::now();
 	for (auto &entry : _stats) {
 		if (entry.offset == offset && entry.start < time) {
