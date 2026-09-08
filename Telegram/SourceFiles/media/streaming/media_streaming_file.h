@@ -138,6 +138,12 @@ private:
 				SeekPrefetchRange,
 				SeekPrefetchRequest::kCriticalRangeLimit> &criticalRanges,
 			int criticalRangeCount);
+		[[nodiscard]] bool prefetchFromIndex(
+			not_null<AVFormatContext*> format,
+			const Stream &stream,
+			StartOptions options,
+			crl::time position);
+		void prefetchForPacket(const AVPacket &packet);
 
 		[[nodiscard]] bool unroll() const;
 		void logError(QLatin1String method);
