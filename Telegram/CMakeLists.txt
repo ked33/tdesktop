@@ -1566,6 +1566,7 @@ PRIVATE
     media/streaming/media_streaming_mpv_special.h
     media/streaming/media_streaming_player.cpp
     media/streaming/media_streaming_player.h
+    media/streaming/media_streaming_read_stall.h
     media/streaming/media_streaming_reader.cpp
     media/streaming/media_streaming_reader.h
     media/streaming/media_streaming_round_preview.cpp

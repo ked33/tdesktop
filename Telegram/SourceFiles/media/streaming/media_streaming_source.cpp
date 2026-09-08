@@ -41,8 +41,9 @@ public:
 	[[nodiscard]] FillState fill(
 			int64 offset,
 			bytes::span buffer,
-			not_null<crl::semaphore*> notify) override {
-		switch (_reader->fill(offset, buffer, notify)) {
+			not_null<crl::semaphore*> notify,
+			ReadMode mode) override {
+		switch (_reader->fill(offset, buffer, notify, mode)) {
 		case Reader::FillState::Success:
 			return FillState::Success;
 		case Reader::FillState::Failed:

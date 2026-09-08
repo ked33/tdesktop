@@ -37,6 +37,8 @@ public:
 	[[nodiscard]] virtual int64 size() const = 0;
 	virtual void setDiagnostics(std::shared_ptr<TransferDiagnostics>) {
 	}
+	virtual void setStreamingReadRange(int64, int64) {
+	}
 
 	virtual void load(int64 offset) = 0;
 	virtual void cancel(int64 offset) = 0;

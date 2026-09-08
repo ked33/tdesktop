@@ -815,6 +815,29 @@ int DownloadManagerMtproto::chooseSessionIndex(MTP::DcId dcId) const {
 	return (j - begin(sessions));
 }
 
+auto DownloadManagerMtproto::chooseAlternativeSessionIndex(
+		MTP::DcId dcId,
+		int currentIndex) const
+-> std::optional<int> {
+	const auto i = _balanceData.find(dcId);
+	if (i == end(_balanceData)) {
+		return std::nullopt;
+	}
+	const auto &sessions = i->second.sessions;
+	auto result = std::optional<int>();
+	for (auto index = 0; index != int(sessions.size()); ++index) {
+		const auto &data = sessions[index];
+		if (index == currentIndex
+			|| data.requested + kDownloadPartSize > data.maxWaitedAmount) {
+			continue;
+		}
+		if (!result || data.requested < sessions[*result].requested) {
+			result = index;
+		}
+	}
+	return result;
+}
+
 void DownloadManagerMtproto::sessionTimedOut(MTP::DcId dcId, int index) {
 	const auto i = _balanceData.find(dcId);
 	if (i == end(_balanceData)) {
@@ -1404,6 +1427,39 @@ void DownloadMtprotoTask::cancelRequestForOffset(int64 offset) {
 	_cdnUncheckedParts.remove({ offset, 0 });
 }
 
+bool DownloadMtprotoTask::retryRequestForOffset(
+		int64 offset,
+		crl::time minimumAge) {
+	const auto now = crl::now();
+	const auto state = nonPremiumDelayState();
+	if (_cdnDcId || now < state.limitedUntil || now < state.recoveryUntil) {
+		return false;
+	}
+	const auto i = _requestByOffset.find(offset);
+	if (i == end(_requestByOffset)) {
+		return false;
+	}
+	const auto requestId = i->second;
+	const auto j = _sentRequests.find(requestId);
+	Assert(j != end(_sentRequests));
+	if (api().instance().requestIsDelayed(requestId)) {
+		j->second.readRetrySuppressed = true;
+	}
+	if (now - j->second.sent < minimumAge
+		|| j->second.readRetrySuppressed) {
+		return false;
+	}
+	const auto index = _owner->chooseAlternativeSessionIndex(
+		dcId(),
+		j->second.sessionIndex);
+	if (!index) {
+		return false;
+	}
+	cancelRequest(requestId);
+	makeRequest({ offset, *index });
+	return true;
+}
+
 void DownloadMtprotoTask::cancelRequest(mtpRequestId requestId) {
 	const auto hashes = (_cdnHashesRequestId == requestId);
 	api().request(requestId).cancel();
@@ -1435,6 +1491,10 @@ bool DownloadMtprotoTask::normalPartFailed(
 		QByteArray fileReference,
 		const MTP::Error &error,
 		mtpRequestId requestId) {
+	const auto i = _sentRequests.find(requestId);
+	if (i != end(_sentRequests)) {
+		i->second.readRetrySuppressed = true;
+	}
 	if (MTP::IsDefaultHandledError(error)) {
 		return false;
 	}
