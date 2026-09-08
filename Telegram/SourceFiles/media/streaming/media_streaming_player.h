@@ -27,6 +27,7 @@ class File;
 class AudioTrack;
 class VideoTrack;
 class Instance;
+class PlaybackDiagnostics;
 
 class Player final : private FileDelegate {
 public:
@@ -63,6 +64,7 @@ public:
 	[[nodiscard]] rpl::producer<bool> fullInCache() const;
 
 	[[nodiscard]] int64 fileSize() const;
+	[[nodiscard]] uint64 diagnosticId() const;
 	[[nodiscard]] bool smartStreamingEnabled() const;
 	[[nodiscard]] QSize videoSize() const;
 	[[nodiscard]] QImage frame(
@@ -224,6 +226,7 @@ private:
 		crl::time position);
 
 	const std::unique_ptr<File> _file;
+	const std::unique_ptr<PlaybackDiagnostics> _diagnostics;
 
 	// Immutable while File is active after it is ready.
 	AudioMsgId _audioId;

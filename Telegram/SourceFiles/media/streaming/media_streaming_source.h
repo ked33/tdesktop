@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Media::Streaming {
 
 class Reader;
+class TransferDiagnostics;
 
 struct SeekPrefetchRange {
 	int64 offset = -1;
@@ -51,6 +52,9 @@ public:
 	};
 
 	[[nodiscard]] virtual int64 size() const = 0;
+	[[nodiscard]] virtual std::shared_ptr<TransferDiagnostics> diagnostics() const {
+		return nullptr;
+	}
 	[[nodiscard]] virtual bool isRemoteLoader() const = 0;
 	[[nodiscard]] virtual bool smartStreamingEnabled() const {
 		return false;

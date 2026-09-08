@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item_components.h"
 #include "main/main_session.h"
 #include "media/streaming/media_streaming_boost.h"
+#include "media/streaming/media_streaming_diagnostics.h"
 #include "media/streaming/media_streaming_mp4_header.h"
 #include "media/streaming/media_streaming_reader.h"
 #include "logs.h"
@@ -172,12 +173,14 @@ struct Entry {
 	: document(document)
 	, origin(origin)
 	, reader(std::move(reader))
+	, diagnostics(this->reader->diagnostics())
 	, size(this->reader ? this->reader->size() : 0) {
 	}
 
 	not_null<DocumentData*> document;
 	Data::FileOrigin origin;
 	std::shared_ptr<Reader> reader;
+	const std::shared_ptr<TransferDiagnostics> diagnostics;
 	std::shared_ptr<Reader> seekReader;
 	QString mime;
 	int64 size = 0;
@@ -552,6 +555,7 @@ public:
 			document,
 			origin,
 			std::move(reader));
+		entry->diagnostics->bridgeOpened(document->id, true);
 		entry->mime = document->mimeString().isEmpty()
 			? QStringLiteral("application/octet-stream")
 			: document->mimeString();
@@ -723,6 +727,11 @@ private:
 				});
 				return;
 			}
+			auto diagnostics = BridgeRequestDiagnostics(
+				entry->diagnostics,
+				true,
+				range.range.from,
+				range.range.length);
 			// Fragmented MP4 keeps the sequential-open fallback.
 			// A large front moov only requires an isolated reader
 			// for range requests, so probing and playback reads do
@@ -818,6 +827,7 @@ private:
 				.arg(left)
 				.arg(int(layout)));
 			if (request.method == "HEAD") {
+				diagnostics.outcome("head");
 				return;
 			}
 			const auto startedFromZero = (offset == 0);
@@ -849,6 +859,9 @@ private:
 			const auto seekGeneration = seekGenerationManaged
 				? (entry->latestSeekGeneration.fetch_add(1) + 1)
 				: std::uint64_t(0);
+			diagnostics.useReader(
+				activeReader->diagnostics(),
+				seekGeneration);
 			const auto seekSuperseded = [&] {
 				return seekGenerationManaged
 					&& (entry->latestSeekGeneration.load() != seekGeneration);
@@ -872,8 +885,10 @@ private:
 					: kReadChunkSize;
 				const auto size = int(std::min(left, int64(chunkSize)));
 				auto buffer = QByteArray(size, Qt::Uninitialized);
+				diagnostics.readStarted();
 				{
 					const auto lock = std::unique_lock(*fillMutex);
+					diagnostics.readLocked();
 					if (seekSuperseded()) {
 						supersededSeek = true;
 						break;
@@ -890,6 +905,8 @@ private:
 							bytes::span(
 								reinterpret_cast<bytes::type*>(buffer.data()),
 								size))) {
+						diagnostics.readFinished();
+						diagnostics.outcome("read-failed");
 						const auto error = activeReader->streamingError();
 						if (!usingSeekReader
 							&& !retriedLoadFailure
@@ -905,6 +922,7 @@ private:
 							.arg(StreamingErrorDebugString(error)));
 						return;
 					}
+					diagnostics.readFinished();
 					if (startedFromZero
 						&& !usingSeekReader
 						&& !entry->headerFinalized.exchange(true)) {
@@ -930,12 +948,14 @@ private:
 					clientDisconnected = true;
 					break;
 				}
+				diagnostics.wrote(size);
 				retriedLoadFailure = false;
 				offset += size;
 				left -= size;
 				entry->lastActivity = crl::now();
 			}
 			if (supersededSeek) {
+				diagnostics.outcome("superseded");
 				MPV_STREAMING_LOG(("MPV Streaming (Special): Superseded seek request token=%1 generation=%2 offset=%3 latest=%4.")
 					.arg(request.token)
 					.arg(qulonglong(seekGeneration))
@@ -943,6 +963,9 @@ private:
 					.arg(qulonglong(entry->latestSeekGeneration.load())));
 				return;
 			}
+			diagnostics.outcome(clientDisconnected
+				? "client-disconnected"
+				: "complete");
 			// Pre-fill cache sequentially after client disconnect.
 			// When a fragmented MP4 is opened, the demuxer scans
 			// hundreds of fragment headers via HTTP range requests.
@@ -971,6 +994,7 @@ private:
 									size))) {
 							break;
 						}
+						diagnostics.backgroundRead(size);
 						// Stop if FillBuffer was slow (cache miss).
 						// A slow fill means the Reader had to download
 						// from Telegram at this offset, indicating our
