@@ -113,6 +113,7 @@ public:
 	void ping();
 	void cancel(mtpRequestId requestId);
 	[[nodiscard]] int32 state(mtpRequestId requestId); // < 0 means waiting for such count of ms
+	[[nodiscard]] bool requestIsDelayed(mtpRequestId requestId) const;
 	void killSession(ShiftedDcId shiftedDcId);
 	void stopSession(ShiftedDcId shiftedDcId);
 	void reInitConnection(DcId dcId);
@@ -698,6 +699,13 @@ int32 Instance::Private::state(mtpRequestId requestId) {
 	}
 	const auto session = getSession(-requestId);
 	return session->requestState(0);
+}
+
+bool Instance::Private::requestIsDelayed(mtpRequestId requestId) const {
+	return std::any_of(
+		_delayedRequests.begin(),
+		_delayedRequests.end(),
+		[=](const auto &entry) { return entry.first == requestId; });
 }
 
 void Instance::Private::killSession(ShiftedDcId shiftedDcId) {
@@ -1997,6 +2005,10 @@ void Instance::cancel(mtpRequestId requestId) {
 
 int32 Instance::state(mtpRequestId requestId) { // < 0 means waiting for such count of ms
 	return _private->state(requestId);
+}
+
+bool Instance::requestIsDelayed(mtpRequestId requestId) const {
+	return _private->requestIsDelayed(requestId);
 }
 
 void Instance::killSession(ShiftedDcId shiftedDcId) {

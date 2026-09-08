@@ -102,7 +102,9 @@ struct SpeedEstimate {
 	int bytesPerSecond = 0;
 	int latencyMs = 0;
 	int jitterMs = 0;
+	int noProgressMs = 0;
 	bool unreliable = false;
+	bool stalled = false;
 };
 
 struct ServerDelay {

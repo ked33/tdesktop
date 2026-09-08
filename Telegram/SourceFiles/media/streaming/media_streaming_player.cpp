@@ -1225,7 +1225,8 @@ bool Player::receivedTillEnd() const {
 }
 
 void Player::checkResumeFromWaitingForData() {
-	if (_pausedByWaitingForData
+	if (_stage == Stage::Started
+		&& _pausedByWaitingForData
 		&& bothReceivedEnough(waitingForDataBuffer())) {
 		_pausedByWaitingForData = false;
 		_file->setSmartStreamingBufferPressure(false);
@@ -1242,6 +1243,11 @@ void Player::start() {
 	const auto guard = base::make_weak(&_sessionGuard);
 
 	_file->speedEstimate() | rpl::on_next([=](SpeedEstimate value) {
+		const auto guard = base::make_weak(&_sessionGuard);
+		checkResumeFromWaitingForData();
+		if (!guard) {
+			return;
+		}
 		_updates.fire({ value });
 	}, _sessionLifetime);
 
@@ -1417,6 +1423,7 @@ void Player::setSpeed(float64 speed) {
 			if (_video) {
 				_video->setSpeed(speed);
 			}
+			checkResumeFromWaitingForData();
 		}
 	}
 }

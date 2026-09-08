@@ -7,10 +7,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "data/data_file_origin.h"
 #include "base/timer.h"
 #include "base/weak_ptr.h"
+#include "data/data_file_origin.h"
 #include "storage/storage_non_premium_delay.h"
+
+#include <optional>
 #include <utility>
 
 class ApiWrap;
@@ -58,6 +60,9 @@ public:
 		crl::time timeAtRequestStart);
 	void checkSendNextAfterSuccess(MTP::DcId dcId);
 	[[nodiscard]] int chooseSessionIndex(MTP::DcId dcId) const;
+	[[nodiscard]] std::optional<int> chooseAlternativeSessionIndex(
+		MTP::DcId dcId,
+		int currentIndex) const;
 
 	void notifyNonPremiumDelay(
 		MTP::DcId dcId,
@@ -259,6 +264,7 @@ protected:
 	[[nodiscard]] bool haveSentRequestForOffset(int64 offset) const;
 	void cancelAllRequests();
 	void cancelRequestForOffset(int64 offset);
+	[[nodiscard]] bool retryRequestForOffset(int64 offset, crl::time minimumAge);
 
 	void addToQueue(int priority = 0);
 	void removeFromQueue();
@@ -276,6 +282,7 @@ private:
 		mutable int sessionIndex = 0;
 		int requestedInSession = 0;
 		crl::time sent = 0;
+		bool readRetrySuppressed = false;
 
 		inline bool operator<(const RequestData &other) const {
 			return offset < other.offset;

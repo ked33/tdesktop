@@ -63,7 +63,8 @@ public:
 	[[nodiscard]] FillState fill(
 		int64 offset,
 		bytes::span buffer,
-		not_null<crl::semaphore*> notify);
+		not_null<crl::semaphore*> notify,
+		ReadMode mode = ReadMode::Required);
 	void prefetch(SeekPrefetchRequest request);
 	[[nodiscard]] SeekPrefetchProgress seekPrefetchProgress(
 		uint64 generation) const;
@@ -328,6 +329,7 @@ private:
 	std::atomic<int> _streamLatencyMs = 0;
 	std::atomic<int> _streamJitterMs = 0;
 	std::atomic<int> _smartBufferTargetLoggedMs = 0;
+	std::atomic<bool> _streamReadStalled = false;
 	std::atomic<bool> _smartBufferPressure = false;
 	bool _smartBufferPressureRequested = false;
 	std::mutex _smartPressureMutex;

@@ -1140,7 +1140,30 @@ Reader::Reader(
 	_loader->speedEstimate(
 	) | rpl::on_next([=](SpeedEstimate estimate) {
 		_diagnostics->speed(estimate);
+		const auto stalled = estimate.stalled
+			&& smartStreamingEnabled()
+			&& _streamingActive.load(std::memory_order_acquire)
+			&& !_stopStreamingAsync.load(std::memory_order_acquire);
+		const auto previous = _streamReadStalled.exchange(
+			stalled,
+			std::memory_order_acq_rel);
+		if (stalled) {
+			_streamThroughputBytesPerSecond.store(0, std::memory_order_relaxed);
+			_speedState = SpeedState::Normal;
+			_burstSpeedEma = 0.;
+			_burstSpeedInitialized = false;
+			_adaptivePreloadPercent.store(100, std::memory_order_relaxed);
+		}
+		if (previous != stalled) {
+			syncSmartStreamingBufferPressure(crl::now());
+			if (const auto waiting = _waiting.exchange(
+					nullptr,
+					std::memory_order_acq_rel)) {
+				waiting->release();
+			}
+		}
 		if (DownloadBoostLevel() == 0
+			|| estimate.stalled
 			|| estimate.unreliable
 			|| estimate.bytesPerSecond <= 0) {
 			return;
@@ -1324,6 +1347,7 @@ void Reader::stopSleep() {
 
 void Reader::stopStreamingAsync() {
 	_stopStreamingAsync = true;
+	_loader->setStreamingReadRange(-1, 0);
 	setSmartStreamingBufferPressure(false);
 	_loader->setSmartStreamingPlaybackRate(0);
 	crl::on_main(this, [=] {
@@ -1364,6 +1388,7 @@ void Reader::syncSmartStreamingBufferPressure(crl::time now) {
 			std::memory_order_acquire);
 		const auto forwarded = pressure
 			&& playbackReady
+			&& (!smart || !_streamReadStalled.load(std::memory_order_acquire))
 			&& (!smart || now >= pressureLocalUntil);
 		_loader->setSmartStreamingBufferPressure(forwarded);
 		_diagnostics->pressureForwarded(pressure, forwarded);
@@ -1378,6 +1403,8 @@ void Reader::syncSmartStreamingBufferPressure(crl::time now) {
 			|| (_loader->smartStreamingPlaybackRate() > 0);
 		const auto currentForwarded = currentPressure
 			&& currentPlaybackReady
+			&& (!currentSmart
+				|| !_streamReadStalled.load(std::memory_order_acquire))
 			&& (!currentSmart || currentNow >= currentPressureLocalUntil);
 		if (currentForwarded == forwarded) {
 			return;
@@ -1510,6 +1537,7 @@ void Reader::startStreaming() {
 void Reader::continueStreamingForSoftSeek() {
 	Expects(_sleeping == nullptr);
 
+	_loader->setStreamingReadRange(-1, 0);
 	_waiting.store(nullptr, std::memory_order_release);
 	if (_cacheHelper && _cacheHelper->waiting != nullptr) {
 		QMutexLocker lock(&_cacheHelper->mutex);
@@ -1537,6 +1565,7 @@ void Reader::primeSeekPrefetch(SeekPrefetchRequest request) {
 void Reader::stopStreaming(bool stillActive) {
 	Expects(_sleeping == nullptr);
 
+	_loader->setStreamingReadRange(-1, 0);
 	_diagnostics->readStopped();
 	_stopStreamingAsync = false;
 	_waiting.store(nullptr, std::memory_order_release);
@@ -1599,6 +1628,7 @@ void Reader::stopStreaming(bool stillActive) {
 		_streamThroughputBytesPerSecond.store(0, std::memory_order_relaxed);
 		_streamLatencyMs.store(0, std::memory_order_relaxed);
 		_streamJitterMs.store(0, std::memory_order_relaxed);
+		_streamReadStalled.store(false, std::memory_order_release);
 		_smartBufferTargetLoggedMs.store(0, std::memory_order_relaxed);
 		_seekCancelGeneration.fetch_add(1, std::memory_order_release);
 		refreshLoaderPriority();
@@ -1853,9 +1883,10 @@ crl::time Reader::smartStreamingBackgroundBuffer() const {
 
 crl::time Reader::smartStreamingRecoveryBuffer() const {
 	const auto background = smartStreamingBackgroundBuffer();
+	const auto now = crl::now();
 	if (background <= 0
-		|| crl::now() >= _smartSeekRecoveryUntil.load(
-			std::memory_order_relaxed)) {
+		|| (now < _serverRecoveryUntil.load(std::memory_order_relaxed)
+			&& now >= _smartSeekRecoveryUntil.load(std::memory_order_relaxed))) {
 		return background;
 	}
 	return crl::time(SmartSeekBootstrapWaitMs(
@@ -1968,7 +1999,8 @@ bool Reader::fullInCache() const {
 Reader::FillState Reader::fill(
 		int64 offset,
 		bytes::span buffer,
-		not_null<crl::semaphore*> notify) {
+		not_null<crl::semaphore*> notify,
+		ReadMode mode) {
 	Expects(offset + buffer.size() <= size());
 	Expects(offset >= 0 && size() <= std::numeric_limits<uint32>::max());
 
@@ -2080,11 +2112,13 @@ Reader::FillState Reader::fill(
 	};
 	const auto done = [&] {
 		clearWaiting();
+		_loader->setStreamingReadRange(-1, 0);
 		_diagnostics->read(offset, buffer.size(), true, false);
 		return FillState::Success;
 	};
 	const auto failed = [&] {
 		clearWaiting();
+		_loader->setStreamingReadRange(-1, 0);
 		_diagnostics->readStopped();
 		notify->release();
 		return FillState::Failed;
@@ -2092,6 +2126,7 @@ Reader::FillState Reader::fill(
 
 	checkForSomethingMoreReceived();
 	if (_streamingError) {
+		_loader->setStreamingReadRange(-1, 0);
 		_diagnostics->readStopped();
 		return FillState::Failed;
 	}
@@ -2113,6 +2148,13 @@ Reader::FillState Reader::fill(
 		buffer.size(),
 		false,
 		lastResult == FillState::WaitingCache);
+	const auto waitingRemote = mode == ReadMode::Required
+		&& lastResult == FillState::WaitingRemote
+		&& _streamingActive.load(std::memory_order_acquire)
+		&& !_stopStreamingAsync.load(std::memory_order_acquire);
+	_loader->setStreamingReadRange(
+		waitingRemote ? offset : -1,
+		waitingRemote ? int64(buffer.size()) : 0);
 	return lastResult;
 }
 
@@ -2405,6 +2447,11 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 			floorParts,
 			std::max(floorParts, neededParts));
 	}
+	const auto readStalled = smartNonPremium
+		&& _streamReadStalled.load(std::memory_order_acquire);
+	if (readStalled) {
+		preloadParts = std::min(preloadParts, preloadMinimum);
+	}
 	// Grow the active seek keep-window with steady preload so cancelOutside
 	// does not kill next-slice catch-up after urgent is done.
 	if (seekPrefetchActive
@@ -2587,7 +2634,7 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		putToCache(std::move(result.toCache));
 	}
 	auto checkPriority = true;
-	if (!seekCriticalPhase) {
+	if (!seekCriticalPhase && !readStalled) {
 		consumePendingTailPrefetch();
 	}
 	const auto allowSoftCancel = StreamingSeekCancelEnabled()

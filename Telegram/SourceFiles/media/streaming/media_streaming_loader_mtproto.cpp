@@ -9,9 +9,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "apiwrap.h"
 #include "main/main_session.h"
+#include "media/streaming/media_streaming_debug.h"
 #include "media/streaming/media_streaming_diagnostics.h"
-#include "storage/streamed_file_downloader.h"
+#include "settings.h"
 #include "storage/cache/storage_cache_types.h"
+#include "storage/streamed_file_downloader.h"
+
+#include <algorithm>
+#include <limits>
 
 namespace Media {
 namespace Streaming {
@@ -75,6 +80,11 @@ int64 LoaderMtproto::size() const {
 void LoaderMtproto::setDiagnostics(
 		std::shared_ptr<TransferDiagnostics> diagnostics) {
 	_diagnostics = std::move(diagnostics);
+}
+
+void LoaderMtproto::setStreamingReadRange(int64 offset, int64 amount) {
+	const auto lock = std::lock_guard(_readStallMutex);
+	_readStall.setRead(offset, amount, crl::now());
 }
 
 void LoaderMtproto::load(int64 offset) {
@@ -215,6 +225,9 @@ int64 LoaderMtproto::takeNextRequestOffset() {
 		_firstRequestStart = time;
 	}
 	_stats.push_back({ .start = time, .offset = *offset });
+	if (!_statsTimer.isActive()) {
+		_statsTimer.callOnce(kCheckStatsInterval);
+	}
 	if (_diagnostics) {
 		_diagnostics->dispatched(*offset);
 	}
@@ -224,6 +237,11 @@ int64 LoaderMtproto::takeNextRequestOffset() {
 }
 
 bool LoaderMtproto::feedPart(int64 offset, const QByteArray &bytes) {
+	if (!bytes.isEmpty()) {
+		_lastStatsProgress = crl::now();
+		const auto lock = std::lock_guard(_readStallMutex);
+		_readStall.progress(offset, bytes.size(), _lastStatsProgress);
+	}
 	if (_diagnostics) {
 		_diagnostics->received(offset, bytes.size());
 	}
@@ -239,10 +257,7 @@ void LoaderMtproto::finishStats(int64 offset, int64 received) {
 			entry.end = std::max(time, entry.start + 1);
 			entry.received = received;
 			if (!_statsTimer.isActive()) {
-				const auto checkAt = std::max(
-					time + kCheckStatsInterval,
-					_firstRequestStart + kInitialStatsWait);
-				_statsTimer.callOnce(checkAt - time);
+				_statsTimer.callOnce(kCheckStatsInterval);
 			}
 			break;
 		}
@@ -253,6 +268,10 @@ void LoaderMtproto::clearStats() {
 	_statsTimer.cancel();
 	_stats.clear();
 	_firstRequestStart = 0;
+	_lastStatsProgress = 0;
+	_retryLatencyMs = 0;
+	_retryJitterMs = 0;
+	setStreamingReadRange(-1, 0);
 }
 
 void LoaderMtproto::cancelOnFail() {
@@ -348,8 +367,10 @@ void LoaderMtproto::checkStats() {
 		return entry.end && entry.end <= from;
 	});
 	if (_stats.empty()) {
+		_speedEstimate.fire({ .unreliable = true });
 		return;
 	}
+	_statsTimer.callOnce(kCheckStatsInterval);
 	// Count duration for which at least one request was in progress.
 	// This is the time we should consider for download speed.
 	// We don't count time when no requests were in progress.
@@ -358,7 +379,11 @@ void LoaderMtproto::checkStats() {
 	auto received = int64(0);
 	auto latencyTotal = int64(0);
 	auto latencyCount = 0;
+	auto activeSince = time;
 	for (const auto &entry : _stats) {
+		if (!entry.end) {
+			activeSince = std::min(activeSince, entry.start);
+		}
 		if (entry.start > durationCountedTill) {
 			durationCountedTill = entry.start;
 		}
@@ -386,24 +411,81 @@ void LoaderMtproto::checkStats() {
 					: (latency - sample);
 			}
 		}
+		const auto noProgress = time - std::max(activeSince, _lastStatsProgress);
+		const auto readStalled = [&] {
+			const auto lock = std::lock_guard(_readStallMutex);
+			return _readStall.waitingFor(time) >= ReadStallPolicy::kStallTimeout;
+		}();
+		const auto jitter = latencyCount
+			? int(std::clamp(
+				crl::time(jitterTotal / latencyCount),
+				crl::time(0),
+				crl::time(std::numeric_limits<int>::max())))
+			: 0;
+		const auto latencyMs = int(std::clamp(
+			latency,
+			crl::time(0),
+			crl::time(std::numeric_limits<int>::max())));
+		if (latencyCount) {
+			_retryLatencyMs = latencyMs;
+			_retryJitterMs = jitter;
+		}
+		checkReadRetry(time, _retryLatencyMs, _retryJitterMs);
 		_speedEstimate.fire({
 			.bytesPerSecond = int(std::clamp(
 				int64(received * 1000 / duration),
 				int64(0),
 				int64(64 * 1024 * 1024))),
-			.latencyMs = int(std::clamp(
-				latency,
+			.latencyMs = latencyMs,
+			.jitterMs = jitter,
+			.noProgressMs = int(std::clamp(
+				noProgress,
 				crl::time(0),
 				crl::time(std::numeric_limits<int>::max()))),
-			.jitterMs = latencyCount
-				? int(std::clamp(
-					crl::time(jitterTotal / latencyCount),
-					crl::time(0),
-					crl::time(std::numeric_limits<int>::max())))
-				: 0,
-			.unreliable = (received < 3 * Storage::kDownloadPartSize),
+			.unreliable = received < 3 * Storage::kDownloadPartSize
+				|| time < _firstRequestStart + kInitialStatsWait
+				|| readStalled
+				|| noProgress >= ReadStallPolicy::kStallTimeout,
+			.stalled = readStalled || noProgress >= ReadStallPolicy::kStallTimeout,
 		});
 	}
+}
+
+void LoaderMtproto::checkReadRetry(crl::time now, int latencyMs, int jitterMs) {
+	if (GetEnhancedInt(u"net_download_speed_boost"_q) != 6 || premiumSession()) {
+		return;
+	}
+	const auto lock = std::lock_guard(_readStallMutex);
+	const auto i = std::find_if(
+		_stats.begin(),
+		_stats.end(),
+		[&](const auto &entry) {
+			return !entry.end && _readStall.contains(entry.offset, kPartSize);
+		});
+	if (i == _stats.end()
+		|| !_readStall.retryReady(now, i->start, latencyMs, jitterMs)) {
+		return;
+	}
+	const auto offset = i->offset;
+	const auto requestAge = now - i->start;
+	if (!retryRequestForOffset(
+			offset,
+			ReadStallPolicy::RetryDelay(latencyMs, jitterMs))) {
+		return;
+	}
+	finishStats(offset, 0);
+	_stats.push_back({ .start = now, .offset = offset });
+	_readStall.retried(now);
+	if (_diagnostics) {
+		_diagnostics->cancelled(offset, true);
+		_diagnostics->dispatched(offset);
+	}
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: critical read retry "
+		"offset=%1 requestMs=%2 readWaitMs=%3 reader_id=%4.")
+		.arg(qlonglong(offset))
+		.arg(qlonglong(requestAge))
+		.arg(qlonglong(_readStall.waitingFor(now)))
+		.arg(qulonglong(_diagnostics ? _diagnostics->id() : 0)));
 }
 
 } // namespace Streaming

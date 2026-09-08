@@ -168,6 +168,16 @@ jobs:
             -D CMAKE_C_COMPILER_LAUNCHER=sccache ^
             -D CMAKE_CXX_COMPILER_LAUNCHER=sccache
 
+      - name: Check streaming read stall recovery
+        shell: cmd
+        run: |
+          cd /d %TBUILD%\%REPO_NAME%\out
+          cmake --build . --config Release --target test_streaming_read_stall --parallel
+          if errorlevel 1 exit /b %errorlevel%
+          if not exist "Release\test_streaming_read_stall.exe" exit /b 1
+          "Release\test_streaming_read_stall.exe"
+          exit /b %errorlevel%
+
       - name: Build Telegram (Release)
         shell: cmd
         run: |

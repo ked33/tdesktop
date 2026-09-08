@@ -8,11 +8,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/timer.h"
-#include "media/streaming/media_streaming_loader.h"
-#include "mtproto/sender.h"
 #include "data/data_file_origin.h"
+#include "media/streaming/media_streaming_loader.h"
+#include "media/streaming/media_streaming_read_stall.h"
+#include "mtproto/sender.h"
 #include "storage/download_manager_mtproto.h"
 
+#include <mutex>
 #include <vector>
 
 namespace Media {
@@ -30,6 +32,7 @@ public:
 	[[nodiscard]] Storage::Cache::Key baseCacheKey() const override;
 	[[nodiscard]] int64 size() const override;
 	void setDiagnostics(std::shared_ptr<TransferDiagnostics> diagnostics) override;
+	void setStreamingReadRange(int64 offset, int64 amount) override;
 
 	void load(int64 offset) override;
 	void cancel(int64 offset) override;
@@ -75,6 +78,7 @@ private:
 	void finishStats(int64 offset, int64 received);
 	void clearStats();
 	void checkStats();
+	void checkReadRetry(crl::time now, int latencyMs, int jitterMs);
 
 	const not_null<Storage::DownloadManagerMtproto*> _owner;
 	const int64 _size = 0;
@@ -96,6 +100,11 @@ private:
 
 	std::vector<StatsEntry> _stats;
 	crl::time _firstRequestStart = 0;
+	crl::time _lastStatsProgress = 0;
+	int _retryLatencyMs = 0;
+	int _retryJitterMs = 0;
+	ReadStallPolicy _readStall;
+	std::mutex _readStallMutex;
 	base::Timer _statsTimer;
 	rpl::lifetime _lifetime;
 
