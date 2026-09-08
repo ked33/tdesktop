@@ -54,6 +54,7 @@ public:
 
 	// Any thread.
 	[[nodiscard]] int64 size() const;
+	[[nodiscard]] std::shared_ptr<TransferDiagnostics> diagnostics() const;
 	[[nodiscard]] bool isRemoteLoader() const;
 	[[nodiscard]] bool smartStreamingEnabled() const;
 	[[nodiscard]] crl::time smartStreamingRecoveryBuffer() const;
@@ -282,6 +283,7 @@ private:
 		Storage::Cache::Key baseKey);
 
 	const std::unique_ptr<Loader> _loader;
+	const std::shared_ptr<TransferDiagnostics> _diagnostics;
 	const bool _premiumSession = true;
 	Storage::Cache::Database * const _cache = nullptr;
 

@@ -130,14 +130,15 @@ const Information &Document::info() const {
 
 void Document::play(const PlaybackOptions &options) {
 	if (_document && (_document->isVideoFile() || _document->isVideoMessage())) {
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Start document stream doc=%1 size=%2 mime=%3 mode=%4 position=%5 durationOverride=%6 speed=%7.")
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Start document stream doc=%1 size=%2 mime=%3 mode=%4 position=%5 durationOverride=%6 speed=%7 play_id=%8.")
 			.arg(qulonglong(_document->id))
 			.arg(qlonglong(_document->size))
 			.arg(_document->mimeString())
 			.arg(int(options.mode))
 			.arg(qlonglong(options.position))
 			.arg(qlonglong(options.durationOverride))
-			.arg(options.speed, 0, 'f', 2));
+			.arg(options.speed, 0, 'f', 2)
+			.arg(qulonglong(_player.diagnosticId())));
 	}
 	_player.play(options);
 	_info.audio.state.position

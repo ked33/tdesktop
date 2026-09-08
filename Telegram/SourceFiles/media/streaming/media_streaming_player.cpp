@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "media/streaming/media_streaming_boost.h"
 #include "media/streaming/media_streaming_debug.h"
+#include "media/streaming/media_streaming_diagnostics.h"
 #include "media/streaming/media_streaming_file.h"
 #include "media/streaming/media_streaming_loader.h"
 #include "media/streaming/media_streaming_audio_track.h"
@@ -99,13 +100,20 @@ Player::Player(std::shared_ptr<Reader> reader)
 }
 
 Player::Player(std::shared_ptr<FileSource> source)
-: _file(std::make_unique<File>(std::move(source)))
+: _file(std::make_unique<File>(source))
+, _diagnostics(std::make_unique<PlaybackDiagnostics>(
+	source->diagnostics(),
+	source->isRemoteLoader()))
 , _remoteLoader(_file->isRemoteLoader())
 , _renderFrameTimer([=] { renderFrameTimerFired(); }) {
 }
 
 not_null<FileDelegate*> Player::delegate() {
 	return static_cast<FileDelegate*>(this);
+}
+
+uint64 Player::diagnosticId() const {
+	return _diagnostics->id();
 }
 
 void Player::clearFrameRenderSchedule() {
@@ -171,6 +179,7 @@ void Player::renderFrame(crl::time now) {
 	}
 
 	Assert(position != kTimeUnknown);
+	_diagnostics->frameDisplayed(position, _options.waitForMarkAsShown);
 	videoPlayedTill(position);
 }
 
@@ -181,7 +190,11 @@ bool Player::markFrameShown() {
 		_nextFrameTime = kTimeUnknown;
 		_video->addTimelineDelay(crl::now() - _currentFrameTime);
 	}
-	return _video->markFrameShown();
+	const auto result = _video->markFrameShown();
+	if (result) {
+		_diagnostics->frameShown();
+	}
+	return result;
 }
 
 void Player::setLoaderPriority(int priority) {
@@ -219,6 +232,11 @@ void Player::trackPlayedTill(
 	trackReceivedTill(track, state, position);
 	if (guard && position != kTimeUnknown) {
 		state.position = position;
+		_diagnostics->sample(
+			_information,
+			_options.speed,
+			_pausedByUser,
+			_pausedByWaitingForData);
 		const auto value = _options.loop
 			? (position % computeTotalDuration())
 			: position;
@@ -238,6 +256,11 @@ void Player::trackSendReceivedTill(
 	Expects(state.duration != kTimeUnknown);
 	Expects(state.receivedTill != kTimeUnknown);
 
+	_diagnostics->sample(
+		_information,
+		_options.speed,
+		_pausedByUser,
+		_pausedByWaitingForData);
 	if (!_remoteLoader || _fullInCacheSinceStart.value_or(false)) {
 		return;
 	}
@@ -260,6 +283,7 @@ void Player::audioReceivedTill(crl::time position) {
 void Player::audioPlayedTill(crl::time position) {
 	Expects(_audio != nullptr);
 
+	_diagnostics->audioProgress(position);
 	trackPlayedTill(*_audio, _information.audio.state, position);
 }
 
@@ -634,6 +658,7 @@ void Player::provideStartInformation() {
 		fail(Error::OpenFailed);
 	} else {
 		_stage = Stage::Ready;
+		_diagnostics->ready(_information);
 		updateSmartStreamingPlaybackRate();
 		if (_seekTiming) {
 			_seekTiming->overallReadyAt = crl::now();
@@ -659,6 +684,7 @@ void Player::provideStartInformation() {
 }
 
 void Player::fail(Error error) {
+	_diagnostics->finish("error");
 	_sessionLifetime = rpl::lifetime();
 	const auto stopGuarded = crl::guard(&_sessionGuard, [=] { stop(); });
 	_lastFailure = error;
@@ -667,7 +693,11 @@ void Player::fail(Error error) {
 }
 
 uint64 Player::startTrackGeneration() {
-	return _trackGeneration.fetch_add(1, std::memory_order_acq_rel) + 1;
+	const auto result = _trackGeneration.fetch_add(
+		1,
+		std::memory_order_acq_rel) + 1;
+	_diagnostics->generation(result);
+	return result;
 }
 
 void Player::beginSeekTiming(
@@ -726,7 +756,7 @@ void Player::finishSeekTiming(SeekOutcome outcome) {
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player seek summary "
 		"gen=%1 position=%2 path=%3 outcome=%4 totalMs=%5 criticalMs=%6 "
 		"criticalWaitMs=%7 videoMs=%8 audioMs=%9 overallMs=%10 "
-		"criticalParts=%11 cacheHits=%12 staleCallbacks=%13.")
+		"criticalParts=%11 cacheHits=%12 staleCallbacks=%13 play_id=%14.")
 		.arg(qulonglong(timing.generation))
 		.arg(qlonglong(timing.position))
 		.arg(path)
@@ -743,7 +773,8 @@ void Player::finishSeekTiming(SeekOutcome outcome) {
 		.arg(qlonglong(elapsed(timing.overallReadyAt)))
 		.arg(progress.criticalParts)
 		.arg(progress.criticalCacheHits)
-		.arg(timing.staleCallbacks));
+		.arg(timing.staleCallbacks)
+		.arg(qulonglong(diagnosticId())));
 }
 
 void Player::noteStaleTrackCallback(uint64 generation) {
@@ -952,6 +983,10 @@ void Player::play(const PlaybackOptions &options) {
 	const auto notifySeek = (_stage != Stage::Uninitialized)
 		&& options.seekable
 		&& (options.position != _options.position);
+	_diagnostics->requested(
+		options,
+		(_stage != Stage::Uninitialized) && options.seekable,
+		seekStarted);
 
 	if (trySoftSeek(options, previous, seekStarted)) {
 		return;
@@ -1122,6 +1157,11 @@ void Player::stopAudio() {
 }
 
 void Player::updatePausedState() {
+	_diagnostics->sample(
+		_information,
+		_options.speed,
+		_pausedByUser,
+		_pausedByWaitingForData);
 	const auto paused = _pausedByUser || _pausedByWaitingForData;
 	if (_paused == paused) {
 		return;
@@ -1228,6 +1268,7 @@ void Player::start() {
 
 			_audioFinished = true;
 			if (!_video || _videoFinished) {
+				_diagnostics->finish("finished");
 				_updates.fire({ Finished() });
 			}
 		}, _sessionLifetime);
@@ -1242,6 +1283,7 @@ void Player::start() {
 
 			_videoFinished = true;
 			if (!_audio || _audioFinished) {
+				_diagnostics->finish("finished");
 				_updates.fire({ Finished() });
 			}
 		}, _sessionLifetime);
@@ -1256,6 +1298,7 @@ void Player::start() {
 	if (guard && _audio) {
 		if (_audioFinished) {
 			if (!_video || _videoFinished) {
+				_diagnostics->finish("finished");
 				_updates.fire({ Finished() });
 			}
 		} else {
@@ -1282,6 +1325,9 @@ void Player::checkVideoStep() {
 }
 
 void Player::stop(bool stillActive) {
+	if (!stillActive) {
+		_diagnostics->finish("stopped");
+	}
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player stop stillActive=%1 stage=%2 audio=%3 video=%4 failed=%5.")
 		.arg(stillActive ? 1 : 0)
 		.arg(int(_stage))
@@ -1358,6 +1404,11 @@ void Player::setSpeed(float64 speed) {
 	}
 	if (!EqualSpeeds(_options.speed, speed)) {
 		_options.speed = speed;
+		_diagnostics->sample(
+			_information,
+			_options.speed,
+			_pausedByUser,
+			_pausedByWaitingForData);
 		updateSmartStreamingPlaybackRate();
 		if (active()) {
 			if (_audio) {
