@@ -702,7 +702,7 @@ template <typename Stop>
 	if (stop()) {
 		return std::nullopt;
 	}
-	const auto state = source->fill(offset, buffer, notify);
+	const auto state = source->fill(offset, buffer, notify, ReadMode::Probe);
 	if (state != FileSource::FillState::Success) {
 		return std::nullopt;
 	}

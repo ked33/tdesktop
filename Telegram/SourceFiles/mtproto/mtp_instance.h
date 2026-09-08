@@ -98,6 +98,7 @@ public:
 	void ping();
 	void cancel(mtpRequestId requestId);
 	int32 state(mtpRequestId requestId); // < 0 means waiting for such count of ms
+	[[nodiscard]] bool requestIsDelayed(mtpRequestId requestId) const;
 
 	// Main thread.
 	void killSession(ShiftedDcId shiftedDcId);

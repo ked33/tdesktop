@@ -19,6 +19,11 @@ namespace Media::Streaming {
 class Reader;
 class TransferDiagnostics;
 
+enum class ReadMode {
+	Required,
+	Probe,
+};
+
 struct SeekPrefetchRange {
 	int64 offset = -1;
 	int64 amount = 0;
@@ -65,7 +70,8 @@ public:
 	[[nodiscard]] virtual FillState fill(
 		int64 offset,
 		bytes::span buffer,
-		not_null<crl::semaphore*> notify) = 0;
+		not_null<crl::semaphore*> notify,
+		ReadMode mode = ReadMode::Required) = 0;
 	virtual void prefetch(SeekPrefetchRequest) {
 	}
 	[[nodiscard]] virtual SeekPrefetchProgress seekPrefetchProgress(
