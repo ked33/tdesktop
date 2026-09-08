@@ -79,6 +79,24 @@ namespace Settings {
 
 		AddButtonWithIcon(
 			inner,
+			tr::lng_settings_video_player_prefer_original(),
+			st::settingsButtonNoIcon
+		)->toggleOn(
+			rpl::single(GetEnhancedBool(u"video_player_prefer_original"_q))
+		)->toggledChanges(
+		) | rpl::filter([=](bool toggled) {
+			return toggled
+				!= GetEnhancedBool(u"video_player_prefer_original"_q);
+		}) | rpl::on_next([=](bool toggled) {
+			SetEnhancedValue(u"video_player_prefer_original"_q, toggled);
+			EnhancedSettings::Write();
+		}, container->lifetime());
+		AddDividerText(
+			inner,
+			tr::lng_settings_video_player_prefer_original_about());
+
+		AddButtonWithIcon(
+			inner,
 			tr::lng_settings_online_playback_parameters_title(),
 			st::settingsButtonNoIcon
 		)->addClickHandler([=] {

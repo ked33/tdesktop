@@ -122,6 +122,7 @@ void LoaderMtproto::stop() {
 		}
 		cancelAllRequests();
 		_requested.clear();
+		clearStats();
 		removeFromQueue();
 	});
 }
@@ -161,6 +162,7 @@ void LoaderMtproto::cancelForSeek(int64 offset) {
 
 void LoaderMtproto::cancelForOffset(int64 offset) {
 	if (haveSentRequestForOffset(offset)) {
+		finishStats(offset, 0);
 		if (_diagnostics) {
 			_diagnostics->cancelled(offset, true);
 		}
@@ -212,7 +214,7 @@ int64 LoaderMtproto::takeNextRequestOffset() {
 	if (!_firstRequestStart) {
 		_firstRequestStart = time;
 	}
-	_stats.push_back({ .start = crl::now(), .offset = *offset });
+	_stats.push_back({ .start = time, .offset = *offset });
 	if (_diagnostics) {
 		_diagnostics->dispatched(*offset);
 	}
@@ -225,10 +227,17 @@ bool LoaderMtproto::feedPart(int64 offset, const QByteArray &bytes) {
 	if (_diagnostics) {
 		_diagnostics->received(offset, bytes.size());
 	}
+	finishStats(offset, bytes.size());
+	_parts.fire({ offset, bytes });
+	return true;
+}
+
+void LoaderMtproto::finishStats(int64 offset, int64 received) {
 	const auto time = crl::now();
 	for (auto &entry : _stats) {
-		if (entry.offset == offset && entry.start < time) {
-			entry.end = time;
+		if (entry.offset == offset && !entry.end) {
+			entry.end = std::max(time, entry.start + 1);
+			entry.received = received;
 			if (!_statsTimer.isActive()) {
 				const auto checkAt = std::max(
 					time + kCheckStatsInterval,
@@ -238,11 +247,16 @@ bool LoaderMtproto::feedPart(int64 offset, const QByteArray &bytes) {
 			break;
 		}
 	}
-	_parts.fire({ offset, bytes });
-	return true;
+}
+
+void LoaderMtproto::clearStats() {
+	_statsTimer.cancel();
+	_stats.clear();
+	_firstRequestStart = 0;
 }
 
 void LoaderMtproto::cancelOnFail() {
+	clearStats();
 	_parts.fire({ LoadedPart::kFailedOffset });
 }
 
@@ -330,24 +344,16 @@ int LoaderMtproto::smartStreamingPlaybackRate() const {
 void LoaderMtproto::checkStats() {
 	const auto time = crl::now();
 	const auto from = time - kInitialStatsWait;
-	{ // Erase all stats entries that are too old.
-		for (auto i = begin(_stats); i != end(_stats);) {
-			if (i->start >= from) {
-				break;
-			} else if (i->end && i->end < from) {
-				i = _stats.erase(i);
-			} else {
-				++i;
-			}
-		}
-	}
+	std::erase_if(_stats, [=](const StatsEntry &entry) {
+		return entry.end && entry.end <= from;
+	});
 	if (_stats.empty()) {
 		return;
 	}
 	// Count duration for which at least one request was in progress.
 	// This is the time we should consider for download speed.
 	// We don't count time when no requests were in progress.
-	auto durationCountedTill = _stats.front().start;
+	auto durationCountedTill = from;
 	auto duration = crl::time(0);
 	auto received = int64(0);
 	auto latencyTotal = int64(0);
@@ -356,13 +362,13 @@ void LoaderMtproto::checkStats() {
 		if (entry.start > durationCountedTill) {
 			durationCountedTill = entry.start;
 		}
-		const auto till = entry.end ? entry.end : time;
+		const auto till = entry.end ? std::min(entry.end, time) : time;
 		if (till > durationCountedTill) {
 			duration += (till - durationCountedTill);
 			durationCountedTill = till;
 		}
-		if (entry.end) {
-			received += Storage::kDownloadPartSize;
+		if (entry.received > 0) {
+			received += entry.received;
 			latencyTotal += std::max(entry.end - entry.start, crl::time(1));
 			++latencyCount;
 		}
@@ -373,7 +379,7 @@ void LoaderMtproto::checkStats() {
 			: crl::time(0);
 		auto jitterTotal = int64(0);
 		for (const auto &entry : _stats) {
-			if (entry.end) {
+			if (entry.received > 0) {
 				const auto sample = entry.end - entry.start;
 				jitterTotal += (sample >= latency)
 					? (sample - latency)
