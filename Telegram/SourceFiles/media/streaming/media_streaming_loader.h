@@ -9,11 +9,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "media/streaming/media_streaming_common.h"
 
+#include <memory>
+
 namespace Storage {
 class StreamedFileDownloader;
 } // namespace Storage
 
 namespace Media::Streaming {
+
+class TransferDiagnostics;
 
 struct LoadedPart {
 	int64 offset = 0;
@@ -31,6 +35,8 @@ public:
 
 	[[nodiscard]] virtual Storage::Cache::Key baseCacheKey() const = 0;
 	[[nodiscard]] virtual int64 size() const = 0;
+	virtual void setDiagnostics(std::shared_ptr<TransferDiagnostics>) {
+	}
 
 	virtual void load(int64 offset) = 0;
 	virtual void cancel(int64 offset) = 0;

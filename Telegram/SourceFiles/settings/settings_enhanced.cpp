@@ -34,6 +34,7 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #include "storage/localstorage.h"
 #include "data/data_session.h"
 #include "main/main_session.h"
+#include "media/streaming/media_streaming_diagnostics.h"
 #include "layout/layout_item_base.h"
 #include "facades.h"
 #include "styles/style_settings.h"
@@ -96,6 +97,7 @@ namespace Settings {
 				!= GetEnhancedBool("online_playback_debug_logs"));
 		}) | rpl::on_next([=](bool toggled) {
 			SetEnhancedValue("online_playback_debug_logs", toggled);
+			Media::Streaming::RefreshPlaybackDiagnosticsSettings();
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
@@ -599,6 +601,7 @@ namespace Settings {
 				return (toggled != GetEnhancedBool(key));
 			}) | rpl::on_next([=](bool toggled) {
 				SetEnhancedValue(key, toggled);
+				Media::Streaming::RefreshPlaybackDiagnosticsSettings();
 				EnhancedSettings::Write();
 			}, container->lifetime());
 		};

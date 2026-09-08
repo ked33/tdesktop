@@ -1544,6 +1544,8 @@ PRIVATE
     media/streaming/media_streaming_boost.cpp
     media/streaming/media_streaming_boost.h
     media/streaming/media_streaming_common.h
+    media/streaming/media_streaming_diagnostics.cpp
+    media/streaming/media_streaming_diagnostics.h
     media/streaming/media_streaming_document.cpp
     media/streaming/media_streaming_document.h
     media/streaming/media_streaming_file.cpp
