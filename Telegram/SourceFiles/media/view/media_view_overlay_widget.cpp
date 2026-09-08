@@ -3073,7 +3073,8 @@ void OverlayWidget::assignMediaPointer(DocumentData *document) {
 		_streamedQualityChangeFinished = false;
 		if ((_document = document)) {
 			_quality = _document->initialPlaybackVideoQuality(
-				Core::App().settings().videoQuality());
+				Core::App().settings().videoQuality(),
+				GetEnhancedBool(u"video_player_prefer_original"_q));
 			_chosenQuality = _document->chooseQuality(_message, _quality);
 			_documentMedia = _document->createMediaView();
 			_videoCover = LookupVideoCover(_document, _message);
@@ -5070,7 +5071,9 @@ bool OverlayWidget::initStreaming(const StartStreaming &startStreaming) {
 			.arg(video->inappPlaybackFailed())
 			.arg(qlonglong(video->size))
 			.arg(video->mimeString()));
-		const auto qualityReason = _quality.manual
+		const auto qualityReason = (_quality.manual && _quality.original)
+			? u"fixed_original"_q
+			: _quality.manual
 			? u"manual"_q
 			: (video == _document)
 			? u"auto_original"_q
@@ -5111,8 +5114,15 @@ bool OverlayWidget::initStreaming(const StartStreaming &startStreaming) {
 
 	_streamed->instance.switchQualityRequests(
 	) | rpl::filter([=](int quality) {
-		return !_quality.manual
-			&& _quality.height != quality;
+		const auto allowed = !_quality.manual && _quality.height != quality;
+		if (!allowed) {
+			VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: quality switch ignored "
+				"reason=%1 requestedHeight=%2 original=%3.")
+				.arg(_quality.manual ? u"fixed"_q : u"unchanged"_q)
+				.arg(quality)
+				.arg(_quality.original ? 1 : 0));
+		}
+		return allowed;
 	}) | rpl::on_next([=](int quality) {
 		const auto value = VideoQuality{
 			.manual = 0,
@@ -5896,6 +5906,13 @@ void OverlayWidget::applyVideoQuality(VideoQuality value) {
 	if (_chosenQuality == resolved) {
 		return;
 	}
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: quality switch applied "
+		"from=%1 to=%2 manual=%3 original=%4 height=%5.")
+		.arg(qulonglong((_chosenQuality ? _chosenQuality : _document)->id))
+		.arg(qulonglong(resolved->id))
+		.arg(value.manual ? 1 : 0)
+		.arg(value.original ? 1 : 0)
+		.arg(value.height));
 	_chosenQuality = resolved;
 	if (_streamed && _streamed->instance.ready()) {
 		_streamedQualityChangeFrame = currentVideoFrameImage();

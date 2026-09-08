@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_common.h"
 
 #include <memory>
+#include <utility>
 
 namespace Media::Streaming {
 
@@ -22,6 +23,15 @@ public:
 	~TransferDiagnostics();
 
 	[[nodiscard]] uint64 id() const;
+	[[nodiscard]] std::pair<int64, int64> byteTotals() const;
+	void demuxSeekStarted(uint64 generation, crl::time position);
+	void demuxPacket(
+		uint64 generation,
+		bool video,
+		crl::time position,
+		int64 offset,
+		int size,
+		bool keyframe);
 	void queued(int64 offset);
 	void dispatched(int64 offset);
 	void received(int64 offset, int64 bytes);
