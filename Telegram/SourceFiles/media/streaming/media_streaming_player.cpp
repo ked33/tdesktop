@@ -656,7 +656,16 @@ void Player::provideStartInformation() {
 		|| (!_audio && _options.mode == Mode::Audio)
 		|| (!_video && _options.mode == Mode::Video)) {
 		fail(Error::OpenFailed);
+	} else if (!_pausedByUser
+		&& _video
+		&& _remoteLoader
+		&& _file->smartStreamingEnabled()
+		&& !_fullInCacheSinceStart.value_or(false)
+		&& !bothReceivedEnough(crl::time(kSmartStartupBufferMs * _options.speed))) {
+		_waitingForStartupBuffer = true;
+		_file->setSmartStreamingBufferPressure(true);
 	} else {
+		_waitingForStartupBuffer = false;
 		_stage = Stage::Ready;
 		_diagnostics->ready(_information);
 		updateSmartStreamingPlaybackRate();
@@ -693,6 +702,7 @@ void Player::fail(Error error) {
 }
 
 uint64 Player::startTrackGeneration() {
+	_waitingForStartupBuffer = false;
 	const auto result = _trackGeneration.fetch_add(
 		1,
 		std::memory_order_acq_rel) + 1;
@@ -1129,6 +1139,7 @@ void Player::pause() {
 	_file->setSmartStreamingBufferPressure(false);
 	updateSmartStreamingPlaybackRate();
 	updatePausedState();
+	checkResumeFromWaitingForData();
 }
 
 void Player::resume() {
@@ -1225,7 +1236,9 @@ bool Player::receivedTillEnd() const {
 }
 
 void Player::checkResumeFromWaitingForData() {
-	if (_stage == Stage::Started
+	if (_stage == Stage::Initializing && _waitingForStartupBuffer) {
+		provideStartInformation();
+	} else if (_stage == Stage::Started
 		&& _pausedByWaitingForData
 		&& bothReceivedEnough(waitingForDataBuffer())) {
 		_pausedByWaitingForData = false;

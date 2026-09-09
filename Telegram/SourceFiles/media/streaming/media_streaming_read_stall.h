@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <optional>
 
 namespace Media::Streaming {
 
@@ -21,6 +22,10 @@ public:
 	void setRead(std::int64_t offset, std::int64_t amount, std::int64_t now);
 	void progress(std::int64_t offset, std::int64_t amount, std::int64_t now);
 	[[nodiscard]] bool contains(std::int64_t part, std::int64_t size) const;
+	template <typename Range>
+	[[nodiscard]] std::optional<std::int64_t> firstRequired(
+		const Range &offsets,
+		std::int64_t partSize) const;
 	[[nodiscard]] std::int64_t waitingFor(std::int64_t now) const;
 	[[nodiscard]] bool retryReady(
 		std::int64_t now,
@@ -78,6 +83,18 @@ inline bool ReadStallPolicy::contains(
 		&& size > 0
 		&& part < _till
 		&& (part >= _from || size > _from - part);
+}
+
+template <typename Range>
+std::optional<std::int64_t> ReadStallPolicy::firstRequired(
+		const Range &offsets,
+		std::int64_t partSize) const {
+	for (const auto offset : offsets) {
+		if (contains(offset, partSize)) {
+			return offset;
+		}
+	}
+	return std::nullopt;
 }
 
 inline std::int64_t ReadStallPolicy::waitingFor(std::int64_t now) const {

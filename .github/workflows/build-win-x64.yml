@@ -178,6 +178,16 @@ jobs:
           "Release\test_streaming_read_stall.exe"
           exit /b %errorlevel%
 
+      - name: Check streaming seek planning
+        shell: cmd
+        run: |
+          cd /d %TBUILD%\%REPO_NAME%\out
+          cmake --build . --config Release --target test_streaming_seek --parallel
+          if errorlevel 1 exit /b %errorlevel%
+          if not exist "Release\test_streaming_seek.exe" exit /b 1
+          "Release\test_streaming_seek.exe"
+          exit /b %errorlevel%
+
       - name: Build Telegram (Release)
         shell: cmd
         run: |

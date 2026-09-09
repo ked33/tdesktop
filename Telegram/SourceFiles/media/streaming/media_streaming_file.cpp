@@ -9,10 +9,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/algorithm.h"
 #include "ffmpeg/ffmpeg_utility.h"
+#include "media/streaming/media_streaming_boost.h"
 #include "media/streaming/media_streaming_debug.h"
 #include "media/streaming/media_streaming_diagnostics.h"
 #include "media/streaming/media_streaming_file_delegate.h"
 #include "media/streaming/media_streaming_loader.h"
+#include "media/streaming/media_streaming_mp4_seek.h"
 
 #include <QtCore/QtEndian>
 
@@ -221,6 +223,8 @@ struct Mp4SeekPoint {
 		SeekPrefetchRange,
 		SeekPrefetchRequest::kCriticalRangeLimit> criticalRanges;
 	int criticalRangeCount = 0;
+	uint64 criticalBytes = 0;
+	bool criticalLimited = false;
 };
 
 struct Mp4SeekMapResolution {
@@ -880,63 +884,6 @@ template <typename Stop>
 	return (i == begin(track.stss)) ? track.stss.front() : *(i - 1);
 }
 
-[[nodiscard]] std::optional<uint64> ComputeSampleOffset(
-		const Mp4SeekTrack &track,
-		uint32 sample) {
-	if (!sample || (sample > track.sampleCount)) {
-		return std::nullopt;
-	}
-	const auto sampleZero = uint64(sample - 1);
-	auto sampleCursor = uint64(0);
-	for (auto i = 0, count = int(track.stsc.size()); i != count; ++i) {
-		const auto &entry = track.stsc[i];
-		const auto chunkStart = uint64(entry.firstChunk - 1);
-		const auto chunkEnd = (i + 1 == count)
-			? uint64(track.chunkOffsets.size())
-			: uint64(track.stsc[i + 1].firstChunk - 1);
-		if ((chunkStart >= chunkEnd)
-			|| (chunkEnd > track.chunkOffsets.size())) {
-			return std::nullopt;
-		}
-		const auto samplesPerChunk = uint64(entry.samplesPerChunk);
-		const auto groupSamples = (chunkEnd - chunkStart) * samplesPerChunk;
-		if (sampleZero >= sampleCursor + groupSamples) {
-			sampleCursor += groupSamples;
-			continue;
-		}
-		const auto relative = sampleZero - sampleCursor;
-		const auto chunk = chunkStart + (relative / samplesPerChunk);
-		const auto insideChunk = uint32(relative % samplesPerChunk);
-		auto offset = track.chunkOffsets[chunk];
-		if (track.constantSampleSize) {
-			offset += uint64(insideChunk) * track.constantSampleSize;
-			return offset;
-		}
-		const auto firstSample = size_t(sampleZero - insideChunk);
-		if ((firstSample + insideChunk) > track.sampleSizes.size()) {
-			return std::nullopt;
-		}
-		for (auto j = uint32(0); j != insideChunk; ++j) {
-			offset += track.sampleSizes[firstSample + j];
-		}
-		return offset;
-	}
-	return std::nullopt;
-}
-
-[[nodiscard]] std::optional<uint32> SampleSize(
-		const Mp4SeekTrack &track,
-		uint32 sample) {
-	if (!sample || sample > track.sampleCount) {
-		return std::nullopt;
-	}
-	return track.constantSampleSize
-		? std::optional<uint32>(track.constantSampleSize)
-		: (size_t(sample) <= track.sampleSizes.size())
-		? std::optional<uint32>(track.sampleSizes[sample - 1])
-		: std::nullopt;
-}
-
 [[nodiscard]] std::optional<crl::time> FindSamplePosition(
 		const Mp4SeekTrack &track,
 		uint32 sample) {
@@ -964,36 +911,6 @@ template <typename Stop>
 		timeCursor += uint64(entry.sampleCount) * entry.sampleDelta;
 	}
 	return std::nullopt;
-}
-
-[[nodiscard]] std::optional<SeekPrefetchRange> ComputeSampleRange(
-		const Mp4SeekTrack &track,
-		uint32 firstSample,
-		uint32 lastSample) {
-	if (!firstSample || firstSample > lastSample) {
-		return std::nullopt;
-	}
-	const auto firstOffset = ComputeSampleOffset(track, firstSample);
-	const auto lastOffset = ComputeSampleOffset(track, lastSample);
-	const auto lastSize = SampleSize(track, lastSample);
-	if (!firstOffset
-		|| !lastOffset
-		|| !lastSize
-		|| *lastOffset < *firstOffset
-		|| *lastOffset > std::numeric_limits<uint64>::max() - *lastSize) {
-		return std::nullopt;
-	}
-	const auto end = *lastOffset + *lastSize;
-	const auto amount = end - *firstOffset;
-	if (!amount
-		|| *firstOffset > uint64(std::numeric_limits<int64>::max())
-		|| amount > uint64(std::numeric_limits<int64>::max())) {
-		return std::nullopt;
-	}
-	return SeekPrefetchRange{
-		.offset = int64(*firstOffset),
-		.amount = int64(amount),
-	};
 }
 
 [[nodiscard]] bool CacheableMp4SeekMapFailure(
@@ -1090,24 +1007,29 @@ template <typename Stop>
 		return failed(Mp4SeekMapFailure::TargetSampleInvalid);
 	}
 	const auto syncSample = FindSyncSample(track, *targetSample);
-	const auto videoRange = ComputeSampleRange(
+	const auto prefetchPosition = std::clamp(
+		position,
+		crl::time(0),
+		std::max(track.duration - 1, crl::time(0)));
+	const auto prefetchTill = prefetchPosition + std::min(
+		crl::time(kSmartStartupBufferMs),
+		std::max(track.duration - 1 - prefetchPosition, crl::time(0)));
+	const auto lastVideoSample = FindTargetSample(track, prefetchTill);
+	const auto videoRanges = ComputeMp4SampleRanges(
 		track,
 		syncSample,
-		*targetSample);
-	if (!videoRange) {
+		lastVideoSample.value_or(*targetSample),
+		fileSize);
+	if (!videoRanges || !videoRanges->count) {
 		return failed(Mp4SeekMapFailure::SampleOffsetInvalid);
-	} else if (videoRange->offset >= source->size()
-		|| videoRange->amount > source->size() - videoRange->offset) {
-		return failed(Mp4SeekMapFailure::SampleOffsetOutOfRange);
 	}
 	auto point = Mp4SeekPoint{
 		.duration = track.duration,
 		.targetSample = *targetSample,
 		.syncSample = syncSample,
-		.sampleOffset = videoRange->offset,
+		.sampleOffset = int64(videoRanges->ranges[0].offset),
 	};
-	point.criticalRanges[0] = *videoRange;
-	point.criticalRangeCount = 1;
+	auto audioRanges = std::optional<Mp4SeekRanges>();
 	if (cache->audioTrack) {
 		const auto &audio = *cache->audioTrack;
 		const auto syncPosition = FindSamplePosition(track, syncSample);
@@ -1115,21 +1037,41 @@ template <typename Stop>
 			? FindTargetSample(audio, *syncPosition)
 			: std::nullopt;
 		const auto targetAudioSample = FindTargetSample(audio, position);
-		if (firstAudioSample && targetAudioSample) {
-			const auto audioRange = ComputeSampleRange(
+		const auto lastAudioSample = FindTargetSample(audio, prefetchTill);
+		if (firstAudioSample && targetAudioSample && lastAudioSample) {
+			audioRanges = ComputeMp4SampleRanges(
 				audio,
-				std::min(*firstAudioSample, *targetAudioSample),
-				std::max(*firstAudioSample, *targetAudioSample));
-			if (audioRange
-				&& audioRange->offset < source->size()
-				&& audioRange->amount
-					<= source->size() - audioRange->offset) {
+				std::min(*firstAudioSample, *lastAudioSample),
+				std::max(*firstAudioSample, *lastAudioSample),
+				fileSize);
+			if (audioRanges && audioRanges->count) {
 				point.audioTargetSample = *targetAudioSample;
-				point.audioSampleOffset = audioRange->offset;
-				point.criticalRanges[point.criticalRangeCount++] = *audioRange;
+				point.audioSampleOffset = int64(audioRanges->ranges[0].offset);
 			}
 		}
 	}
+	static_assert(SeekPrefetchRequest::kCriticalRangeLimit
+		>= 2 * Mp4SeekRanges::kRangeLimit);
+	for (auto i = 0; i != Mp4SeekRanges::kRangeLimit; ++i) {
+		if (i < videoRanges->count) {
+			const auto &range = videoRanges->ranges[i];
+			point.criticalRanges[point.criticalRangeCount++] = {
+				.offset = int64(range.offset),
+				.amount = int64(range.amount),
+			};
+		}
+		if (audioRanges && i < audioRanges->count) {
+			const auto &range = audioRanges->ranges[i];
+			point.criticalRanges[point.criticalRangeCount++] = {
+				.offset = int64(range.offset),
+				.amount = int64(range.amount),
+			};
+		}
+	}
+	point.criticalBytes = videoRanges->bytes
+		+ (audioRanges ? audioRanges->bytes : 0);
+	point.criticalLimited = videoRanges->limited
+		|| (audioRanges && audioRanges->limited);
 	result.point = std::move(point);
 	return result;
 }
@@ -1872,7 +1814,8 @@ void File::Context::seekToPosition(
 			"target=%1 duration=%2 sample=%3 sync=%4 sampleOffset=%5 "
 			"adjustedOffset=%6 explicit=%7 moovOffset=%8 moovSize=%9 "
 			"audioSample=%10 audioOffset=%11 criticalRanges=%12 tail=%13 "
-			"fragmented=%14 cache=%15 mapMs=%16.")
+			"fragmented=%14 cache=%15 mapMs=%16 "
+			"criticalBytes=%17 criticalLimited=%18.")
 			.arg(qlonglong(position))
 			.arg(qlonglong(point.duration))
 			.arg(point.targetSample)
@@ -1888,7 +1831,9 @@ void File::Context::seekToPosition(
 			.arg(tailMoov ? 1 : 0)
 			.arg(resolved.diagnostic.fragmented ? 1 : 0)
 			.arg(resolved.cacheHit ? u"hit"_q : u"miss"_q)
-			.arg(qlonglong(resolved.buildDuration)));
+			.arg(qlonglong(resolved.buildDuration))
+			.arg(qulonglong(point.criticalBytes))
+			.arg(point.criticalLimited ? 1 : 0));
 		if (!tryByteSeek(adjustedOffset, "byte-map")) {
 			return false;
 		}
