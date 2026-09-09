@@ -80,6 +80,8 @@ public:
 		return {};
 	}
 	[[nodiscard]] virtual std::optional<Error> streamingError() const = 0;
+	virtual void setHeaderReadRange(int64, int64) {
+	}
 	virtual void headerDone() = 0;
 	[[nodiscard]] virtual int headerSize() const = 0;
 	[[nodiscard]] virtual bool fullInCache() const = 0;

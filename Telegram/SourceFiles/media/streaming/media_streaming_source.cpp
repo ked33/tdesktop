@@ -69,6 +69,10 @@ public:
 		return _reader->streamingError();
 	}
 
+	void setHeaderReadRange(int64 offset, int64 amount) override {
+		_reader->setHeaderReadRange(offset, amount);
+	}
+
 	void headerDone() override {
 		_reader->headerDone();
 	}
