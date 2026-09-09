@@ -197,6 +197,7 @@ private:
 
 		[[nodiscard]] QByteArray partForDownloader(uint32 offset) const;
 		[[nodiscard]] bool hasPart(uint32 offset) const;
+		[[nodiscard]] int prepareCacheForPart(uint32 offset);
 		[[nodiscard]] bool readCacheForDownloaderRequired(uint32 offset);
 
 	private:
@@ -266,7 +267,10 @@ private:
 
 	bool checkForSomethingMoreReceived();
 
-	FillState fillFromSlices(uint32 offset, bytes::span buffer);
+	FillState fillFromSlices(
+		uint32 offset,
+		bytes::span buffer,
+		ReadMode mode);
 
 	void finalizeCache();
 

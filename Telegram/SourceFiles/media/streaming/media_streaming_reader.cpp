@@ -850,6 +850,25 @@ bool Reader::Slices::waitingForHeaderCache() const {
 	return (_header.flags & Slice::Flag::LoadingFromCache);
 }
 
+int Reader::Slices::prepareCacheForPart(uint32 offset) {
+	Expects(offset < _size);
+
+	if (_headerMode == HeaderMode::NoCache
+		|| _headerMode == HeaderMode::Unknown
+		|| isFullInHeader()) {
+		return 0;
+	}
+	const auto index = offset / kInSlice;
+	auto &slice = _data[index];
+	if (slice.flags & Slice::Flag::LoadedFromCache) {
+		return 0;
+	} else if (slice.flags & Slice::Flag::LoadingFromCache) {
+		return -1;
+	}
+	slice.flags |= Slice::Flag::LoadingFromCache;
+	return int(index + 1);
+}
+
 bool Reader::Slices::readCacheForDownloaderRequired(uint32 offset) {
 	Expects(offset < _size);
 	Expects(!waitingForHeaderCache());
@@ -2133,7 +2152,7 @@ Reader::FillState Reader::fill(
 
 	auto lastResult = FillState();
 	do {
-		lastResult = fillFromSlices(uint32(offset), buffer);
+		lastResult = fillFromSlices(uint32(offset), buffer, mode);
 		if (lastResult == FillState::Success) {
 			return done();
 		}
@@ -2270,7 +2289,10 @@ SeekPrefetchProgress Reader::seekPrefetchProgress(uint64 generation) const {
 	};
 }
 
-Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
+Reader::FillState Reader::fillFromSlices(
+		uint32 offset,
+		bytes::span buffer,
+		ReadMode mode) {
 	using namespace rpl::mappers;
 
 	consumePendingSeekPrefetch();
@@ -2573,23 +2595,14 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 			.arg(serverRequests)
 			.arg(serverState.penalty));
 	}
-	const auto activeCriticalLoads = seekCriticalPhase
-		? topUpSeekCriticalLoads(requestsLimit)
-		: 0;
-	const auto regularRequestLimit = seekCriticalPhase
-		? std::max(0, requestsLimit - activeCriticalLoads)
-		: requestsLimit;
 	_diagnostics->policy(preloadParts, requestsLimit, smartPlaybackRate);
 	auto result = _slices.fill(
 		offset,
 		buffer,
-		preloadParts,
-		regularRequestLimit);
-	auto remoteRequests = 0;
-	for (const auto requestOffset : result.offsetsFromLoader.values()) {
-		(void)requestOffset;
-		++remoteRequests;
-	}
+		(seekCriticalPhase || readStalled) ? 0 : preloadParts,
+		requestsLimit);
+	const auto remoteRequests = int(ranges::distance(
+		result.offsetsFromLoader.values()));
 	if (result.state != FillState::Success) {
 		VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader fill waiting offset=%1 buffer=%2 state=%3 boost=%4 preloadBase=%5 preload=%6 limitBase=%7 limit=%8 adaptivePreload=%9 adaptiveLimit=%10 playbackBps=%11 remoteRequests=%12 loadingActive=%13 headerBytes=%14 size=%15.")
 			.arg(qulonglong(offset))
@@ -2619,6 +2632,13 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 		_streamingError = Error::NotStreamable;
 		return FillState::Failed;
 	}
+	const auto waitingRemote = mode == ReadMode::Required
+		&& result.state == FillState::WaitingRemote
+		&& _streamingActive.load(std::memory_order_acquire)
+		&& !_stopStreamingAsync.load(std::memory_order_acquire);
+	_loader->setStreamingReadRange(
+		waitingRemote ? int64(offset) : -1,
+		waitingRemote ? int64(buffer.size()) : 0);
 
 	for (const auto sliceNumber : result.sliceNumbersFromCache.values()) {
 		readFromCache(sliceNumber);
@@ -2681,13 +2701,45 @@ Reader::FillState Reader::fillFromSlices(uint32 offset, bytes::span buffer) {
 			}
 		}
 	}
-	for (const auto offset : result.offsetsFromLoader.values()) {
+	auto loading = smartNonPremium
+		? _loadingOffsets.valuesInRange(0, std::numeric_limits<int64>::max())
+		: base::flat_set<int64>();
+	auto activeLoads = int(loading.size());
+	const auto readTill = int64(offset) + int64(buffer.size());
+	auto firstMissing = int64(-1);
+	auto missingParts = 0;
+	for (const auto part : result.offsetsFromLoader.values()) {
+		const auto required = mode == ReadMode::Required
+			&& int64(part) < readTill
+			&& int64(part) + kPartSize > offset;
+		if (required) {
+			if (firstMissing < 0) {
+				firstMissing = part;
+			}
+			++missingParts;
+		} else if (smartNonPremium
+			&& (seekCriticalPhase
+				|| readStalled
+				|| activeLoads >= requestsLimit)) {
+			continue;
+		}
 		if (checkPriority) {
-			checkLoadWillBeFirst(offset);
+			checkLoadWillBeFirst(part);
 			checkPriority = false;
 		}
-		loadAtOffset(offset);
+		loadAtOffset(part);
+		if (smartNonPremium && loading.emplace(part).second) {
+			++activeLoads;
+		}
 	}
+	if (seekCriticalPhase && !readStalled) {
+		activeLoads = topUpSeekCriticalLoads(requestsLimit);
+	}
+	_diagnostics->readPlan(
+		firstMissing,
+		missingParts,
+		seekCriticalPhase ? int(_seekPrefetchCriticalParts.size()) : 0,
+		smartNonPremium ? std::max(0, requestsLimit - activeLoads) : 0);
 	return result.state;
 }
 
@@ -2736,17 +2788,21 @@ int Reader::topUpSeekCriticalLoads(int requestLimit) {
 		return active;
 	}
 	auto requested = 0;
-	auto priorityChecked = false;
 	for (const auto part : _seekPrefetchCriticalOrder) {
 		if (active >= limit) {
 			break;
 		}
-		if (_slices.hasPart(uint32(part)) || loading.contains(part)) {
+		if (!_seekPrefetchCriticalParts.contains(part)
+			|| _slices.hasPart(uint32(part))
+			|| loading.contains(part)) {
 			continue;
 		}
-		if (!priorityChecked) {
-			checkLoadWillBeFirst(uint32(part));
-			priorityChecked = true;
+		const auto cacheSlice = _slices.prepareCacheForPart(uint32(part));
+		if (cacheSlice) {
+			if (cacheSlice > 0) {
+				readFromCache(cacheSlice);
+			}
+			continue;
 		}
 		if (_loadingOffsets.add(part)) {
 			_loader->load(part);
@@ -2767,17 +2823,18 @@ int Reader::topUpSeekCriticalLoads(int requestLimit) {
 
 bool Reader::updateSeekPrefetchCriticalProgress() {
 	if (_seekPrefetchBackgroundActive
-		|| _seekPrefetchCriticalParts.empty()) {
+		|| _seekPrefetchCriticalOrder.empty()) {
 		return _seekPrefetchBackgroundActive;
 	}
-	auto hits = 0;
-	for (const auto part : _seekPrefetchCriticalParts) {
-		if (_slices.hasPart(uint32(part))) {
-			++hits;
+	for (auto i = _seekPrefetchCriticalParts.begin()
+		; i != _seekPrefetchCriticalParts.end();) {
+		if (_slices.hasPart(uint32(*i))) {
+			i = _seekPrefetchCriticalParts.erase(i);
+		} else {
+			++i;
 		}
 	}
-	const auto partCount = int(_seekPrefetchCriticalParts.size());
-	if (hits != partCount) {
+	if (!_seekPrefetchCriticalParts.empty()) {
 		return false;
 	}
 	_seekPrefetchBackgroundActive = true;
@@ -2787,7 +2844,7 @@ bool Reader::updateSeekPrefetchCriticalProgress() {
 		"phase=background generation=%1 criticalParts=%2 criticalMs=%3 "
 		"windowStart=%4 windowTill=%5.")
 		.arg(qulonglong(_seekPrefetchActiveGeneration))
-		.arg(partCount)
+		.arg(_seekPrefetchCriticalPartCount.load(std::memory_order_relaxed))
 		.arg(qlonglong(std::max(
 			crl::time(0),
 			readyAt - _seekPrefetchProgressRequestedAt.load(
@@ -3030,9 +3087,12 @@ void Reader::consumePendingSeekPrefetch() {
 	for (auto i = 0; i != validCriticalRanges; ++i) {
 		criticalCursors[i] = criticalWindows[i].first;
 	}
-	while (true) {
+	while (criticalParts.size() < SeekPrefetchRequest::kCriticalPartLimit) {
 		auto added = false;
-		for (auto i = 0; i != validCriticalRanges; ++i) {
+		for (auto i = 0
+			; i != validCriticalRanges
+				&& criticalParts.size() < SeekPrefetchRequest::kCriticalPartLimit
+			; ++i) {
 			auto &cursor = criticalCursors[i];
 			if (cursor >= criticalWindows[i].second) {
 				continue;
@@ -3058,7 +3118,7 @@ void Reader::consumePendingSeekPrefetch() {
 		std::memory_order_relaxed);
 	const auto sameWindow = (_seekPrefetchWindowStart == windowStart)
 		&& (_seekPrefetchWindowTill == windowTill)
-		&& (_seekPrefetchCriticalParts == criticalParts);
+		&& (_seekPrefetchCriticalOrder == criticalOrder);
 	_seekPrefetchWindowStart = windowStart;
 	_seekPrefetchWindowTill = windowTill;
 	_seekPrefetchCriticalParts = std::move(criticalParts);
@@ -3106,7 +3166,7 @@ void Reader::consumePendingSeekPrefetch() {
 	const auto targetParts = int(
 		(windowTill - windowStart + kPartSize - 1) / kPartSize);
 	const auto targetHits = countWindowHits(windowStart, windowTill);
-	VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Reader seek prefetch window "
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader seek prefetch window "
 		"start=%1 bytes=%2 targetBytes=%3 targetParts=%4 cacheHits=%5 "
 		"criticalRanges=%6 criticalParts=%7 criticalHits=%8 phase=%9 "
 		"playback=%10 size=%11 boost=%12 bufferMs=%13 recovering=%14 "
@@ -3117,7 +3177,7 @@ void Reader::consumePendingSeekPrefetch() {
 		.arg(targetParts)
 		.arg(targetHits)
 		.arg(validCriticalRanges)
-		.arg(int(_seekPrefetchCriticalParts.size()))
+		.arg(_seekPrefetchCriticalPartCount.load(std::memory_order_relaxed))
 		.arg(criticalHits)
 		.arg(_seekPrefetchBackgroundActive
 			? u"background"_q

@@ -168,6 +168,34 @@ def test_source_structure() -> None:
 	player_h = (ROOT / "media_streaming_player.h").read_text(encoding="utf-8")
 	boost = (ROOT / "media_streaming_boost.cpp").read_text(encoding="utf-8")
 	boost_h = (ROOT / "media_streaming_boost.h").read_text(encoding="utf-8")
+	loader = (ROOT / "media_streaming_loader_mtproto.cpp").read_text(encoding="utf-8")
+	mp4_seek = (ROOT / "media_streaming_mp4_seek.h").read_text(encoding="utf-8")
+	source_h = (ROOT / "media_streaming_source.h").read_text(encoding="utf-8")
+	diagnostics = (ROOT / "media_streaming_diagnostics.cpp").read_text(encoding="utf-8")
+	fill = reader[
+		reader.index("Reader::FillState Reader::fillFromSlices("):
+		reader.index("void Reader::cancelLoadInRange(")
+	]
+	critical_loads = reader[
+		reader.index("int Reader::topUpSeekCriticalLoads("):
+		reader.index("bool Reader::updateSeekPrefetchCriticalProgress()")
+	]
+	provide_start = player[
+		player.index("void Player::provideStartInformation() {"):
+		player.index("void Player::fail(Error error)")
+	]
+	resume_waiting = player[
+		player.index("void Player::checkResumeFromWaitingForData() {"):
+		player.index("void Player::start() {")
+	]
+	start_generation = player[
+		player.index("uint64 Player::startTrackGeneration() {"):
+		player.index("void Player::beginSeekTiming(")
+	]
+	pause = player[
+		player.index("void Player::pause() {"):
+		player.index("void Player::resume() {")
+	]
 	read_source_bytes = file[
 		file.index("[[nodiscard]] std::optional<QByteArray> ReadSourceBytes("):
 		file.index("[[nodiscard]] Mp4SeekMapBuildResult BuildMp4SeekTrack(")
@@ -227,9 +255,60 @@ def test_source_structure() -> None:
 			"seek prefetch publishes one locked request snapshot",
 		),
 		(
-			"regularRequestLimit" in reader
-			and "requestsLimit - activeCriticalLoads" in reader,
-			"critical and regular loads share one request budget",
+			fill.index("_slices.fill(")
+			< fill.index("loadAtOffset(part);")
+			< fill.index("topUpSeekCriticalLoads(requestsLimit)")
+			and "activeLoads >= requestsLimit" in fill
+			and "active >= limit" in critical_loads,
+			"actual reads precede speculative loads within the dispatch budget",
+		),
+		(
+			"mode == ReadMode::Required" in fill
+			and "_readStall.firstRequired(" in loader
+			and "required && _requested.remove(*required)" in loader,
+			"dispatch selects the current blocking read before speculative offsets",
+		),
+		(
+			"prepareCacheForPart" in critical_loads
+			and "readFromCache(cacheSlice);" in critical_loads
+			and "_seekPrefetchCriticalParts.erase(i)" in reader
+			and "!_seekPrefetchCriticalParts.contains(part)" in critical_loads,
+			"critical prefetch consults cache and retires received parts",
+		),
+		(
+			"ComputeMp4SampleRanges(" in file
+			and "ComputeSampleRange(" not in file
+			and "chunkOffsets[chunk]" in mp4_seek
+			and "kByteLimit" in mp4_seek
+			and "kCriticalPartLimit = 128" in source_h
+			and "criticalParts.size() < SeekPrefetchRequest::kCriticalPartLimit"
+			in reader,
+			"MP4 predictions preserve chunk gaps and bound speculative bytes",
+		),
+		(
+			"_file->smartStreamingEnabled()" in provide_start
+			and "_fullInCacheSinceStart.value_or(false)" in provide_start
+			and "bothReceivedEnough(crl::time(kSmartStartupBufferMs * _options.speed))"
+			in provide_start
+			and "_stage == Stage::Initializing" in resume_waiting
+			and "provideStartInformation();" in resume_waiting,
+			"Smart startup waits for both tracks and rechecks arriving packets",
+		),
+		(
+			"&& _waitingForStartupBuffer" in resume_waiting
+			and "_waitingForStartupBuffer = true;" in provide_start
+			and "_waitingForStartupBuffer = false;" in provide_start
+			and "_waitingForStartupBuffer = false;" in start_generation
+			and "checkResumeFromWaitingForData();" in pause,
+			"startup rechecks stay armed only for ready tracks of the current play",
+		),
+		(
+			all(key in diagnostics for key in (
+				"read_missing_offset", "read_missing_parts", "read_queued",
+				"read_sent", "read_oldest_ms", "critical_pending_parts",
+				"prefetch_slots",
+			)),
+			"sparse snapshots distinguish unscheduled and in-flight blockers",
 		),
 		(
 			"audioTrack" in file

@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/streaming/media_streaming_read_stall.h"
 
+#include <array>
 #include <cstdlib>
 #include <iostream>
 #include <limits>
@@ -72,6 +73,37 @@ void CheckProgress() {
 	policy.retried(7500);
 	policy.progress(2000, 1000, 8000);
 	Check(!policy.retryReady(30000, 0, 0, 0), "progress does not reset retry budget");
+}
+
+void CheckDispatchPriority() {
+	constexpr auto kPart = std::int64_t(131072);
+	auto policy = ReadStallPolicy();
+	const auto queued = std::array<std::int64_t, 4>{
+		0, kPart, 100 * kPart, 101 * kPart,
+	};
+	Check(!policy.firstRequired(queued, kPart), "idle queue keeps normal priority");
+	policy.setRead(100 * kPart + 100, 200, 0);
+	Check(
+		policy.firstRequired(queued, kPart) == 100 * kPart,
+		"current read wins over earlier speculative offsets immediately");
+	policy.setRead(101 * kPart - 20, 40, 0);
+	Check(
+		policy.firstRequired(queued, kPart) == 100 * kPart,
+		"cross-part read schedules its first missing part");
+	const auto remaining = std::array<std::int64_t, 3>{ 0, kPart, 101 * kPart };
+	Check(
+		policy.firstRequired(remaining, kPart) == 101 * kPart,
+		"cross-part read schedules remaining hole ahead of prefetch");
+	policy.setRead(kPart + 20, 100, 500);
+	Check(
+		policy.firstRequired(queued, kPart) == kPart,
+		"new seek immediately replaces old read priority");
+	policy.setRead(200 * kPart, 100, 1000);
+	Check(
+		!policy.firstRequired(queued, kPart),
+		"unscheduled blocker is distinct from a slow request");
+	policy.setRead(-1, 0, 1000);
+	Check(!policy.firstRequired(queued, kPart), "stop releases read priority");
 }
 
 void CheckBudgetAcrossSeeks() {
@@ -157,6 +189,7 @@ void CheckBoundaries() {
 int main() {
 	CheckRequiredRange();
 	CheckProgress();
+	CheckDispatchPriority();
 	CheckBudgetAcrossSeeks();
 	CheckRollingBudget();
 	CheckBoundaries();

@@ -30,7 +30,8 @@ struct SeekPrefetchRange {
 };
 
 struct SeekPrefetchRequest {
-	static constexpr auto kCriticalRangeLimit = 2;
+	static constexpr auto kCriticalRangeLimit = 64;
+	static constexpr auto kCriticalPartLimit = 128;
 
 	uint64 generation = 0;
 	int64 offset = -1;

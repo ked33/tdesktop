@@ -83,3 +83,18 @@ PRIVATE
 set_target_properties(test_streaming_read_stall PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 add_dependencies(Telegram test_streaming_read_stall)
+
+add_executable(test_streaming_seek)
+init_target(test_streaming_seek "(tests)")
+
+target_include_directories(test_streaming_seek PRIVATE ${src_loc})
+
+nice_target_sources(test_streaming_seek ${src_loc}
+PRIVATE
+    media/streaming/media_streaming_mp4_seek.h
+    test/test_streaming_seek.cpp
+)
+
+set_target_properties(test_streaming_seek PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
+add_dependencies(Telegram test_streaming_seek)
