@@ -1543,6 +1543,7 @@ PRIVATE
     media/streaming/media_streaming_audio_track.h
     media/streaming/media_streaming_boost.cpp
     media/streaming/media_streaming_boost.h
+    media/streaming/media_streaming_cache.h
     media/streaming/media_streaming_common.h
     media/streaming/media_streaming_diagnostics.cpp
     media/streaming/media_streaming_diagnostics.h

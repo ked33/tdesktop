@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_reader.h"
 
 #include "media/streaming/media_streaming_boost.h"
+#include "media/streaming/media_streaming_cache.h"
 #include "media/streaming/media_streaming_common.h"
 #include "media/streaming/media_streaming_debug.h"
 #include "media/streaming/media_streaming_diagnostics.h"
@@ -27,6 +28,7 @@ constexpr auto kMaxPartsInHeader = 64;
 constexpr auto kMaxOnlyInHeader = 80 * kPartSize;
 constexpr auto kPartsOutsideFirstSliceGood = 8;
 constexpr auto kSlicesInMemory = 2;
+constexpr auto kSmartSlicesInMemory = 4;
 constexpr auto kSmartPreloadRecoveryFullDuration
 	= 15 * crl::time(1000);
 constexpr auto kSmartPreloadRecoveryTaperDuration
@@ -575,6 +577,24 @@ void Reader::Slices::processCacheResult(int sliceNumber, PartsMap &&result) {
 	}
 }
 
+void Reader::Slices::restoreHeaderParts(int sliceIndex) {
+	auto &slice = _data[sliceIndex];
+	auto restored = false;
+	CachePolicy::RestoreHeaderParts(
+		_header.parts,
+		uint32(sliceIndex) * kInSlice,
+		kInSlice,
+		[&](uint32 offset, const QByteArray &part) {
+			if (!slice.parts.contains(offset)) {
+				slice.addPart(offset, base::duplicate(part));
+				restored = true;
+			}
+		});
+	if (restored && (slice.flags & Slice::Flag::LoadedFromCache)) {
+		checkSliceFullLoaded(sliceIndex + 1);
+	}
+}
+
 void Reader::Slices::processCachedSizes(const std::vector<int> &sizes) {
 	Expects(sizes.size() == _data.size());
 
@@ -655,11 +675,12 @@ void Reader::Slices::processPart(
 	checkSliceFullLoaded(index + 1);
 }
 
-auto Reader::Slices::fill(
+Reader::FillResult Reader::Slices::fill(
 		uint32 offset,
 		bytes::span buffer,
 		int preloadParts,
-		int requestsLimit) -> FillResult {
+		int requestsLimit,
+		int maxSlicesInMemory) {
 	Expects(!buffer.empty());
 	Expects(offset < _size);
 	Expects(offset + buffer.size() <= _size);
@@ -729,27 +750,31 @@ auto Reader::Slices::fill(
 	const auto secondTill = (till > (fromSlice + 1) * kInSlice)
 		? (till - (fromSlice + 1) * kInSlice)
 		: 0;
-	// When preload needs more than the remainder of the current 8MB slice,
-	// also schedule the next slice. Read readiness still only depends on
-	// slices covered by the actual buffer span.
-	const auto remainingFirstParts = std::max(
-		1,
-		int((kInSlice - firstFrom + kPartSize - 1) / kPartSize));
-	const auto wantNextPreload = (preloadParts > remainingFirstParts)
+	const auto preload = CachePolicy::SplitPreload(
+		firstTill,
+		secondTill > 0,
+		kInSlice,
+		kPartSize,
+		preloadParts);
+	const auto wantNextPreload = (preload.second > 0)
 		&& (fromSlice + 1 < uint32(_data.size()));
 	const auto useSecondSlice = (readTillSlice > fromSlice + 1)
 		|| wantNextPreload;
+	restoreHeaderParts(fromSlice);
+	if (useSecondSlice) {
+		restoreHeaderParts(fromSlice + 1);
+	}
 	const auto first = _data[fromSlice].prepareFill(
 		firstFrom,
 		firstTill,
-		preloadParts,
+		preload.first,
 		requestsLimit);
 	const auto second = useSecondSlice
 		? _data[fromSlice + 1].prepareFill(
 			secondFrom,
 			// till=0 still issues forward preload requests inside the slice.
 			secondTill,
-			preloadParts,
+			preload.second,
 			requestsLimit)
 		: Slice::PrepareFillResult();
 	handlePrepareResult(fromSlice, first);
@@ -778,7 +803,7 @@ auto Reader::Slices::fill(
 				secondTill);
 			addToHeader(fromSlice + 1, list);
 		}
-		result.toCache = serializeAndUnloadUnused();
+		result.toCache = serializeAndUnloadUnused(maxSlicesInMemory);
 		result.state = FillState::Success;
 	} else {
 		handleReadFromCache(fromSlice, true);
@@ -898,11 +923,12 @@ int Reader::Slices::maxSliceSize(int sliceNumber) const {
 	return MaxSliceSize(sliceNumber, _size);
 }
 
-Reader::SerializedSlice Reader::Slices::serializeAndUnloadUnused() {
+auto Reader::Slices::serializeAndUnloadUnused(int maxSlicesInMemory)
+-> SerializedSlice {
 	using Flag = Slice::Flag;
 
 	if (_headerMode == HeaderMode::Unknown
-		|| _usedSlices.size() <= kSlicesInMemory) {
+		|| int(_usedSlices.size()) <= maxSlicesInMemory) {
 		return {};
 	}
 	const auto purgeSlice = _usedSlices.front();
@@ -2631,7 +2657,8 @@ Reader::FillState Reader::fillFromSlices(
 		offset,
 		buffer,
 		(!headerRead && (seekCriticalPhase || readStalled)) ? 0 : preloadParts,
-		requestsLimit);
+		requestsLimit,
+		smartNonPremium ? kSmartSlicesInMemory : kSlicesInMemory);
 	const auto remoteRequests = int(ranges::distance(
 		result.offsetsFromLoader.values()));
 	if (result.state != FillState::Success) {

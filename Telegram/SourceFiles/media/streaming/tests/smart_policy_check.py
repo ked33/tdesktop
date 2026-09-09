@@ -172,6 +172,10 @@ def test_source_structure() -> None:
 	mp4_seek = (ROOT / "media_streaming_mp4_seek.h").read_text(encoding="utf-8")
 	mp4_header = (ROOT / "media_streaming_mp4_header.h").read_text(encoding="utf-8")
 	startup = (ROOT / "media_streaming_startup.h").read_text(encoding="utf-8")
+	cache = (ROOT / "media_streaming_cache.h").read_text(encoding="utf-8")
+	manager = (ROOT.parent.parent / "storage" / "download_manager_mtproto.cpp").read_text(
+		encoding="utf-8"
+	)
 	source = (ROOT / "media_streaming_source.cpp").read_text(encoding="utf-8")
 	document = (ROOT / "media_streaming_document.cpp").read_text(encoding="utf-8")
 	source_h = (ROOT / "media_streaming_source.h").read_text(encoding="utf-8")
@@ -241,7 +245,19 @@ def test_source_structure() -> None:
 		player.index("void Player::stop(bool stillActive) {")
 	]
 	stop = player[player.index("void Player::stop(bool stillActive) {"):]
-	retry = loader[loader.index("void LoaderMtproto::checkReadRetry("):]
+	retry = loader[
+		loader.index("void LoaderMtproto::checkReadRetry("):
+		loader.index("bool LoaderMtproto::promoteQueuedRead(")
+	]
+	promotion = loader[loader.index("bool LoaderMtproto::promoteQueuedRead("):]
+	replacement = manager[
+		manager.index("bool DownloadMtprotoTask::replaceRequestForOffset("):
+		manager.index("void DownloadMtprotoTask::cancelRequest(")
+	]
+	slice_fill = reader[
+		reader.index("Reader::FillResult Reader::Slices::fill("):
+		reader.index("auto Reader::Slices::fillFromHeader(")
+	]
 	retry_diagnostics = diagnostics[
 		diagnostics.index("void TransferDiagnostics::retried("):
 		diagnostics.index("void TransferDiagnostics::received(")
@@ -255,6 +271,53 @@ def test_source_structure() -> None:
 		reader.index("int Reader::headerSize() const {")
 	]
 	checks = [
+		(
+			"CachePolicy::RestoreHeaderParts(" in reader
+			and slice_fill.index("restoreHeaderParts(fromSlice);")
+				< slice_fill.index("_data[fromSlice].prepareFill(")
+			and slice_fill.index("restoreHeaderParts(fromSlice + 1);")
+				< slice_fill.index("_data[fromSlice + 1].prepareFill("),
+			"actual reads hydrate header blocks before testing data-slice readiness",
+		),
+		(
+			"CachePolicy::SplitPreload(" in slice_fill
+			and "preload.first," in slice_fill
+			and "preload.second," in slice_fill
+			and "preloadParts - first" in cache,
+			"neighboring slices share one forward-preload budget",
+		),
+		(
+			"kSlicesInMemory = 2" in reader
+			and "kSmartSlicesInMemory = 4" in reader
+			and "smartNonPremium ? kSmartSlicesInMemory : kSlicesInMemory" in fill,
+			"Smart keeps both audio and video slice pairs without changing other modes",
+		),
+		(
+			"queued && promoteQueuedRead(" in retry
+			and "if (_downloader)" in promotion
+			and "_readStall.replacementReady(" in promotion
+			and "_readStall.retried(now);" in promotion,
+			"queued blockers share the existing recovery budget and protect downloader work",
+		),
+		(
+			"_cdnDcId" in replacement
+			and "haveSentRequestForOffset(requiredOffset)" in replacement
+			and "now < state.limitedUntil" in replacement
+			and "now < state.recoveryUntil" in replacement
+			and "requestIsDelayed(requestId)" in replacement
+			and "j->second.readRetrySuppressed" in replacement
+			and replacement.index("cancelRequest(requestId);")
+				< replacement.index("makeRequest({ requiredOffset, index });"),
+			"replacement releases an existing slot and honors server and transport delays",
+		),
+		(
+			"_requested.remove(offset)" in promotion
+			and "_diagnostics->cancelled(displaced, true);" in promotion
+			and "_diagnostics->dispatched(offset);" in promotion
+			and ".offset = displaced," in promotion
+			and ".cancelled = true," in promotion,
+			"replacement retires displaced Reader loads and preserves request accounting",
+		),
 		(
 			"topUpSeekCriticalLoads" in reader
 			and "updateSeekPrefetchCriticalProgress" in reader,
