@@ -1584,6 +1584,7 @@ void Reader::primeSeekPrefetch(SeekPrefetchRequest request) {
 void Reader::stopStreaming(bool stillActive) {
 	Expects(_sleeping == nullptr);
 
+	_headerReadAhead = {};
 	_loader->setStreamingReadRange(-1, 0);
 	_diagnostics->readStopped();
 	_stopStreamingAsync = false;
@@ -2003,7 +2004,26 @@ std::optional<Error> Reader::streamingError() const {
 	return _streamingError;
 }
 
+void Reader::setHeaderReadRange(int64 offset, int64 amount) {
+	_headerReadAhead = {};
+	if (!smartStreamingEnabled()
+		|| offset < 0
+		|| offset >= size()
+		|| amount <= 0
+		|| amount > Mp4::ReadAheadRange::kMaximumSize
+		|| amount > size() - offset) {
+		return;
+	}
+	_headerReadAhead = { offset, amount };
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Reader header range "
+		"reader_id=%1 offset=%2 size=%3.")
+		.arg(qulonglong(_diagnostics->id()))
+		.arg(qlonglong(offset))
+		.arg(qlonglong(amount)));
+}
+
 void Reader::headerDone() {
+	_headerReadAhead = {};
 	_slices.headerDone(false);
 }
 
@@ -2511,6 +2531,17 @@ Reader::FillState Reader::fillFromSlices(
 		&& (underPlayback || bufferPressure)) {
 		requestsLimit = std::max(requestsLimit, smartRequestLimit);
 	}
+	const auto headerRead = smartNonPremium
+		&& mode == ReadMode::Required
+		&& !seekCriticalPhase
+		&& _headerReadAhead.intersects(offset, buffer.size());
+	if (headerRead) {
+		preloadParts = _headerReadAhead.preloadParts(
+			offset,
+			buffer.size(),
+			kPartSize,
+			requestsLimit);
+	}
 	const auto serverPhase = serverLimited
 		? 1
 		: (serverRecovering ? 2 : 0);
@@ -2599,7 +2630,7 @@ Reader::FillState Reader::fillFromSlices(
 	auto result = _slices.fill(
 		offset,
 		buffer,
-		(seekCriticalPhase || readStalled) ? 0 : preloadParts,
+		(!headerRead && (seekCriticalPhase || readStalled)) ? 0 : preloadParts,
 		requestsLimit);
 	const auto remoteRequests = int(ranges::distance(
 		result.offsetsFromLoader.values()));
@@ -2654,12 +2685,13 @@ Reader::FillState Reader::fillFromSlices(
 		putToCache(std::move(result.toCache));
 	}
 	auto checkPriority = true;
-	if (!seekCriticalPhase && !readStalled) {
+	if (!seekCriticalPhase && !readStalled && !headerRead) {
 		consumePendingTailPrefetch();
 	}
 	const auto allowSoftCancel = StreamingSeekCancelEnabled()
 		&& !_loadingOffsets.empty()
-		&& !seekCriticalPhase;
+		&& !seekCriticalPhase
+		&& !headerRead;
 	if (allowSoftCancel) {
 		auto minOff = std::numeric_limits<uint32>::max();
 		auto maxOff = uint32(0);
@@ -2717,9 +2749,11 @@ Reader::FillState Reader::fillFromSlices(
 				firstMissing = part;
 			}
 			++missingParts;
+		} else if (headerRead && !_headerReadAhead.intersects(part, kPartSize)) {
+			continue;
 		} else if (smartNonPremium
 			&& (seekCriticalPhase
-				|| readStalled
+				|| (readStalled && !headerRead)
 				|| activeLoads >= requestsLimit)) {
 			continue;
 		}

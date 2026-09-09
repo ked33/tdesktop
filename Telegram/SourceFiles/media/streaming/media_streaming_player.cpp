@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_diagnostics.h"
 #include "media/streaming/media_streaming_file.h"
 #include "media/streaming/media_streaming_loader.h"
+#include "media/streaming/media_streaming_startup.h"
 #include "media/streaming/media_streaming_audio_track.h"
 #include "media/streaming/media_streaming_video_track.h"
 #include "media/audio/media_audio.h" // for SupportsSpeedControl()
@@ -104,6 +105,7 @@ Player::Player(std::shared_ptr<FileSource> source)
 , _diagnostics(std::make_unique<PlaybackDiagnostics>(
 	source->diagnostics(),
 	source->isRemoteLoader()))
+, _startupBufferTimer([=] { checkResumeFromWaitingForData(); })
 , _remoteLoader(_file->isRemoteLoader())
 , _renderFrameTimer([=] { renderFrameTimerFired(); }) {
 }
@@ -656,20 +658,27 @@ void Player::provideStartInformation() {
 		|| (!_audio && _options.mode == Mode::Audio)
 		|| (!_video && _options.mode == Mode::Video)) {
 		fail(Error::OpenFailed);
-	} else if (!_pausedByUser
-		&& _video
-		&& _remoteLoader
-		&& _file->smartStreamingEnabled()
-		&& !_fullInCacheSinceStart.value_or(false)
-		&& !bothReceivedEnough(crl::time(kSmartStartupBufferMs * _options.speed))) {
-		_waitingForStartupBuffer = true;
-		_file->setSmartStreamingBufferPressure(true);
 	} else {
-		_waitingForStartupBuffer = false;
+		_waitingForStartupBuffer = !_pausedByUser
+			&& _video
+			&& _remoteLoader
+			&& _file->smartStreamingEnabled()
+			&& !_fullInCacheSinceStart.value_or(false)
+			&& !bothReceivedEnough(crl::time(
+				StartupBufferPolicy::kTargetMs * _options.speed));
+		if (_waitingForStartupBuffer) {
+			_startupBufferStartedAt = crl::now();
+			_startupBufferForSeek = _seekTiming.has_value();
+			_pausedByWaitingForData = true;
+			_file->setSmartStreamingBufferPressure(true);
+			_startupBufferTimer.callOnce(
+				StartupBufferPolicy::ExtraWaitLimit(_startupBufferForSeek));
+		}
 		_stage = Stage::Ready;
+		_paused = true;
 		_diagnostics->ready(_information);
 		updateSmartStreamingPlaybackRate();
-		if (_seekTiming) {
+		if (_seekTiming && !_waitingForStartupBuffer) {
 			_seekTiming->overallReadyAt = crl::now();
 			finishSeekTiming(SeekOutcome::Ready);
 		}
@@ -683,10 +692,20 @@ void Player::provideStartInformation() {
 		auto copy = _information;
 		_information.video.cover = QImage();
 
+		const auto guard = base::make_weak(&_sessionGuard);
+		const auto generation = _trackGeneration.load(std::memory_order_acquire);
 		_updates.fire(Update{ std::move(copy) });
 
-		if (_stage == Stage::Ready && !_paused) {
-			_paused = true;
+		if (!guard
+			|| generation != _trackGeneration.load(std::memory_order_acquire)) {
+			return;
+		}
+		if (_waitingForStartupBuffer) {
+			_updates.fire({ WaitingForData{ true } });
+		}
+		if (guard
+			&& generation == _trackGeneration.load(std::memory_order_acquire)
+			&& _stage == Stage::Ready) {
 			updatePausedState();
 		}
 	}
@@ -702,7 +721,9 @@ void Player::fail(Error error) {
 }
 
 uint64 Player::startTrackGeneration() {
+	_startupBufferTimer.cancel();
 	_waitingForStartupBuffer = false;
+	_startupBufferStartedAt = 0;
 	const auto result = _trackGeneration.fetch_add(
 		1,
 		std::memory_order_acq_rel) + 1;
@@ -1236,8 +1257,45 @@ bool Player::receivedTillEnd() const {
 }
 
 void Player::checkResumeFromWaitingForData() {
-	if (_stage == Stage::Initializing && _waitingForStartupBuffer) {
-		provideStartInformation();
+	if (_stage == Stage::Ready && _waitingForStartupBuffer) {
+		const auto elapsed = crl::now() - _startupBufferStartedAt;
+		const auto required = StartupBufferPolicy::RequiredBuffer(
+			elapsed,
+			_startupBufferForSeek);
+		if (!_pausedByUser
+			&& !bothReceivedEnough(crl::time(required * _options.speed))) {
+			const auto remaining = StartupBufferPolicy::ExtraWaitLimit(
+				_startupBufferForSeek) - elapsed;
+			if (remaining > 0 && !_startupBufferTimer.isActive()) {
+				_startupBufferTimer.callOnce(remaining);
+			}
+			return;
+		}
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Player startup buffer "
+			"ready play_id=%1 seek=%2 elapsed_ms=%3 required_ms=%4 "
+			"paused=%5 audio=%6 video=%7.")
+			.arg(qulonglong(diagnosticId()))
+			.arg(_startupBufferForSeek ? 1 : 0)
+			.arg(qlonglong(elapsed))
+			.arg(qlonglong(required))
+			.arg(_pausedByUser ? 1 : 0)
+			.arg(PlaybackTrackStateDebugString(_information.audio.state))
+			.arg(PlaybackTrackStateDebugString(_information.video.state)));
+		_startupBufferTimer.cancel();
+		_waitingForStartupBuffer = false;
+		_pausedByWaitingForData = false;
+		_file->setSmartStreamingBufferPressure(false);
+		if (_seekTiming) {
+			_seekTiming->overallReadyAt = crl::now();
+			finishSeekTiming(SeekOutcome::Ready);
+		}
+		const auto guard = base::make_weak(&_sessionGuard);
+		const auto generation = _trackGeneration.load(std::memory_order_acquire);
+		updatePausedState();
+		if (guard
+			&& generation == _trackGeneration.load(std::memory_order_acquire)) {
+			_updates.fire({ WaitingForData{ _pausedByWaitingForData } });
+		}
 	} else if (_stage == Stage::Started
 		&& _pausedByWaitingForData
 		&& bothReceivedEnough(waitingForDataBuffer())) {
@@ -1252,6 +1310,7 @@ void Player::start() {
 	Expects(_stage == Stage::Ready);
 
 	_stage = Stage::Started;
+	_diagnostics->playable();
 	_file->setSmartStreamingBufferPressure(false);
 	const auto guard = base::make_weak(&_sessionGuard);
 
