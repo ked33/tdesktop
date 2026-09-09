@@ -194,7 +194,8 @@ private:
 			uint32 offset,
 			bytes::span buffer,
 			int preloadParts,
-			int requestsLimit);
+			int requestsLimit,
+			int maxSlicesInMemory);
 		[[nodiscard]] SerializedSlice unloadToCache();
 
 		[[nodiscard]] QByteArray partForDownloader(uint32 offset) const;
@@ -212,10 +213,12 @@ private:
 		};
 
 		void applyHeaderCacheData();
+		void restoreHeaderParts(int sliceIndex);
 		[[nodiscard]] int maxSliceSize(int sliceNumber) const;
 		[[nodiscard]] SerializedSlice serializeAndUnloadSlice(
 			int sliceNumber);
-		[[nodiscard]] SerializedSlice serializeAndUnloadUnused();
+		[[nodiscard]] SerializedSlice serializeAndUnloadUnused(
+			int maxSlicesInMemory);
 		[[nodiscard]] QByteArray serializeComplexSlice(
 			const Slice &slice) const;
 		[[nodiscard]] QByteArray serializeAndUnloadFirstSliceNoHeader();
