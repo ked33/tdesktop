@@ -32,6 +32,13 @@ public:
 		std::int64_t sentAt,
 		int latencyMs,
 		int jitterMs) const;
+	[[nodiscard]] bool replacementReady(
+		std::int64_t part,
+		std::int64_t size,
+		std::int64_t now,
+		std::int64_t sentAt,
+		int latencyMs,
+		int jitterMs) const;
 	void retried(std::int64_t now);
 
 private:
@@ -122,6 +129,19 @@ inline bool ReadStallPolicy::retryReady(
 		&& now - sentAt >= delay
 		&& (_lastRetryAt < 0 || now - _lastRetryAt >= kRetryCooldown)
 		&& (_previousRetryAt < 0 || now - _previousRetryAt >= kRetryWindow);
+}
+
+inline bool ReadStallPolicy::replacementReady(
+		std::int64_t part,
+		std::int64_t size,
+		std::int64_t now,
+		std::int64_t sentAt,
+		int latencyMs,
+		int jitterMs) const {
+	return part >= 0
+		&& size > 0
+		&& !contains(part, size)
+		&& retryReady(now, sentAt, latencyMs, jitterMs);
 }
 
 inline void ReadStallPolicy::retried(std::int64_t now) {

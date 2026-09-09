@@ -113,3 +113,18 @@ PRIVATE
 set_target_properties(test_streaming_startup PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 add_dependencies(Telegram test_streaming_startup)
+
+add_executable(test_streaming_cache)
+init_target(test_streaming_cache "(tests)")
+
+target_include_directories(test_streaming_cache PRIVATE ${src_loc})
+
+nice_target_sources(test_streaming_cache ${src_loc}
+PRIVATE
+    media/streaming/media_streaming_cache.h
+    test/test_streaming_cache.cpp
+)
+
+set_target_properties(test_streaming_cache PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
+add_dependencies(Telegram test_streaming_cache)

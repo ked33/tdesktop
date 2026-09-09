@@ -469,6 +469,12 @@ void LoaderMtproto::checkReadRetry(crl::time now, int latencyMs, int jitterMs) {
 		return;
 	}
 	const auto lock = std::lock_guard(_readStallMutex);
+	const auto queued = _readStall.firstRequired(
+		_requested.valuesInRange(0, size()),
+		kPartSize);
+	if (queued && promoteQueuedRead(*queued, now, latencyMs, jitterMs)) {
+		return;
+	}
 	const auto i = std::find_if(
 		_stats.begin(),
 		_stats.end(),
@@ -498,6 +504,61 @@ void LoaderMtproto::checkReadRetry(crl::time now, int latencyMs, int jitterMs) {
 		.arg(qlonglong(requestAge))
 		.arg(qlonglong(_readStall.waitingFor(now)))
 		.arg(qulonglong(_diagnostics ? _diagnostics->id() : 0)));
+}
+
+bool LoaderMtproto::promoteQueuedRead(
+		int64 offset,
+		crl::time now,
+		int latencyMs,
+		int jitterMs) {
+	if (_downloader) {
+		return false;
+	}
+	auto displaced = int64(-1);
+	auto requestAge = crl::time(0);
+	for (const auto &entry : _stats) {
+		if (entry.end
+			|| !_readStall.replacementReady(
+				entry.offset,
+				kPartSize,
+				now,
+				entry.start,
+				latencyMs,
+				jitterMs)) {
+			continue;
+		} else if (replaceRequestForOffset(
+				entry.offset,
+				offset,
+				ReadStallPolicy::RetryDelay(latencyMs, jitterMs))) {
+			displaced = entry.offset;
+			requestAge = now - entry.start;
+			break;
+		}
+	}
+	if (displaced < 0) {
+		return false;
+	}
+	const auto removed = _requested.remove(offset);
+	Ensures(removed);
+	finishStats(displaced, 0);
+	_stats.push_back({ .start = now, .offset = offset });
+	_readStall.retried(now);
+	if (_diagnostics) {
+		_diagnostics->cancelled(displaced, true);
+		_diagnostics->dispatched(offset);
+	}
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: critical read promoted "
+		"offset=%1 displaced=%2 requestMs=%3 readWaitMs=%4 reader_id=%5.")
+		.arg(qlonglong(offset))
+		.arg(qlonglong(displaced))
+		.arg(qlonglong(requestAge))
+		.arg(qlonglong(_readStall.waitingFor(now)))
+		.arg(qulonglong(_diagnostics ? _diagnostics->id() : 0)));
+	_parts.fire({
+		.offset = displaced,
+		.cancelled = true,
+	});
+	return true;
 }
 
 } // namespace Streaming

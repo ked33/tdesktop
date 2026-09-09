@@ -1460,6 +1460,42 @@ bool DownloadMtprotoTask::retryRequestForOffset(
 	return true;
 }
 
+bool DownloadMtprotoTask::replaceRequestForOffset(
+		int64 previousOffset,
+		int64 requiredOffset,
+		crl::time minimumAge) {
+	const auto now = crl::now();
+	const auto state = nonPremiumDelayState();
+	if (_cdnDcId
+		|| requiredOffset < 0
+		|| requiredOffset % kDownloadPartSize
+		|| haveSentRequestForOffset(requiredOffset)
+		|| now < state.limitedUntil
+		|| now < state.recoveryUntil) {
+		return false;
+	}
+	const auto i = _requestByOffset.find(previousOffset);
+	if (i == end(_requestByOffset)) {
+		return false;
+	}
+	const auto requestId = i->second;
+	const auto j = _sentRequests.find(requestId);
+	Assert(j != end(_sentRequests));
+	if (api().instance().requestIsDelayed(requestId)) {
+		j->second.readRetrySuppressed = true;
+	}
+	if (now - j->second.sent < minimumAge
+		|| j->second.readRetrySuppressed) {
+		return false;
+	}
+	const auto index = _owner->chooseAlternativeSessionIndex(
+		dcId(),
+		j->second.sessionIndex).value_or(j->second.sessionIndex);
+	cancelRequest(requestId);
+	makeRequest({ requiredOffset, index });
+	return true;
+}
+
 void DownloadMtprotoTask::cancelRequest(mtpRequestId requestId) {
 	const auto hashes = (_cdnHashesRequestId == requestId);
 	api().request(requestId).cancel();
