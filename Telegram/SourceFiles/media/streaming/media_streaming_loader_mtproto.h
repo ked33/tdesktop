@@ -79,6 +79,11 @@ private:
 	void clearStats();
 	void checkStats();
 	void checkReadRetry(crl::time now, int latencyMs, int jitterMs);
+	[[nodiscard]] bool promoteQueuedRead(
+		int64 offset,
+		crl::time now,
+		int latencyMs,
+		int jitterMs);
 
 	const not_null<Storage::DownloadManagerMtproto*> _owner;
 	const int64 _size = 0;

@@ -106,6 +106,50 @@ void CheckDispatchPriority() {
 	Check(!policy.firstRequired(queued, kPart), "stop releases read priority");
 }
 
+void CheckQueuedReadReplacement() {
+	constexpr auto kPart = std::int64_t(131072);
+	auto policy = ReadStallPolicy();
+	policy.setRead(100 * kPart + 100, 200, 0);
+	Check(
+		!policy.replacementReady(0, kPart, 3999, 0, 0, 0),
+		"queued read does not replace normal latency requests");
+	Check(
+		policy.replacementReady(0, kPart, 4000, 0, 0, 0),
+		"queued blocker can replace an old unrelated request");
+	Check(
+		!policy.replacementReady(0, kPart, 4000, 1, 0, 0),
+		"freshly dispatched work cannot be displaced");
+	Check(
+		!policy.replacementReady(100 * kPart, kPart, 4000, 0, 0, 0),
+		"replacement never cancels bytes needed by the current read");
+	policy.setRead(101 * kPart - 20, 40, 0);
+	Check(
+		!policy.replacementReady(101 * kPart, kPart, 4000, 0, 0, 0),
+		"both sides of a crossing read are protected");
+	Check(
+		!policy.replacementReady(-1, kPart, 4000, 0, 0, 0),
+		"invalid candidate offsets are rejected");
+	policy.retried(4000);
+	Check(
+		!policy.replacementReady(0, kPart, 50000, 0, 0, 0),
+		"only one recovery action is permitted for one blocking read");
+	policy.setRead(200 * kPart, 200, 5000);
+	Check(
+		!policy.retryReady(13999, 5000, 0, 0),
+		"replacement and request retry share the same cooldown");
+	Check(
+		policy.retryReady(14000, 5000, 0, 0),
+		"next read recovers after the shared cooldown");
+	policy.retried(14000);
+	policy.setRead(300 * kPart, 200, 15000);
+	Check(
+		!policy.replacementReady(0, kPart, 24000, 15000, 0, 0),
+		"replacement also respects the rolling recovery budget");
+	Check(
+		policy.replacementReady(0, kPart, 34000, 15000, 0, 0),
+		"replacement budget becomes available after the window expires");
+}
+
 void CheckBudgetAcrossSeeks() {
 	auto policy = ReadStallPolicy();
 	policy.setRead(0, 131072, 0);
@@ -190,6 +234,7 @@ int main() {
 	CheckRequiredRange();
 	CheckProgress();
 	CheckDispatchPriority();
+	CheckQueuedReadReplacement();
 	CheckBudgetAcrossSeeks();
 	CheckRollingBudget();
 	CheckBoundaries();

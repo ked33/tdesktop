@@ -265,6 +265,10 @@ protected:
 	void cancelAllRequests();
 	void cancelRequestForOffset(int64 offset);
 	[[nodiscard]] bool retryRequestForOffset(int64 offset, crl::time minimumAge);
+	[[nodiscard]] bool replaceRequestForOffset(
+		int64 previousOffset,
+		int64 requiredOffset,
+		crl::time minimumAge);
 
 	void addToQueue(int priority = 0);
 	void removeFromQueue();
