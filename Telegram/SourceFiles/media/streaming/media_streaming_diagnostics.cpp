@@ -123,6 +123,7 @@ struct TransferState {
 	int64 cacheLoadedBytes = 0;
 	int64 retainedPayloadBytes = 0;
 	int64 dispatchedCount = 0;
+	int64 retriedCount = 0;
 	int64 receivedCount = 0;
 	int64 cancelledQueued = 0;
 	int64 cancelledSent = 0;
@@ -320,6 +321,21 @@ void TransferDiagnostics::dispatched(int64 offset) {
 		} else {
 			s.requestsComplete = false;
 		}
+	});
+}
+
+void TransferDiagnostics::retried(int64 offset) {
+	_impl->update([&](TransferState &s) {
+		++s.dispatchedCount;
+		++s.retriedCount;
+		const auto i = s.requests.find(offset);
+		if (i == s.requests.end() || !i->second.sentAt) {
+			s.requestsComplete = false;
+			return;
+		}
+		const auto now = crl::now();
+		s.maxRequestMs = std::max(s.maxRequestMs, now - i->second.sentAt);
+		i->second.sentAt = now;
 	});
 }
 
@@ -545,7 +561,7 @@ QString TransferDiagnostics::snapshot(crl::time now) {
 			.arg(qlonglong(s.waitingOffset))
 		+ (u"read_missing_offset=%1 read_missing_parts=%2 read_queued=%3 "
 			"read_sent=%4 read_oldest_ms=%5 critical_pending_parts=%6 "
-			"prefetch_slots=%7 "_q
+			"prefetch_slots=%7 retried=%8 "_q
 		).arg(qlonglong(s.waitingSince ? s.firstMissing : -1))
 			.arg(s.waitingSince ? s.missingParts : 0)
 			.arg(s.requestsComplete ? readQueued : -1)
@@ -553,6 +569,7 @@ QString TransferDiagnostics::snapshot(crl::time now) {
 			.arg(qlonglong(s.requestsComplete ? readOldest : -1))
 			.arg(s.criticalPendingParts)
 			.arg(s.prefetchSlots)
+			.arg(qlonglong(s.retriedCount))
 		+ (u"preload_parts=%1 request_limit=%2 playback_bps=%3 speed_bps=%4 "
 			"latency_ms=%5 jitter_ms=%6 speed_unreliable=%7 "
 			"pressure_requested=%8 pressure_local=%9 pressure_forwarded=%10 "
@@ -610,6 +627,7 @@ struct PresentationTiming {
 	uint64 generation = 0;
 	crl::time startedAt = crl::now();
 	crl::time readyAt = 0;
+	crl::time playableAt = 0;
 	crl::time position = 0;
 	crl::time pausedMs = 0;
 	crl::time pauseSince = 0;
@@ -726,7 +744,8 @@ struct PlaybackDiagnostics::Impl {
 		LOG((u"Video Playback: presentation play_id=%1 capture=%2 request=%3 "
 			"seek_gen=%4 kind=%5 outcome=%6 target_ms=%7 shown_position_ms=%8 "
 			"elapsed_ms=%9 ready_ms=%10 user_pause_ms=%11 active_ms=%12 "
-			"downloaded_bytes=%13 read_bytes=%14"_q
+			"downloaded_bytes=%13 read_bytes=%14 playable_ms=%15 "
+			"ready_to_playable_ms=%16"_q
 			).arg(qulonglong(id))
 			.arg(qulonglong(capture))
 			.arg(qulonglong(timing.sequence))
@@ -740,7 +759,13 @@ struct PlaybackDiagnostics::Impl {
 			.arg(qlonglong(paused))
 			.arg(qlonglong(elapsed - paused))
 			.arg(qlonglong(delta(timing.initialBytes.first, totals.first)))
-			.arg(qlonglong(delta(timing.initialBytes.second, totals.second))));
+			.arg(qlonglong(delta(timing.initialBytes.second, totals.second)))
+			.arg(qlonglong(timing.playableAt
+				? timing.playableAt - timing.startedAt
+				: -1))
+			.arg(qlonglong((timing.playableAt && timing.readyAt)
+				? timing.playableAt - timing.readyAt
+				: -1)));
 	}
 
 	void report(const char *event) {
@@ -871,6 +896,12 @@ void PlaybackDiagnostics::ready(const Information &information) {
 	s.video = information.video.state;
 	if (s.pending) {
 		s.pending->readyAt = crl::now();
+	}
+}
+
+void PlaybackDiagnostics::playable() {
+	if (_impl->enabled() && _impl->state && _impl->state->pending) {
+		_impl->state->pending->playableAt = crl::now();
 	}
 }
 

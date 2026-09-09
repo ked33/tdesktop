@@ -37,6 +37,41 @@ struct StreamingHeader {
 	HeaderPatch patch;
 };
 
+struct ReadAheadRange {
+	static constexpr auto kMaximumSize = std::int64_t(8) * 1024 * 1024;
+
+	std::int64_t offset = 0;
+	std::int64_t size = 0;
+
+	[[nodiscard]] bool intersects(
+		std::int64_t readOffset,
+		std::int64_t amount) const;
+	[[nodiscard]] int preloadParts(
+		std::int64_t readOffset,
+		std::int64_t amount,
+		int partSize,
+		int requestLimit) const;
+
+};
+
+class HeaderReadAhead final {
+public:
+	explicit HeaderReadAhead(std::int64_t fileSize) : _fileSize(fileSize) {
+	}
+
+	[[nodiscard]] std::optional<ReadAheadRange> observe(
+		std::int64_t offset,
+		std::span<const char> data);
+
+private:
+	std::int64_t _fileSize = 0;
+	std::int64_t _nextOffset = 0;
+	std::array<char, 16> _header = {};
+	int _headerBytes = 0;
+	int _atomsLeft = 64;
+
+};
+
 namespace details {
 
 struct Atom {
@@ -67,6 +102,35 @@ inline void WriteBigEndian(std::uint64_t value, std::span<char> data) {
 	}
 }
 
+[[nodiscard]] inline std::optional<Atom> ParseAtom(
+		std::span<const char> data,
+		std::int64_t available) {
+	if (data.size() < 8 || available < 8) {
+		return std::nullopt;
+	}
+	auto size = ReadBigEndian(data.first(4));
+	auto headerSize = 8;
+	if (size == 1) {
+		if (data.size() < 16) {
+			return std::nullopt;
+		}
+		size = ReadBigEndian(data.subspan(8, 8));
+		headerSize = 16;
+	} else if (size == 0) {
+		size = available;
+	}
+	if (size < std::uint64_t(headerSize)
+		|| size > std::uint64_t(available)) {
+		return std::nullopt;
+	}
+	auto result = Atom{
+		.size = std::int64_t(size),
+		.headerSize = headerSize,
+	};
+	std::copy_n(data.begin() + 4, result.type.size(), result.type.begin());
+	return result;
+}
+
 template <typename Read>
 [[nodiscard]] std::optional<Atom> ReadAtom(
 		std::int64_t offset,
@@ -85,33 +149,96 @@ template <typename Read>
 		storage.size(),
 		end - offset));
 	const auto data = std::span(storage).first(available);
-	if (!read(offset, data)) {
-		return std::nullopt;
-	}
-	auto size = ReadBigEndian(data.first(4));
-	auto headerSize = 8;
-	if (size == 1) {
-		if (available < 16) {
-			return std::nullopt;
-		}
-		size = ReadBigEndian(data.subspan(8, 8));
-		headerSize = 16;
-	} else if (size == 0) {
-		size = end - offset;
-	}
-	if (size < std::uint64_t(headerSize)
-		|| size > std::uint64_t(end - offset)) {
-		return std::nullopt;
-	}
-	auto result = Atom{
-		.size = std::int64_t(size),
-		.headerSize = headerSize,
-	};
-	std::copy_n(data.begin() + 4, result.type.size(), result.type.begin());
-	return result;
+	return read(offset, data) ? ParseAtom(data, end - offset) : std::nullopt;
 }
 
 } // namespace details
+
+inline bool ReadAheadRange::intersects(
+		std::int64_t readOffset,
+		std::int64_t amount) const {
+	constexpr auto kMax = std::numeric_limits<std::int64_t>::max();
+	return offset >= 0
+		&& size > 0
+		&& size <= kMaximumSize
+		&& size <= kMax - offset
+		&& readOffset >= 0
+		&& amount > 0
+		&& amount <= kMax - readOffset
+		&& readOffset < offset + size
+		&& readOffset + amount > offset;
+}
+
+inline int ReadAheadRange::preloadParts(
+		std::int64_t readOffset,
+		std::int64_t amount,
+		int partSize,
+		int requestLimit) const {
+	if (!intersects(readOffset, amount) || partSize <= 0 || requestLimit <= 0) {
+		return 0;
+	}
+	const auto first = (readOffset + amount - 1) / partSize + 1;
+	const auto last = (offset + size - 1) / partSize + 1;
+	return int(std::clamp<std::int64_t>(last - first, 0, requestLimit));
+}
+
+inline std::optional<ReadAheadRange> HeaderReadAhead::observe(
+		std::int64_t offset,
+		std::span<const char> data) {
+	if (offset < 0
+		|| offset > _fileSize
+		|| data.size() > std::uint64_t(_fileSize - offset)) {
+		return std::nullopt;
+	}
+	while (_atomsLeft > 0 && _fileSize - _nextOffset >= 8) {
+		const auto needed = (_headerBytes >= 8
+			&& details::ReadBigEndian(std::span(_header).first(4)) == 1)
+			? 16
+			: 8;
+		const auto next = _nextOffset + _headerBytes;
+		if (next < offset || std::uint64_t(next - offset) >= data.size()) {
+			return std::nullopt;
+		}
+		const auto count = std::min<std::size_t>(
+			needed - _headerBytes,
+			data.size() - std::size_t(next - offset));
+		std::copy_n(
+			data.data() + std::size_t(next - offset),
+			count,
+			_header.data() + _headerBytes);
+		_headerBytes += int(count);
+		if (_headerBytes < needed) {
+			return std::nullopt;
+		} else if (needed == 8
+			&& details::ReadBigEndian(std::span(_header).first(4)) == 1) {
+			continue;
+		}
+		const auto atom = details::ParseAtom(
+			std::span(_header).first(_headerBytes),
+			_fileSize - _nextOffset);
+		--_atomsLeft;
+		if (!atom
+			|| (_nextOffset == 0
+				&& !atom->is("ftyp")
+				&& !atom->is("moov")
+				&& !atom->is("mdat")
+				&& !atom->is("wide")
+				&& !atom->is("free")
+				&& !atom->is("skip"))) {
+			_atomsLeft = 0;
+			return std::nullopt;
+		} else if (atom->is("moov")) {
+			_atomsLeft = 0;
+			if (atom->size <= ReadAheadRange::kMaximumSize) {
+				return ReadAheadRange{ _nextOffset, atom->size };
+			}
+			return std::nullopt;
+		}
+		_nextOffset += atom->size;
+		_headerBytes = 0;
+	}
+	return std::nullopt;
+}
 
 inline void HeaderPatch::apply(
 		std::int64_t readOffset,

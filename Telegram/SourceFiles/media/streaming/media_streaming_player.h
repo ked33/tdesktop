@@ -254,6 +254,9 @@ private:
 	bool _pausedByUser = false;
 	bool _pausedByWaitingForData = false;
 	bool _waitingForStartupBuffer = false;
+	bool _startupBufferForSeek = false;
+	crl::time _startupBufferStartedAt = 0;
+	base::Timer _startupBufferTimer;
 	bool _paused = false;
 	bool _audioFinished = false;
 	bool _videoFinished = false;

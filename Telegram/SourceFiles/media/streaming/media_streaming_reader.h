@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_boost.h"
 #include "media/streaming/media_streaming_common.h"
 #include "media/streaming/media_streaming_loader.h"
+#include "media/streaming/media_streaming_mp4_header.h"
 #include "media/streaming/media_streaming_source.h"
 #include "base/bytes.h"
 #include "base/timer.h"
@@ -69,6 +70,7 @@ public:
 	[[nodiscard]] SeekPrefetchProgress seekPrefetchProgress(
 		uint64 generation) const;
 	[[nodiscard]] std::optional<Error> streamingError() const;
+	void setHeaderReadRange(int64 offset, int64 amount);
 	void headerDone();
 	[[nodiscard]] int headerSize() const;
 	[[nodiscard]] bool fullInCache() const;
@@ -380,6 +382,7 @@ private:
 	SmartDualKeep _dualKeep;
 
 	Slices _slices;
+	Mp4::ReadAheadRange _headerReadAhead;
 
 	// Even if streaming had failed, the Reader can work for the downloader.
 	std::optional<Error> _streamingError;

@@ -438,7 +438,7 @@ void Document::ready(Information &&info) {
 			.arg(_info.video.alpha));
 	}
 	validateGoodThumbnail();
-	waitingChange(false);
+	waitingChange(_player.buffering());
 }
 
 void Document::waitingChange(bool waiting) {

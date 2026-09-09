@@ -170,6 +170,10 @@ def test_source_structure() -> None:
 	boost_h = (ROOT / "media_streaming_boost.h").read_text(encoding="utf-8")
 	loader = (ROOT / "media_streaming_loader_mtproto.cpp").read_text(encoding="utf-8")
 	mp4_seek = (ROOT / "media_streaming_mp4_seek.h").read_text(encoding="utf-8")
+	mp4_header = (ROOT / "media_streaming_mp4_header.h").read_text(encoding="utf-8")
+	startup = (ROOT / "media_streaming_startup.h").read_text(encoding="utf-8")
+	source = (ROOT / "media_streaming_source.cpp").read_text(encoding="utf-8")
+	document = (ROOT / "media_streaming_document.cpp").read_text(encoding="utf-8")
 	source_h = (ROOT / "media_streaming_source.h").read_text(encoding="utf-8")
 	diagnostics = (ROOT / "media_streaming_diagnostics.cpp").read_text(encoding="utf-8")
 	fill = reader[
@@ -237,6 +241,19 @@ def test_source_structure() -> None:
 		player.index("void Player::stop(bool stillActive) {")
 	]
 	stop = player[player.index("void Player::stop(bool stillActive) {"):]
+	retry = loader[loader.index("void LoaderMtproto::checkReadRetry("):]
+	retry_diagnostics = diagnostics[
+		diagnostics.index("void TransferDiagnostics::retried("):
+		diagnostics.index("void TransferDiagnostics::received(")
+	]
+	file_start = file[
+		file.index("void File::Context::start(StartOptions options) {"):
+		file.index("void File::Context::sendFullInCache(")
+	]
+	reader_header_done = reader[
+		reader.index("void Reader::headerDone() {"):
+		reader.index("int Reader::headerSize() const {")
+	]
 	checks = [
 		(
 			"topUpSeekCriticalLoads" in reader
@@ -288,19 +305,92 @@ def test_source_structure() -> None:
 		(
 			"_file->smartStreamingEnabled()" in provide_start
 			and "_fullInCacheSinceStart.value_or(false)" in provide_start
-			and "bothReceivedEnough(crl::time(kSmartStartupBufferMs * _options.speed))"
-			in provide_start
-			and "_stage == Stage::Initializing" in resume_waiting
-			and "provideStartInformation();" in resume_waiting,
-			"Smart startup waits for both tracks and rechecks arriving packets",
+			and "StartupBufferPolicy::kTargetMs * _options.speed" in provide_start
+			and "_stage == Stage::Ready" in resume_waiting
+			and "bothReceivedEnough(crl::time(required * _options.speed))"
+			in resume_waiting,
+			"Smart startup checks both tracks using a speed-adjusted buffer target",
 		),
 		(
 			"&& _waitingForStartupBuffer" in resume_waiting
-			and "_waitingForStartupBuffer = true;" in provide_start
-			and "_waitingForStartupBuffer = false;" in provide_start
+			and "_waitingForStartupBuffer = !_pausedByUser" in provide_start
+			and "_waitingForStartupBuffer = false;" in resume_waiting
 			and "_waitingForStartupBuffer = false;" in start_generation
+			and "_startupBufferTimer.cancel();" in start_generation
 			and "checkResumeFromWaitingForData();" in pause,
 			"startup rechecks stay armed only for ready tracks of the current play",
+		),
+		(
+			provide_start.index("_stage = Stage::Ready;")
+			< provide_start.index("_paused = true;")
+			< provide_start.index("_updates.fire(Update{ std::move(copy) });")
+			< provide_start.index("_updates.fire({ WaitingForData{ true } });")
+			and "waitingChange(_player.buffering());" in document,
+			"decoded preview is published while the buffering indicator stays accurate",
+		),
+		(
+			"StartupBufferPolicy::RequiredBuffer(" in resume_waiting
+			and "StartupBufferPolicy::ExtraWaitLimit(" in provide_start
+			and "elapsed < ExtraWaitLimit(seek)" in startup
+			and "? kTargetMs : kMinimumMs" in startup
+			and "_startupBufferTimer.callOnce(remaining);" in resume_waiting
+			and "StartupBufferPolicy::kTargetMs" in file,
+			"startup target has a bounded extra wait and a shared seek prediction target",
+		),
+		(
+			"generation != _trackGeneration.load" in provide_start
+			and "generation == _trackGeneration.load" in resume_waiting
+			and "base::make_weak(&_sessionGuard)" in provide_start
+			and "base::make_weak(&_sessionGuard)" in resume_waiting
+			and "WaitingForData{ _pausedByWaitingForData }" in resume_waiting,
+			"preview and buffer release reject reentrant seek and stop callbacks",
+		),
+		(
+			"_stage == Stage::Started" in resume_waiting
+			and "bothReceivedEnough(waitingForDataBuffer())" in resume_waiting
+			and "FullTrackReceived(state)" in player,
+			"normal rebuffering and fully received short tracks retain their policies",
+		),
+		(
+			"_diagnostics->playable();" in player
+			and "void PlaybackDiagnostics::playable()" in diagnostics
+			and "playable_ms=" in diagnostics
+			and "ready_to_playable_ms=" in diagnostics,
+			"diagnostics distinguish preview readiness from actual playback start",
+		),
+		(
+			"_headerReadAhead->observe(" in read_callback
+			and read_callback.count("_source->fill(") == 1
+			and "ProbeForStreaming(" not in read_callback
+			and "_reader->setHeaderReadRange(offset, amount);" in source
+			and "_headerReadAhead.emplace(_size);" in file_start,
+			"header discovery observes existing AVIO reads without additional remote probes",
+		),
+		(
+			"_headerReadAhead.preloadParts(" in fill
+			and "!_headerReadAhead.intersects(part, kPartSize)" in fill
+			and "activeLoads >= requestsLimit" in fill
+			and "(readStalled && !headerRead)" in fill
+			and "_atomsLeft = 64" in mp4_header
+			and "atom->size <= ReadAheadRange::kMaximumSize" in mp4_header,
+			"known metadata fills spare slots within atom bounds and the existing request budget",
+		),
+		(
+			"_headerReadAhead.reset();" in file_start
+			and "_source->setHeaderReadRange(-1, 0);" in file_start
+			and "gsl::finally" in file_start
+			and "_headerReadAhead = {};" in reader_header_done,
+			"header scheduling ends on completion and early open failure",
+		),
+		(
+			"_diagnostics->retried(offset);" in retry
+			and "_diagnostics->cancelled(" not in retry
+			and "s.requests.erase" not in retry_diagnostics
+			and "i->second.sentAt = now;" in retry_diagnostics
+			and "s.maxQueueMs" not in retry_diagnostics
+			and "s.requestsComplete = false;" in retry_diagnostics
+			and "retried=%8" in diagnostics,
+			"retry preserves logical requests without inflating queue time or masking partial capture",
 		),
 		(
 			all(key in diagnostics for key in (

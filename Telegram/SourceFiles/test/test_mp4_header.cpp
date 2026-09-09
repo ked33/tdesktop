@@ -308,6 +308,131 @@ void TestInvalidAndBoundedReads() {
 	}
 }
 
+void TestObservedHeaders() {
+	const auto prefix = Join({ Atom("ftyp", Bytes(16)), Atom("free") });
+	for (const auto extended : { false, true }) {
+		const auto moov = Atom("moov", Atom("trak", Bytes(128)), extended);
+		const auto source = Join({ prefix, moov, Atom("mdat", Bytes(256)) });
+		for (const auto step : { 1, 7, 8, 13, 16, 64, 131072 }) {
+			auto observer = HeaderReadAhead(std::int64_t(source.size()));
+			auto found = 0;
+			for (auto offset = std::size_t(0); offset < source.size();) {
+				const auto count = std::min<std::size_t>(step, source.size() - offset);
+				const auto range = observer.observe(
+					std::int64_t(offset),
+					std::span(source).subspan(offset, count));
+				if (range) {
+					++found;
+					Check(
+						range->offset == std::int64_t(prefix.size()),
+						"observed moov offset");
+					Check(
+						range->size == std::int64_t(moov.size()),
+						"observed moov size");
+				}
+				offset += count;
+			}
+			Check(found == 1, "split headers publish one bounded range");
+			Check(!observer.observe(0, source), "cached reread cannot rearm header");
+		}
+	}
+	const auto fakeMoov = Atom("moov", Atom("trak"));
+	const auto source = Join({ prefix, Atom("mdat", fakeMoov) });
+	auto observer = HeaderReadAhead(std::int64_t(source.size()));
+	Check(!observer.observe(0, source), "media payload cannot impersonate a moov");
+}
+
+void TestObservedTailHeaders() {
+	const auto prefix = Atom("ftyp", Bytes(24));
+	const auto mediaSize = std::int64_t(1) << 30;
+	const auto mediaHeader = Join({ Number(mediaSize, 4), Bytes{ 'm', 'd', 'a', 't' } });
+	const auto moov = Atom("moov", Atom("trak", Bytes(32)), true);
+	const auto tailOffset = std::int64_t(prefix.size()) + mediaSize;
+	auto observer = HeaderReadAhead(tailOffset + std::int64_t(moov.size()));
+	Check(
+		!observer.observe(0, Join({ prefix, mediaHeader })),
+		"tail moov is not requested from a guessed offset");
+	Check(
+		!observer.observe(4096, moov),
+		"out of order payload does not change expected root offset");
+	Check(
+		!observer.observe(tailOffset, std::span(moov).first(11)),
+		"split extended tail header waits for bytes already being read");
+	const auto range = observer.observe(tailOffset + 11, std::span(moov).subspan(11));
+	Check(range.has_value(), "tail range recognized without reading media gap");
+	Check(range->offset == tailOffset, "tail range starts at parsed atom");
+	Check(
+		range->size == std::int64_t(moov.size()),
+		"tail range ends at parsed atom boundary");
+}
+
+void TestObservedBounds() {
+	for (const auto count : { 63, 64 }) {
+		auto source = Bytes();
+		for (auto i = 0; i != count; ++i) {
+			Append(source, Atom("free"));
+		}
+		Append(source, Atom("moov", Atom("trak")));
+		auto observer = HeaderReadAhead(std::int64_t(source.size()));
+		Check(
+			observer.observe(0, source).has_value() == (count == 63),
+			"root atom scan stays bounded across callbacks");
+	}
+	for (const auto size : {
+		ReadAheadRange::kMaximumSize,
+		ReadAheadRange::kMaximumSize + 1,
+	}) {
+		const auto header = Join({ Number(size, 4), Bytes{ 'm', 'o', 'o', 'v' } });
+		auto observer = HeaderReadAhead(size);
+		Check(
+			observer.observe(0, header).has_value()
+				== (size == ReadAheadRange::kMaximumSize),
+			"oversized metadata keeps the normal read path");
+	}
+	for (const auto &invalid : {
+		Join({ Number(7, 4), Bytes{ 'm', 'o', 'o', 'v' } }),
+		Join({ Number(999, 4), Bytes{ 'm', 'o', 'o', 'v' } }),
+		Join({ Atom("junk"), Atom("moov") }),
+	}) {
+		auto observer = HeaderReadAhead(std::int64_t(invalid.size()));
+		Check(!observer.observe(0, invalid), "malformed metadata cannot widen reads");
+	}
+	auto observer = HeaderReadAhead(32);
+	Check(!observer.observe(-1, Atom("moov")), "negative read rejected");
+	Check(!observer.observe(33, Atom("moov")), "read past EOF rejected");
+	Check(!observer.observe(30, Atom("moov")), "read crossing EOF rejected");
+}
+
+void TestHeaderReadBudget() {
+	constexpr auto kPart = 131072;
+	const auto range = ReadAheadRange{ 32, 1856762 };
+	for (const auto limit : { 1, 2, 4, 8, 12, 13, 32 }) {
+		Check(
+			range.preloadParts(kPart, kPart, kPart, limit) == std::min(limit, 13),
+			"known metadata uses only the available request budget");
+	}
+	Check(
+		range.preloadParts(14 * kPart, kPart, kPart, 13) == 0,
+		"last metadata part does not preload media payload");
+	Check(range.intersects(14 * kPart, kPart), "partial last header part is needed");
+	Check(!range.intersects(15 * kPart, kPart), "parts beyond header are excluded");
+	Check(!range.intersects(0, 32), "range ending at header start is excluded");
+	constexpr auto kSlice = 8 * 1024 * 1024;
+	const auto crossing = ReadAheadRange{ kSlice - 2 * kPart, 5 * kPart };
+	Check(
+		crossing.preloadParts(kSlice - 2 * kPart, kPart, kPart, 13) == 4,
+		"metadata budget spans the cache slice boundary");
+	Check(
+		!crossing.intersects(kSlice + 3 * kPart, kPart),
+		"next-slice preload still stops at the metadata boundary");
+	Check(range.preloadParts(0, kPart, 0, 8) == 0, "invalid part size is rejected");
+	Check(range.preloadParts(0, kPart, kPart, 0) == 0, "zero budget cannot preload");
+	constexpr auto kMax = std::numeric_limits<std::int64_t>::max();
+	Check(!range.intersects(kMax, 1), "read end cannot overflow");
+	Check(!ReadAheadRange{ kMax, 1 }.intersects(0, 1), "header end cannot overflow");
+	Check(!ReadAheadRange{ -1, 1 }.intersects(0, 1), "invalid header is inactive");
+}
+
 } // namespace
 
 int main() {
@@ -315,6 +440,10 @@ int main() {
 	TestLargeAndFragmentedLayouts();
 	TestWideSizes();
 	TestInvalidAndBoundedReads();
+	TestObservedHeaders();
+	TestObservedTailHeaders();
+	TestObservedBounds();
+	TestHeaderReadBudget();
 	std::cout << "MP4 header regression: "
 		<< TotalChecks << " checks passed.\n";
 	return 0;

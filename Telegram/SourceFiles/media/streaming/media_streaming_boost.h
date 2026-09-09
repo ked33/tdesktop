@@ -14,8 +14,6 @@ https://github.com/telegramdesktop/tdesktop/blob/dev/LEGAL
 
 namespace Media::Streaming {
 
-inline constexpr auto kSmartStartupBufferMs = 1500;
-
 struct BoostProfile {
 	int requestsLimit = 8;
 	int preloadPartsAhead = 8;

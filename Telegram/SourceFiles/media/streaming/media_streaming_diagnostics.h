@@ -34,6 +34,7 @@ public:
 		bool keyframe);
 	void queued(int64 offset);
 	void dispatched(int64 offset);
+	void retried(int64 offset);
 	void received(int64 offset, int64 bytes);
 	void reused(int64 bytes);
 	void cancelled(int64 offset, bool sent);
@@ -77,6 +78,7 @@ public:
 		crl::time startedAt);
 	void generation(uint64 generation);
 	void ready(const Information &information);
+	void playable();
 	void sample(
 		const Information &information,
 		float64 speed,
