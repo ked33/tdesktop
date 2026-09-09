@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "media/streaming/media_streaming_common.h"
+#include "media/streaming/media_streaming_mp4_header.h"
 #include "media/streaming/media_streaming_source.h"
 #include "media/streaming/media_streaming_utility.h"
 #include "ffmpeg/ffmpeg_utility.h"
@@ -192,6 +193,7 @@ private:
 		int _debugReadCalls = 0;
 		int _debugWaitingCount = 0;
 		std::optional<bool> _fullInCache;
+		std::optional<Mp4::HeaderReadAhead> _headerReadAhead;
 		crl::semaphore _semaphore;
 		std::atomic<bool> _interrupted = false;
 		std::atomic<bool> _avioAbortForSoftSeek = false;

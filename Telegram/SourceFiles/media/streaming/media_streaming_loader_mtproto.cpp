@@ -490,8 +490,7 @@ void LoaderMtproto::checkReadRetry(crl::time now, int latencyMs, int jitterMs) {
 	_stats.push_back({ .start = now, .offset = offset });
 	_readStall.retried(now);
 	if (_diagnostics) {
-		_diagnostics->cancelled(offset, true);
-		_diagnostics->dispatched(offset);
+		_diagnostics->retried(offset);
 	}
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: critical read retry "
 		"offset=%1 requestMs=%2 readWaitMs=%3 reader_id=%4.")

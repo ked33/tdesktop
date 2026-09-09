@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_file_delegate.h"
 #include "media/streaming/media_streaming_loader.h"
 #include "media/streaming/media_streaming_mp4_seek.h"
+#include "media/streaming/media_streaming_startup.h"
 
 #include <QtCore/QtEndian>
 
@@ -1012,7 +1013,7 @@ template <typename Stop>
 		crl::time(0),
 		std::max(track.duration - 1, crl::time(0)));
 	const auto prefetchTill = prefetchPosition + std::min(
-		crl::time(kSmartStartupBufferMs),
+		crl::time(StartupBufferPolicy::kTargetMs),
 		std::max(track.duration - 1 - prefetchPosition, crl::time(0)));
 	const auto lastVideoSample = FindTargetSample(track, prefetchTill);
 	const auto videoRanges = ComputeMp4SampleRanges(
@@ -1429,6 +1430,16 @@ int File::Context::read(bytes::span buffer) {
 		}
 	}
 
+	if (_headerReadAhead) {
+		const auto range = _headerReadAhead->observe(
+			requestedOffset,
+			std::span<const char>(
+				reinterpret_cast<const char*>(buffer.data()),
+				buffer.size()));
+		if (range) {
+			_source->setHeaderReadRange(range->offset, range->size);
+		}
+	}
 	sendFullInCache();
 
 	_offset += amount;
@@ -1918,6 +1929,13 @@ void File::Context::start(StartOptions options) {
 	Expects(options.seekable || !options.position);
 
 	_trackGeneration = options.trackGeneration;
+	if (_source->smartStreamingEnabled() && _source->isRemoteLoader()) {
+		_headerReadAhead.emplace(_size);
+	}
+	const auto headerGuard = gsl::finally([&] {
+		_headerReadAhead.reset();
+		_source->setHeaderReadRange(-1, 0);
+	});
 	auto error = FFmpeg::AvErrorWrap();
 
 	if (unroll()) {
@@ -1932,6 +1950,7 @@ void File::Context::start(StartOptions options) {
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File open strategy sequentialOpen=%1 seekableOnOpen=%2.")
 		.arg(options.sequentialOpen ? 1 : 0)
 		.arg((options.seekable && !options.sequentialOpen) ? 1 : 0));
+	const auto openStartedAt = crl::now();
 	auto format = FFmpeg::MakeFormatPointer(
 		static_cast<void*>(this),
 		&Context::Read,
@@ -1941,8 +1960,10 @@ void File::Context::start(StartOptions options) {
 	if (!format) {
 		return fail(Error::OpenFailed);
 	}
-	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File format context created sourceSize=%1.")
-		.arg(qlonglong(_size)));
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File format context created "
+		"sourceSize=%1 open_ms=%2.")
+		.arg(qlonglong(_size))
+		.arg(qlonglong(crl::now() - openStartedAt)));
 	if (options.sequentialOpen) {
 		format->probesize = kSequentialOpenProbeSize;
 		format->max_analyze_duration = kSequentialOpenAnalyzeDuration;
@@ -1959,11 +1980,14 @@ void File::Context::start(StartOptions options) {
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File calling avformat_find_stream_info size=%1 position=%2.")
 		.arg(qlonglong(_size))
 		.arg(qlonglong(options.position)));
+	const auto streamInfoStartedAt = crl::now();
 	if ((error = avformat_find_stream_info(format.get(), nullptr))) {
 		return logFatal(qstr("avformat_find_stream_info"), error);
 	}
-	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File avformat_find_stream_info done size=%1.")
-		.arg(qlonglong(_size)));
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File avformat_find_stream_info "
+		"done size=%1 elapsed_ms=%2.")
+		.arg(qlonglong(_size))
+		.arg(qlonglong(crl::now() - streamInfoStartedAt)));
 	if (options.sequentialOpen && options.seekable && format->pb) {
 		format->pb->seek = &Context::Seek;
 		format->pb->seekable = 1;
@@ -2005,6 +2029,7 @@ void File::Context::start(StartOptions options) {
 		return;
 	}
 
+	_headerReadAhead.reset();
 	_source->headerDone();
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File header done headerSize=%1 remote=%2.")
 		.arg(_source->headerSize())
