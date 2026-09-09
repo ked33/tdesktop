@@ -253,6 +253,7 @@ private:
 	std::optional<Error> _lastFailure;
 	bool _pausedByUser = false;
 	bool _pausedByWaitingForData = false;
+	bool _waitingForStartupBuffer = false;
 	bool _paused = false;
 	bool _audioFinished = false;
 	bool _videoFinished = false;
