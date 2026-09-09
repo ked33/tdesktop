@@ -217,7 +217,20 @@ bool LoaderMtproto::readyToRequest() const {
 }
 
 int64 LoaderMtproto::takeNextRequestOffset() {
-	const auto offset = _requested.take();
+	auto offset = std::optional<int64>();
+	if (GetEnhancedInt(u"net_download_speed_boost"_q) == 6
+		&& !premiumSession()) {
+		const auto lock = std::lock_guard(_readStallMutex);
+		const auto required = _readStall.firstRequired(
+			_requested.valuesInRange(0, size()),
+			kPartSize);
+		if (required && _requested.remove(*required)) {
+			offset = *required;
+		}
+	}
+	if (!offset) {
+		offset = _requested.take();
+	}
 	Assert(offset.has_value());
 
 	const auto time = crl::now();

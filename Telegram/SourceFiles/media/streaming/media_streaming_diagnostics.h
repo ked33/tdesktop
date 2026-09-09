@@ -45,6 +45,11 @@ public:
 	void pressureRequested(bool pressure);
 	void pressureForwarded(bool local, bool forwarded);
 	void policy(int preloadParts, int requestLimit, int playbackRate);
+	void readPlan(
+		int64 firstMissing,
+		int missingParts,
+		int criticalPendingParts,
+		int prefetchSlots);
 	void serverDelay(ServerDelay delay);
 	void speed(SpeedEstimate estimate);
 	[[nodiscard]] QString snapshot(crl::time now);

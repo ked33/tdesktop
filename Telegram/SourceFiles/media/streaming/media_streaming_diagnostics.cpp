@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/timer.h"
 #include "media/streaming/media_streaming_debug.h"
+#include "media/streaming/media_streaming_loader.h"
 
 #include <algorithm>
 #include <atomic>
@@ -130,6 +131,7 @@ struct TransferState {
 	crl::time maxRequestMs = 0;
 	std::map<int64, RequestTiming> requests;
 	int64 waitingOffset = -1;
+	int64 waitingAmount = 0;
 	crl::time waitingSince = 0;
 	bool waitingCache = false;
 	crl::time cacheWaitMs = 0;
@@ -141,6 +143,10 @@ struct TransferState {
 	int preloadParts = 0;
 	int requestLimit = 0;
 	int playbackRate = 0;
+	int64 firstMissing = -1;
+	int missingParts = 0;
+	int criticalPendingParts = 0;
+	int prefetchSlots = 0;
 	ServerDelay server;
 	SpeedEstimate speed = { .unreliable = true };
 	std::optional<DemuxSeekTiming> demuxSeek;
@@ -377,7 +383,10 @@ void TransferDiagnostics::read(
 	_impl->update([&](TransferState &s) {
 		const auto now = crl::now();
 		if (s.waitingSince
-			&& (success || s.waitingOffset != offset || s.waitingCache != cacheWait)) {
+			&& (success
+				|| s.waitingOffset != offset
+				|| s.waitingAmount != bytes
+				|| s.waitingCache != cacheWait)) {
 			(s.waitingCache ? s.cacheWaitMs : s.remoteWaitMs)
 				+= now - s.waitingSince;
 			s.waitingSince = 0;
@@ -385,8 +394,10 @@ void TransferDiagnostics::read(
 		if (success) {
 			s.suppliedBytes += bytes;
 			s.supplied.add(offset, bytes);
+			s.waitingAmount = 0;
 		} else if (!s.waitingSince) {
 			s.waitingOffset = offset;
+			s.waitingAmount = bytes;
 			s.waitingSince = now;
 			s.waitingCache = cacheWait;
 		}
@@ -435,6 +446,19 @@ void TransferDiagnostics::serverDelay(ServerDelay delay) {
 	_impl->update([&](TransferState &s) { s.server = delay; });
 }
 
+void TransferDiagnostics::readPlan(
+		int64 firstMissing,
+		int missingParts,
+		int criticalPendingParts,
+		int prefetchSlots) {
+	_impl->update([&](TransferState &s) {
+		s.firstMissing = firstMissing;
+		s.missingParts = missingParts;
+		s.criticalPendingParts = criticalPendingParts;
+		s.prefetchSlots = prefetchSlots;
+	});
+}
+
 void TransferDiagnostics::speed(SpeedEstimate estimate) {
 	_impl->update([&](TransferState &s) { s.speed = estimate; });
 }
@@ -456,6 +480,9 @@ QString TransferDiagnostics::snapshot(crl::time now) {
 	auto sent = 0;
 	auto oldestQueued = crl::time(0);
 	auto oldestSent = crl::time(0);
+	auto readQueued = 0;
+	auto readSent = 0;
+	auto readOldest = crl::time(0);
 	for (const auto &[offset, request] : s.requests) {
 		if (request.sentAt) {
 			++sent;
@@ -463,6 +490,15 @@ QString TransferDiagnostics::snapshot(crl::time now) {
 		} else {
 			++queued;
 			oldestQueued = std::max(oldestQueued, now - request.queuedAt);
+		}
+		if (s.waitingSince
+			&& !s.waitingCache
+			&& offset < s.waitingOffset + s.waitingAmount
+			&& offset + Loader::kPartSize > s.waitingOffset) {
+			++(request.sentAt ? readSent : readQueued);
+			readOldest = std::max(
+				readOldest,
+				now - (request.sentAt ? request.sentAt : request.queuedAt));
 		}
 	}
 	const auto waitMs = s.waitingSince ? now - s.waitingSince : 0;
@@ -507,6 +543,16 @@ QString TransferDiagnostics::snapshot(crl::time now) {
 			.arg(qlonglong(s.remoteWaitMs + (s.waitingCache ? 0 : waitMs)))
 			.arg(qlonglong(waitMs))
 			.arg(qlonglong(s.waitingOffset))
+		+ (u"read_missing_offset=%1 read_missing_parts=%2 read_queued=%3 "
+			"read_sent=%4 read_oldest_ms=%5 critical_pending_parts=%6 "
+			"prefetch_slots=%7 "_q
+		).arg(qlonglong(s.waitingSince ? s.firstMissing : -1))
+			.arg(s.waitingSince ? s.missingParts : 0)
+			.arg(s.requestsComplete ? readQueued : -1)
+			.arg(s.requestsComplete ? readSent : -1)
+			.arg(qlonglong(s.requestsComplete ? readOldest : -1))
+			.arg(s.criticalPendingParts)
+			.arg(s.prefetchSlots)
 		+ (u"preload_parts=%1 request_limit=%2 playback_bps=%3 speed_bps=%4 "
 			"latency_ms=%5 jitter_ms=%6 speed_unreliable=%7 "
 			"pressure_requested=%8 pressure_local=%9 pressure_forwarded=%10 "
