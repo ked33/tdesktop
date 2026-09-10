@@ -1564,6 +1564,7 @@ PRIVATE
     media/streaming/media_streaming_mp4_seek.h
     media/streaming/media_streaming_mpv.cpp
     media/streaming/media_streaming_mpv.h
+    media/streaming/media_streaming_mpv_http.h
     media/streaming/media_streaming_mpv_special.cpp
     media/streaming/media_streaming_mpv_special.h
     media/streaming/media_streaming_player.cpp
