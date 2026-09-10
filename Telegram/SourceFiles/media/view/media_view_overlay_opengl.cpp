@@ -618,12 +618,14 @@ void OverlayWidget::RendererGL::paintTransformedContent(
 	const auto centery = rect.y() + rect.height() / 2;
 	const auto rsin = float(std::sin(geometry.rotation * M_PI / 180.));
 	const auto rcos = float(std::cos(geometry.rotation * M_PI / 180.));
+	const auto flipX = geometry.flip.testFlag(Qt::Horizontal) ? -1.f : 1.f;
+	const auto flipY = geometry.flip.testFlag(Qt::Vertical) ? -1.f : 1.f;
 	const auto rotated = [&](float x, float y) -> std::array<float, 2> {
 		x -= centerx;
 		y -= centery;
-		return std::array<float, 2>{
-			centerx + (x * rcos + y * rsin),
-			centery + (y * rcos - x * rsin)
+		return {
+			centerx + (x * rcos + y * rsin) * flipX,
+			centery + (y * rcos - x * rsin) * flipY,
 		};
 	};
 	const auto topleft = rotated(rect.left(), rect.top());
@@ -1258,12 +1260,14 @@ void OverlayWidget::RendererGL::paintRecognitionOverlay(
 	const auto radians = float(geometry.rotation * M_PI / 180.);
 	const auto rsin = std::sin(radians);
 	const auto rcos = std::cos(radians);
+	const auto flipX = geometry.flip.testFlag(Qt::Horizontal) ? -1.f : 1.f;
+	const auto flipY = geometry.flip.testFlag(Qt::Vertical) ? -1.f : 1.f;
 	const auto rotated = [&](float x, float y) -> std::array<float, 2> {
 		x -= centerx;
 		y -= centery;
-		return std::array<float, 2>{
-			centerx + (x * rcos + y * rsin),
-			centery + (y * rcos - x * rsin)
+		return {
+			centerx + (x * rcos + y * rsin) * flipX,
+			centery + (y * rcos - x * rsin) * flipY,
 		};
 	};
 

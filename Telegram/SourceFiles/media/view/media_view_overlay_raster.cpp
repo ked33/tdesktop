@@ -131,7 +131,7 @@ void OverlayWidget::RendererSW::paintTransformedVideoFrame(
 	const auto sourceRect = _owner->_stories
 		? StoryCropRect(QSizeF(image.size()), geometry.rect.size())
 		: QRectF();
-	paintTransformedImage(image, rect, rotation, sourceRect);
+	paintTransformedImage(image, rect, rotation, geometry.flip, sourceRect);
 	applyMediaViewerBrightness(rect);
 	paintControlsFade(rect, geometry);
 }
@@ -155,7 +155,7 @@ void OverlayWidget::RendererSW::paintTransformedStaticContent(
 		const auto sourceRect = _owner->_stories
 			? StoryCropRect(QSizeF(image.size()), geometry.rect.size())
 			: QRectF();
-		paintTransformedImage(image, rect, rotation, sourceRect);
+		paintTransformedImage(image, rect, rotation, geometry.flip, sourceRect);
 		applyMediaViewerBrightness(rect);
 	}
 	paintControlsFade(rect, geometry);
@@ -241,8 +241,20 @@ void OverlayWidget::RendererSW::paintTransformedImage(
 		const QImage &image,
 		QRect rect,
 		int rotation,
+		Qt::Orientations flip,
 		const QRectF &sourceRect) {
 	PainterHighQualityEnabler hq(*_p);
+	if (flip) {
+		_p->save();
+		const auto center = QPointF(
+			rect.x() + rect.width() / 2.,
+			rect.y() + rect.height() / 2.);
+		_p->translate(center);
+		_p->scale(
+			flip.testFlag(Qt::Horizontal) ? -1. : 1.,
+			flip.testFlag(Qt::Vertical) ? -1. : 1.);
+		_p->translate(-center);
+	}
 	if (UsePainterRotation(rotation)) {
 		if (rotation) {
 			_p->save();
@@ -258,6 +270,9 @@ void OverlayWidget::RendererSW::paintTransformedImage(
 		}
 	} else {
 		_p->drawImage(rect, _owner->transformShownContent(image, rotation));
+	}
+	if (flip) {
+		_p->restore();
 	}
 }
 

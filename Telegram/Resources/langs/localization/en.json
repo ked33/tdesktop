@@ -1,6 +1,8 @@
 {
     "lng_intro_about2": "Welcome to the 64Gram Desktop app.\nIt's fast and secure.",
 
+    "lng_mediaview_flip_horizontal": "Flip Horizontally",
+
     "lng_settings_enhanced": "Enhanced Settings",
     "lng_settings_network": "Network",
     "lng_settings_net_upload_speed_boost": "Upload speed boost",

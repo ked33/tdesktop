@@ -1187,11 +1187,15 @@ void OverlayWidget::RendererRhi::paintTransformedVideoFrame(
 	const auto centery = rRect.y() + rRect.height() / 2;
 	const auto rsin = float(std::sin(geometry.rotation * M_PI / 180.));
 	const auto rcos = float(std::cos(geometry.rotation * M_PI / 180.));
+	const auto flipX = geometry.flip.testFlag(Qt::Horizontal) ? -1.f : 1.f;
+	const auto flipY = geometry.flip.testFlag(Qt::Vertical) ? -1.f : 1.f;
 	const auto rotated = [&](float x, float y) -> std::array<float, 2> {
 		x -= centerx;
 		y -= centery;
-		return { centerx + x * rcos + y * rsin,
-		         centery + y * rcos - x * rsin };
+		return {
+			centerx + (x * rcos + y * rsin) * flipX,
+			centery + (y * rcos - x * rsin) * flipY,
+		};
 	};
 	const auto tl = rotated(rRect.left(), rRect.bottom());
 	const auto tr = rotated(rRect.right(), rRect.bottom());
@@ -1387,11 +1391,15 @@ void OverlayWidget::RendererRhi::paintRecognitionOverlay(
 	const auto centery = rRect.y() + rRect.height() / 2;
 	const auto rsin = float(std::sin(geometry.rotation * M_PI / 180.));
 	const auto rcos = float(std::cos(geometry.rotation * M_PI / 180.));
+	const auto flipX = geometry.flip.testFlag(Qt::Horizontal) ? -1.f : 1.f;
+	const auto flipY = geometry.flip.testFlag(Qt::Vertical) ? -1.f : 1.f;
 	const auto rotated = [&](float x, float y) -> std::array<float, 2> {
 		x -= centerx;
 		y -= centery;
-		return { centerx + x * rcos + y * rsin,
-		         centery + y * rcos - x * rsin };
+		return {
+			centerx + (x * rcos + y * rsin) * flipX,
+			centery + (y * rcos - x * rsin) * flipY,
+		};
 	};
 	const auto tl = rotated(rRect.left(), rRect.bottom());
 	const auto tr = rotated(rRect.right(), rRect.bottom());
@@ -1455,11 +1463,15 @@ void OverlayWidget::RendererRhi::paintTransformedStaticContent(
 	const auto centery = rRect.y() + rRect.height() / 2;
 	const auto rsin = float(std::sin(geometry.rotation * M_PI / 180.));
 	const auto rcos = float(std::cos(geometry.rotation * M_PI / 180.));
+	const auto flipX = geometry.flip.testFlag(Qt::Horizontal) ? -1.f : 1.f;
+	const auto flipY = geometry.flip.testFlag(Qt::Vertical) ? -1.f : 1.f;
 	const auto rotated = [&](float x, float y) -> std::array<float, 2> {
 		x -= centerx;
 		y -= centery;
-		return { centerx + x * rcos + y * rsin,
-		         centery + y * rcos - x * rsin };
+		return {
+			centerx + (x * rcos + y * rsin) * flipX,
+			centery + (y * rcos - x * rsin) * flipY,
+		};
 	};
 	const auto tl = rotated(rRect.left(), rRect.bottom());
 	const auto tr = rotated(rRect.right(), rRect.bottom());

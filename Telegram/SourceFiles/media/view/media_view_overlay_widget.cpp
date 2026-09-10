@@ -28,8 +28,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/crash_reports.h"
 #include "core/sandbox.h"
 #include "core/shortcuts.h"
+#include "ui/widgets/menu/menu.h"
 #include "ui/widgets/menu/menu_add_action_callback.h"
 #include "ui/widgets/menu/menu_add_action_callback_factory.h"
+#include "ui/widgets/menu/menu_toggle.h"
 #include "ui/widgets/dropdown_menu.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/buttons.h"
@@ -1086,7 +1088,7 @@ void OverlayWidget::setupWindow() {
 			&& _recognitionResult.success
 			&& !_recognitionResult.items.empty()
 			&& _recognition.positionAt(
-				widgetPoint,
+				unflipContentPosition(widgetPoint),
 				finalContentRect(),
 				_rotation,
 				false).item >= 0) {
@@ -1573,15 +1575,32 @@ void OverlayWidget::setStaticContent(QImage image) {
 		image = std::move(image).convertToFormat(kGood);
 	}
 	image.setDevicePixelRatio(style::DevicePixelRatio());
-	if (_flip) {
-		image = image.mirrored(_flip & Qt::Horizontal, _flip & Qt::Vertical);
-	}
 	_staticContent = std::move(image);
 	_staticContentTransparent = IsSemitransparent(_staticContent);
 }
 
 bool OverlayWidget::contentShown() const {
 	return _photo || documentContentShown();
+}
+
+bool OverlayWidget::canFlipContent() const {
+	return !_stories
+		&& !_themePreviewShown
+		&& (contentShown()
+			|| (_document
+				&& (_document->isVideoFile()
+					|| _document->isVideoMessage()
+					|| _document->isAnimation()
+					|| _document->isImage())));
+}
+
+void OverlayWidget::toggleContentFlip(Qt::Orientation orientation) {
+	if (!canFlipContent()) {
+		return;
+	}
+	_flip.setFlag(orientation, !_flip.testFlag(orientation));
+	clearRecognitionSelection();
+	update();
 }
 
 bool OverlayWidget::opaqueContentShown() const {
@@ -2256,6 +2275,7 @@ void OverlayWidget::refreshPollVotersWidgetGeometry() {
 }
 
 void OverlayWidget::fillContextMenuActions(
+		not_null<Ui::Menu::Menu*> menu,
 		const Ui::Menu::MenuCallback &addAction) {
 	if (_message && _message->isSponsored()) {
 		if (const auto window = findWindow()) {
@@ -2439,6 +2459,20 @@ void OverlayWidget::fillContextMenuActions(
 			text,
 			[=] { showMediaOverview(); },
 			&st::mediaMenuIconShowAll);
+	}
+	if (canFlipContent()) {
+		auto toggle = base::make_unique_q<Ui::Menu::Toggle>(
+			menu,
+			st::mediaviewMenuWithToggle,
+			tr::lng_mediaview_flip_horizontal(tr::now),
+			[=] { toggleContentFlip(Qt::Horizontal); },
+			&st::mediaMenuIconFlip,
+			&st::mediaMenuIconFlip);
+		const auto action = toggle->action();
+		action->setCheckable(true);
+		action->setChecked(_flip.testFlag(Qt::Horizontal));
+		toggle->finishAnimating();
+		menu->addAction(std::move(toggle));
 	}
 	[&] { // Set userpic.
 		if (!_peer || !_photo || (_peer->userpicPhotoId() == _photo->id)) {
@@ -2722,7 +2756,12 @@ OverlayWidget::ContentGeometry OverlayWidget::contentGeometry() const {
 			toRectRotated.width())
 		: toRectRotated;
 	if (!_geometryAnimation.animating()) {
-		return { toRect, toRotation, controlsOpacity };
+		return {
+			.rect = toRect,
+			.rotation = toRotation,
+			.controlsOpacity = controlsOpacity,
+			.flip = _flip,
+		};
 	}
 	const auto fromRect = _oldGeometry.rect;
 	const auto fromRotation = _oldGeometry.rotation;
@@ -2745,7 +2784,12 @@ OverlayWidget::ContentGeometry OverlayWidget::contentGeometry() const {
 		fromRect.width() + (toRect.width() - fromRect.width()) * progress,
 		fromRect.height() + (toRect.height() - fromRect.height()) * progress
 	);
-	return { useRect, useRotation, controlsOpacity };
+	return {
+		.rect = useRect,
+		.rotation = useRotation,
+		.controlsOpacity = controlsOpacity,
+		.flip = _flip,
+	};
 }
 
 OverlayWidget::ContentGeometry OverlayWidget::storiesContentGeometry(
@@ -3062,7 +3106,9 @@ OverlayWidget::~OverlayWidget() {
 
 void OverlayWidget::assignMediaPointer(DocumentData *document) {
 	_savePhotoVideoWhenLoaded = SavePhotoVideo::None;
-	_flip = {};
+	if (_photo || _document != document) {
+		_flip = {};
+	}
 	_photo = nullptr;
 	_photoMedia = nullptr;
 	_videoStream = nullptr;
@@ -5395,9 +5441,15 @@ void OverlayWidget::updatePowerSaveBlocker(
 }
 
 QImage OverlayWidget::transformedShownContent() const {
-	return transformShownContent(
+	auto content = transformShownContent(
 		videoShown() ? currentVideoFrameImage() : _staticContent,
 		finalContentRotation());
+	if (_flip && !_stories) {
+		content = content.mirrored(
+			_flip.testFlag(Qt::Horizontal),
+			_flip.testFlag(Qt::Vertical));
+	}
+	return content;
 }
 
 QImage OverlayWidget::transformShownContent(
@@ -5727,7 +5779,9 @@ void OverlayWidget::restartAtSeekPosition(crl::time position) {
 	if (videoShown()) {
 		_streamed->instance.saveFrameToCover();
 		const auto saved = base::take(_rotation);
-		setStaticContent(transformedShownContent());
+		setStaticContent(transformShownContent(
+			currentVideoFrameImage(),
+			finalContentRotation()));
 		_rotation = saved;
 		updateContentRect();
 	}
@@ -7746,25 +7800,9 @@ void OverlayWidget::handleKeyPress(not_null<QKeyEvent*> e) {
 		}
 		moveToNext(-1);
 	} else if (key == Qt::Key_H && !_stories) {
-		if (_flip & Qt::Horizontal) {
-			_flip &= ~Qt::Horizontal;
-		} else {
-			_flip |= Qt::Horizontal;
-		}
-		if (_photo) {
-			validatePhotoCurrentImage();
-			redisplayContent();
-		}
+		toggleContentFlip(Qt::Horizontal);
 	} else if (key == Qt::Key_V && !_stories) {
-		if (_flip & Qt::Vertical) {
-			_flip &= ~Qt::Vertical;
-		} else {
-			_flip |= Qt::Vertical;
-		}
-		if (_photo) {
-			validatePhotoCurrentImage();
-			redisplayContent();
-		}
+		toggleContentFlip(Qt::Vertical);
 	} else if (key == Qt::Key_Right) {
 		if (_controlsHideTimer.isActive()) {
 			activateControls();
@@ -8405,7 +8443,7 @@ void OverlayWidget::handleMousePress(
 					&& _recognitionResult.success
 					&& !_recognitionResult.items.empty())
 					? _recognition.positionAt(
-						position,
+						unflipContentPosition(position),
 						finalContentRect(),
 						_rotation,
 						false)
@@ -8474,8 +8512,20 @@ void OverlayWidget::snapXY() {
 	accumulate_min(_y, ymax);
 }
 
+QPoint OverlayWidget::unflipContentPosition(QPoint position) const {
+	const auto rect = finalContentRect();
+	if (_flip.testFlag(Qt::Horizontal)) {
+		position.setX(rect.x() + rect.width() - (position.x() - rect.x()));
+	}
+	if (_flip.testFlag(Qt::Vertical)) {
+		position.setY(rect.y() + rect.height() - (position.y() - rect.y()));
+	}
+	return position;
+}
+
 auto OverlayWidget::scaledRecognitionRect(QPoint position)
 const -> std::optional<Platform::TextRecognition::RectWithText> {
+	position = unflipContentPosition(position);
 	auto contentRect = finalContentRect();
 	if (_rotation) {
 		auto transform = QTransform();
@@ -8519,7 +8569,7 @@ bool OverlayWidget::recognitionTakesMouse(QPoint position) const {
 
 void OverlayWidget::updateRecognitionSelection(QPoint position) {
 	const auto focus = _recognition.positionAt(
-		position,
+		unflipContentPosition(position),
 		finalContentRect(),
 		_rotation,
 		true);
@@ -8981,7 +9031,9 @@ bool OverlayWidget::handleContextMenu(std::optional<QPoint> position) {
 	_menu = base::make_unique_q<Ui::PopupMenu>(
 		_window,
 		st::mediaviewPopupMenu);
-	fillContextMenuActions(Ui::Menu::CreateAddActionCallback(_menu));
+	fillContextMenuActions(
+		_menu->menu(),
+		Ui::Menu::CreateAddActionCallback(_menu));
 
 	if (_menu->empty()) {
 		_menu = nullptr;
@@ -9301,7 +9353,9 @@ void OverlayWidget::receiveMouse() {
 
 void OverlayWidget::showDropdown() {
 	_dropdown->clearActions();
-	fillContextMenuActions(Ui::Menu::CreateAddActionCallback(_dropdown));
+	fillContextMenuActions(
+		_dropdown->menu(),
+		Ui::Menu::CreateAddActionCallback(_dropdown));
 	_dropdown->moveToRight(0, height() - _dropdown->height());
 	_dropdown->showAnimated(Ui::PanelAnimation::Origin::BottomRight);
 	_dropdown->setFocus();

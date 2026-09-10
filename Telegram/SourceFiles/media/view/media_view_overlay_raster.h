@@ -34,6 +34,7 @@ private:
 		const QImage &image,
 		QRect rect,
 		int rotation,
+		Qt::Orientations flip,
 		const QRectF &sourceRect = QRectF());
 	void paintControlsFade(QRect content, const ContentGeometry &geometry);
 	void applyMediaViewerBrightness(QRect content);

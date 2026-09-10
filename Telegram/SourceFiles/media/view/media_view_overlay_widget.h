@@ -59,6 +59,7 @@ enum class Backend;
 } // namespace Ui::GL
 
 namespace Ui::Menu {
+class Menu;
 struct MenuCallback;
 } // namespace Ui::Menu
 
@@ -193,6 +194,7 @@ private:
 		QRectF rect;
 		qreal rotation = 0.;
 		qreal controlsOpacity = 0.;
+		Qt::Orientations flip;
 
 		// Stories.
 		qreal fade = 0.;
@@ -316,6 +318,7 @@ private:
 	void receiveMouse();
 	void showAttachedStickers();
 
+	[[nodiscard]] QPoint unflipContentPosition(QPoint position) const;
 	[[nodiscard]] auto scaledRecognitionRect(QPoint position)
 	const -> std::optional<Platform::TextRecognition::RectWithText>;
 	[[nodiscard]] bool recognitionTakesMouse(QPoint position) const;
@@ -427,7 +430,9 @@ private:
 	void markTimedMediaRead();
 	void checkSingleViewMediaBurn();
 
-	void fillContextMenuActions(const Ui::Menu::MenuCallback &addAction);
+	void fillContextMenuActions(
+		not_null<Ui::Menu::Menu*> menu,
+		const Ui::Menu::MenuCallback &addAction);
 
 	void resizeCenteredControls();
 	void resizeContentByScreenSize();
@@ -620,6 +625,8 @@ private:
 	[[nodiscard]] bool documentBubbleShown() const;
 	void setStaticContent(QImage image);
 	[[nodiscard]] bool contentShown() const;
+	[[nodiscard]] bool canFlipContent() const;
+	void toggleContentFlip(Qt::Orientation orientation);
 	[[nodiscard]] bool opaqueContentShown() const;
 	void clearStreaming(bool savePosition = true);
 	[[nodiscard]] bool canInitStreaming() const;
