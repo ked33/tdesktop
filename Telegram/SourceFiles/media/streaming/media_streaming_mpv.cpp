@@ -22,6 +22,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_boost.h"
 #include "media/streaming/media_streaming_diagnostics.h"
 #include "media/streaming/media_streaming_mp4_header.h"
+#include "media/streaming/media_streaming_mpv_http.h"
 #include "media/streaming/media_streaming_reader.h"
 #include "logs.h"
 #include "settings.h"
@@ -66,21 +67,13 @@ constexpr auto kPathPrefixLength = 5;
 constexpr auto kHeadersLimit = 64 * 1024;
 constexpr auto kReadChunkSize = 256 * 1024;
 constexpr auto kInitialReadChunkSize = 64 * 1024;
+constexpr auto kReadCancelCheckInterval = 10;
 constexpr auto kMp4LayoutWaitTimeout = 4000;
 constexpr auto kMp4LayoutWaitStep = 10;
 constexpr auto kCleanupInterval = 60 * crl::time(1000);
 constexpr auto kTokenLifetime = 5 * 60 * crl::time(1000);
 constexpr auto kPlayerStartTimeout = 5000;
 constexpr auto kMpvLoaderPriority = 2;
-constexpr auto kSmartSeekStartupGrace = crl::time(2000);
-constexpr auto kSmartSeekDuplicateInterval = crl::time(750);
-constexpr auto kSmartSeekPressureMaximum = crl::time(1500);
-constexpr auto kSmartSeekMinimumPlaybackBytes = int64(2) * 1024 * 1024;
-constexpr auto kSmartSeekMinimumJump = int64(4) * 1024 * 1024;
-constexpr auto kSmartSeekMaximumJump = int64(32) * 1024 * 1024;
-constexpr auto kSmartSeekMinimumRange = int64(1024) * 1024;
-constexpr auto kSmartSeekTailGuard = int64(4) * 1024 * 1024;
-constexpr auto kSmartSeekPrefetchFallback = int64(4) * 1024 * 1024;
 
 [[nodiscard]] bool MpvDebugLogsEnabled() {
 	return GetEnhancedBool("mpv_streaming_debug_logs");
@@ -207,8 +200,7 @@ struct Entry {
 	, reader(std::move(reader))
 	, diagnostics(this->reader->diagnostics())
 	, size(this->reader ? this->reader->size() : 0)
-	, smartPlaybackRate(SmartPlaybackRateForDocument(document))
-	, smartOpenedAt(crl::now()) {
+	, smartPlaybackRate(SmartPlaybackRateForDocument(document)) {
 		smartActiveReader = this->reader;
 		if (this->reader
 			&& smartPlaybackRate > 0
@@ -224,6 +216,8 @@ struct Entry {
 
 	not_null<DocumentData*> document;
 	Data::FileOrigin origin;
+	crl::semaphore readReady;
+	crl::semaphore seekReadReady;
 	std::shared_ptr<Reader> reader;
 	const std::shared_ptr<TransferDiagnostics> diagnostics;
 	std::shared_ptr<Reader> seekReader;
@@ -237,125 +231,21 @@ struct Entry {
 	Mp4::HeaderPatch mp4HeaderPatch;
 	std::atomic<std::uint64_t> latestSeekGeneration = 0;
 	int smartPlaybackRate = 0;
-	crl::time smartOpenedAt = 0;
-	crl::time smartLastSeekAt = 0;
-	int64 smartPlaybackTill = 0;
-	int64 smartPlaybackBytes = 0;
-	int64 smartLastSeekOffset = -1;
-	std::uint64_t smartPlaybackGeneration = 0;
 	std::weak_ptr<Reader> smartActiveReader;
-	std::map<Reader*, int> smartPressureReaders;
 	std::mutex smartStateMutex;
 	std::mutex fillMutex;
 	std::mutex seekFillMutex;
 };
 
-struct SmartRangeDecision {
-	bool trackPlayback = false;
-	bool seek = false;
-	std::uint64_t generation = 0;
-	int64 previousTill = 0;
-	int64 jump = 0;
-};
-
-[[nodiscard]] SmartRangeDecision ClassifySmartRange(
-		const std::shared_ptr<Entry> &entry,
-		not_null<Reader*> reader,
-		int64 offset,
-		int64 length,
-		bool startedFromZero,
-		bool directRange) {
-	if (!reader->smartStreamingEnabled() || entry->smartPlaybackRate <= 0) {
-		return {};
-	}
-	const auto now = crl::now();
-	const auto guard = std::lock_guard(entry->smartStateMutex);
-	auto result = SmartRangeDecision{
-		.generation = entry->smartPlaybackGeneration,
-		.previousTill = entry->smartPlaybackTill,
-	};
-	if (startedFromZero) {
-		result.trackPlayback = true;
-		return result;
-	}
-	const auto jump = (offset >= entry->smartPlaybackTill)
-		? (offset - entry->smartPlaybackTill)
-		: (entry->smartPlaybackTill - offset);
-	result.jump = jump;
-	const auto continuationLimit = std::max<int64>(
-		2 * kReadChunkSize,
-		std::min<int64>(entry->smartPlaybackRate, kSmartSeekMinimumJump));
-	if (entry->smartPlaybackBytes > 0 && jump <= continuationLimit) {
-		result.trackPlayback = true;
-		return result;
-	}
-	const auto seekJump = std::clamp<int64>(
-		int64(entry->smartPlaybackRate) * 2,
-		kSmartSeekMinimumJump,
-		kSmartSeekMaximumJump);
-	if (jump < seekJump) {
-		result.trackPlayback = true;
-		return result;
-	}
-	const auto duplicateJump = (entry->smartLastSeekOffset >= 0)
-		? ((offset >= entry->smartLastSeekOffset)
-			? (offset - entry->smartLastSeekOffset)
-			: (entry->smartLastSeekOffset - offset))
-		: seekJump;
-	const auto usableDirectRange = directRange
-		&& offset > 0
-		&& length >= kSmartSeekMinimumRange
-		&& offset <= entry->size
-			- std::min(entry->size, kSmartSeekTailGuard)
-		&& now >= entry->smartOpenedAt + kSmartSeekStartupGrace;
-	if (entry->smartPlaybackBytes < kSmartSeekMinimumPlaybackBytes) {
-		result.trackPlayback = usableDirectRange;
-		return result;
-	}
-	if (!usableDirectRange
-		|| (now < entry->smartLastSeekAt + kSmartSeekDuplicateInterval
-			&& duplicateJump <= continuationLimit)) {
-		return result;
-	}
-	result.trackPlayback = true;
-	result.seek = true;
-	result.generation = ++entry->smartPlaybackGeneration;
-	entry->smartLastSeekAt = now;
-	entry->smartLastSeekOffset = offset;
-	return result;
-}
-
-void NoteSmartPlaybackProgress(
-		const std::shared_ptr<Entry> &entry,
-		const SmartRangeDecision &decision,
-		int64 till,
-		int size) {
-	if (!decision.trackPlayback || size <= 0) {
-		return;
-	}
-	const auto guard = std::lock_guard(entry->smartStateMutex);
-	if (decision.generation != entry->smartPlaybackGeneration) {
-		return;
-	}
-	entry->smartPlaybackTill = till;
-	entry->smartPlaybackBytes = std::min(
-		entry->smartPlaybackBytes + size,
-		kSmartSeekMinimumPlaybackBytes);
-}
-
 void ActivateSmartReader(
 		const std::shared_ptr<Entry> &entry,
-		const std::shared_ptr<Reader> &reader,
-		std::uint64_t generation) {
+		const std::shared_ptr<Reader> &reader) {
 	if (!reader
 		|| entry->smartPlaybackRate <= 0
 		|| !reader->smartStreamingEnabled()) {
 		return;
 	}
 	const auto guard = std::lock_guard(entry->smartStateMutex);
-	if (generation != entry->smartPlaybackGeneration) {
-		return;
-	}
 	const auto previous = entry->smartActiveReader.lock();
 	if (previous == reader) {
 		return;
@@ -367,58 +257,20 @@ void ActivateSmartReader(
 	entry->smartActiveReader = reader;
 }
 
-[[nodiscard]] bool BeginSmartSeekPressure(
-		const std::shared_ptr<Entry> &entry,
-		const std::shared_ptr<Reader> &reader,
-		std::uint64_t generation) {
-	const auto guard = std::lock_guard(entry->smartStateMutex);
-	if (generation != entry->smartPlaybackGeneration) {
-		return false;
-	}
-	++entry->smartPressureReaders[reader.get()];
-	reader->setSmartStreamingBufferPressure(true);
-	return true;
-}
-
-void EndSmartSeekPressure(
-		const std::shared_ptr<Entry> &entry,
-		const std::shared_ptr<Reader> &reader) {
-	const auto guard = std::lock_guard(entry->smartStateMutex);
-	const auto i = entry->smartPressureReaders.find(reader.get());
-	if (i == end(entry->smartPressureReaders)) {
-		return;
-	} else if (--i->second == 0) {
-		reader->setSmartStreamingBufferPressure(false);
-		entry->smartPressureReaders.erase(i);
-	}
-}
-
-void PrefetchSmartSeekIfCurrent(
-		const std::shared_ptr<Entry> &entry,
-		const std::shared_ptr<Reader> &reader,
-		const SmartRangeDecision &decision,
-		int64 offset) {
-	const auto guard = std::lock_guard(entry->smartStateMutex);
-	if (decision.generation == entry->smartPlaybackGeneration) {
-		reader->prefetch({
-			.generation = decision.generation,
-			.offset = offset,
-			.amount = kSmartSeekPrefetchFallback,
-			.fallbackUrgentOffset = offset,
-		});
-	}
-}
-
 [[nodiscard]] std::shared_ptr<Reader> CreateDedicatedReader(
 	not_null<DocumentData*> document,
 	Data::FileOrigin origin);
 [[nodiscard]] std::shared_ptr<Reader> CreateDedicatedReaderFromWorker(
 	not_null<DocumentData*> document,
 	Data::FileOrigin origin);
-[[nodiscard]] bool FillBuffer(
-	not_null<Reader*> reader,
+[[nodiscard]] Http::ReadResult FillBuffer(
+	const std::shared_ptr<Reader> &reader,
+	crl::semaphore &ready,
 	int64 offset,
-	bytes::span buffer);
+	bytes::span buffer,
+	const std::function<bool()> &cancelled,
+	const std::function<bool()> &wait,
+	ReadMode mode = ReadMode::Required);
 
 [[nodiscard]] QString StreamingErrorDebugString(std::optional<Error> error) {
 	if (!error) {
@@ -464,38 +316,32 @@ void PrefetchSmartSeekIfCurrent(
 	return result;
 }
 
-	[[nodiscard]] bool RecoverEntryReader(
-			const std::shared_ptr<Entry> &entry,
-			const QString &token,
-			int64 offset,
-			const SmartRangeDecision &smartRange) {
-		const auto fresh = CreateDedicatedReaderFromWorker(
-			entry->document,
-			entry->origin);
-			if (!fresh) {
-				MPV_STREAMING_LOG(("MPV Streaming: Failed to recreate reader for token %1 at offset %2.")
-					.arg(token)
-					.arg(offset));
-				return false;
-			}
-		if (smartRange.trackPlayback) {
-			ActivateSmartReader(
-				entry,
-				fresh,
-				smartRange.generation);
-		}
-		const auto previous = std::move(entry->reader);
-		entry->reader = fresh;
-		entry->headerFinalized = false;
-		if (previous) {
-			previous->stopStreamingAsync();
-			previous->tryRemoveLoaderAsync();
-		}
-		MPV_STREAMING_LOG(("MPV Streaming: Recreated reader for token %1 after LoadFailed at offset %2.")
+[[nodiscard]] bool RecoverEntryReader(
+		const std::shared_ptr<Entry> &entry,
+		const QString &token,
+		int64 offset) {
+	const auto fresh = CreateDedicatedReaderFromWorker(
+		entry->document,
+		entry->origin);
+	if (!fresh) {
+		MPV_STREAMING_LOG(("MPV Streaming: Failed to recreate reader for token %1 at offset %2.")
 			.arg(token)
 			.arg(offset));
-		return true;
+		return false;
 	}
+	ActivateSmartReader(entry, fresh);
+	const auto previous = std::move(entry->reader);
+	entry->reader = fresh;
+	entry->headerFinalized = false;
+	if (previous) {
+		previous->stopStreamingAsync();
+		previous->tryRemoveLoaderAsync();
+	}
+	MPV_STREAMING_LOG(("MPV Streaming: Recreated reader for token %1 after LoadFailed at offset %2.")
+		.arg(token)
+		.arg(offset));
+	return true;
+}
 
 [[nodiscard]] QString ResolveProgram() {
 	auto configured = GetEnhancedString("mpv_path").trimmed();
@@ -667,7 +513,12 @@ void PrefetchSmartSeekIfCurrent(
 		}
 		written += amount;
 	}
-	return socket.waitForBytesWritten(30000) || !socket.bytesToWrite();
+	while (socket.bytesToWrite() > 0) {
+		if (!socket.waitForBytesWritten(30000)) {
+			return false;
+		}
+	}
+	return true;
 }
 
 [[nodiscard]] bool WriteAll(
@@ -684,7 +535,12 @@ void PrefetchSmartSeekIfCurrent(
 		}
 		written += amount;
 	}
-	return socket.waitForBytesWritten(30000) || !socket.bytesToWrite();
+	while (socket.bytesToWrite() > 0) {
+		if (!socket.waitForBytesWritten(30000)) {
+			return false;
+		}
+	}
+	return true;
 }
 
 [[nodiscard]] bool SendResponse(
@@ -704,23 +560,41 @@ void PrefetchSmartSeekIfCurrent(
 	return WriteAll(socket, data);
 }
 
-[[nodiscard]] bool FillBuffer(
-		not_null<Reader*> reader,
+void FinishAbandonedRead(const std::shared_ptr<Reader> &reader) {
+	// Reader may retain a notification after an interrupted HTTP read.
+	// Its notification lives with Entry, beyond any individual request.
+	// A main-thread acknowledgement clears the old demand and synchronizes
+	// with loader callbacks before this request releases the fill mutex.
+	auto finished = crl::semaphore();
+	crl::on_main([reader, &finished] {
+		reader->continueStreamingForSoftSeek();
+		reader->diagnostics()->readStopped();
+		finished.release();
+	});
+	finished.acquire();
+}
+
+[[nodiscard]] Http::ReadResult FillBuffer(
+		const std::shared_ptr<Reader> &reader,
+		crl::semaphore &ready,
 		int64 offset,
-		bytes::span buffer) {
-	auto semaphore = crl::semaphore();
-	while (true) {
-		const auto state = reader->fill(offset, buffer, &semaphore);
+		bytes::span buffer,
+		const std::function<bool()> &cancelled,
+		const std::function<bool()> &wait,
+		ReadMode mode) {
+	const auto result = Http::ReadChunk([&] {
+		const auto state = reader->fill(offset, buffer, &ready, mode);
 		if (state == Reader::FillState::Success) {
-			return true;
+			return Http::ReadResult::Success;
 		} else if (state == Reader::FillState::Failed) {
-			return false;
+			return Http::ReadResult::Failed;
 		}
-		semaphore.acquire();
-		if (reader->streamingError()) {
-			return false;
-		}
+		return Http::ReadResult::Waiting;
+	}, cancelled, wait);
+	if (result != Http::ReadResult::Success) {
+		FinishAbandonedRead(reader);
 	}
+	return result;
 }
 
 [[nodiscard]] bool WaitForMp4LayoutForSeek(
@@ -964,6 +838,15 @@ private:
 				false,
 				range.range.from,
 				range.range.length);
+			const auto disconnected = [&] {
+				socket.waitForReadyRead(0);
+				return entry->removeWhenIdle.load()
+					|| socket.state() != QAbstractSocket::ConnectedState;
+			};
+			const auto waitForRead = [&] {
+				socket.waitForReadyRead(kReadCancelCheckInterval);
+				return true;
+			};
 			// Fragmented MP4 keeps the sequential-open fallback.
 			// A large front moov only requires an isolated reader
 			// for range requests, so probing and playback reads do
@@ -972,16 +855,26 @@ private:
 				&& range.range.from == 0) {
 				const auto lock = std::unique_lock(entry->fillMutex);
 				if (entry->mp4Layout.load() == 0) {
+					auto probeCancelled = false;
 					const auto header = Mp4::ProbeForStreaming(
 						entry->size,
 						[&](std::int64_t offset, std::span<char> buffer) {
-							return FillBuffer(
-								entry->reader.get(),
+							const auto result = FillBuffer(
+								entry->reader,
+								entry->readReady,
 								offset,
 								bytes::span(
 									reinterpret_cast<bytes::type*>(buffer.data()),
-									buffer.size()));
+									buffer.size()),
+								disconnected,
+								waitForRead);
+							probeCancelled |= (result == Http::ReadResult::Cancelled);
+							return result == Http::ReadResult::Success;
 						});
+					if (probeCancelled) {
+						diagnostics.outcome("client-disconnected");
+						return;
+					}
 					entry->mp4HeaderPatch = header.patch;
 					entry->mp4Layout.store(int(header.layout));
 					MPV_STREAMING_LOG(("MPV Streaming: Detected MP4 layout: %1 "
@@ -1063,8 +956,21 @@ private:
 				return;
 			}
 			const auto startedFromZero = (offset == 0);
-			auto activeReader = entry->reader;
+			const auto seekGenerationManaged = isolatedSeekRequest;
+			const auto seekGeneration = seekGenerationManaged
+				? (entry->latestSeekGeneration.fetch_add(1) + 1)
+				: std::uint64_t(0);
+			const auto seekSuperseded = [&] {
+				return seekGenerationManaged
+					&& (entry->latestSeekGeneration.load() != seekGeneration);
+			};
+			const auto readCancelled = [&] {
+				return disconnected() || seekSuperseded();
+			};
+			auto activeReader = std::shared_ptr<Reader>();
 			auto *fillMutex = &entry->fillMutex;
+			auto *readReady = &entry->readReady;
+			auto usingSeekReader = false;
 			if (isolatedSeekRequest) {
 				const auto lock = std::unique_lock(entry->seekFillMutex);
 				if (!entry->seekReader) {
@@ -1075,6 +981,9 @@ private:
 				if (entry->seekReader) {
 					activeReader = entry->seekReader;
 					fillMutex = &entry->seekFillMutex;
+					readReady = &entry->seekReadReady;
+					usingSeekReader = true;
+					ActivateSmartReader(entry, activeReader);
 					MPV_STREAMING_LOG(("MPV Streaming: Using isolated seek reader for token %1 at offset %2.")
 						.arg(request.token)
 						.arg(range.range.from));
@@ -1084,61 +993,15 @@ private:
 						.arg(range.range.from));
 				}
 			}
-			const auto usingSeekReader = (activeReader != entry->reader);
-			const auto smartRange = ClassifySmartRange(
-				entry,
-				activeReader.get(),
-				offset,
-				left,
-				startedFromZero,
-				!compatibilitySequentialRequest
-					&& (range.range.from > 0));
-			if (smartRange.trackPlayback) {
-				ActivateSmartReader(
-					entry,
-					activeReader,
-					smartRange.generation);
+			if (!activeReader) {
+				const auto lock = std::unique_lock(entry->fillMutex);
+				activeReader = entry->reader;
+				ActivateSmartReader(entry, activeReader);
 			}
-			auto smartPressureActive = smartRange.seek
-				&& BeginSmartSeekPressure(
-					entry,
-					activeReader,
-					smartRange.generation);
-			auto smartPrefetchPending = smartPressureActive;
-			auto smartSeekServed = int64(0);
-			const auto smartPressureStarted = crl::now();
-			if (smartPressureActive) {
-				activeReader->notifySmartStreamingSeek();
-				MPV_STREAMING_LOG(("MPV Streaming: Smart seek "
-					"target=%1 previous=%2 jump=%3 length=%4 "
-					"playback=%5 layout=%6 isolated=%7.")
-					.arg(qlonglong(offset))
-					.arg(qlonglong(smartRange.previousTill))
-					.arg(qlonglong(smartRange.jump))
-					.arg(qlonglong(left))
-					.arg(entry->smartPlaybackRate)
-					.arg(entry->mp4Layout.load())
-					.arg(usingSeekReader ? 1 : 0));
-			}
-			const auto smartPressureGuard = gsl::finally([&] {
-				if (smartPressureActive) {
-					EndSmartSeekPressure(entry, activeReader);
-				}
-			});
-			const auto seekGenerationManaged =
-				(entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov))
-				&& isolatedSeekRequest;
-			const auto seekGeneration = seekGenerationManaged
-				? (entry->latestSeekGeneration.fetch_add(1) + 1)
-				: std::uint64_t(0);
 			diagnostics.useReader(
 				activeReader->diagnostics(),
 				seekGeneration,
-				smartRange.generation);
-			const auto seekSuperseded = [&] {
-				return seekGenerationManaged
-					&& (entry->latestSeekGeneration.load() != seekGeneration);
-			};
+				0);
 			auto retriedLoadFailure = false;
 			auto clientDisconnected = false;
 			auto supersededSeek = false;
@@ -1148,14 +1011,14 @@ private:
 					break;
 				}
 				// Check if client disconnected before acquiring the lock.
-				socket.waitForReadyRead(0);
-				if (socket.state() != QAbstractSocket::ConnectedState) {
+				if (disconnected()) {
 					clientDisconnected = true;
 					break;
 				}
-				const auto chunkSize = (offset == range.range.from)
-					? kInitialReadChunkSize
-					: kReadChunkSize;
+				const auto chunkSize = (compatibilitySequentialRequest
+					&& offset != range.range.from)
+					? kReadChunkSize
+					: kInitialReadChunkSize;
 				const auto size = int(std::min(left, int64(chunkSize)));
 				auto buffer = QByteArray(size, Qt::Uninitialized);
 				diagnostics.readStarted();
@@ -1167,26 +1030,32 @@ private:
 						break;
 					}
 					// Re-check after acquiring the lock.
-					socket.waitForReadyRead(0);
-					if (socket.state() != QAbstractSocket::ConnectedState) {
+					if (disconnected()) {
 						clientDisconnected = true;
 						break;
 					}
-					if (smartPrefetchPending) {
-						PrefetchSmartSeekIfCurrent(
-							entry,
-							activeReader,
-							smartRange,
-							range.range.from);
-						smartPrefetchPending = false;
+					if (!usingSeekReader && activeReader != entry->reader) {
+						activeReader = entry->reader;
+						diagnostics.useReader(
+							activeReader->diagnostics(),
+							seekGeneration,
+							0);
 					}
-					if (!FillBuffer(
-							activeReader.get(),
-							offset,
-							bytes::span(
-								reinterpret_cast<bytes::type*>(buffer.data()),
-								size))) {
-						diagnostics.readFinished();
+					const auto result = FillBuffer(
+						activeReader,
+						*readReady,
+						offset,
+						bytes::span(
+							reinterpret_cast<bytes::type*>(buffer.data()),
+							size),
+						readCancelled,
+						waitForRead);
+					diagnostics.readFinished();
+					if (result == Http::ReadResult::Cancelled) {
+						supersededSeek = seekSuperseded();
+						clientDisconnected = !supersededSeek;
+						break;
+					} else if (result != Http::ReadResult::Success) {
 						diagnostics.outcome("read-failed");
 						const auto error = activeReader->streamingError();
 						if (!usingSeekReader
@@ -1196,8 +1065,12 @@ private:
 							&& RecoverEntryReader(
 								entry,
 								request.token,
-								offset,
-								smartRange)) {
+								offset)) {
+							activeReader = entry->reader;
+							diagnostics.useReader(
+								activeReader->diagnostics(),
+								seekGeneration,
+								0);
 							retriedLoadFailure = true;
 							continue;
 						}
@@ -1207,7 +1080,6 @@ private:
 							.arg(StreamingErrorDebugString(error)));
 						return;
 					}
-					diagnostics.readFinished();
 					if (startedFromZero
 						&& !usingSeekReader
 						&& !entry->headerFinalized.exchange(true)) {
@@ -1237,20 +1109,6 @@ private:
 				retriedLoadFailure = false;
 				offset += size;
 				left -= size;
-				NoteSmartPlaybackProgress(
-					entry,
-					smartRange,
-					offset,
-					size);
-				if (smartPressureActive) {
-					smartSeekServed += size;
-					if (smartSeekServed >= kSmartSeekMinimumPlaybackBytes
-						|| crl::now() >= smartPressureStarted
-							+ kSmartSeekPressureMaximum) {
-						EndSmartSeekPressure(entry, activeReader);
-						smartPressureActive = false;
-					}
-				}
 				entry->lastActivity = crl::now();
 			}
 			if (supersededSeek) {
@@ -1265,44 +1123,41 @@ private:
 			diagnostics.outcome(clientDisconnected
 				? "client-disconnected"
 				: "complete");
-			// Pre-fill cache sequentially after client disconnect.
-			// When a fragmented MP4 is opened, the demuxer scans
-			// hundreds of fragment headers via HTTP range requests.
-			// By continuing to fill the cache sequentially here,
-			// those seek connections find data already cached and
-			// complete almost instantly instead of each downloading
-			// from Telegram independently (~150ms per seek).
+			// Fragmented MP4 probing may leave received parts unconsumed.
+			// Drain those cached parts while another request is active,
+			// but stop on the first miss instead of waiting for the network.
+			// A disconnected scan must not retain the reader's fill mutex
+			// while a live range request waits to read a different offset.
 			if (clientDisconnected
 				&& startedFromZero
-				&& layout != Mp4Layout::LargeFrontMoov
+				&& compatibilitySequentialRequest
 				&& left > 0) {
 				while (left > 0 && entry->activeRequests.load() > 1) {
 					const auto size = int(std::min(left, int64(kReadChunkSize)));
 					auto buffer = QByteArray(size, Qt::Uninitialized);
 					{
 						const auto lock = std::unique_lock(entry->fillMutex);
-						if (entry->activeRequests.load() <= 1) {
+						if (entry->activeRequests.load() <= 1
+							|| entry->removeWhenIdle.load()) {
 							break;
 						}
-						const auto fillStart = crl::now();
-						if (!FillBuffer(
-								entry->reader.get(),
-								offset,
-								bytes::span(
-									reinterpret_cast<bytes::type*>(buffer.data()),
-									size))) {
+						const auto result = FillBuffer(
+							entry->reader,
+							entry->readReady,
+							offset,
+							bytes::span(
+								reinterpret_cast<bytes::type*>(buffer.data()),
+								size),
+							[&] {
+								return entry->removeWhenIdle.load()
+									|| entry->activeRequests.load() <= 1;
+							},
+							[] { return false; },
+							ReadMode::Probe);
+						if (result != Http::ReadResult::Success) {
 							break;
 						}
 						diagnostics.backgroundRead(size);
-						// Stop if FillBuffer was slow (cache miss).
-						// A slow fill means the Reader had to download
-						// from Telegram at this offset, indicating our
-						// sequential position diverged from the loader.
-						// Continuing would thrash the Reader's position
-						// between our offset and seek connections' offsets.
-						if (crl::now() - fillStart > 50) {
-							break;
-						}
 						if (!entry->headerFinalized.exchange(true)) {
 							entry->reader->headerDone();
 						}
