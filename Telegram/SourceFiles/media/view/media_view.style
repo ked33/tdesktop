@@ -192,6 +192,18 @@ mediaviewMenu: Menu(menuWithIcons) {
 		color: groupCallMenuBgRipple;
 	}
 }
+mediaviewMenuWithToggle: Menu(mediaviewMenu) {
+	itemPadding: margins(54px, 8px, 57px, 8px);
+	itemToggleShift: 40px;
+	itemToggle: Toggle(groupCallSettingsToggle) {
+		toggledBg: groupCallMenuBg;
+		untoggledBg: groupCallMenuBg;
+	}
+	itemToggleOver: Toggle(groupCallSettingsToggle) {
+		toggledBg: groupCallMenuBgOver;
+		untoggledBg: groupCallMenuBgOver;
+	}
+}
 mediaviewMenuShadow: Shadow(defaultEmptyShadow) {
 	fallback: groupCallMenuBg;
 }
