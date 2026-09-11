@@ -1484,6 +1484,15 @@ bool OverlayWidget::hasCopyMediaRestriction(bool skipPremiumCheck) const {
 		|| (_message && _message->forbidsSaving());
 }
 
+bool OverlayWidget::canCopyVideoFrame() const {
+	return _document
+		&& !_stories
+		&& videoShown()
+		&& (!hasCopyMediaRestriction()
+			|| (_history
+				&& (_history->peer->isChat() || _history->peer->isChannel())));
+}
+
 bool OverlayWidget::showCopyMediaRestriction(bool skipPRemiumCheck) {
 	if (!hasCopyMediaRestriction(skipPRemiumCheck)) {
 		return false;
@@ -2364,7 +2373,8 @@ void OverlayWidget::fillContextMenuActions(
 			[=] { copyRecognitionSelection(); },
 			&st::mediaMenuIconCopy);
 	}
-	if (!hasRecognitionSelection && !hasCopyMediaRestriction()) {
+	if (!hasRecognitionSelection
+		&& (canCopyVideoFrame() || !hasCopyMediaRestriction())) {
 		if ((_document && documentContentShown()) || (_photo && _photoMedia->loaded())) {
 			addAction(
 				((_document && _streamed)
@@ -3822,11 +3832,17 @@ void OverlayWidget::draw() {
 }
 
 void OverlayWidget::copyMedia() {
-	if (showCopyMediaRestriction()) {
+	const auto copyFrame = canCopyVideoFrame();
+	if (!copyFrame && showCopyMediaRestriction()) {
 		return;
 	}
 	_dropdown->hideAnimated(Ui::DropdownMenu::HideOption::IgnoreShow);
-	if (_document) {
+	if (copyFrame) {
+		const auto image = transformedShownContent();
+		if (!image.isNull()) {
+			QGuiApplication::clipboard()->setImage(image);
+		}
+	} else if (_document) {
 		const auto filepath = _document->filepath(true);
 		auto image = transformedShownContent();
 		if (!image.isNull() || !filepath.isEmpty()) {
@@ -4335,17 +4351,27 @@ void OverlayWidget::refreshCaption() {
 			_streamed->controls->setTimestamps({});
 			refreshClipControllerGeometry();
 		}
+		refreshCaptionGeometry();
 		return;
 	}
 
 	using namespace HistoryView;
-	_caption = Ui::Text::String(st::msgMinWidth);
 	const auto duration = (_streamed && _document && _message)
 		? DurationForTimestampLinks(_document)
 		: 0;
 	const auto base = duration
 		? TimestampLinkBase(_document, _message->fullId())
 		: QString();
+	auto captionText = base.isEmpty()
+		? caption
+		: AddTimestampLinks(caption, duration, base);
+	refreshTimestampDividers(captionText, duration);
+	if (!_stories) {
+		refreshCaptionGeometry();
+		return;
+	}
+
+	_caption = Ui::Text::String(st::msgMinWidth);
 	const auto captionRepaint = [=] {
 		if (_fullScreenVideo || !_controlsOpacity.current()) {
 			return;
@@ -4358,10 +4384,6 @@ void OverlayWidget::refreshCaption() {
 			: &_message->history()->session()),
 		.repaint = captionRepaint,
 	});
-	auto captionText = base.isEmpty()
-		? caption
-		: AddTimestampLinks(caption, duration, base);
-	refreshTimestampDividers(captionText, duration);
 	_caption.setMarkedText(
 		st::mediaviewCaptionStyle,
 		std::move(captionText),
