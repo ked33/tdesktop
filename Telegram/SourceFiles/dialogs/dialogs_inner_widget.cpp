@@ -5018,8 +5018,8 @@ void InnerWidget::refreshPornSearchStatus() {
 			text = tr::lng_search_porn_progress(
 				tr::now,
 				lt_progress,
-				QString::number(result.searched)
-					+ '/' + QString::number(result.total),
+				tr::marked(QString::number(result.searched)
+					+ '/' + QString::number(result.total)),
 				tr::marked);
 		} else if (result.loading) {
 			text = tr::lng_search_porn_loading(tr::now, tr::marked);
