@@ -692,6 +692,7 @@ void Updates::getDifference() {
 	if (requestingDifference()) {
 		return;
 	}
+	api().invalidatePornSearch();
 
 	_bySeqUpdates.clear();
 	_bySeqTimer.cancel();

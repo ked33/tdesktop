@@ -1097,6 +1097,11 @@ not_null<PeerData*> Session::processChat(const MTPChat &data) {
 			}
 			channel->date = data.vdate().v;
 			if (const auto restriction = data.vrestriction_reason()) {
+				channel->setHasPornRestriction(ranges::any_of(
+					restriction->v,
+					[](const MTPRestrictionReason &value) {
+						return value.c_restrictionReason().vreason().v == "porn";
+					}));
 				channel->setUnavailableReasons(Data::UnavailableReason::Extract(
 					data.vrestriction_reason()));
 				QString reason;
@@ -1108,6 +1113,7 @@ not_null<PeerData*> Session::processChat(const MTPChat &data) {
 				channel->restriction_reason = reason;
 			}
 			else {
+				channel->setHasPornRestriction(false);
 				channel->setUnavailableReasons({});
 				channel->restriction_reason = "";
 			}

@@ -23,6 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_peer_colors.h"
 #include "api/api_peer_photo.h"
 #include "api/api_polls.h"
+#include "api/api_porn_search.h"
 #include "api/api_sending.h"
 #include "api/api_text_entities.h"
 #include "api/api_rich_tasks.h"
@@ -5804,6 +5805,19 @@ Api::SelfDestruct &ApiWrap::selfDestruct() {
 
 Api::SensitiveContent &ApiWrap::sensitiveContent() {
 	return *_sensitiveContent;
+}
+
+Api::PornSearch &ApiWrap::pornSearch() {
+	if (!_pornSearch) {
+		_pornSearch = std::make_unique<Api::PornSearch>(this);
+	}
+	return *_pornSearch;
+}
+
+void ApiWrap::invalidatePornSearch() {
+	if (_pornSearch) {
+		_pornSearch->invalidate();
+	}
 }
 
 Api::GlobalPrivacy &ApiWrap::globalPrivacy() {

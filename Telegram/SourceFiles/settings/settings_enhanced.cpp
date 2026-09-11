@@ -561,6 +561,28 @@ namespace Settings {
 
 		AddButtonWithIcon(
 				inner,
+				tr::lng_settings_search_include_porn(),
+				st::settingsButtonNoIcon
+		)->toggleOn(
+				rpl::single(EnhancedSettings::SearchIncludePorn())
+		)->toggledChanges(
+		) | rpl::on_next([](bool toggled) {
+			EnhancedSettings::SetSearchIncludePorn(toggled);
+		}, container->lifetime());
+
+		AddButtonWithLabel(
+			inner,
+			tr::lng_settings_search_porn_concurrency(),
+			rpl::single(EnhancedSettings::SearchPornConcurrency())
+				| rpl::then(EnhancedSettings::SearchPornConcurrencyChanges())
+				| rpl::map([](int value) { return QString::number(value); }),
+			st::settingsButtonNoIcon
+		)->addClickHandler([] {
+			Ui::show(Box<SearchPornConcurrencyBox>());
+		});
+
+		AddButtonWithIcon(
+				inner,
 				tr::lng_settings_show_group_sender_avatar(),
 				st::settingsButtonNoIcon
 		)->toggleOn(
