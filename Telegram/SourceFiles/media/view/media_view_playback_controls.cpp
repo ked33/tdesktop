@@ -460,28 +460,33 @@ void PlaybackControls::setInFullScreen(bool inFullScreen) {
 }
 
 void PlaybackControls::resizeEvent(QResizeEvent *e) {
+	const auto playLeft = (width() - _playPauseResume->width()) / 2;
+	_playPauseResume->moveToLeft(playLeft, st::mediaviewPlayButtonTop);
+
 	const auto textSkip = st::mediaviewPlayProgressSkip;
-	const auto textLeft = st::mediaviewPlayProgressLeft;
-	const auto textTop = st::mediaviewPlayProgressTop;
-	_playedAlready->moveToLeft(textLeft + textSkip, textTop);
-	_toPlayLeft->moveToRight(textLeft + textSkip, textTop);
-	const auto remove = 2 * textLeft + 4 * textSkip + _playedAlready->width() + _toPlayLeft->width();
-	auto playbackWidth = width() - remove;
-	_playbackSlider->resize(playbackWidth, st::mediaviewPlayback.seekSize.height());
-	_playbackSlider->moveToLeft(textLeft + 2 * textSkip + _playedAlready->width(), st::mediaviewPlaybackTop);
+	const auto textTop = _playPauseResume->y()
+		+ (_playPauseResume->height() - _playedAlready->height()) / 2;
+	_playedAlready->moveToLeft(
+		playLeft - textSkip - _playedAlready->width(),
+		textTop);
+	_toPlayLeft->moveToLeft(
+		playLeft + _playPauseResume->width() + textSkip,
+		textTop);
+
+	const auto playbackSkip = st::mediaviewPlaybackSkip;
+	_playbackSlider->resize(
+		width() - 2 * playbackSkip,
+		st::mediaviewPlayback.seekSize.height());
+	_playbackSlider->moveToLeft(playbackSkip, st::mediaviewPlaybackTop);
 
 	if (_timestampLabel) {
 		_timestampLabel->resize(
 			_playbackSlider->width(),
 			_timestampLabel->height());
 		_timestampLabel->moveToLeft(
-			_playbackSlider->x(),
+			playbackSkip,
 			st::mediaviewTimestampLabelTop);
 	}
-
-	_playPauseResume->moveToLeft(
-		(width() - _playPauseResume->width()) / 2,
-		st::mediaviewPlayButtonTop);
 
 	auto right = st::mediaviewButtonsRight;
 	if (_speedToggle) {
@@ -507,11 +512,16 @@ void PlaybackControls::updateDownloadProgressPosition() {
 	if (!_downloadProgress) {
 		return;
 	}
-	const auto left = _playPauseResume->x() + _playPauseResume->width();
-	const auto right = _fullScreenToggle->x();
+	const auto left = style::RightToLeft()
+		? _fullScreenToggle->x() + _fullScreenToggle->width()
+		: _toPlayLeft->x() + _toPlayLeft->width();
+	const auto right = style::RightToLeft()
+		? _toPlayLeft->x()
+		: _fullScreenToggle->x();
 	const auto available = right - left;
 	const auto x = left + (available - _downloadProgress->width()) / 2;
-	const auto y = _playPauseResume->y() + (_playPauseResume->height() - _downloadProgress->height()) / 2;
+	const auto y = _playPauseResume->y()
+		+ (_playPauseResume->height() - _downloadProgress->height()) / 2;
 	_downloadProgress->move(x, y);
 }
 

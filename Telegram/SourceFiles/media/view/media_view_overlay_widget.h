@@ -604,6 +604,7 @@ private:
 
 	[[nodiscard]] bool hasCopyMediaRestriction(
 		bool skipPremiumCheck = false) const;
+	[[nodiscard]] bool canCopyVideoFrame() const;
 	[[nodiscard]] bool showCopyMediaRestriction(
 		bool skipPRemiumCheck = false);
 

@@ -440,20 +440,6 @@ void PlaybackSponsored::Message::paintEvent(QPaintEvent *e) {
 					{ .options = Images::Option::RoundCircle }));
 		}
 	}
-
-	p.setPen(st::mediaviewControlFg);
-
-	_title.draw(p, {
-		.position = { _left, _top },
-		.availableWidth = _about->x() - _left,
-		.palette = &st::mediaviewTextPalette,
-	});
-
-	_text.draw(p, {
-		.position = { _left, _top + _titleHeight },
-		.availableWidth = _close->x() - _left,
-		.palette = &st::mediaviewTextPalette,
-	});
 }
 
 void PlaybackSponsored::Message::mouseMoveEvent(QMouseEvent *e) {
@@ -478,7 +464,6 @@ void PlaybackSponsored::Message::mousePressEvent(QMouseEvent *e) {
 void PlaybackSponsored::Message::mouseReleaseEvent(QMouseEvent *e) {
 	if (base::take(_pressed) && _over) {
 		_session->sponsoredMessages().clicked(_data.randomId, false, false);
-		UrlClickHandler::Open(_data.link);
 	}
 }
 
