@@ -183,6 +183,22 @@ private:
 
 };
 
+class SearchPornConcurrencyBox final : public Ui::BoxContent {
+public:
+	explicit SearchPornConcurrencyBox(QWidget *parent);
+
+protected:
+	void prepare() override;
+	void setInnerFocus() override;
+	void resizeEvent(QResizeEvent *e) override;
+
+private:
+	void save();
+
+	object_ptr<Ui::InputField> _limit;
+
+};
+
 class QuickCopyTargetsBox : public Ui::BoxContent {
 public:
 	QuickCopyTargetsBox(QWidget *parent);

@@ -74,6 +74,7 @@ class BlockedPeers;
 class CloudPassword;
 class SelfDestruct;
 class SensitiveContent;
+class PornSearch;
 class GlobalPrivacy;
 class ReactionsNotifySettings;
 class UserPrivacy;
@@ -448,6 +449,8 @@ public:
 	[[nodiscard]] Api::CloudPassword &cloudPassword();
 	[[nodiscard]] Api::SelfDestruct &selfDestruct();
 	[[nodiscard]] Api::SensitiveContent &sensitiveContent();
+	[[nodiscard]] Api::PornSearch &pornSearch();
+	void invalidatePornSearch();
 	[[nodiscard]] Api::GlobalPrivacy &globalPrivacy();
 	[[nodiscard]] Api::ReactionsNotifySettings &reactionsNotifySettings();
 	[[nodiscard]] Api::UserPrivacy &userPrivacy();
@@ -826,6 +829,7 @@ private:
 	const std::unique_ptr<Api::CloudPassword> _cloudPassword;
 	const std::unique_ptr<Api::SelfDestruct> _selfDestruct;
 	const std::unique_ptr<Api::SensitiveContent> _sensitiveContent;
+	std::unique_ptr<Api::PornSearch> _pornSearch;
 	const std::unique_ptr<Api::GlobalPrivacy> _globalPrivacy;
 	const std::unique_ptr<Api::ReactionsNotifySettings> _reactionsNotifySettings;
 	const std::unique_ptr<Api::UserPrivacy> _userPrivacy;

@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "api/api_porn_search.h"
 #include "base/flags.h"
 #include "base/object_ptr.h"
 #include "base/timer.h"
@@ -147,6 +148,11 @@ public:
 		SearchRequestType type,
 		int fullCount);
 	void peerSearchReceived(Api::PeerSearchResult result);
+	void setPornSearchEnabled(bool enabled);
+	void pornSearchReceived(Api::PornSearchResult result);
+	void nativeSearchFailed(bool failed);
+	[[nodiscard]] TimeId searchLoadTill() const;
+	[[nodiscard]] rpl::producer<> retryPornSearchRequests() const;
 
 	[[nodiscard]] FilterId filterId() const;
 
@@ -553,6 +559,11 @@ private:
 	[[nodiscard]] bool communitySearchActive() const;
 	void updateSearchIn();
 	void repaintSearchResult(int index);
+	void repaintSearchResult(FullMsgId id);
+	void repaintPreviewResult(FullMsgId id);
+	void rebuildPornSearchResults();
+	void refreshPornSearchStatus();
+	[[nodiscard]] int pornSearchStatusHeight() const;
 	void repaintPreviewResult(int index);
 
 	[[nodiscard]] bool computeSearchWithPostsPreview() const;
@@ -740,6 +751,13 @@ private:
 	int _chatTypeFilterWidth = 0;
 
 	std::vector<std::unique_ptr<FakeRow>> _searchResults;
+	MessageIdsList _nativeSearchResults;
+	Api::PornSearchResult _pornSearchResult;
+	object_ptr<Ui::FlatLabel> _pornSearchStatus = { nullptr };
+	rpl::event_stream<> _retryPornSearchRequests;
+	int _nativeSearchCount = 0;
+	bool _pornSearchEnabled = false;
+	bool _nativeSearchFailed = false;
 	int _searchedCount = 0;
 	int _searchedMigratedCount = 0;
 	int _searchedSelected = -1;

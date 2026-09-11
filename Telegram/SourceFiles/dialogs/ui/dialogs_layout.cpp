@@ -1128,6 +1128,42 @@ const style::VerifiedBadge &VerifiedStyle(const PaintContext &context) {
 		: st::dialogsVerifiedColors;
 }
 
+void PaintPornUserpicBadge(
+		QPainter &p,
+		PeerData *peer,
+		int photoLeft,
+		int photoTop,
+		int outerWidth,
+		int photoSize) {
+	const auto source = peer && peer->migrateTo() ? peer->migrateTo() : peer;
+	const auto channel = source ? source->asChannel() : nullptr;
+	if (!channel || !channel->hasPornRestriction()) {
+		return;
+	}
+	const auto skip = st::dialogsPornBadgeSkip;
+	const auto rect = QRect(
+		QPoint(
+			LeftUserpicPosition(photoLeft, outerWidth, photoSize) + skip.x(),
+			photoTop + skip.y()),
+		st::dialogsPornBadgeSize);
+	const auto colorValue = GetEnhancedString(u"no_forwards_badge_color"_q);
+	const auto color = QColor(colorValue.isEmpty()
+		? u"#ecbb71"_q
+		: colorValue);
+	p.save();
+	p.setRenderHint(QPainter::Antialiasing);
+	p.setPen(Qt::NoPen);
+	p.setBrush(color);
+	p.drawRoundedRect(
+		rect,
+		st::dialogsPornBadgeRadius,
+		st::dialogsPornBadgeRadius);
+	p.setFont(st::dialogsPornBadgeFont);
+	p.setPen(color.lightnessF() > 0.5 ? Qt::black : Qt::white);
+	p.drawText(rect, Qt::AlignCenter, u"18+"_q);
+	p.restore();
+}
+
 void PaintNoForwardsUserpicBadge(
 		QPainter &p,
 		PeerData *peer,
@@ -1410,6 +1446,14 @@ void RowPainter::Paint(
 		badgesState,
 		flags,
 		paintItemCallback);
+	const auto source = item->history()->peer;
+	PaintPornUserpicBadge(
+		p,
+		source->migrateTo() ? source->migrateTo() : source.get(),
+		context.st->padding.left(),
+		context.st->padding.top(),
+		context.width,
+		context.st->photoSize);
 }
 
 QRect RowPainter::SendActionAnimationRect(

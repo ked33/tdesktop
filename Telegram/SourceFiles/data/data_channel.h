@@ -587,6 +587,8 @@ public:
 	void updateSubscriptionUntilDate(TimeId subscriptionUntilDate);
 
 	[[nodiscard]] MTPInputChannel inputChannel() const;
+	[[nodiscard]] bool hasPornRestriction() const;
+	void setHasPornRestriction(bool restricted);
 
 	// Still public data members.
 	int32 date = 0;
@@ -638,6 +640,7 @@ private:
 	ChannelId _linkedCommunityId = 0;
 	std::unique_ptr<Data::CommunityInfo> _communityInfo;
 	bool _discussionLinkKnown = false;
+	bool _hasPornRestriction = false;
 
 	int _peerGiftsCount = 0;
 	int _membersCount = -1;
