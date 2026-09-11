@@ -105,6 +105,18 @@ jobs:
           echo Platform=x64>>"%GITHUB_ENV%"
           for /f "delims=" %%i in ('set') do @echo %%i>>"%GITHUB_ENV%"
 
+      - name: Check supplemental search merging and request limits
+        shell: cmd
+        run: |
+          cl /nologo /std:c++20 /EHsc /W4 /WX ^
+            /I"%TBUILD%\%REPO_NAME%\Telegram\SourceFiles" ^
+            "%TBUILD%\%REPO_NAME%\Telegram\SourceFiles\test\test_porn_search.cpp" ^
+            /Fe:"%RUNNER_TEMP%\test_porn_search.exe" ^
+            /Fo:"%RUNNER_TEMP%\test_porn_search.obj"
+          if errorlevel 1 exit /b %errorlevel%
+          "%RUNNER_TEMP%\test_porn_search.exe"
+          exit /b %errorlevel%
+
       - name: NuGet sources
         shell: cmd
         run: |

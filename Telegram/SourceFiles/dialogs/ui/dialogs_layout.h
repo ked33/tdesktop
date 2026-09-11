@@ -98,6 +98,13 @@ void PaintNoForwardsUserpicBadge(
 	int outerWidth,
 	int photoSize,
 	const PaintContext &context);
+void PaintPornUserpicBadge(
+	QPainter &p,
+	PeerData *peer,
+	int photoLeft,
+	int photoTop,
+	int outerWidth,
+	int photoSize);
 
 class RowPainter {
 public:

@@ -707,6 +707,19 @@ void ChannelData::setUnavailableReasonsList(
 	_unavailableReasons = std::move(reasons);
 }
 
+bool ChannelData::hasPornRestriction() const {
+	return _hasPornRestriction;
+}
+
+void ChannelData::setHasPornRestriction(bool restricted) {
+	if (_hasPornRestriction != restricted) {
+		_hasPornRestriction = restricted;
+		session().changes().peerUpdated(
+			this,
+			Data::PeerUpdate::Flag::UnavailableReason);
+	}
+}
+
 void ChannelData::setAvailableMinId(MsgId availableMinId) {
 	if (_availableMinId != availableMinId) {
 		_availableMinId = availableMinId;

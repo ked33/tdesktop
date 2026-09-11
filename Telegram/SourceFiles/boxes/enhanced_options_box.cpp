@@ -843,6 +843,50 @@ void FloodPremiumWaitBox::save() {
 	closeBox();
 }
 
+SearchPornConcurrencyBox::SearchPornConcurrencyBox(QWidget *parent)
+: _limit(
+	this,
+	st::defaultInputField,
+	tr::lng_settings_search_porn_concurrency_placeholder()) {
+}
+
+void SearchPornConcurrencyBox::prepare() {
+	setTitle(tr::lng_settings_search_porn_concurrency());
+	addButton(tr::lng_settings_save(), [=] { save(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+	_limit->setText(QString::number(EnhancedSettings::SearchPornConcurrency()));
+	_limit->setMaxLength(2);
+	_limit->submits() | rpl::on_next([=] { save(); }, lifetime());
+	setDimensions(
+		st::boxWidth,
+		_limit->height() + st::boxPadding.top() + st::boxPadding.bottom());
+}
+
+void SearchPornConcurrencyBox::setInnerFocus() {
+	_limit->setFocusFast();
+}
+
+void SearchPornConcurrencyBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+	_limit->resizeToWidth(
+		width() - st::boxPadding.left() - st::boxPadding.right());
+	_limit->moveToLeft(st::boxPadding.left(), st::boxPadding.top());
+}
+
+void SearchPornConcurrencyBox::save() {
+	auto valid = false;
+	const auto value = _limit->getLastText().trimmed().toInt(&valid);
+	if (!valid
+		|| value < EnhancedSettings::kSearchPornConcurrencyMinimum
+		|| value > EnhancedSettings::kSearchPornConcurrencyMaximum) {
+		_limit->showError();
+		Ui::Toast::Show(tr::lng_settings_search_porn_concurrency_invalid(tr::now));
+		return;
+	}
+	EnhancedSettings::SetSearchPornConcurrency(value);
+	closeBox();
+}
+
 QuickCopyTargetsBox::QuickCopyTargetsBox(QWidget *parent)
 	: _targets(
 		this,
