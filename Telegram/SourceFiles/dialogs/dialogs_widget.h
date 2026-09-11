@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "api/api_peer_search.h"
+#include "api/api_porn_search.h"
 #include "base/timer.h"
 #include "dialogs/dialogs_key.h"
 #include "window/section_widget.h"
@@ -168,6 +169,7 @@ private:
 
 		PeerData *lastPeer = nullptr;
 		MsgId lastId = 0;
+		TimeId lastDate = 0;
 		int32 nextRate = 0;
 		mtpRequestId requestId = 0;
 		bool full = false;
@@ -179,6 +181,9 @@ private:
 	void completeHashtag(QString tag);
 	void requestPublicPosts(bool fromStart);
 	void requestMessages(bool fromStart);
+	void updatePornSearch();
+	void stopPornSearch();
+	void retryPornSearch();
 	[[nodiscard]] not_null<SearchProcessState*> currentSearchProcess();
 
 	[[nodiscard]] bool computeSearchWithPostsPreview() const;
@@ -433,6 +438,10 @@ private:
 	bool _swipeBackIconMirrored = false;
 
 	SearchProcessState _searchProcess;
+	Api::PornSearch::QueryId _pornSearchQuery = 0;
+	std::optional<Api::PornSearchRequest> _pornSearchRequest;
+	bool _pornSearchMore = false;
+	bool _nativeSearchFailed = false;
 	SearchProcessState _migratedProcess;
 	SearchProcessState _postsProcess;
 	int _historiesRequest = 0; // Not real mtpRequestId.
