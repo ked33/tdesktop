@@ -15,6 +15,10 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #include "ui/widgets/fields/input_field.h"
 #include "lang/lang_cloud_manager.h"
 #include "media/streaming/media_streaming_boost.h"
+#include "rpl/event_stream.h"
+#include "settings.h"
+
+#include <algorithm>
 
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
@@ -25,6 +29,16 @@ namespace EnhancedSettings {
 	namespace {
 
 		constexpr auto kWriteJsonTimeout = crl::time(5000);
+
+		rpl::event_stream<bool> &SearchIncludePornEvents() {
+			static auto events = rpl::event_stream<bool>();
+			return events;
+		}
+
+		rpl::event_stream<int> &SearchPornConcurrencyEvents() {
+			static auto events = rpl::event_stream<int>();
+			return events;
+		}
 
 		void FillMissingDefaults() {
 			const auto ensureBool = [](const QString &key, bool value) {
@@ -80,6 +94,8 @@ namespace EnhancedSettings {
 			ensureInt(qsl("message_emoji_size"), kMessageEmojiSizeDefault);
 			ensureInt(qsl("message_sticker_size"), kMessageStickerSizeDefault);
 			ensureBool(qsl("search_main_and_archive"), true);
+			ensureBool(u"search_include_porn"_q, true);
+			ensureInt(u"search_porn_concurrency"_q, kSearchPornConcurrencyDefault);
 			ensureString(qsl("mpv_path"), QString());
 			ensureString(
 				qsl("net_download_speed_boost_profiles"),
@@ -211,6 +227,47 @@ namespace EnhancedSettings {
 		std::unique_ptr<Manager> Data;
 
 	} // namespace
+
+	bool SearchIncludePorn() {
+		return gEnhancedOptions.value(u"search_include_porn"_q, true).toBool();
+	}
+
+	rpl::producer<bool> SearchIncludePornChanges() {
+		return SearchIncludePornEvents().events();
+	}
+
+	void SetSearchIncludePorn(bool enabled) {
+		if (SearchIncludePorn() == enabled) {
+			return;
+		}
+		SetEnhancedValue(u"search_include_porn"_q, enabled);
+		Write();
+		SearchIncludePornEvents().fire_copy(enabled);
+	}
+
+	int SearchPornConcurrency() {
+		const auto value = GetEnhancedInt(u"search_porn_concurrency"_q);
+		return (value >= kSearchPornConcurrencyMinimum
+			&& value <= kSearchPornConcurrencyMaximum)
+			? value
+			: kSearchPornConcurrencyDefault;
+	}
+
+	rpl::producer<int> SearchPornConcurrencyChanges() {
+		return SearchPornConcurrencyEvents().events();
+	}
+
+	void SetSearchPornConcurrency(int value) {
+		value = std::clamp(
+			value,
+			kSearchPornConcurrencyMinimum,
+			kSearchPornConcurrencyMaximum);
+		if (SearchPornConcurrency() != value) {
+			SetEnhancedValue(u"search_porn_concurrency"_q, value);
+			Write();
+			SearchPornConcurrencyEvents().fire_copy(value);
+		}
+	}
 
 	int MessageEmojiSize() {
 		const auto size = GetEnhancedInt(qsl("message_emoji_size"));
@@ -435,6 +492,8 @@ namespace EnhancedSettings {
 		settings.insert(qsl("disable_premium_animation"), false);
 		settings.insert(qsl("disable_global_search"), false);
 		settings.insert(qsl("search_main_and_archive"), true);
+		settings.insert(u"search_include_porn"_q, true);
+		settings.insert(u"search_porn_concurrency"_q, kSearchPornConcurrencyDefault);
 		settings.insert(qsl("show_group_sender_avatar"), false);
 		settings.insert(qsl("show_seconds"), false);
 		settings.insert(qsl("show_message_context_read_info"), true);
@@ -538,6 +597,8 @@ namespace EnhancedSettings {
 		settings.insert(qsl("disable_premium_animation"), GetEnhancedBool("disable_premium_animation"));
 		settings.insert(qsl("disable_global_search"), GetEnhancedBool("disable_global_search"));
 		settings.insert(qsl("search_main_and_archive"), GetEnhancedBool("search_main_and_archive"));
+		settings.insert(u"search_include_porn"_q, SearchIncludePorn());
+		settings.insert(u"search_porn_concurrency"_q, SearchPornConcurrency());
 		settings.insert(qsl("show_group_sender_avatar"), GetEnhancedBool("show_group_sender_avatar"));
 		settings.insert(qsl("show_seconds"), GetEnhancedBool("show_seconds"));
 		settings.insert(qsl("show_message_context_read_info"), GetEnhancedBool("show_message_context_read_info"));

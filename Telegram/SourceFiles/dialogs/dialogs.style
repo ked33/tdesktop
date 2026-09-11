@@ -193,6 +193,12 @@ dialogsCallBadgeSkip: point(-3px, -3px);
 dialogsNoForwardsBadgeSize: 16px;
 dialogsNoForwardsBadgeSkip: point(-3px, -3px);
 
+dialogsPornBadgeSize: size(23px, 16px);
+dialogsPornBadgeSkip: point(-3px, -3px);
+dialogsPornBadgeRadius: 4px;
+dialogsPornBadgeFont: font(bold 9px);
+dialogsSearchStatusSkip: margins(12px, 6px, 12px, 6px);
+
 dialogsSubscriptionBadgeSize: 16px;
 dialogsSubscriptionBadgeSkip: point(-4px, -4px);
 dialogsSubscriptionBadgeOutlineTwice: 3px;

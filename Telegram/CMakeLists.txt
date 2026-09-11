@@ -169,6 +169,9 @@ PRIVATE
     api/api_peer_search.h
     api/api_polls.cpp
     api/api_polls.h
+    api/api_porn_search.cpp
+    api/api_porn_search.h
+    api/api_porn_search_policy.h
     api/api_premium.cpp
     api/api_premium.h
     api/api_premium_option.cpp
