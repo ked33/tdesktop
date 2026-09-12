@@ -354,4 +354,16 @@ template <typename Item, typename Key, typename Date>
 	return result;
 }
 
+template <typename Item, typename Id, typename Key>
+[[nodiscard]] std::size_t CountNativeResults(
+		const std::vector<Item> &results,
+		const std::vector<Id> &native,
+		Key key) {
+	const auto ids = std::set<Id>(native.begin(), native.end());
+	return std::size_t(std::count_if(
+		results.begin(),
+		results.end(),
+		[&](const auto &item) { return ids.contains(key(item)); }));
+}
+
 } // namespace Api::PornSearchPolicy

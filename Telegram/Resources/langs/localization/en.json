@@ -61,6 +61,8 @@
     "lng_search_porn_loaded#other": "{count} messages loaded",
     "lng_search_porn_loaded_all#one": "All {count} message loaded",
     "lng_search_porn_loaded_all#other": "All {count} messages loaded",
+    "lng_search_porn_loaded_split": "Messages loaded: {native} + {additional}",
+    "lng_search_porn_loaded_all_split": "All messages loaded: {native} + {additional} = {total}",
     "lng_search_porn_summary": "[{progress}] {messages} ({duration})",
     "lng_search_porn_flood": "Telegram limited search requests. Searching will resume automatically in {duration}.",
     "lng_settings_show_group_sender_avatar": "Show sender's avatar in groups",
