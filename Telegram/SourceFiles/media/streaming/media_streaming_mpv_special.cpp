@@ -23,6 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_diagnostics.h"
 #include "media/streaming/media_streaming_mp4_header.h"
 #include "media/streaming/media_streaming_mpv_http.h"
+#include "media/streaming/media_streaming_mpv_index.h"
 #include "media/streaming/media_streaming_reader.h"
 #include "logs.h"
 #include "settings.h"
@@ -111,10 +112,13 @@ constexpr auto kMpvLoaderPriority = 2;
 	return (DownloadBoostLevel() > 0);
 }
 
-[[nodiscard]] QStringList LaunchArguments(const QString &url) {
+[[nodiscard]] QStringList LaunchArguments(
+		not_null<DocumentData*> document,
+		const QString &url) {
 	auto result = QStringList{
 		u"--force-window=immediate"_q,
-		u"--demuxer-lavf-o=ignore_editlist=1"_q,
+		u"--demuxer-lavf-o="_q
+			+ Mpv::PlaybackDemuxerOptions(LooksLikeMp4Stream(document)),
 	};
 	const auto &profile = BoostProfileFor(DownloadBoostLevel());
 	if (MpvStreamingBoostEnabled() && profile.mpvCacheMaxMb > 0) {
@@ -165,7 +169,12 @@ struct Entry {
 	, origin(origin)
 	, reader(std::move(reader))
 	, diagnostics(this->reader->diagnostics())
-	, size(this->reader ? this->reader->size() : 0) {
+	, size(this->reader ? this->reader->size() : 0)
+	, duration(document->duration()) {
+	}
+
+	~Entry() {
+		mp4Index->cancel();
 	}
 
 	not_null<DocumentData*> document;
@@ -177,12 +186,16 @@ struct Entry {
 	std::shared_ptr<Reader> seekReader;
 	QString mime;
 	int64 size = 0;
+	const crl::time duration = 0;
 	std::atomic<int> activeRequests = 0;
 	std::atomic<crl::time> lastActivity = 0;
 	std::atomic<bool> removeWhenIdle = false;
 	std::atomic<bool> headerFinalized = false;
 	std::atomic<int> mp4Layout = 0;
 	Mp4::HeaderPatch mp4HeaderPatch;
+	std::vector<Mp4::HeaderPatch> mp4DurationPatches;
+	const std::shared_ptr<Mpv::PreparedIndex> mp4Index
+		= std::make_shared<Mpv::PreparedIndex>();
 	std::atomic<std::uint64_t> latestSeekGeneration = 0;
 	std::mutex fillMutex;
 	std::mutex seekFillMutex;
@@ -547,6 +560,8 @@ public:
 	struct Launch {
 		QString token;
 		QString url;
+		std::shared_ptr<Mpv::PreparedIndex> index;
+		crl::time duration = 0;
 	};
 
 	Server()
@@ -583,6 +598,8 @@ public:
 				.arg(_server.serverPort())
 				.arg(QString::fromLatin1(kPathPrefix))
 				.arg(token),
+			.index = entry->mp4Index,
+			.duration = entry->duration,
 		};
 	}
 
@@ -751,10 +768,6 @@ private:
 				socket.waitForReadyRead(kReadCancelCheckInterval);
 				return true;
 			};
-			// All finite files support byte ranges, including fragmented MP4.
-			// Fragment indexes are discovered by the demuxer normally.
-			// Only a regular front moov permits extending the first mdat;
-			// fragmented files must retain every moof and mdat boundary.
 			if (entry->mp4Layout.load() == 0
 				&& range.range.from == 0) {
 				const auto lock = std::unique_lock(entry->fillMutex);
@@ -774,13 +787,28 @@ private:
 								waitForRead);
 							probeCancelled |= (result == Http::ReadResult::Cancelled);
 							return result == Http::ReadResult::Success;
-						});
+						}, entry->duration);
 					if (probeCancelled) {
 						diagnostics.outcome("client-disconnected");
 						return;
 					}
 					entry->mp4HeaderPatch = header.patch;
+					entry->mp4DurationPatches = header.durationPatches;
 					entry->mp4Layout.store(int(header.layout));
+					const auto index = entry->mp4Index;
+					if (header.layout == Mp4Layout::Fragmented) {
+						if (index->prepare()) {
+							const auto document = entry->document;
+							const auto origin = entry->origin;
+							crl::on_main(&document->session(), [=] {
+								if (index->state() == Mpv::IndexState::Preparing) {
+									index->start(CreateDedicatedReader(document, origin));
+								}
+							});
+						}
+					} else {
+						index->cancel();
+					}
 					MPV_STREAMING_LOG(("MPV Streaming (Special): Detected MP4 layout: %1 "
 						"for token %2, header patch offset=%3 size=%4.")
 						.arg(int(header.layout))
@@ -803,6 +831,7 @@ private:
 			}
 			const auto layout = Mp4Layout(entry->mp4Layout.load());
 			const auto headerPatch = entry->mp4HeaderPatch;
+			const auto &durationPatches = entry->mp4DurationPatches;
 			const auto isolatedSeekRequest =
 				(layout == Mp4Layout::LargeFrontMoov
 					|| layout == Mp4Layout::Fragmented)
@@ -901,10 +930,18 @@ private:
 					clientDisconnected = true;
 					break;
 				}
-				const auto size = int(std::min(left, int64(kReadChunkSize)));
+				auto size = int(std::min(left, int64(kReadChunkSize)));
 				auto buffer = QByteArray(size, Qt::Uninitialized);
 				diagnostics.readStarted();
-				{
+				const auto cached = entry->mp4Index->copy(
+					offset,
+					std::span(buffer.data(), std::size_t(buffer.size())));
+				if (cached) {
+					size = int(cached);
+					buffer.resize(size);
+					diagnostics.readLocked();
+					diagnostics.readFinished();
+				} else {
 					const auto lock = std::unique_lock(*fillMutex);
 					diagnostics.readLocked();
 					if (seekSuperseded()) {
@@ -964,6 +1001,11 @@ private:
 				headerPatch.apply(
 					offset,
 					std::span(buffer.data(), std::size_t(buffer.size())));
+				for (const auto &patch : durationPatches) {
+					patch.apply(
+						offset,
+						std::span(buffer.data(), std::size_t(buffer.size())));
+				}
 				if (!WriteAll(socket, buffer.constData(), buffer.size())) {
 					const auto error = socket.error();
 					if (error != QAbstractSocket::RemoteHostClosedError) {
@@ -1005,11 +1047,20 @@ private:
 [[nodiscard]] bool StartManagedPlayer(
 		const QString &program,
 		const QStringList &arguments,
-		const QString &token) {
+		const Server::Launch &launch) {
+	const auto token = launch.token;
 	auto process = std::make_unique<QProcess>();
 	const auto raw = process.get();
 	raw->setProgram(program);
 	raw->setArguments(arguments);
+	Mpv::ManageIndexReload(raw, [weak = std::weak_ptr(launch.index)] {
+		const auto index = weak.lock();
+		return index ? index->state() : Mpv::IndexState::Unavailable;
+	}, launch.duration, [weak = std::weak_ptr(launch.index)] {
+		if (const auto index = weak.lock()) {
+			index->cancel();
+		}
+	});
 	raw->setWorkingDirectory(QFileInfo(program).absolutePath());
 	raw->setProcessEnvironment(LaunchEnvironment());
 	raw->setStandardOutputFile(QProcess::nullDevice());
@@ -1094,10 +1145,10 @@ OpenResult OpenVideoMessageInMpvSpecial(HistoryItem *item, DocumentData *documen
 	MPV_STREAMING_LOG(("MPV Streaming (Special): Launching '%1' with URL %2.")
 		.arg(program)
 		.arg(launch.url));
-	const auto arguments = LaunchArguments(launch.url);
+	const auto arguments = LaunchArguments(document, launch.url);
 	MPV_STREAMING_LOG(("MPV Streaming (Special): Launch arguments: %1.")
 		.arg(arguments.join(u" "_q)));
-	if (!StartManagedPlayer(program, arguments, launch.token)) {
+	if (!StartManagedPlayer(program, arguments, launch)) {
 		MPV_STREAMING_LOG(("MPV Streaming (Special): Failed to start player '%1'.").arg(program));
 		Server::instance().remove(launch.token);
 		return OpenResult::Failed;
