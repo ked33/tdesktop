@@ -316,8 +316,8 @@ template <typename Read>
 			const auto tailSize = std::uint64_t(fileSize - offset);
 			if (std::uint64_t(atom->size) != tailSize) {
 				// A front moov without mvex already indexes the samples.
-				// Extend the first mdat to EOF so MOV seeking does not scan
-				// intervening root atoms left unparsed by IGNIDX.
+				// Extend the first mdat to EOF so MOV opening and seeking
+				// do not scan intervening root atoms between media blocks.
 				// Only the served size changes; sample offsets stay intact.
 				const auto extended = (atom->headerSize == 16);
 				result.patch.offset = offset + (extended ? 8 : 0);
