@@ -65,6 +65,8 @@ private:
 	switch (tab) {
 	case ChatSearchTab::MyMessages:
 		return tr::lng_search_tab_my_messages(tr::now);
+	case ChatSearchTab::PornMessages:
+		return tr::lng_search_tab_special(tr::now);
 	case ChatSearchTab::ThisTopic:
 		return tr::lng_search_tab_this_topic(tr::now);
 	case ChatSearchTab::ThisPeer:

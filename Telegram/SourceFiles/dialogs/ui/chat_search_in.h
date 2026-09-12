@@ -26,6 +26,7 @@ enum class ChatSearchTab : uchar {
 	PublicPosts,
 	Archive,
 	ThisCommunity,
+	PornMessages,
 };
 
 enum class ChatSearchPeerTabType : uchar {

@@ -195,6 +195,7 @@ private:
 	void clearSearchField();
 	void searchRequested(SearchRequestDelay delay);
 	bool search(bool inCache = false, SearchRequestDelay after = {});
+	bool searchPornMessages(bool inCache);
 	void searchTopics();
 	void searchMore();
 
