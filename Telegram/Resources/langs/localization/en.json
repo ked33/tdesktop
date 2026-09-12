@@ -50,6 +50,7 @@
     "lng_settings_search_porn_interval_placeholder": "0–5000 ms (default: 500)",
     "lng_settings_search_porn_interval_invalid": "Enter a whole number from 0 to 5000.",
     "lng_settings_search_porn_interval_about": "The interval controls how often requests start. 0 ms uses only the concurrency limit. Shorter intervals send more requests. If Telegram imposes a wait, searching pauses and resumes automatically.",
+    "lng_search_tab_special": "Special Search",
     "lng_search_porn_scanning": "Checking chats…",
     "lng_search_porn_progress": "Chats searched: {progress}",
     "lng_search_porn_loading": "Loading more messages…",
