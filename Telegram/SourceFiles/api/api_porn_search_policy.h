@@ -11,13 +11,142 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <list>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace Api::PornSearchPolicy {
+
+template <typename Key, typename Value>
+class QueryCache final {
+public:
+	QueryCache(std::size_t limit, std::size_t budget);
+
+	[[nodiscard]] std::optional<Value> take(const Key &key);
+	[[nodiscard]] bool put(Key key, Value value, std::size_t cost);
+	template <typename Callback>
+	void forEach(Callback callback);
+	void clear();
+	[[nodiscard]] std::size_t size() const;
+	[[nodiscard]] std::size_t cost() const;
+
+private:
+	struct Entry {
+		Key key;
+		Value value;
+		std::size_t cost = 0;
+	};
+
+	std::list<Entry> _entries;
+	std::size_t _limit = 0;
+	std::size_t _budget = 0;
+	std::size_t _cost = 0;
+
+};
+
+template <typename Key, typename Value>
+QueryCache<Key, Value>::QueryCache(std::size_t limit, std::size_t budget)
+: _limit(limit)
+, _budget(budget) {
+}
+
+template <typename Key, typename Value>
+std::optional<Value> QueryCache<Key, Value>::take(const Key &key) {
+	const auto i = std::find_if(_entries.begin(), _entries.end(), [&](auto &entry) {
+		return entry.key == key;
+	});
+	if (i == _entries.end()) {
+		return std::nullopt;
+	}
+	auto result = std::move(i->value);
+	_cost -= i->cost;
+	_entries.erase(i);
+	return result;
+}
+
+template <typename Key, typename Value>
+bool QueryCache<Key, Value>::put(Key key, Value value, std::size_t cost) {
+	const auto i = std::find_if(_entries.begin(), _entries.end(), [&](auto &entry) {
+		return entry.key == key;
+	});
+	if (i != _entries.end()) {
+		_cost -= i->cost;
+		_entries.erase(i);
+	}
+	if (!_limit || cost > _budget) {
+		return false;
+	}
+	while (!_entries.empty()
+		&& (_entries.size() >= _limit || _cost > _budget - cost)) {
+		_cost -= _entries.back().cost;
+		_entries.pop_back();
+	}
+	_entries.push_front({ std::move(key), std::move(value), cost });
+	_cost += cost;
+	return true;
+}
+
+template <typename Key, typename Value>
+template <typename Callback>
+void QueryCache<Key, Value>::forEach(Callback callback) {
+	for (auto &entry : _entries) {
+		callback(entry.value);
+	}
+}
+
+template <typename Key, typename Value>
+void QueryCache<Key, Value>::clear() {
+	_entries.clear();
+	_cost = 0;
+}
+
+template <typename Key, typename Value>
+std::size_t QueryCache<Key, Value>::size() const {
+	return _entries.size();
+}
+
+template <typename Key, typename Value>
+std::size_t QueryCache<Key, Value>::cost() const {
+	return _cost;
+}
+
+template <typename Key, typename Source>
+void InvalidateSources(std::map<Key, Source> &sources, Key peer) {
+	for (auto &[id, source] : sources) {
+		if (id == peer || source.channel == peer) {
+			source.changed = true;
+		}
+	}
+}
+
+template <typename Key, typename Source, typename Resolve>
+[[nodiscard]] std::size_t RestoreSources(
+		std::map<Key, Source> &sources,
+		std::map<Key, Source> cached,
+		Resolve resolve) {
+	auto reused = std::size_t(0);
+	for (auto &[peer, source] : sources) {
+		const auto i = cached.find(peer);
+		if (i != cached.end()
+			&& source.channel == i->second.channel
+			&& !i->second.changed
+			&& std::all_of(
+				i->second.messages.begin(),
+				i->second.messages.end(),
+				resolve)) {
+			source = std::move(i->second);
+			source.retry |= source.failed;
+			source.failed = false;
+			++reused;
+		}
+	}
+	return reused;
+}
 
 template <typename Key, typename Source>
 class SourceSnapshot final {

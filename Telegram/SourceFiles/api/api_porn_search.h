@@ -15,9 +15,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <array>
 #include <limits>
 #include <map>
+#include <optional>
 #include <set>
 
 class ApiWrap;
+class ChannelData;
 
 namespace Main {
 class Session;
@@ -65,7 +67,10 @@ public:
 	void cancel(QueryId id);
 	void loadMore(QueryId id, TimeId before);
 	void retry(QueryId id);
+	void preload();
 	void invalidate();
+	void invalidateMessages(PeerId peer);
+	void updateFolder(PeerId peer, int folder);
 	void applyFloodWait(const MTP::Error &error);
 	[[nodiscard]] crl::time floodWaitRemaining() const;
 	[[nodiscard]] crl::time takeFloodWaitNotice();
@@ -83,12 +88,19 @@ private:
 		bool exhausted = false;
 		bool failed = false;
 		bool retry = false;
+		bool changed = false;
+	};
+
+	struct CachedQuery {
+		std::map<PeerId, Source> sources;
+		TimeId before = std::numeric_limits<TimeId>::max();
 	};
 
 	struct Query {
 		PornSearchRequest request;
 		Callback done;
 		PornSearchPolicy::SourceSnapshot<PeerId, Source> sources;
+		std::optional<CachedQuery> cached;
 		TimeId before = std::numeric_limits<TimeId>::max();
 		bool dirty = true;
 	};
@@ -115,6 +127,7 @@ private:
 	enum class TaskType {
 		Dialogs,
 		Pinned,
+		PeerDialogs,
 		Metadata,
 		Search,
 	};
@@ -132,6 +145,10 @@ private:
 	void pump();
 	void publish();
 	void reconcile();
+	void adoptLoadedFolders();
+	void peerChanged(not_null<ChannelData*> channel);
+	void forgetPeer(PeerId peer);
+	void cacheQuery(Query &query);
 	[[nodiscard]] CatalogStatus catalogStatus(
 		const PornSearchRequest &request) const;
 	[[nodiscard]] std::map<PeerId, Source> collectSources(
@@ -142,6 +159,7 @@ private:
 	void cancelTask(TaskId id);
 	void cancelCatalogTasks();
 	void sendDialogs(int folder, bool pinned);
+	void sendPeerDialogs(std::vector<PeerId> peers);
 	void sendMetadata(std::vector<PeerId> peers);
 	void sendSearch(QueryId query, PeerId peer);
 	[[nodiscard]] bool sendReadySearch(bool firstPage);
@@ -158,11 +176,18 @@ private:
 	std::map<PeerId, int> _catalog;
 	std::set<PeerId> _metadataPending;
 	std::set<PeerId> _metadataFailed;
+	std::set<PeerId> _folderPending;
+	std::set<PeerId> _folderFailed;
+	PornSearchPolicy::QueryCache<PornSearchRequest, CachedQuery> _cache;
 	std::map<QueryId, Query> _queries;
 	std::map<TaskId, Task> _tasks;
 	QueryId _nextQuery = 0;
 	QueryId _lastQuery = 0;
 	TaskId _nextTask = 0;
+	bool _preloading = false;
+	bool _preloadArchive = true;
+	bool _adoptLoadedFolders = true;
+	bool _metadataDirty = false;
 	PornSearchPolicy::RequestGate _requestGate;
 	rpl::lifetime _lifetime;
 
