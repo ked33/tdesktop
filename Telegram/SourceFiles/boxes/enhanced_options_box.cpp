@@ -887,6 +887,51 @@ void SearchPornConcurrencyBox::save() {
 	closeBox();
 }
 
+SearchPornIntervalBox::SearchPornIntervalBox(QWidget *parent)
+: _interval(
+	this,
+	st::defaultInputField,
+	tr::lng_settings_search_porn_interval_placeholder()) {
+}
+
+void SearchPornIntervalBox::prepare() {
+	setTitle(tr::lng_settings_search_porn_interval());
+	addButton(tr::lng_settings_save(), [=] { save(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+	_interval->setText(QString::number(
+		EnhancedSettings::SearchPornRequestInterval()));
+	_interval->setMaxLength(4);
+	_interval->submits() | rpl::on_next([=] { save(); }, lifetime());
+	setDimensions(
+		st::boxWidth,
+		_interval->height() + st::boxPadding.top() + st::boxPadding.bottom());
+}
+
+void SearchPornIntervalBox::setInnerFocus() {
+	_interval->setFocusFast();
+}
+
+void SearchPornIntervalBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+	_interval->resizeToWidth(
+		width() - st::boxPadding.left() - st::boxPadding.right());
+	_interval->moveToLeft(st::boxPadding.left(), st::boxPadding.top());
+}
+
+void SearchPornIntervalBox::save() {
+	auto valid = false;
+	const auto value = _interval->getLastText().trimmed().toInt(&valid);
+	if (!valid
+		|| value < EnhancedSettings::kSearchPornRequestIntervalMinimum
+		|| value > EnhancedSettings::kSearchPornRequestIntervalMaximum) {
+		_interval->showError();
+		Ui::Toast::Show(tr::lng_settings_search_porn_interval_invalid(tr::now));
+		return;
+	}
+	EnhancedSettings::SetSearchPornRequestInterval(value);
+	closeBox();
+}
+
 QuickCopyTargetsBox::QuickCopyTargetsBox(QWidget *parent)
 	: _targets(
 		this,

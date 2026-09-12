@@ -105,7 +105,7 @@ jobs:
           echo Platform=x64>>"%GITHUB_ENV%"
           for /f "delims=" %%i in ('set') do @echo %%i>>"%GITHUB_ENV%"
 
-      - name: Check supplemental search merging and request limits
+      - name: Check supplemental search progress, merging and limits
         shell: cmd
         run: |
           cl /nologo /std:c++20 /EHsc /W4 /WX ^

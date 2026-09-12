@@ -430,6 +430,9 @@ Widget::Widget(
 		_storiesContents.events() | rpl::flatten_latest())
 	: nullptr)
 , _searchTimer([=] { search(); })
+, _nativeSearchRetryTimer([=] {
+	requestMessages(!_searchProcess.lastId);
+})
 , _peerSearch(&controller->session(), Api::PeerSearch::Type::WithSponsored)
 , _singleMessageSearch(&controller->session()) {
 	_searchState.fromArchive = GetEnhancedBool("search_main_and_archive");
@@ -3320,9 +3323,7 @@ void Widget::updatePornSearch() {
 	_pornSearchRequest = request;
 	_pornSearchMore = true;
 	_inner->setPornSearchEnabled(true);
-	if (_nativeSearchFailed) {
-		_inner->nativeSearchFailed(true);
-	}
+	updateNativeSearchState();
 	_pornSearchQuery = session().api().pornSearch().start(
 		request,
 		crl::guard(this, [=](
@@ -3333,6 +3334,7 @@ void Widget::updatePornSearch() {
 			}
 			_pornSearchMore = result.more;
 			_inner->pornSearchReceived(std::move(result));
+			showSearchFloodToast();
 			listScrollUpdated();
 		}));
 }
@@ -3355,10 +3357,30 @@ void Widget::retryPornSearch() {
 	session().api().pornSearch().retry(_pornSearchQuery);
 	if (_nativeSearchFailed && !_searchProcess.requestId) {
 		_nativeSearchFailed = false;
-		_inner->nativeSearchFailed(false);
 		_searchProcess.full = false;
 		requestMessages(!_searchProcess.lastId);
 	}
+}
+
+void Widget::updateNativeSearchState() {
+	const auto waiting = _nativeSearchRetryTimer.isActive();
+	_inner->setNativeSearchState(
+		_searchProcess.requestId != 0 || waiting,
+		_searchProcess.full,
+		_nativeSearchFailed,
+		waiting);
+}
+
+void Widget::showSearchFloodToast() {
+	const auto wait = session().api().pornSearch().takeFloodWaitNotice();
+	if (!wait) {
+		return;
+	}
+	controller()->showToast(tr::lng_search_porn_flood(
+		tr::now,
+		lt_duration,
+		QString::fromStdString(Api::PornSearchPolicy::FormatDuration(
+			wait / 1000 + (wait % 1000 != 0)))));
 }
 
 bool Widget::peerSearchRequired() const {
@@ -3485,7 +3507,8 @@ void Widget::searchMore() {
 	const auto process = currentSearchProcess();
 	if (process->requestId
 		|| _historiesRequest
-		|| _searchTimer.isActive()) {
+		|| _searchTimer.isActive()
+		|| _nativeSearchRetryTimer.isActive()) {
 		return;
 	} else if (!process->full) {
 		if (const auto peer = searchInPeer()) {
@@ -3635,6 +3658,9 @@ void Widget::requestPublicPosts(bool fromStart) {
 }
 
 void Widget::requestMessages(bool fromStart) {
+	if (_searchProcess.requestId) {
+		return;
+	}
 	if (!_searchProcess.lastId || !_searchProcess.lastPeer) {
 		fromStart = true;
 	}
@@ -3643,8 +3669,16 @@ void Widget::requestMessages(bool fromStart) {
 		_searchProcess.lastId = 0;
 		_searchProcess.lastDate = 0;
 		_searchProcess.nextRate = 0;
-		_nativeSearchFailed = false;
 	}
+	_nativeSearchFailed = false;
+	const auto wait = session().api().pornSearch().floodWaitRemaining();
+	if (wait) {
+		_nativeSearchRetryTimer.callOnce(wait);
+		updateNativeSearchState();
+		showSearchFloodToast();
+		return;
+	}
+	_nativeSearchRetryTimer.cancel();
 	const auto type = SearchRequestType{
 		.start = fromStart,
 	};
@@ -3684,15 +3718,27 @@ void Widget::requestMessages(bool fromStart) {
 				: _searchProcess.lastPeer->input()),
 			MTP_int(fromStart ? 0 : _searchProcess.lastId),
 			MTP_int(kSearchPerPage))
-	).done([=](const MTPmessages_Messages &result, mtpRequestId requestId) {
+	).done(crl::guard(this, [=](
+			const MTPmessages_Messages &result,
+			mtpRequestId requestId) {
 		if (_searchProcess.requestId == requestId) {
 			searchReceived(type, result, &_searchProcess);
 		}
-	}).fail([=](const MTP::Error &error, mtpRequestId requestId) {
+	})).fail(crl::guard(this, [=](
+			const MTP::Error &error,
+			mtpRequestId requestId) {
 		if (_searchProcess.requestId == requestId) {
+			if (!MTP::IgnoreError(error)) {
+				LOG(("Search Error: messages.searchGlobal request %1 failed, "
+					"code %2, type %3.")
+					.arg(requestId)
+					.arg(error.code())
+					.arg(error.type()));
+			}
 			searchFailed(type, error, &_searchProcess);
 		}
-	}).send();
+	})).handleFloodErrors().send();
+	updateNativeSearchState();
 	if (fromStart) {
 		_searchProcess.queries.emplace(
 			_searchProcess.requestId,
@@ -3837,12 +3883,18 @@ void Widget::searchReceived(
 	}, [&](const MTPDmessages_messagesNotModified &) {
 		LOG(("API Error: received messages.messagesNotModified! "
 			"(Widget::searchReceived)"));
+		if (process == &_searchProcess) {
+			_nativeSearchFailed = true;
+		}
 		process->full = true;
 		return std::vector<not_null<HistoryItem*>>();
 	});
 	_inner->searchReceived(messages, inject, type, fullCount);
 
 	process->requestId = 0;
+	if (process == &_searchProcess) {
+		updateNativeSearchState();
+	}
 	listScrollUpdated();
 	update();
 }
@@ -3871,17 +3923,27 @@ void Widget::searchFailed(
 		SearchRequestType type,
 		const MTP::Error &error,
 		not_null<SearchProcessState*> process) {
-	if (error.type() == u"SEARCH_QUERY_EMPTY"_q || MTP::IgnoreError(error)) {
+	if (MTP::IsFloodError(error) && process == &_searchProcess) {
+		process->queries.remove(process->requestId);
+		process->requestId = 0;
+		process->full = false;
+		_nativeSearchFailed = false;
+		auto &search = session().api().pornSearch();
+		search.applyFloodWait(error);
+		_nativeSearchRetryTimer.callOnce(search.floodWaitRemaining());
+		updateNativeSearchState();
+		showSearchFloodToast();
+	} else if (error.type() == u"SEARCH_QUERY_EMPTY"_q
+		|| MTP::IgnoreError(error)) {
 		searchApplyEmpty(type, process);
 	} else {
+		process->queries.remove(process->requestId);
 		process->requestId = 0;
 		process->full = true;
 		if (process == &_searchProcess
 			&& _searchState.tab == ChatSearchTab::MyMessages) {
 			_nativeSearchFailed = true;
-			if (_pornSearchQuery) {
-				_inner->nativeSearchFailed(true);
-			}
+			updateNativeSearchState();
 		}
 	}
 }
@@ -5020,6 +5082,7 @@ void Widget::scrollToEntry(const RowDescriptor &entry) {
 void Widget::cancelSearchRequest() {
 	const auto processing = std::exchange(_processingSearch, true);
 	const auto guard = gsl::finally([&] { _processingSearch = processing; });
+	_nativeSearchRetryTimer.cancel();
 	stopPornSearch();
 	_searchProcess.queries.remove(_searchProcess.requestId);
 	_migratedProcess.queries.remove(_migratedProcess.requestId);

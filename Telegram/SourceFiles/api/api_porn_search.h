@@ -46,6 +46,7 @@ struct PornSearchResult {
 	int searched = 0;
 	int total = 0;
 	int failed = 0;
+	bool totalKnown = false;
 	bool scanning = false;
 	bool loading = false;
 	bool waiting = false;
@@ -65,11 +66,15 @@ public:
 	void loadMore(QueryId id, TimeId before);
 	void retry(QueryId id);
 	void invalidate();
+	void applyFloodWait(const MTP::Error &error);
+	[[nodiscard]] crl::time floodWaitRemaining() const;
+	[[nodiscard]] crl::time takeFloodWaitNotice();
 
 private:
 	using TaskId = uint64;
 
 	struct Source {
+		PeerId channel;
 		MsgId offsetId = 0;
 		TimeId oldestDate = std::numeric_limits<TimeId>::max();
 		std::set<FullMsgId> messages;

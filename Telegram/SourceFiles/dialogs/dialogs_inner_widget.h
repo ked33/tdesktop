@@ -150,7 +150,7 @@ public:
 	void peerSearchReceived(Api::PeerSearchResult result);
 	void setPornSearchEnabled(bool enabled);
 	void pornSearchReceived(Api::PornSearchResult result);
-	void nativeSearchFailed(bool failed);
+	void setNativeSearchState(bool loading, bool full, bool failed, bool waiting);
 	[[nodiscard]] TimeId searchLoadTill() const;
 	[[nodiscard]] rpl::producer<> retryPornSearchRequests() const;
 
@@ -561,8 +561,11 @@ private:
 	void repaintSearchResult(int index);
 	void repaintSearchResult(FullMsgId id);
 	void repaintPreviewResult(FullMsgId id);
-	void rebuildPornSearchResults();
+	void rebuildPornSearchResults(bool messagesChanged = true);
 	void refreshPornSearchStatus();
+	void refreshPornSearchTimer();
+	void repaintPornSearchHeader();
+	[[nodiscard]] QString pornSearchSummary() const;
 	[[nodiscard]] int pornSearchStatusHeight() const;
 	void repaintPreviewResult(int index);
 
@@ -755,9 +758,14 @@ private:
 	Api::PornSearchResult _pornSearchResult;
 	object_ptr<Ui::FlatLabel> _pornSearchStatus = { nullptr };
 	rpl::event_stream<> _retryPornSearchRequests;
+	base::Timer _pornSearchTimer;
+	Api::PornSearchPolicy::ElapsedTime _pornSearchElapsed;
 	int _nativeSearchCount = 0;
 	bool _pornSearchEnabled = false;
+	bool _nativeSearchLoading = false;
+	bool _nativeSearchFull = false;
 	bool _nativeSearchFailed = false;
+	bool _nativeSearchWaiting = false;
 	int _searchedCount = 0;
 	int _searchedMigratedCount = 0;
 	int _searchedSelected = -1;

@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <cstdint>
 #include <limits>
 #include <set>
+#include <string>
 #include <type_traits>
 #include <vector>
 
@@ -23,14 +24,19 @@ public:
 
 	[[nodiscard]] bool canStart(Time now, std::size_t active, int limit) const;
 	[[nodiscard]] Time delay(Time now) const;
+	[[nodiscard]] Time pauseRemaining(Time now) const;
+	[[nodiscard]] Time takePauseNotice(Time now);
 	[[nodiscard]] bool waiting(Time now) const;
 	[[nodiscard]] bool finishPause(Time now);
+	void setInterval(Time interval);
 	void started(Time now);
 	void pause(Time now, Time seconds);
 
 private:
-	Time _nextRequestAt = 0;
+	Time _lastRequestAt = -1;
+	Time _interval = 500;
 	Time _pausedUntil = 0;
+	bool _pauseNoticePending = false;
 
 };
 
@@ -42,7 +48,20 @@ inline bool RequestGate::canStart(
 }
 
 inline RequestGate::Time RequestGate::delay(Time now) const {
-	return std::max({ _nextRequestAt, _pausedUntil, now }) - now;
+	const auto next = (_lastRequestAt < 0) ? now : _lastRequestAt + _interval;
+	return std::max({ next, _pausedUntil, now }) - now;
+}
+
+inline RequestGate::Time RequestGate::pauseRemaining(Time now) const {
+	return std::max(_pausedUntil - now, Time(0));
+}
+
+inline RequestGate::Time RequestGate::takePauseNotice(Time now) {
+	if (!_pauseNoticePending) {
+		return 0;
+	}
+	_pauseNoticePending = false;
+	return pauseRemaining(now);
 }
 
 inline bool RequestGate::waiting(Time now) const {
@@ -54,18 +73,70 @@ inline bool RequestGate::finishPause(Time now) {
 		return false;
 	}
 	_pausedUntil = 0;
+	_pauseNoticePending = false;
 	return true;
 }
 
+inline void RequestGate::setInterval(Time interval) {
+	_interval = std::max(interval, Time(0));
+}
+
 inline void RequestGate::started(Time now) {
-	constexpr auto kRequestInterval = Time(500);
-	_nextRequestAt = now + kRequestInterval;
+	_lastRequestAt = now;
 }
 
 inline void RequestGate::pause(Time now, Time seconds) {
+	_pauseNoticePending |= !waiting(now);
 	const auto maximum = (std::numeric_limits<Time>::max() - now) / 1000;
 	const auto duration = std::clamp(seconds, Time(1), maximum) * 1000;
 	_pausedUntil = std::max(_pausedUntil, now + duration);
+}
+
+class ElapsedTime final {
+public:
+	using Time = std::int64_t;
+
+	void setRunning(Time now, bool running);
+	[[nodiscard]] Time elapsed(Time now) const;
+	[[nodiscard]] bool running() const;
+
+private:
+	Time _elapsed = 0;
+	Time _started = 0;
+	bool _running = false;
+
+};
+
+inline void ElapsedTime::setRunning(Time now, bool running) {
+	if (_running == running) {
+		return;
+	}
+	if (_running) {
+		_elapsed += now - _started;
+	} else {
+		_started = now;
+	}
+	_running = running;
+}
+
+inline ElapsedTime::Time ElapsedTime::elapsed(Time now) const {
+	return _elapsed + (_running ? now - _started : 0);
+}
+
+inline bool ElapsedTime::running() const {
+	return _running;
+}
+
+[[nodiscard]] inline std::string FormatDuration(std::int64_t seconds) {
+	seconds = std::max(seconds, std::int64_t(0));
+	return (seconds < 60 ? std::string() : std::to_string(seconds / 60) + 'm')
+		+ std::to_string(seconds % 60) + 's';
+}
+
+[[nodiscard]] inline bool ExactCountReached(
+		std::size_t loaded,
+		int exactCount) {
+	return exactCount >= 0 && loaded >= std::size_t(exactCount);
 }
 
 [[nodiscard]] inline bool PageAdvanced(

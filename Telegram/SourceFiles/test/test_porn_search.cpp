@@ -141,6 +141,62 @@ void CheckRequestGate() {
 	Check(!gate.canStart(40000, 0, 0), "invalid concurrency cannot start requests");
 }
 
+void CheckAdjustableInterval() {
+	auto gate = Policy::RequestGate();
+	gate.started(0);
+	gate.setInterval(100);
+	Check(gate.delay(50) == 50, "shortening the interval updates a queued request");
+	Check(gate.canStart(100, 2, 3), "a shorter interval takes effect immediately");
+	gate.setInterval(5000);
+	Check(gate.delay(100) == 4900, "lengthening the interval updates a queued request");
+	gate.setInterval(0);
+	Check(gate.canStart(100, 2, 3), "zero interval removes the fixed pacing delay");
+	Check(!gate.canStart(100, 3, 3), "zero interval still enforces concurrency");
+	gate.pause(100, 10);
+	gate.setInterval(500);
+	gate.setInterval(0);
+	Check(!gate.canStart(500, 0, 20), "changing the interval cannot bypass a flood wait");
+	Check(gate.canStart(10100, 0, 20), "zero interval can resume after the flood wait");
+}
+
+std::int64_t QueueDuration(int limit, std::int64_t interval) {
+	auto gate = Policy::RequestGate();
+	gate.setInterval(interval);
+	auto completions = std::vector<std::int64_t>();
+	auto started = 0;
+	for (auto now = std::int64_t(0);; now += 50) {
+		Check(now < 150 * 2000, "short-latency queue eventually completes");
+		std::erase_if(completions, [&](auto at) { return at <= now; });
+		if (started == 150 && completions.empty()) {
+			return now;
+		}
+		while (started != 150 && gate.canStart(now, completions.size(), limit)) {
+			gate.started(now);
+			completions.push_back(now + 1000);
+			++started;
+		}
+		Check(
+			completions.size() <= std::size_t(limit),
+			"an adjustable interval never exceeds the concurrent request limit");
+	}
+}
+
+void CheckConcurrencyThroughput() {
+	const auto spacedThree = QueueDuration(3, 500);
+	const auto spacedTwenty = QueueDuration(20, 500);
+	const auto unspacedThree = QueueDuration(3, 0);
+	const auto unspacedTwenty = QueueDuration(20, 0);
+	Check(
+		spacedThree == spacedTwenty,
+		"a fixed interval can hide concurrency gains for fast responses");
+	Check(
+		unspacedThree < spacedThree,
+		"removing the fixed interval improves throughput at the same concurrency");
+	Check(
+		unspacedTwenty < unspacedThree,
+		"higher concurrency can improve throughput without fixed pacing");
+}
+
 void CheckLargeQueue(int limit) {
 	auto gate = Policy::RequestGate();
 	auto completions = std::vector<std::int64_t>();
@@ -167,11 +223,81 @@ void CheckLargeQueue(int limit) {
 		"configured concurrency is attainable for slow responses");
 }
 
+void CheckFloodNotices() {
+	auto gate = Policy::RequestGate();
+	Check(!gate.takePauseNotice(0), "normal request queue needs no flood toast");
+	gate.started(0);
+	Check(!gate.pauseRemaining(0), "request spacing is not a server flood wait");
+	gate.pause(100, 10);
+	gate.pause(200, 20);
+	Check(
+		gate.takePauseNotice(300) == 19900,
+		"simultaneous flood replies produce one notice for the longest wait");
+	Check(!gate.takePauseNotice(400), "only one window consumes the flood notice");
+	gate.pause(500, 30);
+	Check(!gate.takePauseNotice(600), "extending the same pause does not spam toasts");
+	Check(gate.pauseRemaining(600) == 29900, "extended wait still delays all searches");
+	Check(gate.finishPause(30500), "the extended pause expires at its deadline");
+	gate.pause(40000, 5);
+	Check(gate.takePauseNotice(40000) == 5000, "a later flood gets a new notice");
+	gate.pause(50000, 5);
+	Check(!gate.takePauseNotice(55000), "expired notices are not shown");
+}
+
+void CheckSearchTiming() {
+	auto elapsed = Policy::ElapsedTime();
+	Check(elapsed.elapsed(5000) == 0, "a new search has no elapsed time");
+	elapsed.setRunning(5000, true);
+	elapsed.setRunning(6000, true);
+	Check(elapsed.elapsed(7000) == 2000, "progress updates do not restart the clock");
+	elapsed.setRunning(45000, false);
+	Check(
+		elapsed.elapsed(65000) == 40000,
+		"reading results between pages does not increase search time");
+	elapsed.setRunning(65000, true);
+	Check(elapsed.elapsed(85000) == 60000, "pagination resumes the same elapsed time");
+	elapsed.setRunning(85000, true);
+	Check(
+		elapsed.elapsed(105000) == 80000,
+		"searching and automatic flood waiting use continuous elapsed time");
+	elapsed.setRunning(105000, false);
+	Check(elapsed.elapsed(110000) == 80000, "completion freezes elapsed time");
+	Check(!elapsed.running(), "the repaint timer can stop when idle");
+	Check(Policy::FormatDuration(0) == "0s", "zero-second format");
+	Check(Policy::FormatDuration(40) == "40s", "seconds-only format");
+	Check(Policy::FormatDuration(59) == "59s", "last second before a minute");
+	Check(Policy::FormatDuration(60) == "1m0s", "exact-minute format");
+	Check(Policy::FormatDuration(80) == "1m20s", "minutes-and-seconds format");
+	elapsed = {};
+	Check(elapsed.elapsed(110000) == 0, "a replacement query resets elapsed time");
+}
+
+void CheckExactCounts() {
+	Check(Policy::ExactCountReached(0, 0), "empty exact result is complete");
+	Check(Policy::ExactCountReached(1, 1), "one hit needs no confirming empty page");
+	Check(Policy::ExactCountReached(50, 50), "an exact full page can also be complete");
+	Check(!Policy::ExactCountReached(20, 100), "a short page alone does not prove completion");
+	Check(!Policy::ExactCountReached(50, 100), "more matches still need pagination");
+	Check(!Policy::ExactCountReached(100, -1), "inexact totals cannot end pagination early");
+	const auto duplicates = std::vector<Message>{
+		{ { 1, 5 }, 10 },
+		{ { 1, 5 }, 10 },
+	};
+	Check(
+		!Policy::ExactCountReached(Merge({}, duplicates).size(), 2),
+		"duplicate hits do not satisfy the exact total");
+}
+
 } // namespace
 
 int main() {
 	CheckMergedPages();
 	CheckRequestGate();
+	CheckAdjustableInterval();
+	CheckConcurrencyThroughput();
+	CheckFloodNotices();
+	CheckSearchTiming();
+	CheckExactCounts();
 	for (const auto limit : std::array{ 1, 3, 10, 20, 32 }) {
 		CheckLargeQueue(limit);
 	}
