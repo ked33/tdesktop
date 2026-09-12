@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <limits>
 #include <optional>
 #include <span>
+#include <vector>
 
 namespace Media::Streaming::Mp4 {
 
@@ -35,6 +36,7 @@ struct HeaderPatch {
 struct StreamingHeader {
 	Layout layout = Layout::Regular;
 	HeaderPatch patch;
+	std::vector<HeaderPatch> durationPatches;
 };
 
 struct ReadAheadRange {
@@ -152,6 +154,92 @@ template <typename Read>
 	return read(offset, data) ? ParseAtom(data, end - offset) : std::nullopt;
 }
 
+template <typename Read>
+[[nodiscard]] bool ReadDurationPatches(
+		std::int64_t offset,
+		std::int64_t end,
+		Read &read,
+		std::int64_t durationMs,
+		int &budget,
+		int depth,
+		std::vector<HeaderPatch> &patches) {
+	while (offset < end) {
+		const auto atom = ReadAtom(offset, end, read, budget);
+		if (!atom) {
+			return false;
+		}
+		const auto payload = offset + atom->headerSize;
+		if (atom->is("trak") || atom->is("mdia")) {
+			if (depth >= 2 || !ReadDurationPatches(
+					payload,
+					offset + atom->size,
+					read,
+					durationMs,
+					budget,
+					depth + 1,
+					patches)) {
+				return false;
+			}
+		} else if (atom->is("mvhd") || atom->is("mdhd")) {
+			auto storage = std::array<char, 32>();
+			const auto data = std::span(storage).first(std::size_t(std::min(
+				std::int64_t(storage.size()),
+				atom->size - atom->headerSize)));
+			if (data.empty() || !read(payload, data)) {
+				return false;
+			}
+			const auto version = static_cast<unsigned char>(data[0]);
+			const auto position = (version == 1) ? 24 : 16;
+			const auto width = (version == 1) ? 8 : 4;
+			if (version > 1 || data.size() < std::size_t(position + width)) {
+				return false;
+			}
+			const auto timescale = ReadBigEndian(data.subspan(position - 4, 4));
+			const auto duration = ReadBigEndian(data.subspan(position, width));
+			const auto maximum = (version == 1)
+				? std::numeric_limits<std::uint64_t>::max()
+				: std::numeric_limits<std::uint32_t>::max();
+			const auto seconds = std::uint64_t(durationMs / 1000);
+			const auto fraction = std::uint64_t(durationMs % 1000) * timescale / 1000;
+			if (timescale && (!duration || duration == maximum)
+				&& seconds <= (maximum - 1 - fraction) / timescale) {
+				const auto value = seconds * timescale + fraction;
+				if (value) {
+					auto patch = HeaderPatch{
+						.offset = payload + position,
+						.size = width,
+					};
+					WriteBigEndian(value, std::span(patch.bytes).first(width));
+					patches.push_back(patch);
+				}
+			}
+		}
+		offset += atom->size;
+	}
+	return true;
+}
+
+template <typename Read>
+[[nodiscard]] StreamingHeader FragmentedHeader(
+		std::int64_t moovOffset,
+		const Atom &moov,
+		Read &read,
+		std::int64_t durationMs) {
+	auto result = StreamingHeader{ .layout = Layout::Fragmented };
+	auto budget = 256;
+	if (durationMs > 0 && !ReadDurationPatches(
+			moovOffset + moov.headerSize,
+			moovOffset + moov.size,
+			read,
+			durationMs,
+			budget,
+			0,
+			result.durationPatches)) {
+		result.durationPatches.clear();
+	}
+	return result;
+}
+
 } // namespace details
 
 inline bool ReadAheadRange::intersects(
@@ -267,7 +355,8 @@ inline void HeaderPatch::apply(
 template <typename Read>
 [[nodiscard]] StreamingHeader ProbeForStreaming(
 		std::int64_t fileSize,
-		Read &&read) {
+		Read &&read,
+		std::int64_t durationMs = 0) {
 	constexpr auto kLargeFrontMoovThreshold = std::int64_t(2) * 1024 * 1024;
 	constexpr auto kMaximumHeaderAtoms = 64;
 	auto budget = kMaximumHeaderAtoms;
@@ -295,7 +384,7 @@ template <typename Read>
 				if (!child) {
 					return {};
 				} else if (child->is("mvex")) {
-					return { .layout = Layout::Fragmented };
+					return details::FragmentedHeader(offset, *atom, read, durationMs);
 				}
 				hasTrack = hasTrack || child->is("trak");
 				childOffset += child->size;

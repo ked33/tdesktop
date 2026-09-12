@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <initializer_list>
 #include <iostream>
 #include <limits>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -69,13 +70,14 @@ void Append(Bytes &to, const Bytes &from) {
 [[nodiscard]] StreamingHeader Probe(
 		const Bytes &data,
 		std::int64_t fileSize = -1,
-		int failAfter = -1) {
+		int failAfter = -1,
+		std::int64_t durationMs = 0) {
 	auto calls = 0;
 	return ProbeForStreaming(
 		(fileSize < 0) ? std::int64_t(data.size()) : fileSize,
 		[&](std::int64_t offset, std::span<char> buffer) {
-			Check(++calls <= 64, "bounded header reads");
-			Check(buffer.size() <= 16, "only atom headers are read");
+			Check(++calls <= (durationMs ? 320 : 64), "bounded header reads");
+			Check(buffer.size() <= (durationMs ? 32 : 16), "only atom headers are read");
 			Check(offset >= 0, "nonnegative read offset");
 			if (calls > failAfter && failAfter >= 0) {
 				return false;
@@ -87,7 +89,7 @@ void Append(Bytes &to, const Bytes &from) {
 				"read ends inside fixture");
 			std::copy_n(data.data() + start, buffer.size(), buffer.data());
 			return true;
-		});
+		}, durationMs);
 }
 
 void CheckRanges(
@@ -434,7 +436,68 @@ void TestHeaderReadBudget() {
 	Check(!ReadAheadRange{ -1, 1 }.intersects(0, 1), "invalid header is inactive");
 }
 
-[[nodiscard]] int InspectFile(const char *path) {
+[[nodiscard]] Bytes DurationBox(
+		std::string_view name,
+		int version,
+		std::uint32_t timescale,
+		std::uint64_t duration) {
+	auto body = Bytes(version ? 36 : 24);
+	body[0] = char(version);
+	const auto position = version ? 24 : 16;
+	details::WriteBigEndian(
+		timescale,
+		std::span(body).subspan(position - 4, 4));
+	details::WriteBigEndian(
+		duration,
+		std::span(body).subspan(position, version ? 8 : 4));
+	return Atom(name, body);
+}
+
+void TestFragmentedDurationHints() {
+	const auto audioHeader = DurationBox("mdhd", 0, 48000, 0);
+	const auto videoHeader = DurationBox(
+		"mdhd",
+		1,
+		90000,
+		std::numeric_limits<std::uint64_t>::max());
+	const auto audio = Atom("trak", Atom("mdia", audioHeader));
+	const auto video = Atom("trak", Atom("mdia", videoHeader));
+	const auto movie = DurationBox("mvhd", 0, 1000, 0);
+	const auto data = Join({
+		Atom("ftyp"),
+		Atom("moov", Join({ movie, audio, video, Atom("mvex") })),
+		Atom("moof"),
+		Atom("mdat", Bytes(16)),
+	});
+	const auto header = Probe(data, -1, -1, 45001);
+	Check(header.layout == Layout::Fragmented, "duration hint keeps fragmented layout");
+	Check(header.durationPatches.size() == 3, "unknown movie and track durations get hints");
+	const auto expected = std::array<std::uint64_t, 3>{ 45001, 2160048, 4050090 };
+	for (auto i = std::size_t(0); i != expected.size(); ++i) {
+		const auto &patch = header.durationPatches[i];
+		Check(details::ReadBigEndian(std::span(patch.bytes).first(patch.size))
+			== expected[i], "duration hint uses the track timescale");
+	}
+	auto patched = data;
+	for (const auto &patch : header.durationPatches) {
+		patch.apply(0, patched);
+	}
+	Check(Probe(patched, -1, -1, 60000).durationPatches.empty(),
+		"valid existing durations are never overwritten");
+	Check(Probe(data).durationPatches.empty(), "missing document duration adds no hints");
+	const auto overflow = Join({
+		Atom("moov", Join({
+			Atom("trak", Atom("mdia", DurationBox("mdhd", 0, 4000000000U, 0))),
+			Atom("mvex"),
+		})),
+		Atom("moof"),
+		Atom("mdat"),
+	});
+	Check(Probe(overflow, -1, -1, 60000).durationPatches.empty(),
+		"duration hint cannot overflow the field");
+}
+
+[[nodiscard]] int InspectFile(const char *path, std::int64_t durationMs) {
 	auto file = std::ifstream(path, std::ios::binary | std::ios::ate);
 	const auto size = std::int64_t(file.tellg());
 	if (!file || size <= 0) {
@@ -449,7 +512,7 @@ void TestHeaderReadBudget() {
 			file.seekg(offset);
 			file.read(buffer.data(), std::streamsize(buffer.size()));
 			return bool(file);
-		});
+		}, durationMs);
 	std::cout << "{\"layout\":" << int(header.layout)
 		<< ",\"file_size\":" << size
 		<< ",\"header_reads\":" << reads
@@ -461,6 +524,18 @@ void TestHeaderReadBudget() {
 		}
 		std::cout << int(static_cast<unsigned char>(header.patch.bytes[i]));
 	}
+	std::cout << "],\"duration_patches\":[";
+	auto first = true;
+	for (const auto &patch : header.durationPatches) {
+		std::cout << (first ? "" : ",") << "{\"offset\":" << patch.offset
+			<< ",\"bytes\":[";
+		for (auto i = 0; i != patch.size; ++i) {
+			std::cout << (i ? "," : "")
+				<< int(static_cast<unsigned char>(patch.bytes[i]));
+		}
+		std::cout << "]}";
+		first = false;
+	}
 	std::cout << "]}\n";
 	return 0;
 }
@@ -468,10 +543,10 @@ void TestHeaderReadBudget() {
 } // namespace
 
 int main(int argc, char *argv[]) {
-	if (argc == 3 && std::string_view(argv[1]) == "--inspect") {
-		return InspectFile(argv[2]);
+	if ((argc == 3 || argc == 4) && std::string_view(argv[1]) == "--inspect") {
+		return InspectFile(argv[2], argc == 4 ? std::stoll(argv[3]) : 0);
 	} else if (argc != 1) {
-		std::cerr << "Usage: test_mp4_header [--inspect media-file]\n";
+		std::cerr << "Usage: test_mp4_header [--inspect media-file [duration-ms]]\n";
 		return 2;
 	}
 	TestRegularLayouts();
@@ -482,6 +557,7 @@ int main(int argc, char *argv[]) {
 	TestObservedTailHeaders();
 	TestObservedBounds();
 	TestHeaderReadBudget();
+	TestFragmentedDurationHints();
 	std::cout << "MP4 header regression: "
 		<< TotalChecks << " checks passed.\n";
 	return 0;
