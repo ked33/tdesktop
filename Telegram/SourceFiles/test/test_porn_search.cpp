@@ -420,6 +420,41 @@ void CheckMergedPages() {
 	Check(!Policy::PageAdvanced(0, -1), "invalid message ids cannot advance pagination");
 }
 
+void CheckSourceCounts() {
+	const auto first = Message{ { 1, 10 }, 300 };
+	const auto shared = Message{ { 2, 20 }, 200 };
+	const auto extra = Message{ { 3, 30 }, 100 };
+	const auto native = std::vector<Message>{ first, shared, shared };
+	const auto additional = std::vector<Message>{ shared, extra, extra };
+	const auto merged = Merge(native, additional);
+	auto nativeIds = std::vector<MessageId>{ first.id, shared.id, shared.id };
+	const auto count = [&](const std::vector<Message> &visible) {
+		return Policy::CountNativeResults(
+			visible,
+			nativeIds,
+			[](const Message &message) { return message.id; });
+	};
+	Check(count(merged) == 2, "duplicate native hits count only once");
+	Check(
+		merged.size() - count(merged) == 1,
+		"supplemental counts exclude messages already found by native search");
+	Check(
+		count({ first, extra }) == 1,
+		"removed or filtered native rows do not inflate the loaded count");
+	Check(count({ extra }) == 0, "only displayed native hits are counted");
+	Check(count({}) == 0, "clearing the result list clears both counts");
+	nativeIds = { first.id };
+	Check(
+		count(merged) == 1 && merged.size() - count(merged) == 2,
+		"supplemental hits are shown before the native page arrives");
+	nativeIds.push_back(shared.id);
+	Check(
+		count(merged) == 2 && merged.size() - count(merged) == 1,
+		"late native duplicates change attribution without changing the total");
+	nativeIds.clear();
+	Check(count(merged) == 0, "special search has no native contribution");
+}
+
 void CheckRequestGate() {
 	auto gate = Policy::RequestGate();
 	Check(gate.canStart(0, 0, 3), "idle queue starts immediately");
@@ -599,6 +634,7 @@ int main() {
 	CheckCachedSources();
 	CheckSourceSnapshot();
 	CheckMergedPages();
+	CheckSourceCounts();
 	CheckRequestGate();
 	CheckAdjustableInterval();
 	CheckConcurrencyThroughput();
