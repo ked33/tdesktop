@@ -200,11 +200,11 @@ jobs:
           "Release\test_streaming_seek.exe"
           exit /b %errorlevel%
 
-      - name: Check streaming startup, cache, MPV and MP4 headers
+      - name: Check streaming startup, cache, MPV and MP4 metadata
         shell: cmd
         run: |
           cd /d %TBUILD%\%REPO_NAME%\out
-          cmake --build . --config Release --target test_streaming_startup test_streaming_cache test_streaming_mpv test_mp4_header --parallel
+          cmake --build . --config Release --target test_streaming_startup test_streaming_cache test_streaming_mpv test_mp4_header test_mp4_index --parallel
           if errorlevel 1 exit /b %errorlevel%
           if not exist "Release\test_streaming_startup.exe" exit /b 1
           "Release\test_streaming_startup.exe"
@@ -217,6 +217,9 @@ jobs:
           if errorlevel 1 exit /b %errorlevel%
           if not exist "Release\test_mp4_header.exe" exit /b 1
           "Release\test_mp4_header.exe"
+          if errorlevel 1 exit /b %errorlevel%
+          if not exist "Release\test_mp4_index.exe" exit /b 1
+          "Release\test_mp4_index.exe"
           exit /b %errorlevel%
 
       - name: Build Telegram (Release)
