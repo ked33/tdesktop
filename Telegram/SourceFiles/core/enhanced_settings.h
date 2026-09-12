@@ -21,6 +21,9 @@ namespace EnhancedSettings {
 	inline constexpr auto kSearchPornConcurrencyMinimum = 1;
 	inline constexpr auto kSearchPornConcurrencyDefault = 3;
 	inline constexpr auto kSearchPornConcurrencyMaximum = 32;
+	inline constexpr auto kSearchPornRequestIntervalMinimum = 0;
+	inline constexpr auto kSearchPornRequestIntervalDefault = 500;
+	inline constexpr auto kSearchPornRequestIntervalMaximum = 5000;
 
 	[[nodiscard]] int MessageEmojiSize();
 	[[nodiscard]] int MessageStickerSize();
@@ -30,6 +33,9 @@ namespace EnhancedSettings {
 	[[nodiscard]] int SearchPornConcurrency();
 	[[nodiscard]] rpl::producer<int> SearchPornConcurrencyChanges();
 	void SetSearchPornConcurrency(int value);
+	[[nodiscard]] int SearchPornRequestInterval();
+	[[nodiscard]] rpl::producer<int> SearchPornRequestIntervalChanges();
+	void SetSearchPornRequestInterval(int value);
 
 	class Manager : public QObject {
 	Q_OBJECT

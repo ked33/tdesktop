@@ -1140,12 +1140,13 @@ void PaintPornUserpicBadge(
 	if (!channel || !channel->hasPornRestriction()) {
 		return;
 	}
-	const auto skip = st::dialogsPornBadgeSkip;
+	const auto size = st::dialogsNoForwardsBadgeSize;
+	const auto skip = st::dialogsNoForwardsBadgeSkip;
 	const auto rect = QRect(
-		QPoint(
-			LeftUserpicPosition(photoLeft, outerWidth, photoSize) + skip.x(),
-			photoTop + skip.y()),
-		st::dialogsPornBadgeSize);
+		LeftUserpicPosition(photoLeft, outerWidth, photoSize) + skip.x(),
+		photoTop + skip.y(),
+		size,
+		size);
 	const auto colorValue = GetEnhancedString(u"no_forwards_badge_color"_q);
 	const auto color = QColor(colorValue.isEmpty()
 		? u"#ecbb71"_q
@@ -1154,10 +1155,7 @@ void PaintPornUserpicBadge(
 	p.setRenderHint(QPainter::Antialiasing);
 	p.setPen(Qt::NoPen);
 	p.setBrush(color);
-	p.drawRoundedRect(
-		rect,
-		st::dialogsPornBadgeRadius,
-		st::dialogsPornBadgeRadius);
+	p.drawEllipse(rect);
 	p.setFont(st::dialogsPornBadgeFont);
 	p.setPen(color.lightnessF() > 0.5 ? Qt::black : Qt::white);
 	p.drawText(rect, Qt::AlignCenter, u"18+"_q);
