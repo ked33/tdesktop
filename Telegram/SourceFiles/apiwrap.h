@@ -451,6 +451,8 @@ public:
 	[[nodiscard]] Api::SensitiveContent &sensitiveContent();
 	[[nodiscard]] Api::PornSearch &pornSearch();
 	void invalidatePornSearch();
+	void invalidatePornSearchMessages(PeerId peer);
+	void updatePornSearchFolder(PeerId peer, int folder);
 	[[nodiscard]] Api::GlobalPrivacy &globalPrivacy();
 	[[nodiscard]] Api::ReactionsNotifySettings &reactionsNotifySettings();
 	[[nodiscard]] Api::UserPrivacy &userPrivacy();

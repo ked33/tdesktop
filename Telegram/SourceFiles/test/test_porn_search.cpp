@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <compare>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 
 namespace {
 
@@ -39,14 +40,225 @@ struct Message {
 };
 
 struct SearchSource {
+	int channel = 0;
 	int offsetId = 0;
 	std::set<int> messages;
 	bool started = false;
 	bool failed = false;
+	bool exhausted = false;
+	bool retry = false;
+	bool changed = false;
 	friend bool operator==(
 		const SearchSource &,
 		const SearchSource &) = default;
 };
+
+struct CachedRequest {
+	std::string query;
+	int filter = 0;
+	bool archive = true;
+	friend bool operator==(
+		const CachedRequest &,
+		const CachedRequest &) = default;
+};
+
+struct CachedSearch {
+	std::map<int, SearchSource> sources;
+	int before = 0;
+};
+
+void CheckQueryCache() {
+	using Cache = Policy::QueryCache<CachedRequest, CachedSearch>;
+	const auto first = CachedRequest{ "dance" };
+	const auto second = CachedRequest{ "music" };
+	const auto filtered = CachedRequest{ "dance", 1 };
+	const auto mainOnly = CachedRequest{ "dance", 0, false };
+	auto cache = Cache(3, 5);
+	const auto saved = CachedSearch{
+		.sources = { { 1, SearchSource{
+			.channel = 1,
+			.offsetId = 30,
+			.messages = { 30, 40, 50 },
+			.started = true,
+		} } },
+		.before = 100,
+	};
+	Check(cache.put(first, saved, 3), "cache accepts loaded result identities");
+	Check(!cache.take(second), "another keyword cannot consume cached results");
+	Check(!cache.take(filtered), "chat filters are part of the cache key");
+	Check(!cache.take(mainOnly), "archive scope is part of the cache key");
+	auto restored = cache.take(first);
+	Check(restored.has_value(), "the same request restores its cached state");
+	Check(
+		restored->sources == saved.sources && restored->before == 100,
+		"restoration preserves result IDs, page cursors and the loaded time boundary");
+	Check(
+		cache.size() == 0 && cache.cost() == 0,
+		"active queries leave the cache budget");
+	Check(
+		cache.put(first, std::move(*restored), 3),
+		"cancelled queries can be retained again");
+	Check(
+		cache.put(second, {}, 2),
+		"multiple keywords share one result budget");
+	Check(
+		cache.cost() == 5,
+		"all retained result IDs count toward the shared budget");
+	Check(cache.put(filtered, {}, 1), "a new query can evict an older query");
+	Check(
+		!cache.take(first),
+		"budget eviction removes the least recently used query");
+	Check(
+		cache.size() == 2 && cache.cost() == 3,
+		"eviction updates both accounting totals");
+	Check(cache.put(second, {}, 1), "the same key replaces its old entry");
+	Check(
+		cache.size() == 2 && cache.cost() == 2,
+		"replacement does not double-count results");
+	Check(
+		!cache.put(second, {}, 1090000),
+		"full-history-sized results are not retained");
+	Check(
+		!cache.take(second),
+		"an oversized replacement cannot leave an older result behind");
+	Check(cache.put(first, {}, 0), "empty result sets can be cached");
+	Check(
+		cache.put(second, {}, 0),
+		"empty results still occupy one query slot");
+	Check(
+		cache.put(mainOnly, {}, 0),
+		"query count also bounds zero-result entries");
+	Check(
+		!cache.take(filtered),
+		"query-count eviction uses the same recency order");
+	Check(
+		cache.size() == 3 && cache.cost() == 0,
+		"zero-result queries remain bounded");
+	cache.clear();
+	Check(
+		cache.size() == 0 && cache.cost() == 0,
+		"a synchronization reset drops all cache entries");
+	Check(
+		!Cache(3, 5).take(first),
+		"another session starts without the previous cache");
+	Check(
+		!Cache(0, 5).put(first, {}, 0),
+		"a zero query limit cannot retain entries");
+	Check(
+		Cache(1, 0).put(first, {}, 0),
+		"zero memory budget still permits an empty result");
+	Check(
+		!Cache(1, 0).put(first, {}, 1),
+		"zero memory budget rejects nonempty results");
+
+	auto moveOnly = Policy::QueryCache<int, std::unique_ptr<int>>(1, 1);
+	Check(
+		moveOnly.put(1, std::make_unique<int>(42), 1),
+		"cached state need not be copied");
+	auto moved = moveOnly.take(1);
+	Check(
+		moved && **moved == 42,
+		"restoring transfers ownership of cached state");
+}
+
+void CheckCachedSources() {
+	auto cached = std::map<int, SearchSource>();
+	for (auto peer = 1; peer <= 109; ++peer) {
+		cached.emplace(peer, SearchSource{
+			.channel = peer,
+			.offsetId = 10,
+			.messages = { 10, 20 },
+			.started = true,
+			.exhausted = true,
+		});
+	}
+	cached.emplace(200, SearchSource{
+		.channel = 1,
+		.offsetId = 5,
+		.messages = { 5 },
+		.started = true,
+	});
+	cached.at(2).messages.clear();
+	Policy::InvalidateSources(cached, 1);
+	Policy::InvalidateSources(cached, 999);
+	Check(
+		cached.at(1).changed && cached.at(200).changed,
+		"channel changes also invalidate migrated history");
+	Check(!cached.at(2).changed, "unrelated chats keep their cached results");
+	Check(
+		cached.at(1).started && cached.size() == 110,
+		"invalidation preserves an active query's fixed progress");
+	cached.at(3).failed = true;
+	cached.at(3).exhausted = false;
+	cached.at(4).messages.insert(999);
+	cached.at(5).channel = 999;
+	cached.at(6).retry = true;
+	cached.at(6).exhausted = false;
+	cached.at(7).messages.clear();
+	cached.at(7).changed = true;
+
+	auto fresh = std::map<int, SearchSource>();
+	for (auto peer = 1; peer <= 108; ++peer) {
+		fresh.emplace(peer, SearchSource{ .channel = peer });
+	}
+	fresh.emplace(110, SearchSource{ .channel = 110 });
+	fresh.emplace(200, SearchSource{ .channel = 1 });
+	const auto reused = Policy::RestoreSources(
+		fresh,
+		cached,
+		[](int id) { return id != 999; });
+	Check(
+		reused == 104,
+		"only valid sources are reused from a large cached query");
+	Check(
+		!fresh.at(1).started && !fresh.at(200).started,
+		"changed chats restart while other chats are reused");
+	Check(
+		fresh.at(2).started && fresh.at(2).exhausted,
+		"unchanged empty results need no new request");
+	Check(
+		fresh.at(3).retry && !fresh.at(3).failed,
+		"failed pages retry from their cached cursor");
+	Check(
+		fresh.at(3).offsetId == 10,
+		"retry does not discard previously loaded pages");
+	Check(
+		!fresh.at(4).started && fresh.at(4).messages.empty(),
+		"unloaded message content forces a fresh source search");
+	Check(
+		!fresh.at(5).started,
+		"a changed migrated-history owner cannot reuse old state");
+	Check(
+		fresh.at(6).retry,
+		"a cancelled in-flight page is still eligible to resume");
+	Check(
+		!fresh.at(7).started && !fresh.at(7).exhausted,
+		"suppressed failures cannot become permanent zero-result cache hits");
+	Check(
+		!fresh.contains(109),
+		"chats outside the current catalog are not restored");
+	Check(
+		!fresh.at(110).started,
+		"newly joined chats are included in the next query");
+	Check(
+		fresh.at(100).offsetId == 10,
+		"unchanged chats retain their pagination progress");
+
+	auto cache = Policy::QueryCache<int, CachedSearch>(10, 20000);
+	Check(
+		cache.put(1, { cached, 100 }, 216),
+		"cached sources can await the next query");
+	cache.forEach([](CachedSearch &query) {
+		Policy::InvalidateSources(query.sources, 2);
+	});
+	auto changed = cache.take(1);
+	Check(
+		changed && changed->sources.at(2).changed,
+		"new messages invalidate even cached zero-result chats");
+	Check(
+		changed && !changed->sources.at(100).changed,
+		"per-chat invalidation leaves other cached chats reusable");
+}
 
 void CheckSourceSnapshot() {
 	using Snapshot = Policy::SourceSnapshot<int, SearchSource>;
@@ -383,6 +595,8 @@ void CheckExactCounts() {
 } // namespace
 
 int main() {
+	CheckQueryCache();
+	CheckCachedSources();
 	CheckSourceSnapshot();
 	CheckMergedPages();
 	CheckRequestGate();

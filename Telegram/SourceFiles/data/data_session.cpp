@@ -3155,6 +3155,7 @@ bool Session::updateExistingMessage(const MTPDmessage &data) {
 }
 
 void Session::updateEditedMessage(const MTPMessage &data) {
+	session().api().invalidatePornSearchMessages(PeerFromMessage(data));
 	const auto existing = data.match([](const MTPDmessageEmpty &)
 			-> HistoryItem* {
 		return nullptr;
@@ -3432,6 +3433,9 @@ void Session::checkFormattedDateUpdates() {
 void Session::processMessagesDeleted(
 		PeerId peerId,
 		const QVector<MTPint> &data) {
+	if (!data.empty()) {
+		session().api().invalidatePornSearchMessages(peerId);
+	}
 	const auto list = messagesList(peerId);
 	const auto affected = historyLoaded(peerId);
 	if (!list && !affected) {
