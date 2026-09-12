@@ -581,6 +581,20 @@ namespace Settings {
 			Ui::show(Box<SearchPornConcurrencyBox>());
 		});
 
+		AddButtonWithLabel(
+			inner,
+			tr::lng_settings_search_porn_interval(),
+			rpl::single(EnhancedSettings::SearchPornRequestInterval())
+				| rpl::then(EnhancedSettings::SearchPornRequestIntervalChanges())
+				| rpl::map([](int value) {
+					return QString::number(value) + u" ms"_q;
+				}),
+			st::settingsButtonNoIcon
+		)->addClickHandler([] {
+			Ui::show(Box<SearchPornIntervalBox>());
+		});
+		AddDividerText(inner, tr::lng_settings_search_porn_interval_about());
+
 		AddButtonWithIcon(
 				inner,
 				tr::lng_settings_show_group_sender_avatar(),

@@ -40,6 +40,11 @@ namespace EnhancedSettings {
 			return events;
 		}
 
+		rpl::event_stream<int> &SearchPornRequestIntervalEvents() {
+			static auto events = rpl::event_stream<int>();
+			return events;
+		}
+
 		void FillMissingDefaults() {
 			const auto ensureBool = [](const QString &key, bool value) {
 				if (!gEnhancedOptions.contains(key)) {
@@ -96,6 +101,9 @@ namespace EnhancedSettings {
 			ensureBool(qsl("search_main_and_archive"), true);
 			ensureBool(u"search_include_porn"_q, true);
 			ensureInt(u"search_porn_concurrency"_q, kSearchPornConcurrencyDefault);
+			ensureInt(
+				u"search_porn_request_interval_ms"_q,
+				kSearchPornRequestIntervalDefault);
 			ensureString(qsl("mpv_path"), QString());
 			ensureString(
 				qsl("net_download_speed_boost_profiles"),
@@ -266,6 +274,33 @@ namespace EnhancedSettings {
 			SetEnhancedValue(u"search_porn_concurrency"_q, value);
 			Write();
 			SearchPornConcurrencyEvents().fire_copy(value);
+		}
+	}
+
+	int SearchPornRequestInterval() {
+		auto valid = false;
+		const auto value = gEnhancedOptions.value(
+			u"search_porn_request_interval_ms"_q,
+			kSearchPornRequestIntervalDefault).toInt(&valid);
+		return (valid && value >= kSearchPornRequestIntervalMinimum
+			&& value <= kSearchPornRequestIntervalMaximum)
+			? value
+			: kSearchPornRequestIntervalDefault;
+	}
+
+	rpl::producer<int> SearchPornRequestIntervalChanges() {
+		return SearchPornRequestIntervalEvents().events();
+	}
+
+	void SetSearchPornRequestInterval(int value) {
+		value = std::clamp(
+			value,
+			kSearchPornRequestIntervalMinimum,
+			kSearchPornRequestIntervalMaximum);
+		if (SearchPornRequestInterval() != value) {
+			SetEnhancedValue(u"search_porn_request_interval_ms"_q, value);
+			Write();
+			SearchPornRequestIntervalEvents().fire_copy(value);
 		}
 	}
 
@@ -494,6 +529,9 @@ namespace EnhancedSettings {
 		settings.insert(qsl("search_main_and_archive"), true);
 		settings.insert(u"search_include_porn"_q, true);
 		settings.insert(u"search_porn_concurrency"_q, kSearchPornConcurrencyDefault);
+		settings.insert(
+			u"search_porn_request_interval_ms"_q,
+			kSearchPornRequestIntervalDefault);
 		settings.insert(qsl("show_group_sender_avatar"), false);
 		settings.insert(qsl("show_seconds"), false);
 		settings.insert(qsl("show_message_context_read_info"), true);
@@ -599,6 +637,9 @@ namespace EnhancedSettings {
 		settings.insert(qsl("search_main_and_archive"), GetEnhancedBool("search_main_and_archive"));
 		settings.insert(u"search_include_porn"_q, SearchIncludePorn());
 		settings.insert(u"search_porn_concurrency"_q, SearchPornConcurrency());
+		settings.insert(
+			u"search_porn_request_interval_ms"_q,
+			SearchPornRequestInterval());
 		settings.insert(qsl("show_group_sender_avatar"), GetEnhancedBool("show_group_sender_avatar"));
 		settings.insert(qsl("show_seconds"), GetEnhancedBool("show_seconds"));
 		settings.insert(qsl("show_message_context_read_info"), GetEnhancedBool("show_message_context_read_info"));

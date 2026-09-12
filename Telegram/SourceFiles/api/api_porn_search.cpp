@@ -32,8 +32,16 @@ PornSearch::PornSearch(not_null<ApiWrap*> api)
 : _session(&api->session())
 , _api(&api->instance())
 , _timer([=] { pump(); }) {
+	const auto settingsChanged = [=] {
+		LOG(("Search Info: supplemental concurrency %1, request interval %2 ms.")
+			.arg(EnhancedSettings::SearchPornConcurrency())
+			.arg(EnhancedSettings::SearchPornRequestInterval()));
+		schedule();
+	};
 	EnhancedSettings::SearchPornConcurrencyChanges(
-	) | rpl::on_next([=] { schedule(); }, _lifetime);
+	) | rpl::on_next(settingsChanged, _lifetime);
+	EnhancedSettings::SearchPornRequestIntervalChanges(
+	) | rpl::on_next(settingsChanged, _lifetime);
 	using Flag = Data::PeerUpdate::Flag;
 	_session->changes().peerUpdates(
 		Flag::UnavailableReason
@@ -79,6 +87,11 @@ PornSearch::QueryId PornSearch::start(
 		Callback done) {
 	const auto id = ++_nextQuery;
 	_queries.emplace(id, Query{ std::move(request), std::move(done) });
+	LOG(("Search Info: supplemental query %1 started, "
+		"concurrency %2, request interval %3 ms.")
+		.arg(id)
+		.arg(EnhancedSettings::SearchPornConcurrency())
+		.arg(EnhancedSettings::SearchPornRequestInterval()));
 	schedule();
 	return id;
 }
@@ -102,8 +115,9 @@ void PornSearch::cancel(QueryId id) {
 
 void PornSearch::loadMore(QueryId id, TimeId before) {
 	const auto i = _queries.find(id);
-	if (i != end(_queries) && before > 0 && before <= i->second.before) {
+	if (i != end(_queries) && before > 0 && before < i->second.before) {
 		i->second.before = before;
+		i->second.dirty = true;
 		schedule();
 	}
 }
@@ -135,6 +149,32 @@ void PornSearch::invalidate() {
 		query.dirty = true;
 	}
 	schedule();
+}
+
+void PornSearch::applyFloodWait(const MTP::Error &error) {
+	_requestGate.pause(
+		crl::now(),
+		error.type().mid(error.type().lastIndexOf('_') + 1).toLongLong());
+	LOG(("Search Warning: %1 (code %2); pausing search requests for %3 ms, "
+		"supplemental concurrency %4, active %5, request interval %6 ms.")
+		.arg(error.type())
+		.arg(error.code())
+		.arg(floodWaitRemaining())
+		.arg(EnhancedSettings::SearchPornConcurrency())
+		.arg(int(_tasks.size()))
+		.arg(EnhancedSettings::SearchPornRequestInterval()));
+	for (auto &[id, query] : _queries) {
+		query.dirty = true;
+	}
+	schedule();
+}
+
+crl::time PornSearch::floodWaitRemaining() const {
+	return _requestGate.pauseRemaining(crl::now());
+}
+
+crl::time PornSearch::takeFloodWaitNotice() {
+	return _requestGate.takePauseNotice(crl::now());
 }
 
 void PornSearch::cancelTask(TaskId id) {
@@ -178,7 +218,7 @@ void PornSearch::schedule() {
 
 void PornSearch::reconcile() {
 	for (auto &[id, query] : _queries) {
-		auto allowed = std::set<PeerId>();
+		auto allowed = std::map<PeerId, PeerId>();
 		for (const auto &[peer, folder] : _catalog) {
 			if (folder && !query.request.fromArchive) {
 				continue;
@@ -194,9 +234,9 @@ void PornSearch::reconcile() {
 					&& !channel->isBroadcast())) {
 				continue;
 			}
-			allowed.insert(peer);
+			allowed.emplace(peer, peer);
 			if (const auto migrated = channel->migrateFrom()) {
-				allowed.insert(migrated->id);
+				allowed.emplace(migrated->id, peer);
 			}
 		}
 		for (auto i = begin(query.sources); i != end(query.sources);) {
@@ -208,8 +248,10 @@ void PornSearch::reconcile() {
 				++i;
 			}
 		}
-		for (const auto peer : allowed) {
-			if (query.sources.try_emplace(peer).second) {
+		for (const auto &[peer, channel] : allowed) {
+			const auto [i, added] = query.sources.try_emplace(peer);
+			if (added || i->second.channel != channel) {
+				i->second.channel = channel;
 				query.dirty = true;
 			}
 		}
@@ -217,12 +259,14 @@ void PornSearch::reconcile() {
 }
 
 void PornSearch::pump() {
+	_requestGate.setInterval(EnhancedSettings::SearchPornRequestInterval());
 	reconcile();
 	if (_requestGate.waiting(crl::now())) {
 		_timer.callOnce(_requestGate.delay(crl::now()));
 		publish();
 		return;
 	} else if (_requestGate.finishPause(crl::now())) {
+		LOG(("Search Info: flood wait expired; supplemental search may resume."));
 		for (auto &[id, query] : _queries) {
 			query.dirty = true;
 		}
@@ -234,9 +278,6 @@ void PornSearch::pump() {
 		if (!_requestGate.canStart(now, _tasks.size(), limit)) {
 			_timer.callOnce(_requestGate.delay(now));
 			break;
-		}
-		if (sendReadySearch(true)) {
-			continue;
 		}
 		auto metadata = std::vector<PeerId>();
 		for (const auto peer : _metadataPending) {
@@ -274,7 +315,7 @@ void PornSearch::pump() {
 				break;
 			}
 		}
-		if (!sent && !sendReadySearch(false)) {
+		if (!sent && !sendReadySearch(true) && !sendReadySearch(false)) {
 			break;
 		}
 	}
@@ -531,6 +572,14 @@ void PornSearch::searchReceived(
 	source.started = true;
 	query.dirty = true;
 	const auto previous = source.offsetId;
+	const auto exactCount = result.match(
+		[](const MTPDmessages_messagesSlice &data) {
+			return data.is_inexact() ? -1 : data.vcount().v;
+		}, [](const MTPDmessages_channelMessages &data) {
+			return data.is_inexact() ? -1 : data.vcount().v;
+		}, [](const auto &) {
+			return -1;
+		});
 	result.match([&](const MTPDmessages_messagesNotModified &) {
 		source.failed = true;
 	}, [&](const auto &data) {
@@ -557,7 +606,10 @@ void PornSearch::searchReceived(
 			}
 		}
 		if (data.vmessages().v.empty()
-			|| result.type() == mtpc_messages_messages) {
+			|| result.type() == mtpc_messages_messages
+			|| PornSearchPolicy::ExactCountReached(
+				source.messages.size(),
+				exactCount)) {
 			source.exhausted = true;
 		} else if (!PornSearchPolicy::PageAdvanced(
 			previous.bare,
@@ -583,11 +635,24 @@ void PornSearch::taskFailed(TaskId taskId, const MTP::Error &error) {
 	}
 	const auto task = i->second;
 	_tasks.erase(i);
+	if (!MTP::IgnoreError(error)) {
+		const auto method = (task.type == TaskType::Dialogs)
+			? u"messages.getDialogs"_q
+			: (task.type == TaskType::Pinned)
+			? u"messages.getPinnedDialogs"_q
+			: (task.type == TaskType::Metadata)
+			? u"channels.getChannels"_q
+			: u"messages.search"_q;
+		LOG(("Search Error: supplemental %1 request %2 failed, "
+			"code %3, type %4.")
+			.arg(method)
+			.arg(task.requestId)
+			.arg(error.code())
+			.arg(error.type()));
+	}
 	const auto flood = MTP::IsFloodError(error);
 	if (flood) {
-		_requestGate.pause(
-			crl::now(),
-			error.type().mid(error.type().lastIndexOf('_') + 1).toLongLong());
+		applyFloodWait(error);
 	}
 	switch (task.type) {
 	case TaskType::Dialogs:
@@ -625,12 +690,13 @@ void PornSearch::taskFailed(TaskId taskId, const MTP::Error &error) {
 
 PornSearchResult PornSearch::resultFor(const Query &query) const {
 	auto result = PornSearchResult();
-	result.waiting = _requestGate.waiting(crl::now());
+	result.totalKnown = true;
 	for (auto folder = 0; folder != int(_folders.size()); ++folder) {
 		if (folder && !query.request.fromArchive) {
 			continue;
 		}
 		const auto &state = _folders[folder];
+		result.totalKnown &= state.dialogsDone && state.pinnedDone;
 		result.scanning |= (!state.dialogsDone && !state.dialogsFailed)
 			|| (!state.pinnedDone && !state.pinnedFailed);
 		result.failed += int(state.dialogsFailed) + int(state.pinnedFailed);
@@ -642,19 +708,29 @@ PornSearchResult PornSearch::resultFor(const Query &query) const {
 	};
 	result.scanning |= ranges::any_of(_metadataPending, relevant);
 	result.failed += int(ranges::count_if(_metadataFailed, relevant));
+	result.totalKnown &= !result.scanning && !result.failed;
+	auto progress = std::map<PeerId, bool>();
 	for (const auto &[peer, source] : query.sources) {
-		++result.total;
-		result.searched += int(source.started);
+		progress.try_emplace(source.channel, true).first->second
+			&= source.started;
 		result.failed += int(source.failed);
-		result.loading |= source.task != 0;
+		result.loading |= source.task != 0
+			|| (!source.exhausted && !source.failed
+				&& (!source.started || source.retry
+					|| source.oldestDate >= query.before));
 		result.more |= !source.exhausted;
 		result.messages.insert(
 			end(result.messages),
 			begin(source.messages),
 			end(source.messages));
 	}
-	result.loading |= result.searched < result.total;
-	result.more |= result.scanning;
+	result.total = int(progress.size());
+	result.searched = int(ranges::count_if(progress, [](const auto &entry) {
+		return entry.second;
+	}));
+	result.more |= !result.totalKnown;
+	result.waiting = _requestGate.waiting(crl::now())
+		&& (result.scanning || result.loading);
 	return result;
 }
 
