@@ -71,6 +71,22 @@ const auto kPsaBadgePrefix = "cloud_lng_badge_psa_";
 	return rtl() ? (outerWidth - x - size) : x;
 }
 
+[[nodiscard]] QRect UserpicBadgeIconRect(
+		int photoLeft,
+		int photoTop,
+		int outerWidth,
+		int photoSize) {
+	const auto size = st::dialogsNoForwardsBadgeSize;
+	const auto skip = st::dialogsNoForwardsBadgeSkip;
+	const auto iconSkip = st::dialogsNoForwardsBadgeIconSkip;
+	return QRect(
+		QPoint(
+			LeftUserpicPosition(photoLeft, outerWidth, photoSize)
+				+ skip.x() + iconSkip.x(),
+			photoTop + photoSize - skip.y() - size + iconSkip.y()),
+		st::dialogsNoForwardsBadgeIcon.icon.size());
+}
+
 [[nodiscard]] bool ShowUserBotIcon(not_null<UserData*> user) {
 	return user->isBot()
 		&& !user->isSupport()
@@ -1140,11 +1156,17 @@ void PaintPornUserpicBadge(
 	if (!channel || !channel->hasPornRestriction()) {
 		return;
 	}
-	const auto size = st::dialogsNoForwardsBadgeSize;
-	const auto skip = st::dialogsNoForwardsBadgeSkip;
-	const auto rect = QRect(
-		LeftUserpicPosition(photoLeft, outerWidth, photoSize) + skip.x(),
-		photoTop + skip.y(),
+	const auto iconRect = UserpicBadgeIconRect(
+		photoLeft,
+		photoTop,
+		outerWidth,
+		photoSize);
+	const auto content = QRectF(iconRect.marginsRemoved(
+		st::dialogsNoForwardsBadgeIconPadding));
+	const auto size = std::max(content.width(), content.height());
+	const auto rect = QRectF(
+		content.center().x() - size / 2.,
+		2 * photoTop + photoSize - content.center().y() - size / 2.,
 		size,
 		size);
 	const auto colorValue = GetEnhancedString(u"no_forwards_badge_color"_q);
@@ -1173,12 +1195,11 @@ void PaintNoForwardsUserpicBadge(
 	if (!peer || peer->allowsForwarding()) {
 		return;
 	}
-	const auto size = st::dialogsNoForwardsBadgeSize;
-	const auto skip = st::dialogsNoForwardsBadgeSkip;
-	const auto left = LeftUserpicPosition(photoLeft, outerWidth, photoSize)
-		+ skip.x();
-	const auto top = photoTop + photoSize - skip.y() - size;
-	const auto rect = QRect(left, top, size, size);
+	const auto rect = UserpicBadgeIconRect(
+		photoLeft,
+		photoTop,
+		outerWidth,
+		photoSize);
 
 	// 使用自定义颜色而不是主题变量
 	const auto colorStr = GetEnhancedString("no_forwards_badge_color");
@@ -1190,7 +1211,7 @@ void PaintNoForwardsUserpicBadge(
 
 	// 绘制锁图标
 	const auto icon = st::dialogsNoForwardsBadgeIcon.icon;
-	icon.paint(p, rect.topLeft(), rect.width(), color);
+	icon.fill(p, rect, color);
 
 	p.restore();
 }
