@@ -22,6 +22,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_boost.h"
 #include "media/streaming/media_streaming_diagnostics.h"
 #include "media/streaming/media_streaming_mp4_header.h"
+#include "media/streaming/media_streaming_mpv_http.h"
 #include "media/streaming/media_streaming_reader.h"
 #include "logs.h"
 #include "settings.h"
@@ -55,13 +56,14 @@ using Mpv::OpenResult;
 
 namespace {
 
+namespace Http = Mpv::Http;
 using Mp4Layout = Mp4::Layout;
 
 constexpr auto kPathPrefix = "/mpv/";
 constexpr auto kPathPrefixLength = 5;
 constexpr auto kHeadersLimit = 64 * 1024;
-constexpr auto kReadChunkSize = 256 * 1024;
-constexpr auto kInitialReadChunkSize = 64 * 1024;
+constexpr auto kReadChunkSize = 64 * 1024;
+constexpr auto kReadCancelCheckInterval = 10;
 constexpr auto kMp4LayoutWaitTimeout = 4000;
 constexpr auto kMp4LayoutWaitStep = 10;
 constexpr auto kCleanupInterval = 60 * crl::time(1000);
@@ -109,21 +111,10 @@ constexpr auto kMpvLoaderPriority = 2;
 	return (DownloadBoostLevel() > 0);
 }
 
-[[nodiscard]] QStringList LaunchArguments(
-		not_null<DocumentData*> document,
-		const QString &url) {
-	auto lavfOptions = u"ignore_editlist=1"_q;
-	if (LooksLikeMp4Stream(document)) {
-		// IGNIDX stops the MOV demuxer at the first mdat during open,
-		// retaining the moov sample tables needed for indexed seeking.
-		// The HTTP server also extends that mdat for a regular front
-		// moov, so seeking to later samples does not scan intervening
-		// root atoms left unparsed by IGNIDX.
-		lavfOptions += u",fflags=+ignidx"_q;
-	}
+[[nodiscard]] QStringList LaunchArguments(const QString &url) {
 	auto result = QStringList{
 		u"--force-window=immediate"_q,
-		u"--demuxer-lavf-o=%1"_q.arg(lavfOptions),
+		u"--demuxer-lavf-o=ignore_editlist=1"_q,
 	};
 	const auto &profile = BoostProfileFor(DownloadBoostLevel());
 	if (MpvStreamingBoostEnabled() && profile.mpvCacheMaxMb > 0) {
@@ -179,6 +170,8 @@ struct Entry {
 
 	not_null<DocumentData*> document;
 	Data::FileOrigin origin;
+	crl::semaphore readReady;
+	crl::semaphore seekReadReady;
 	std::shared_ptr<Reader> reader;
 	const std::shared_ptr<TransferDiagnostics> diagnostics;
 	std::shared_ptr<Reader> seekReader;
@@ -494,23 +487,40 @@ struct Entry {
 	return WriteAll(socket, data);
 }
 
-[[nodiscard]] bool FillBuffer(
-		not_null<Reader*> reader,
+void FinishAbandonedRead(const std::shared_ptr<Reader> &reader) {
+	// Reader may retain a notification after an interrupted HTTP read.
+	// Its notification lives with Entry, beyond any individual request.
+	// A main-thread acknowledgement clears the old demand and synchronizes
+	// with loader callbacks before this request releases the fill mutex.
+	auto finished = crl::semaphore();
+	crl::on_main([reader, &finished] {
+		reader->continueStreamingForSoftSeek();
+		reader->diagnostics()->readStopped();
+		finished.release();
+	});
+	finished.acquire();
+}
+
+[[nodiscard]] Http::ReadResult FillBuffer(
+		const std::shared_ptr<Reader> &reader,
+		crl::semaphore &ready,
 		int64 offset,
-		bytes::span buffer) {
-	auto semaphore = crl::semaphore();
-	while (true) {
-		const auto state = reader->fill(offset, buffer, &semaphore);
+		bytes::span buffer,
+		const std::function<bool()> &cancelled,
+		const std::function<bool()> &wait) {
+	const auto result = Http::ReadChunk([&] {
+		const auto state = reader->fill(offset, buffer, &ready);
 		if (state == Reader::FillState::Success) {
-			return true;
+			return Http::ReadResult::Success;
 		} else if (state == Reader::FillState::Failed) {
-			return false;
+			return Http::ReadResult::Failed;
 		}
-		semaphore.acquire();
-		if (reader->streamingError()) {
-			return false;
-		}
+		return Http::ReadResult::Waiting;
+	}, cancelled, wait);
+	if (result != Http::ReadResult::Success) {
+		FinishAbandonedRead(reader);
 	}
+	return result;
 }
 
 class DescriptorServer final : public QTcpServer {
@@ -732,24 +742,43 @@ private:
 				true,
 				range.range.from,
 				range.range.length);
-			// Fragmented MP4 keeps the sequential-open fallback.
-			// A large front moov only requires an isolated reader
-			// for range requests, so probing and playback reads do
-			// not compete for the primary reader's download window.
+			const auto disconnected = [&] {
+				socket.waitForReadyRead(0);
+				return entry->removeWhenIdle.load()
+					|| socket.state() != QAbstractSocket::ConnectedState;
+			};
+			const auto waitForRead = [&] {
+				socket.waitForReadyRead(kReadCancelCheckInterval);
+				return true;
+			};
+			// All finite files support byte ranges, including fragmented MP4.
+			// Fragment indexes are discovered by the demuxer normally.
+			// Only a regular front moov permits extending the first mdat;
+			// fragmented files must retain every moof and mdat boundary.
 			if (entry->mp4Layout.load() == 0
 				&& range.range.from == 0) {
 				const auto lock = std::unique_lock(entry->fillMutex);
 				if (entry->mp4Layout.load() == 0) {
+					auto probeCancelled = false;
 					const auto header = Mp4::ProbeForStreaming(
 						entry->size,
 						[&](std::int64_t offset, std::span<char> buffer) {
-							return FillBuffer(
-								entry->reader.get(),
+							const auto result = FillBuffer(
+								entry->reader,
+								entry->readReady,
 								offset,
 								bytes::span(
 									reinterpret_cast<bytes::type*>(buffer.data()),
-									buffer.size()));
+									buffer.size()),
+								disconnected,
+								waitForRead);
+							probeCancelled |= (result == Http::ReadResult::Cancelled);
+							return result == Http::ReadResult::Success;
 						});
+					if (probeCancelled) {
+						diagnostics.outcome("client-disconnected");
+						return;
+					}
 					entry->mp4HeaderPatch = header.patch;
 					entry->mp4Layout.store(int(header.layout));
 					MPV_STREAMING_LOG(("MPV Streaming (Special): Detected MP4 layout: %1 "
@@ -774,20 +803,11 @@ private:
 			}
 			const auto layout = Mp4Layout(entry->mp4Layout.load());
 			const auto headerPatch = entry->mp4HeaderPatch;
-			const auto compatibilitySequentialRequest =
-				(layout == Mp4Layout::Fragmented);
 			const auto isolatedSeekRequest =
-				(layout == Mp4Layout::LargeFrontMoov)
+				(layout == Mp4Layout::LargeFrontMoov
+					|| layout == Mp4Layout::Fragmented)
 				&& (range.range.from > 0);
-			if (compatibilitySequentialRequest) {
-				if (!SendResponse(socket, "200 OK", {
-					{ "Connection", "close" },
-					{ "Content-Length", QByteArray::number(entry->size) },
-					{ "Content-Type", entry->mime.toUtf8() },
-				})) {
-					return;
-				}
-			} else if (range.range.partial) {
+			if (range.range.partial) {
 				const auto contentRange = QByteArray("bytes ")
 					+ QByteArray::number(range.range.from)
 					+ '-'
@@ -811,17 +831,11 @@ private:
 			})) {
 				return;
 			}
-			auto offset = compatibilitySequentialRequest
-				? int64(0)
-				: range.range.from;
-			auto left = compatibilitySequentialRequest
-				? entry->size
-				: range.range.length;
+			auto offset = range.range.from;
+			auto left = range.range.length;
 			MPV_STREAMING_LOG(("MPV Streaming (Special): Response status=%1 "
 				"token=%2 offset=%3 length=%4 layout=%5.")
-				.arg(!compatibilitySequentialRequest && range.range.partial
-					? 206
-					: 200)
+				.arg(range.range.partial ? 206 : 200)
 				.arg(request.token)
 				.arg(offset)
 				.arg(left)
@@ -831,8 +845,21 @@ private:
 				return;
 			}
 			const auto startedFromZero = (offset == 0);
-			auto activeReader = entry->reader;
+			const auto seekGenerationManaged = isolatedSeekRequest;
+			const auto seekGeneration = seekGenerationManaged
+				? (entry->latestSeekGeneration.fetch_add(1) + 1)
+				: std::uint64_t(0);
+			const auto seekSuperseded = [&] {
+				return seekGenerationManaged
+					&& (entry->latestSeekGeneration.load() != seekGeneration);
+			};
+			const auto readCancelled = [&] {
+				return disconnected() || seekSuperseded();
+			};
+			auto activeReader = std::shared_ptr<Reader>();
 			auto *fillMutex = &entry->fillMutex;
+			auto *readReady = &entry->readReady;
+			auto usingSeekReader = false;
 			if (isolatedSeekRequest) {
 				const auto lock = std::unique_lock(entry->seekFillMutex);
 				if (!entry->seekReader) {
@@ -843,6 +870,8 @@ private:
 				if (entry->seekReader) {
 					activeReader = entry->seekReader;
 					fillMutex = &entry->seekFillMutex;
+					readReady = &entry->seekReadReady;
+					usingSeekReader = true;
 					MPV_STREAMING_LOG(("MPV Streaming (Special): Using isolated seek reader for token %1 at offset %2.")
 						.arg(request.token)
 						.arg(range.range.from));
@@ -852,20 +881,13 @@ private:
 						.arg(range.range.from));
 				}
 			}
-			const auto usingSeekReader = (activeReader != entry->reader);
-			const auto seekGenerationManaged =
-				(entry->mp4Layout.load() == int(Mp4Layout::LargeFrontMoov))
-				&& isolatedSeekRequest;
-			const auto seekGeneration = seekGenerationManaged
-				? (entry->latestSeekGeneration.fetch_add(1) + 1)
-				: std::uint64_t(0);
+			if (!activeReader) {
+				const auto lock = std::unique_lock(entry->fillMutex);
+				activeReader = entry->reader;
+			}
 			diagnostics.useReader(
 				activeReader->diagnostics(),
 				seekGeneration);
-			const auto seekSuperseded = [&] {
-				return seekGenerationManaged
-					&& (entry->latestSeekGeneration.load() != seekGeneration);
-			};
 			auto retriedLoadFailure = false;
 			auto clientDisconnected = false;
 			auto supersededSeek = false;
@@ -875,15 +897,11 @@ private:
 					break;
 				}
 				// Check if client disconnected before acquiring the lock.
-				socket.waitForReadyRead(0);
-				if (socket.state() != QAbstractSocket::ConnectedState) {
+				if (disconnected()) {
 					clientDisconnected = true;
 					break;
 				}
-				const auto chunkSize = (offset == range.range.from)
-					? kInitialReadChunkSize
-					: kReadChunkSize;
-				const auto size = int(std::min(left, int64(chunkSize)));
+				const auto size = int(std::min(left, int64(kReadChunkSize)));
 				auto buffer = QByteArray(size, Qt::Uninitialized);
 				diagnostics.readStarted();
 				{
@@ -894,18 +912,25 @@ private:
 						break;
 					}
 					// Re-check after acquiring the lock.
-					socket.waitForReadyRead(0);
-					if (socket.state() != QAbstractSocket::ConnectedState) {
+					if (disconnected()) {
 						clientDisconnected = true;
 						break;
 					}
-					if (!FillBuffer(
-							activeReader.get(),
-							offset,
-							bytes::span(
-								reinterpret_cast<bytes::type*>(buffer.data()),
-								size))) {
-						diagnostics.readFinished();
+					const auto result = FillBuffer(
+						activeReader,
+						*readReady,
+						offset,
+						bytes::span(
+							reinterpret_cast<bytes::type*>(buffer.data()),
+							size),
+						readCancelled,
+						waitForRead);
+					diagnostics.readFinished();
+					if (result == Http::ReadResult::Cancelled) {
+						supersededSeek = seekSuperseded();
+						clientDisconnected = !supersededSeek;
+						break;
+					} else if (result != Http::ReadResult::Success) {
 						diagnostics.outcome("read-failed");
 						const auto error = activeReader->streamingError();
 						if (!usingSeekReader
@@ -913,6 +938,10 @@ private:
 							&& error
 							&& (*error == Error::LoadFailed)
 							&& RecoverEntryReader(entry, request.token, offset)) {
+							activeReader = entry->reader;
+							diagnostics.useReader(
+								activeReader->diagnostics(),
+								seekGeneration);
 							retriedLoadFailure = true;
 							continue;
 						}
@@ -922,7 +951,6 @@ private:
 							.arg(StreamingErrorDebugString(error)));
 						return;
 					}
-					diagnostics.readFinished();
 					if (startedFromZero
 						&& !usingSeekReader
 						&& !entry->headerFinalized.exchange(true)) {
@@ -966,56 +994,6 @@ private:
 			diagnostics.outcome(clientDisconnected
 				? "client-disconnected"
 				: "complete");
-			// Pre-fill cache sequentially after client disconnect.
-			// When a fragmented MP4 is opened, the demuxer scans
-			// hundreds of fragment headers via HTTP range requests.
-			// By continuing to fill the cache sequentially here,
-			// those seek connections find data already cached and
-			// complete almost instantly instead of each downloading
-			// from Telegram independently (~150ms per seek).
-			if (clientDisconnected
-				&& startedFromZero
-				&& layout != Mp4Layout::LargeFrontMoov
-				&& left > 0) {
-				while (left > 0 && entry->activeRequests.load() > 1) {
-					const auto size = int(std::min(left, int64(kReadChunkSize)));
-					auto buffer = QByteArray(size, Qt::Uninitialized);
-					{
-						const auto lock = std::unique_lock(entry->fillMutex);
-						if (entry->activeRequests.load() <= 1) {
-							break;
-						}
-						const auto fillStart = crl::now();
-						if (!FillBuffer(
-								entry->reader.get(),
-								offset,
-								bytes::span(
-									reinterpret_cast<bytes::type*>(buffer.data()),
-									size))) {
-							break;
-						}
-						diagnostics.backgroundRead(size);
-						// Stop if FillBuffer was slow (cache miss).
-						// A slow fill means the Reader had to download
-						// from Telegram at this offset, indicating our
-						// sequential position diverged from the loader.
-						// Continuing would thrash the Reader's position
-						// between our offset and seek connections' offsets.
-						if (crl::now() - fillStart > 50) {
-							break;
-						}
-						if (!entry->headerFinalized.exchange(true)) {
-							entry->reader->headerDone();
-						}
-					}
-					offset += size;
-					left -= size;
-					entry->lastActivity = crl::now();
-					// Yield to let seek connections acquire the lock.
-					std::this_thread::sleep_for(
-						std::chrono::milliseconds(1));
-				}
-			}
 		}
 
 	std::mutex _entriesMutex;
@@ -1116,7 +1094,7 @@ OpenResult OpenVideoMessageInMpvSpecial(HistoryItem *item, DocumentData *documen
 	MPV_STREAMING_LOG(("MPV Streaming (Special): Launching '%1' with URL %2.")
 		.arg(program)
 		.arg(launch.url));
-	const auto arguments = LaunchArguments(document, launch.url);
+	const auto arguments = LaunchArguments(launch.url);
 	MPV_STREAMING_LOG(("MPV Streaming (Special): Launch arguments: %1.")
 		.arg(arguments.join(u" "_q)));
 	if (!StartManagedPlayer(program, arguments, launch.token)) {
