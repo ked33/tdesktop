@@ -101,12 +101,14 @@ void PornSearch::cancel(QueryId id) {
 	if (i == end(_queries)) {
 		return;
 	}
-	for (const auto &[peer, source] : i->second.sources) {
+	for (const auto &[peer, source] : i->second.sources.entries()) {
 		cancelTask(source.task);
 	}
 	_queries.erase(i);
-	if (_queries.empty()) {
+	if (!folderNeeded(0)) {
 		cancelCatalogTasks();
+	}
+	if (_queries.empty()) {
 		_timer.cancel();
 	} else {
 		schedule();
@@ -127,15 +129,17 @@ void PornSearch::retry(QueryId id) {
 	if (i == end(_queries)) {
 		return;
 	}
-	for (auto &[peer, source] : i->second.sources) {
+	for (auto &[peer, source] : i->second.sources.entries()) {
 		source.retry |= source.failed;
 		source.failed = false;
 	}
-	for (auto &folder : _folders) {
-		folder.dialogsFailed = folder.pinnedFailed = false;
+	if (!i->second.sources.ready()) {
+		for (auto &folder : _folders) {
+			folder.dialogsFailed = folder.pinnedFailed = false;
+		}
+		_metadataFailed.clear();
+		refreshMetadata();
 	}
-	_metadataFailed.clear();
-	refreshMetadata();
 	i->second.dirty = true;
 	schedule();
 }
@@ -146,8 +150,12 @@ void PornSearch::invalidate() {
 	_metadataFailed.clear();
 	refreshMetadata();
 	for (auto &[id, query] : _queries) {
-		query.dirty = true;
+		if (!query.sources.ready()) {
+			query.dirty = true;
+		}
 	}
+	LOG(("Search Info: supplemental chat catalog invalidated; "
+		"confirmed search sources remain fixed."));
 	schedule();
 }
 
@@ -200,8 +208,9 @@ void PornSearch::cancelCatalogTasks() {
 }
 
 bool PornSearch::folderNeeded(int folder) const {
-	return !folder || ranges::any_of(_queries, [](const auto &entry) {
-		return entry.second.request.fromArchive;
+	return ranges::any_of(_queries, [&](const auto &entry) {
+		return !entry.second.sources.ready()
+			&& (!folder || entry.second.request.fromArchive);
 	});
 }
 
@@ -218,44 +227,67 @@ void PornSearch::schedule() {
 
 void PornSearch::reconcile() {
 	for (auto &[id, query] : _queries) {
-		auto allowed = std::map<PeerId, PeerId>();
-		for (const auto &[peer, folder] : _catalog) {
-			if (folder && !query.request.fromArchive) {
-				continue;
-			}
-			const auto channel = _session->data().channelLoaded(
-				peerToChannel(peer));
-			if (!channel
-				|| !channel->amIn()
-				|| !channel->hasPornRestriction()
-				|| (query.request.filter == PornSearchFilter::Groups
-					&& !channel->isMegagroup())
-				|| (query.request.filter == PornSearchFilter::Channels
-					&& !channel->isBroadcast())) {
-				continue;
-			}
-			allowed.emplace(peer, peer);
-			if (const auto migrated = channel->migrateFrom()) {
-				allowed.emplace(migrated->id, peer);
-			}
+		if (query.sources.ready()) {
+			continue;
 		}
-		for (auto i = begin(query.sources); i != end(query.sources);) {
-			if (!allowed.contains(i->first)) {
-				cancelTask(i->second.task);
-				i = query.sources.erase(i);
-				query.dirty = true;
-			} else {
-				++i;
-			}
-		}
-		for (const auto &[peer, channel] : allowed) {
-			const auto [i, added] = query.sources.try_emplace(peer);
-			if (added || i->second.channel != channel) {
-				i->second.channel = channel;
-				query.dirty = true;
-			}
+		if (query.sources.prepare(catalogStatus(query.request).complete, [&] {
+			return collectSources(query.request);
+		})) {
+			query.dirty = true;
+			LOG(("Search Info: supplemental query %1 confirmed %2 marked chats; "
+				"starting with fixed sources.")
+				.arg(id)
+				.arg(resultFor(query).total));
 		}
 	}
+}
+
+PornSearch::CatalogStatus PornSearch::catalogStatus(
+		const PornSearchRequest &request) const {
+	auto result = CatalogStatus{ .complete = true };
+	for (auto folder = 0; folder != int(_folders.size()); ++folder) {
+		if (folder && !request.fromArchive) {
+			continue;
+		}
+		const auto &state = _folders[folder];
+		result.complete &= state.dialogsDone && state.pinnedDone;
+		result.scanning |= (!state.dialogsDone && !state.dialogsFailed)
+			|| (!state.pinnedDone && !state.pinnedFailed);
+		result.failed += int(state.dialogsFailed) + int(state.pinnedFailed);
+	}
+	const auto relevant = [&](PeerId peer) {
+		const auto i = _catalog.find(peer);
+		return i != end(_catalog) && (!i->second || request.fromArchive);
+	};
+	result.scanning |= ranges::any_of(_metadataPending, relevant);
+	result.failed += int(ranges::count_if(_metadataFailed, relevant));
+	result.complete &= !result.scanning && !result.failed;
+	return result;
+}
+
+std::map<PeerId, PornSearch::Source> PornSearch::collectSources(
+		const PornSearchRequest &request) const {
+	auto result = std::map<PeerId, Source>();
+	for (const auto &[peer, folder] : _catalog) {
+		if (folder && !request.fromArchive) {
+			continue;
+		}
+		const auto channel = _session->data().channelLoaded(peerToChannel(peer));
+		if (!channel
+			|| !channel->amIn()
+			|| !channel->hasPornRestriction()
+			|| (request.filter == PornSearchFilter::Groups
+				&& !channel->isMegagroup())
+			|| (request.filter == PornSearchFilter::Channels
+				&& !channel->isBroadcast())) {
+			continue;
+		}
+		result.emplace(peer, Source{ .channel = peer });
+		if (const auto migrated = channel->migrateFrom()) {
+			result.emplace(migrated->id, Source{ .channel = peer });
+		}
+	}
+	return result;
 }
 
 void PornSearch::pump() {
@@ -328,7 +360,7 @@ bool PornSearch::sendReadySearch(bool firstPage) {
 		if (query == end(_queries)) {
 			query = begin(_queries);
 		}
-		for (const auto &[peer, source] : query->second.sources) {
+		for (const auto &[peer, source] : query->second.sources.entries()) {
 			if (!source.task && !source.exhausted && !source.failed
 				&& ((!source.started && firstPage)
 					|| (!firstPage && (source.retry
@@ -521,7 +553,7 @@ void PornSearch::sendMetadata(std::vector<PeerId> peers) {
 void PornSearch::sendSearch(QueryId queryId, PeerId peerId) {
 	_requestGate.started(crl::now());
 	auto &query = _queries.at(queryId);
-	auto &source = query.sources.at(peerId);
+	auto &source = query.sources.entries().at(peerId);
 	const auto peer = _session->data().peer(peerId);
 	const auto taskId = ++_nextTask;
 	source.task = taskId;
@@ -567,7 +599,7 @@ void PornSearch::searchReceived(
 	const auto peerId = task->second.peer;
 	_tasks.erase(task);
 	auto &query = _queries.at(queryId);
-	auto &source = query.sources.at(peerId);
+	auto &source = query.sources.entries().at(peerId);
 	source.task = 0;
 	source.started = true;
 	query.dirty = true;
@@ -670,7 +702,7 @@ void PornSearch::taskFailed(TaskId taskId, const MTP::Error &error) {
 		}
 		break;
 	case TaskType::Search: {
-		auto &source = _queries.at(task.query).sources.at(task.peer);
+		auto &source = _queries.at(task.query).sources.entries().at(task.peer);
 		source.task = 0;
 		if (flood) {
 			source.retry = true;
@@ -690,27 +722,14 @@ void PornSearch::taskFailed(TaskId taskId, const MTP::Error &error) {
 
 PornSearchResult PornSearch::resultFor(const Query &query) const {
 	auto result = PornSearchResult();
-	result.totalKnown = true;
-	for (auto folder = 0; folder != int(_folders.size()); ++folder) {
-		if (folder && !query.request.fromArchive) {
-			continue;
-		}
-		const auto &state = _folders[folder];
-		result.totalKnown &= state.dialogsDone && state.pinnedDone;
-		result.scanning |= (!state.dialogsDone && !state.dialogsFailed)
-			|| (!state.pinnedDone && !state.pinnedFailed);
-		result.failed += int(state.dialogsFailed) + int(state.pinnedFailed);
+	result.totalKnown = query.sources.ready();
+	if (!result.totalKnown) {
+		const auto status = catalogStatus(query.request);
+		result.scanning = status.scanning;
+		result.failed = status.failed;
 	}
-	const auto relevant = [&](PeerId peer) {
-		const auto i = _catalog.find(peer);
-		return i != end(_catalog)
-			&& (!i->second || query.request.fromArchive);
-	};
-	result.scanning |= ranges::any_of(_metadataPending, relevant);
-	result.failed += int(ranges::count_if(_metadataFailed, relevant));
-	result.totalKnown &= !result.scanning && !result.failed;
 	auto progress = std::map<PeerId, bool>();
-	for (const auto &[peer, source] : query.sources) {
+	for (const auto &[peer, source] : query.sources.entries()) {
 		progress.try_emplace(source.channel, true).first->second
 			&= source.started;
 		result.failed += int(source.failed);

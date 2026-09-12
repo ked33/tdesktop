@@ -38,6 +38,98 @@ struct Message {
 	friend bool operator==(const Message &, const Message &) = default;
 };
 
+struct SearchSource {
+	int offsetId = 0;
+	std::set<int> messages;
+	bool started = false;
+	bool failed = false;
+	friend bool operator==(
+		const SearchSource &,
+		const SearchSource &) = default;
+};
+
+void CheckSourceSnapshot() {
+	using Snapshot = Policy::SourceSnapshot<int, SearchSource>;
+	auto sources = Snapshot();
+	auto catalog = Snapshot::Entries();
+	auto collections = 0;
+	const auto collect = [&] {
+		++collections;
+		return catalog;
+	};
+	Check(!sources.ready(), "a new query waits for its chat catalog");
+	for (auto peer = 1; peer <= 109; ++peer) {
+		catalog.emplace(peer, SearchSource());
+		Check(
+			!sources.prepare(false, collect),
+			"partial catalog pages cannot start supplemental searches");
+	}
+	Check(collections == 0, "the query does not collect partial chat catalogs");
+	Check(sources.entries().empty(), "no source starts before the total is known");
+	Check(sources.prepare(true, collect), "a complete catalog starts the query");
+	Check(sources.ready(), "the search total is now known");
+	Check(sources.entries().size() == 109, "all 109 sources are captured together");
+	const auto &confirmed = sources;
+	Check(
+		confirmed.entries() == catalog,
+		"published progress reads the same confirmed sources");
+
+	auto &paged = sources.entries().at(1);
+	paged.offsetId = 40;
+	paged.messages = { 40, 60, 80 };
+	paged.failed = true;
+	catalog.erase(1);
+	catalog.emplace(110, SearchSource());
+	catalog.emplace(111, SearchSource());
+	for (const auto searched : std::array{ 3, 11, 45, 99, 109 }) {
+		for (auto peer = 1; peer <= searched; ++peer) {
+			sources.entries().at(peer).started = true;
+		}
+		const auto beforeRefresh = sources.entries();
+		for (const auto complete : std::array{ false, true }) {
+			Check(
+				!sources.prepare(complete, collect),
+				"background catalog invalidation and refresh cannot recapture sources");
+			Check(sources.ready(), "a confirmed search total never becomes unknown");
+			Check(sources.entries().size() == 109, "the confirmed total stays at 109");
+			Check(
+				sources.entries() == beforeRefresh,
+				"refresh preserves search progress, failures, messages and page cursors");
+			Check(
+				std::count_if(
+					sources.entries().begin(),
+					sources.entries().end(),
+					[](const auto &entry) { return entry.second.started; }) == searched,
+				"the completed-chat counter cannot regress during a catalog refresh");
+		}
+	}
+	paged.failed = false;
+	Check(
+		!sources.prepare(true, collect) && paged.offsetId == 40,
+		"retrying a source resumes the saved page cursor");
+	Check(collections == 1, "the active query captures its catalog only once");
+
+	auto nextQuery = Snapshot();
+	Check(
+		nextQuery.prepare(true, collect),
+		"a new query can use the refreshed catalog");
+	Check(
+		nextQuery.entries() == catalog && sources.entries().size() == 109,
+		"new queries see membership changes without altering active queries");
+	Check(!nextQuery.entries().contains(1), "the new query excludes removed chats");
+	Check(
+		nextQuery.entries().contains(111),
+		"the new query includes newly added chats");
+
+	auto empty = Snapshot();
+	catalog.clear();
+	Check(empty.prepare(true, collect), "an empty complete catalog is confirmed");
+	catalog.emplace(200, SearchSource());
+	Check(
+		!empty.prepare(true, collect) && empty.ready() && empty.entries().empty(),
+		"a confirmed empty query also keeps its original scope");
+}
+
 std::vector<Message> Merge(
 		const std::vector<Message> &native,
 		const std::vector<Message> &additional,
@@ -291,6 +383,7 @@ void CheckExactCounts() {
 } // namespace
 
 int main() {
+	CheckSourceSnapshot();
 	CheckMergedPages();
 	CheckRequestGate();
 	CheckAdjustableInterval();
