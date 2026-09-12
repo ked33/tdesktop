@@ -562,6 +562,7 @@ private:
 	void repaintSearchResult(FullMsgId id);
 	void repaintPreviewResult(FullMsgId id);
 	void rebuildPornSearchResults(bool messagesChanged = true);
+	void refreshPornSearchCounts();
 	void refreshPornSearchStatus();
 	void refreshPornSearchTimer();
 	void repaintPornSearchHeader();
@@ -761,6 +762,7 @@ private:
 	base::Timer _pornSearchTimer;
 	Api::PornSearchPolicy::ElapsedTime _pornSearchElapsed;
 	int _nativeSearchCount = 0;
+	int _nativeSearchLoadedCount = 0;
 	bool _pornSearchEnabled = false;
 	bool _nativeSearchLoading = false;
 	bool _nativeSearchFull = false;

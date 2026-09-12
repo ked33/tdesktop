@@ -4561,6 +4561,7 @@ void InnerWidget::clearSearchResults(bool alsoPeerSearchResults) {
 	_searchResults.clear();
 	_nativeSearchResults.clear();
 	_nativeSearchCount = 0;
+	_nativeSearchLoadedCount = 0;
 	_nativeSearchLoading = false;
 	_nativeSearchFull = false;
 	_nativeSearchFailed = false;
@@ -4651,6 +4652,7 @@ void InnerWidget::trackResultsHistory(not_null<History*> history) {
 				&FakeRow::topic);
 			if (sfrom != end(_searchResults)) {
 				_searchResults.erase(sfrom, end(_searchResults));
+				refreshPornSearchCounts();
 				removed = true;
 			}
 			const auto ffrom = ranges::remove(
@@ -4831,6 +4833,7 @@ void InnerWidget::itemRemoved(not_null<const HistoryItem*> item) {
 		}
 	}
 	if (wasCount != _searchResults.size()) {
+		refreshPornSearchCounts();
 		refresh();
 	}
 }
@@ -5009,6 +5012,15 @@ void InnerWidget::setNativeSearchState(
 	}
 }
 
+void InnerWidget::refreshPornSearchCounts() {
+	_nativeSearchLoadedCount = _pornSearchEnabled
+		? int(Api::PornSearchPolicy::CountNativeResults(
+			_searchResults,
+			_nativeSearchResults,
+			[](const auto &row) { return row->item()->fullId(); }))
+		: 0;
+}
+
 QString InnerWidget::pornSearchSummary() const {
 	const auto &result = _pornSearchResult;
 	const auto complete = result.totalKnown
@@ -5017,15 +5029,37 @@ QString InnerWidget::pornSearchSummary() const {
 		&& !_nativeSearchLoading && !_nativeSearchWaiting
 		&& !result.failed && !_nativeSearchFailed;
 	const auto count = int(_searchResults.size());
+	auto messages = QString();
+	if (_searchState.tab == ChatSearchTab::MyMessages) {
+		const auto native = QString::number(_nativeSearchLoadedCount);
+		const auto additional = QString::number(count - _nativeSearchLoadedCount);
+		messages = complete
+			? tr::lng_search_porn_loaded_all_split(
+				tr::now,
+				lt_native,
+				native,
+				lt_additional,
+				additional,
+				lt_total,
+				QString::number(count))
+			: tr::lng_search_porn_loaded_split(
+				tr::now,
+				lt_native,
+				native,
+				lt_additional,
+				additional);
+	} else {
+		messages = complete
+			? tr::lng_search_porn_loaded_all(tr::now, lt_count, count)
+			: tr::lng_search_porn_loaded(tr::now, lt_count, count);
+	}
 	return tr::lng_search_porn_summary(
 		tr::now,
 		lt_progress,
 		QString::number(result.searched) + '/'
 			+ (result.totalKnown ? QString::number(result.total) : u"…"_q),
 		lt_messages,
-		complete
-			? tr::lng_search_porn_loaded_all(tr::now, lt_count, count)
-			: tr::lng_search_porn_loaded(tr::now, lt_count, count),
+		messages,
 		lt_duration,
 		QString::fromStdString(Api::PornSearchPolicy::FormatDuration(
 			_pornSearchElapsed.elapsed(crl::now()) / 1000)));
@@ -5168,6 +5202,7 @@ void InnerWidget::rebuildPornSearchResults(bool messagesChanged) {
 				trackResultsHistory(item->history());
 			}
 		}
+		refreshPornSearchCounts();
 	}
 	const auto indexOf = [&](FullMsgId id) {
 		const auto i = ranges::find(
@@ -5774,6 +5809,7 @@ void InnerWidget::clearFilter() {
 		_filterResultsGlobal.clear();
 		clearPeerSearchResults();
 		_searchResults.clear();
+		_nativeSearchLoadedCount = 0;
 		_previewResults.clear();
 		_trackedHistories.clear();
 		_trackedLifetime.destroy();
