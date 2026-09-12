@@ -65,8 +65,7 @@ using Mp4Layout = Mp4::Layout;
 constexpr auto kPathPrefix = "/mpv/";
 constexpr auto kPathPrefixLength = 5;
 constexpr auto kHeadersLimit = 64 * 1024;
-constexpr auto kReadChunkSize = 256 * 1024;
-constexpr auto kInitialReadChunkSize = 64 * 1024;
+constexpr auto kReadChunkSize = 64 * 1024;
 constexpr auto kReadCancelCheckInterval = 10;
 constexpr auto kMp4LayoutWaitTimeout = 4000;
 constexpr auto kMp4LayoutWaitStep = 10;
@@ -134,21 +133,10 @@ constexpr auto kMpvLoaderPriority = 2;
 		document->duration());
 }
 
-[[nodiscard]] QStringList LaunchArguments(
-		not_null<DocumentData*> document,
-		const QString &url) {
-	auto lavfOptions = u"ignore_editlist=1"_q;
-	if (LooksLikeMp4Stream(document)) {
-		// IGNIDX stops the MOV demuxer at the first mdat during open,
-		// retaining the moov sample tables needed for indexed seeking.
-		// The HTTP server also extends that mdat for a regular front
-		// moov, so seeking to later samples does not scan intervening
-		// root atoms left unparsed by IGNIDX.
-		lavfOptions += u",fflags=+ignidx"_q;
-	}
+[[nodiscard]] QStringList LaunchArguments(const QString &url) {
 	auto result = QStringList{
 		u"--force-window=immediate"_q,
-		u"--demuxer-lavf-o=%1"_q.arg(lavfOptions),
+		u"--demuxer-lavf-o=ignore_editlist=1"_q,
 	};
 	const auto &profile = BoostProfileFor(DownloadBoostLevel());
 	if (MpvStreamingBoostEnabled() && profile.mpvCacheMaxMb > 0) {
@@ -847,10 +835,10 @@ private:
 				socket.waitForReadyRead(kReadCancelCheckInterval);
 				return true;
 			};
-			// Fragmented MP4 keeps the sequential-open fallback.
-			// A large front moov only requires an isolated reader
-			// for range requests, so probing and playback reads do
-			// not compete for the primary reader's download window.
+			// All finite files support byte ranges, including fragmented MP4.
+			// Fragment indexes are discovered by the demuxer normally.
+			// Only a regular front moov permits extending the first mdat;
+			// fragmented files must retain every moof and mdat boundary.
 			if (entry->mp4Layout.load() == 0
 				&& range.range.from == 0) {
 				const auto lock = std::unique_lock(entry->fillMutex);
@@ -899,20 +887,11 @@ private:
 			}
 			const auto layout = Mp4Layout(entry->mp4Layout.load());
 			const auto headerPatch = entry->mp4HeaderPatch;
-			const auto compatibilitySequentialRequest =
-				(layout == Mp4Layout::Fragmented);
 			const auto isolatedSeekRequest =
-				(layout == Mp4Layout::LargeFrontMoov)
+				(layout == Mp4Layout::LargeFrontMoov
+					|| layout == Mp4Layout::Fragmented)
 				&& (range.range.from > 0);
-			if (compatibilitySequentialRequest) {
-				if (!SendResponse(socket, "200 OK", {
-					{ "Connection", "close" },
-					{ "Content-Length", QByteArray::number(entry->size) },
-					{ "Content-Type", entry->mime.toUtf8() },
-				})) {
-					return;
-				}
-			} else if (range.range.partial) {
+			if (range.range.partial) {
 				const auto contentRange = QByteArray("bytes ")
 					+ QByteArray::number(range.range.from)
 					+ '-'
@@ -936,17 +915,11 @@ private:
 			})) {
 				return;
 			}
-			auto offset = compatibilitySequentialRequest
-				? int64(0)
-				: range.range.from;
-			auto left = compatibilitySequentialRequest
-				? entry->size
-				: range.range.length;
+			auto offset = range.range.from;
+			auto left = range.range.length;
 			MPV_STREAMING_LOG(("MPV Streaming: Response status=%1 "
 				"token=%2 offset=%3 length=%4 layout=%5.")
-				.arg(!compatibilitySequentialRequest && range.range.partial
-					? 206
-					: 200)
+				.arg(range.range.partial ? 206 : 200)
 				.arg(request.token)
 				.arg(offset)
 				.arg(left)
@@ -1015,11 +988,7 @@ private:
 					clientDisconnected = true;
 					break;
 				}
-				const auto chunkSize = (compatibilitySequentialRequest
-					&& offset != range.range.from)
-					? kReadChunkSize
-					: kInitialReadChunkSize;
-				const auto size = int(std::min(left, int64(chunkSize)));
+				const auto size = int(std::min(left, int64(kReadChunkSize)));
 				auto buffer = QByteArray(size, Qt::Uninitialized);
 				diagnostics.readStarted();
 				{
@@ -1123,53 +1092,6 @@ private:
 			diagnostics.outcome(clientDisconnected
 				? "client-disconnected"
 				: "complete");
-			// Fragmented MP4 probing may leave received parts unconsumed.
-			// Drain those cached parts while another request is active,
-			// but stop on the first miss instead of waiting for the network.
-			// A disconnected scan must not retain the reader's fill mutex
-			// while a live range request waits to read a different offset.
-			if (clientDisconnected
-				&& startedFromZero
-				&& compatibilitySequentialRequest
-				&& left > 0) {
-				while (left > 0 && entry->activeRequests.load() > 1) {
-					const auto size = int(std::min(left, int64(kReadChunkSize)));
-					auto buffer = QByteArray(size, Qt::Uninitialized);
-					{
-						const auto lock = std::unique_lock(entry->fillMutex);
-						if (entry->activeRequests.load() <= 1
-							|| entry->removeWhenIdle.load()) {
-							break;
-						}
-						const auto result = FillBuffer(
-							entry->reader,
-							entry->readReady,
-							offset,
-							bytes::span(
-								reinterpret_cast<bytes::type*>(buffer.data()),
-								size),
-							[&] {
-								return entry->removeWhenIdle.load()
-									|| entry->activeRequests.load() <= 1;
-							},
-							[] { return false; },
-							ReadMode::Probe);
-						if (result != Http::ReadResult::Success) {
-							break;
-						}
-						diagnostics.backgroundRead(size);
-						if (!entry->headerFinalized.exchange(true)) {
-							entry->reader->headerDone();
-						}
-					}
-					offset += size;
-					left -= size;
-					entry->lastActivity = crl::now();
-					// Yield to let seek connections acquire the lock.
-					std::this_thread::sleep_for(
-						std::chrono::milliseconds(1));
-				}
-			}
 		}
 
 	std::mutex _entriesMutex;
@@ -1227,7 +1149,7 @@ private:
 	MPV_STREAMING_LOG(("MPV Streaming: Launching '%1' with URL %2.")
 		.arg(program)
 		.arg(launch.url));
-	const auto arguments = LaunchArguments(document, launch.url);
+	const auto arguments = LaunchArguments(launch.url);
 	MPV_STREAMING_LOG(("MPV Streaming: Launch arguments: %1.")
 		.arg(arguments.join(u" "_q)));
 	if (!StartManagedPlayer(program, arguments, launch.token)) {

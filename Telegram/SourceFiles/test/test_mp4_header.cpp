@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <algorithm>
 #include <cstddef>
 #include <cstdlib>
+#include <fstream>
 #include <initializer_list>
 #include <iostream>
 #include <limits>
@@ -433,9 +434,46 @@ void TestHeaderReadBudget() {
 	Check(!ReadAheadRange{ -1, 1 }.intersects(0, 1), "invalid header is inactive");
 }
 
+[[nodiscard]] int InspectFile(const char *path) {
+	auto file = std::ifstream(path, std::ios::binary | std::ios::ate);
+	const auto size = std::int64_t(file.tellg());
+	if (!file || size <= 0) {
+		std::cerr << "Could not open media file.\n";
+		return 1;
+	}
+	auto reads = 0;
+	const auto header = ProbeForStreaming(
+		size,
+		[&](std::int64_t offset, std::span<char> buffer) {
+			++reads;
+			file.seekg(offset);
+			file.read(buffer.data(), std::streamsize(buffer.size()));
+			return bool(file);
+		});
+	std::cout << "{\"layout\":" << int(header.layout)
+		<< ",\"file_size\":" << size
+		<< ",\"header_reads\":" << reads
+		<< ",\"patch_offset\":" << header.patch.offset
+		<< ",\"patch_bytes\":[";
+	for (auto i = 0; i < header.patch.size; ++i) {
+		if (i) {
+			std::cout << ',';
+		}
+		std::cout << int(static_cast<unsigned char>(header.patch.bytes[i]));
+	}
+	std::cout << "]}\n";
+	return 0;
+}
+
 } // namespace
 
-int main() {
+int main(int argc, char *argv[]) {
+	if (argc == 3 && std::string_view(argv[1]) == "--inspect") {
+		return InspectFile(argv[2]);
+	} else if (argc != 1) {
+		std::cerr << "Usage: test_mp4_header [--inspect media-file]\n";
+		return 2;
+	}
 	TestRegularLayouts();
 	TestLargeAndFragmentedLayouts();
 	TestWideSizes();
