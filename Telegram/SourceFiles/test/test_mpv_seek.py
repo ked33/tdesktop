@@ -9,9 +9,12 @@ No MPV configuration is loaded, and video/audio output remains disabled.
 from __future__ import annotations
 
 import argparse
+import bisect
+import collections
 import json
 import os
 import re
+import select
 import socket
 import struct
 import subprocess
@@ -129,19 +132,19 @@ def fixtures(ffmpeg: str, output: Path) -> list[tuple[Path, int, bool]]:
     return result
 
 
-def production_options() -> str:
+def production_options() -> tuple[str, str]:
     directory = Path(__file__).resolve().parents[1] / "media" / "streaming"
-    options = []
     for name in ("media_streaming_mpv.cpp", "media_streaming_mpv_special.cpp"):
         text = (directory / name).read_text(encoding="utf-8")
         body = text.split("QStringList LaunchArguments(", 1)[1].split("\n}", 1)[0]
-        matches = re.findall(r'u"(--demuxer-lavf-o=[^"]+)"_q', body)
-        if len(matches) != 1:
+        if "PlaybackDemuxerOptions(LooksLikeMp4Stream(document))" not in body:
             raise AssertionError(f"Inspect the launch options in {name}")
-        options.append(matches[0])
-    if len(set(options)) != 1:
-        raise AssertionError("The two MPV backends need separate compatibility runs")
-    return options[0]
+    text = (directory / "media_streaming_mpv_index.cpp").read_text(encoding="utf-8")
+    body = text.split("QString PlaybackDemuxerOptions(", 1)[1].split("\n}", 1)[0]
+    options = re.findall(r'u"(ignore_editlist=[^"]+)"_q', body)
+    if len(options) != 2:
+        raise AssertionError("Inspect the fast-open and indexed demuxer options")
+    return tuple("--demuxer-lavf-o=" + value for value in options)
 
 
 class Ipc:
@@ -219,10 +222,74 @@ class Ipc:
         self.transport.close()
 
 
-def serve_file(source: Path, metadata: dict, records: list):
+class RemoteBlocks:
+    def __init__(self, latency: float):
+        self.latency = latency
+        self.stopped = threading.Event()
+        self.records = []
+        self.blocks = {role: collections.OrderedDict() for role in ("media", "index")}
+        self.locks = {role: threading.Lock() for role in self.blocks}
+
+    def read(self, offset: int, count: int, role: str = "media", cancelled=None):
+        def stopped():
+            return self.stopped.is_set() or (cancelled and cancelled())
+
+        part = 128 * 1024
+        with self.locks[role]:
+            blocks = self.blocks[role]
+            for block in range(offset // part, (offset + count - 1) // part + 1):
+                if stopped():
+                    raise ConnectionAbortedError("Playback test stopped")
+                if block not in blocks:
+                    self.records.append({"role": role, "offset": block * part})
+                    deadline = time.monotonic() + self.latency
+                    while time.monotonic() < deadline:
+                        self.stopped.wait(min(0.01, deadline - time.monotonic()))
+                        if stopped():
+                            raise ConnectionAbortedError("Playback test stopped")
+                blocks[block] = True
+                blocks.move_to_end(block)
+                if len(blocks) > 128:
+                    blocks.popitem(last=False)
+
+
+class PreparedIndex:
+    def __init__(self, source: Path, metadata: dict, remote: RemoteBlocks):
+        self.source = source
+        self.metadata = metadata
+        self.remote = remote
+        self.ready = threading.Event()
+        self.ranges = metadata["ranges"]
+        self.offsets = [offset for offset, _ in self.ranges]
+        self.seconds = None
+        self.worker = threading.Thread(target=self.prepare, daemon=True)
+
+    def prepare(self):
+        started = time.monotonic()
+        try:
+            for offset, count in self.metadata["reads"]:
+                self.remote.read(offset, count, "index")
+        except ConnectionAbortedError:
+            return
+        self.seconds = round(time.monotonic() - started, 3)
+        self.ready.set()
+
+    def count(self, offset: int, maximum: int) -> int:
+        if not self.ready.is_set():
+            return 0
+        found = bisect.bisect_right(self.offsets, offset) - 1
+        if found < 0:
+            return 0
+        begin, length = self.ranges[found]
+        return max(0, min(maximum, begin + length - offset))
+
+
+def serve_file(source: Path, metadata: dict, records: list,
+        remote: RemoteBlocks | None = None, index: PreparedIndex | None = None):
     size = metadata["file_size"]
-    patch = bytes(metadata["patch_bytes"])
-    patch_offset = metadata["patch_offset"]
+    patches = [(metadata["patch_offset"], bytes(metadata["patch_bytes"]))]
+    patches.extend((value["offset"], bytes(value["bytes"]))
+        for value in metadata.get("duration_patches", []))
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -236,6 +303,13 @@ def serve_file(source: Path, metadata: dict, records: list):
         def do_GET(self):
             self.serve(True)
 
+        def disconnected(self):
+            try:
+                readable, _, _ = select.select([self.connection], [], [], 0)
+                return bool(readable and not self.connection.recv(1, socket.MSG_PEEK))
+            except OSError:
+                return True
+
         def serve(self, body):
             match = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers.get("Range", ""))
             start, end = 0, size - 1
@@ -248,8 +322,9 @@ def serve_file(source: Path, metadata: dict, records: list):
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
-            record = {"offset": start, "written": 0}
+            record = {"offset": start, "written": 0, "metadata_bytes": 0}
             records.append(record)
+            self.close_connection = True
             try:
                 self.send_response(206 if match else 200)
                 self.send_header("Accept-Ranges", "bytes")
@@ -264,13 +339,21 @@ def serve_file(source: Path, metadata: dict, records: list):
                         stream.seek(start)
                         offset = start
                         while offset <= end:
-                            data = bytearray(stream.read(min(65536, end - offset + 1)))
+                            count = min(65536, end - offset + 1)
+                            cached = index.count(offset, count) if index else 0
+                            if cached:
+                                count = cached
+                                record["metadata_bytes"] += cached
+                            elif remote:
+                                remote.read(offset, count, cancelled=self.disconnected)
+                            data = bytearray(stream.read(count))
                             if not data:
                                 raise EOFError("Fixture changed during playback")
-                            begin = max(offset, patch_offset)
-                            finish = min(offset + len(data), patch_offset + len(patch))
-                            if begin < finish:
-                                data[begin - offset:finish - offset] = patch[begin - patch_offset:finish - patch_offset]
+                            for patch_offset, patch in patches:
+                                begin = max(offset, patch_offset)
+                                finish = min(offset + len(data), patch_offset + len(patch))
+                                if begin < finish:
+                                    data[begin - offset:finish - offset] = patch[begin - patch_offset:finish - patch_offset]
                             self.wfile.write(data)
                             record["written"] += len(data)
                             offset += len(data)
@@ -284,40 +367,67 @@ def serve_file(source: Path, metadata: dict, records: list):
     return server
 
 
-def wait_position(ipc: Ipc, target: float, timeout: float):
+def wait_position(ipc: Ipc, target: float, timeout: float, progress=None):
     deadline = time.monotonic() + timeout
     position = None
     while time.monotonic() < deadline:
         position = ipc.property("time-pos")
         if position is not None and abs(position - target) < 0.2 and ipc.property("seeking") is False:
             return
+        if progress:
+            progress()
         time.sleep(0.05)
     raise TimeoutError(f"Seek to {target:.3f}; position={position}")
 
 
-def check_playback(source: Path, metadata: dict, options, lavf: str) -> dict:
+def check_playback(source: Path, metadata: dict, options,
+        lavf: str, indexed_lavf: str) -> dict:
     records = []
-    server = serve_file(source, metadata, records)
+    remote = RemoteBlocks(options.latency_ms / 1000)
+    index = None
+    if metadata["layout"] == 1 and not options.previous_behavior:
+        plan = json.loads(run([options.index_test, "--inspect", str(source)]))
+        index = PreparedIndex(source, plan, remote)
+        index.worker.start()
+    server = serve_file(source, metadata, records, remote, index)
     endpoint = (r"\\.\pipe\tdesktop-seek-" + uuid.uuid4().hex if os.name == "nt"
         else str(options.output / (uuid.uuid4().hex + ".sock")))
     log = options.output / f"{source.stem}-mpv.log"
+    url = f"http://127.0.0.1:{server.server_port}/video.mp4"
     command = [options.mpv, "--no-config", "--no-terminal", "--load-scripts=no",
         "--vo=null", "--ao=null", "--hwdec=no", "--cache=no",
         "--demuxer-readahead-secs=0", "--pause", "--idle=yes", "--keep-open=yes",
         "--force-window=no", "--save-position-on-quit=no", lavf,
         "--msg-level=all=v", f"--log-file={log}", f"--input-ipc-server={endpoint}",
-        f"http://127.0.0.1:{server.server_port}/video.mp4"]
+        url]
     process = None
     ipc = None
     started = time.monotonic()
     result = {"file": source.name, "layout": metadata["layout"],
         "patched": bool(metadata["patch_bytes"]), "seeks": []}
+
+    def prepare_seek():
+        if not index or not index.ready.is_set() or result.get("index_reloaded"):
+            return
+        if not ipc.property("seeking") or ipc.property("path") != url:
+            return
+        target = ipc.property("time-pos")
+        paused = ipc.property("pause")
+        response = ipc.request("loadfile", url, "replace", -1, {
+            "start": str(target), "pause": "yes" if paused else "no",
+            "demuxer-lavf-o": indexed_lavf.split("=", 1)[1],
+        })
+        if response.get("error") != "success":
+            raise AssertionError(f"Indexed reload failed: {response}")
+        result["index_reloaded"] = True
+        result["reload_target"] = target
+
     try:
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=options.output,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         ipc = Ipc(endpoint, process, 5)
-        deadline = started + options.timeout
+        deadline = started + options.startup_timeout
         while time.monotonic() < deadline:
             if ipc.property("time-pos") is not None and not ipc.property("seeking"):
                 break
@@ -327,6 +437,7 @@ def check_playback(source: Path, metadata: dict, options, lavf: str) -> dict:
         result["startup_seconds"] = round(time.monotonic() - started, 3)
         result["startup_requests"] = len(records)
         result["startup_written_bytes"] = sum(x["written"] for x in records)
+        result["index_ready_at_startup"] = bool(index and index.ready.is_set())
         if ipc.property("seekable") is not True:
             raise AssertionError("MPV considers the HTTP stream unseekable")
         duration = ipc.property("duration")
@@ -339,7 +450,9 @@ def check_playback(source: Path, metadata: dict, options, lavf: str) -> dict:
             response = ipc.request("seek", target, "absolute+exact")
             if response.get("error") != "success":
                 raise AssertionError(f"Seek command failed: {response}")
-            wait_position(ipc, target, options.timeout)
+            wait_position(ipc, target, options.timeout, prepare_seek)
+            if ipc.property("pause") is not True:
+                raise AssertionError("The indexed reload changed the pause state")
             count = len(records) - before
             result["seeks"].append({"target": round(target, 3),
                 "seconds": round(time.monotonic() - seek_started, 3), "requests": count})
@@ -352,7 +465,7 @@ def check_playback(source: Path, metadata: dict, options, lavf: str) -> dict:
             response = ipc.request("seek", target, "absolute+exact")
             if response.get("error") != "success":
                 raise AssertionError(f"Rapid seek command failed: {response}")
-        wait_position(ipc, target, options.timeout)
+        wait_position(ipc, target, options.timeout, prepare_seek)
         result["rapid_seek"] = {"commands": 6, "target": round(target, 3),
             "seconds": round(time.monotonic() - seek_started, 3),
             "requests": len(records) - before}
@@ -374,12 +487,22 @@ def check_playback(source: Path, metadata: dict, options, lavf: str) -> dict:
                 process.wait(timeout=3)
         if ipc:
             ipc.close()
+        remote.stopped.set()
+        if index:
+            index.worker.join(timeout=3)
         server.shutdown()
         server.server_close()
     result["requests"] = len(records)
     result["written_bytes"] = sum(x["written"] for x in records)
+    result["remote_blocks"] = len(remote.records)
+    result["metadata_served_bytes"] = sum(x["metadata_bytes"] for x in records)
+    if index:
+        result["metadata_cache_bytes"] = index.metadata["size"]
+        result["metadata_prepare_seconds"] = index.seconds
     (options.output / f"{source.stem}-requests.json").write_text(
         json.dumps(records, indent=2), encoding="utf-8")
+    (options.output / f"{source.stem}-remote.json").write_text(
+        json.dumps(remote.records, indent=2), encoding="utf-8")
     print(json.dumps(result), flush=True)
     return result
 
@@ -389,29 +512,41 @@ def main() -> int:
     parser.add_argument("--mpv", required=True)
     parser.add_argument("--ffmpeg", required=True)
     parser.add_argument("--header-test", required=True)
+    parser.add_argument("--index-test", required=True)
     parser.add_argument("--sample", type=Path, action="append", default=[])
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--timeout", type=float, default=20)
+    parser.add_argument("--timeout", type=float, default=90)
+    parser.add_argument("--startup-timeout", type=float, default=5)
+    parser.add_argument("--latency-ms", type=float, default=100)
+    parser.add_argument("--skip-fixtures", action="store_true")
+    parser.add_argument("--previous-behavior", action="store_true")
     options = parser.parse_args()
     options.output = options.output or Path(tempfile.mkdtemp(prefix="tdesktop-mpv-seek-"))
     options.output = options.output.resolve()
-    for attribute in ("mpv", "ffmpeg", "header_test"):
+    for attribute in ("mpv", "ffmpeg", "header_test", "index_test"):
         path = Path(getattr(options, attribute))
         if path.exists():
             setattr(options, attribute, str(path.resolve()))
     options.output.mkdir(parents=True, exist_ok=True)
     print(json.dumps({"output": str(options.output)}), flush=True)
-    lavf = production_options()
-    inputs = fixtures(options.ffmpeg, options.output)
+    lavf, indexed_lavf = production_options()
+    if options.previous_behavior:
+        lavf = indexed_lavf
+    inputs = [] if options.skip_fixtures else fixtures(options.ffmpeg, options.output)
     inputs.extend((path.resolve(), None, None) for path in options.sample)
     results = []
     for source, layout, patched in inputs:
-        metadata = json.loads(run([options.header_test, "--inspect", str(source)]))
+        ffprobe = Path(options.ffmpeg).with_name("ffprobe.exe" if os.name == "nt" else "ffprobe")
+        details = json.loads(run([str(ffprobe), "-v", "error", "-show_entries",
+            "format=duration", "-of", "json", str(source)]))
+        duration_ms = round(float(details["format"]["duration"]) * 1000)
+        metadata = json.loads(run([options.header_test, "--inspect", str(source),
+            str(duration_ms)]))
         if layout is not None and metadata["layout"] != layout:
             raise AssertionError(f"Unexpected MP4 layout: {source.name}")
         if patched is not None and bool(metadata["patch_bytes"]) != patched:
             raise AssertionError(f"Unexpected header patch: {source.name}")
-        results.append(check_playback(source, metadata, options, lavf))
+        results.append(check_playback(source, metadata, options, lavf, indexed_lavf))
     summary = {"lavf": lavf, "results": results,
         "passed": all(result["passed"] for result in results)}
     (options.output / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")

@@ -2213,7 +2213,8 @@ Reader::FillState Reader::fill(
 		buffer.size(),
 		false,
 		lastResult == FillState::WaitingCache);
-	const auto waitingRemote = mode == ReadMode::Required
+	const auto waitingRemote = (mode == ReadMode::Required
+		|| mode == ReadMode::Metadata)
 		&& lastResult == FillState::WaitingRemote
 		&& _streamingActive.load(std::memory_order_acquire)
 		&& !_stopStreamingAsync.load(std::memory_order_acquire);
@@ -2557,11 +2558,16 @@ Reader::FillState Reader::fillFromSlices(
 		&& (underPlayback || bufferPressure)) {
 		requestsLimit = std::max(requestsLimit, smartRequestLimit);
 	}
-	const auto headerRead = smartNonPremium
-		&& mode == ReadMode::Required
-		&& !seekCriticalPhase
-		&& _headerReadAhead.intersects(offset, buffer.size());
-	if (headerRead) {
+	const auto metadataRead = (mode == ReadMode::Metadata);
+	const auto headerRead = metadataRead
+		|| (smartNonPremium
+			&& mode == ReadMode::Required
+			&& !seekCriticalPhase
+			&& _headerReadAhead.intersects(offset, buffer.size()));
+	if (metadataRead) {
+		preloadParts = 0;
+		requestsLimit = std::min(requestsLimit, 2);
+	} else if (headerRead) {
 		preloadParts = _headerReadAhead.preloadParts(
 			offset,
 			buffer.size(),
@@ -2690,7 +2696,8 @@ Reader::FillState Reader::fillFromSlices(
 		_streamingError = Error::NotStreamable;
 		return FillState::Failed;
 	}
-	const auto waitingRemote = mode == ReadMode::Required
+	const auto waitingRemote = (mode == ReadMode::Required
+		|| mode == ReadMode::Metadata)
 		&& result.state == FillState::WaitingRemote
 		&& _streamingActive.load(std::memory_order_acquire)
 		&& !_stopStreamingAsync.load(std::memory_order_acquire);
@@ -2768,7 +2775,8 @@ Reader::FillState Reader::fillFromSlices(
 	auto firstMissing = int64(-1);
 	auto missingParts = 0;
 	for (const auto part : result.offsetsFromLoader.values()) {
-		const auto required = mode == ReadMode::Required
+		const auto required = (mode == ReadMode::Required
+			|| mode == ReadMode::Metadata)
 			&& int64(part) < readTill
 			&& int64(part) + kPartSize > offset;
 		if (required) {

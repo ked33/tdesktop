@@ -22,6 +22,7 @@ class TransferDiagnostics;
 enum class ReadMode {
 	Required,
 	Probe,
+	Metadata,
 };
 
 struct SeekPrefetchRange {
