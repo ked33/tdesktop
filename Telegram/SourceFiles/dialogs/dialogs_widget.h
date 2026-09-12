@@ -184,6 +184,8 @@ private:
 	void updatePornSearch();
 	void stopPornSearch();
 	void retryPornSearch();
+	void updateNativeSearchState();
+	void showSearchFloodToast();
 	[[nodiscard]] not_null<SearchProcessState*> currentSearchProcess();
 
 	[[nodiscard]] bool computeSearchWithPostsPreview() const;
@@ -417,6 +419,7 @@ private:
 	bool _postponeProcessSearchFocusChange = false;
 
 	base::Timer _searchTimer;
+	base::Timer _nativeSearchRetryTimer;
 
 	QString _topicSearchQuery;
 	TimeId _topicSearchOffsetDate = 0;

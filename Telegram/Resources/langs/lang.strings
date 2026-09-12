@@ -8926,6 +8926,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_search_porn_concurrency" = "Supplemental search concurrency";
 "lng_settings_search_porn_concurrency_placeholder" = "1–32 (default: 3)";
 "lng_settings_search_porn_concurrency_invalid" = "Enter a whole number from 1 to 32.";
+"lng_settings_search_porn_interval" = "Supplemental search request interval";
+"lng_settings_search_porn_interval_placeholder" = "0–5000 ms (default: 500)";
+"lng_settings_search_porn_interval_invalid" = "Enter a whole number from 0 to 5000.";
+"lng_settings_search_porn_interval_about" = "The interval controls how often requests start. 0 ms uses only the concurrency limit. Shorter intervals send more requests. If Telegram imposes a wait, searching pauses and resumes automatically.";
 "lng_search_porn_scanning" = "Checking chats…";
 "lng_search_porn_progress" = "Chats searched: {progress}";
 "lng_search_porn_loading" = "Loading more messages…";
@@ -8934,6 +8938,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_search_porn_retry" = "Retry";
 "lng_search_porn_loaded#one" = "{count} message loaded";
 "lng_search_porn_loaded#other" = "{count} messages loaded";
+"lng_search_porn_loaded_all#one" = "All {count} message loaded";
+"lng_search_porn_loaded_all#other" = "All {count} messages loaded";
+"lng_search_porn_summary" = "[{progress}] {messages} ({duration})";
+"lng_search_porn_flood" = "Telegram limited search requests. Searching will resume automatically in {duration}.";
 "lng_settings_show_group_sender_avatar" = "Show sender's avatar in groups";
 "lng_settings_show_seconds" = "Time with seconds";
 "lng_settings_message_read_reactions_info" = "Read / Reactions Info";
