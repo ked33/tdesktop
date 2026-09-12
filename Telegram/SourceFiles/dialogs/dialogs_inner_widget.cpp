@@ -279,6 +279,7 @@ base::options::toggle CtrlClickChatNewWindow({
 	const auto hashtag = !query.isEmpty() && (query[0] == '#');
 	const auto trimmed = hashtag ? query.mid(1).trimmed() : query;
 	const auto fromPeer = (state.tab == ChatSearchTab::MyMessages
+		|| state.tab == ChatSearchTab::PornMessages
 		|| state.tab == ChatSearchTab::PublicPosts
 		|| state.tab == ChatSearchTab::Archive
 		|| state.tab == ChatSearchTab::ThisCommunity
@@ -291,7 +292,8 @@ base::options::toggle CtrlClickChatNewWindow({
 		&& state.tags.empty()
 		&& !fromPeer;
 	const auto suggestAllChats = !waiting
-		&& state.tab == ChatSearchTab::MyMessages
+		&& (state.tab == ChatSearchTab::MyMessages
+			|| state.tab == ChatSearchTab::PornMessages)
 		&& (state.filter != ChatTypeFilter::All || !state.fromArchive);
 	const auto icon = waiting
 		? SearchEmptyIcon::Search
@@ -4033,6 +4035,7 @@ void InnerWidget::deselectAllRows() {
 
 void InnerWidget::fillSupportSearchMenu(not_null<Ui::PopupMenu*> menu) {
 	const auto globalSearch = (_searchState.tab == ChatSearchTab::MyMessages)
+		|| (_searchState.tab == ChatSearchTab::PornMessages)
 		|| (_searchState.tab == ChatSearchTab::PublicPosts)
 		|| (_searchState.tab == ChatSearchTab::Archive)
 		|| (_searchState.tab == ChatSearchTab::ThisCommunity);
@@ -4333,7 +4336,8 @@ void InnerWidget::dragPinnedFromTouch() {
 
 bool InnerWidget::hasChatTypeFilter() const {
 	return !_searchResults.empty()
-		&& (_searchState.tab == ChatSearchTab::MyMessages);
+		&& (_searchState.tab == ChatSearchTab::MyMessages
+			|| _searchState.tab == ChatSearchTab::PornMessages);
 }
 
 void InnerWidget::searchRequested(bool loading) {
@@ -4355,6 +4359,7 @@ void InnerWidget::applySearchState(SearchState state) {
 	const auto otherChanged = (_searchState != withSameQuery);
 
 	const auto ignoreInChat = (state.tab == ChatSearchTab::MyMessages)
+		|| (state.tab == ChatSearchTab::PornMessages)
 		|| (state.tab == ChatSearchTab::PublicPosts)
 		|| (state.tab == ChatSearchTab::Archive)
 		|| (state.tab == ChatSearchTab::ThisCommunity);
@@ -4431,6 +4436,7 @@ void InnerWidget::applySearchState(SearchState state) {
 		if (_filter.isEmpty()
 			&& !_searchState.fromPeer
 			&& _searchState.tags.empty()
+			&& _searchState.tab != ChatSearchTab::PornMessages
 			&& _searchState.tab != ChatSearchTab::PublicPosts) {
 			clearFilter();
 		} else {
@@ -4902,6 +4908,7 @@ void InnerWidget::searchReceived(
 	}
 
 	const auto globalSearch = (_searchState.tab == ChatSearchTab::MyMessages)
+		|| (_searchState.tab == ChatSearchTab::PornMessages)
 		|| (_searchState.tab == ChatSearchTab::PublicPosts)
 		|| (_searchState.tab == ChatSearchTab::Archive)
 		|| (_searchState.tab == ChatSearchTab::ThisCommunity);
@@ -5608,6 +5615,8 @@ bool InnerWidget::communitySearchActive() const {
 
 void InnerWidget::updateSearchIn() {
 	if (!_searchState.inChat
+		&& _searchState.tab != ChatSearchTab::PornMessages
+		&& _searchState.query.trimmed().isEmpty()
 		&& _searchHashOrCashtag == HashOrCashtag::None
 		&& !archiveSearchActive()
 		&& !communitySearchActive()) {
@@ -5669,6 +5678,7 @@ void InnerWidget::updateSearchIn() {
 		? Ui::MakeUserpicThumbnail(sublist->sublistPeer())
 		: nullptr;
 	const auto myIcon = Ui::MakeIconThumbnail(st::menuIconChats);
+	const auto specialIcon = Ui::MakeIconThumbnail(st::menuIconSearch);
 	const auto archiveIcon = (_openedFolder && !_searchState.inChat)
 		? Ui::MakeIconThumbnail(st::menuIconArchive)
 		: nullptr;
@@ -5700,6 +5710,7 @@ void InnerWidget::updateSearchIn() {
 		{ ChatSearchTab::ThisCommunity, communityIcon },
 		{ ChatSearchTab::Archive, archiveIcon },
 		{ ChatSearchTab::MyMessages, myIcon },
+		{ ChatSearchTab::PornMessages, specialIcon },
 		{ ChatSearchTab::PublicPosts, publicIcon },
 	}, _searchState.tab, peerTabType, fromImage, fromName);
 }
@@ -6375,6 +6386,10 @@ bool InnerWidget::chooseRow(
 			ChatTypeFilter::Groups,
 			ChatTypeFilter::Channels,
 		}) {
+			if (_searchState.tab == ChatSearchTab::PornMessages
+				&& tab == ChatTypeFilter::Private) {
+				continue;
+			}
 			_menu->addAction(ChatTypeFilterLabel(tab), [=] {
 				_changeSearchFilterRequests.fire_copy(tab);
 			}, (tab == _searchState.filter)
