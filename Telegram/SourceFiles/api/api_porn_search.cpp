@@ -18,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item.h"
 #include "main/main_session.h"
 #include "mtproto/mtproto_response.h"
+#include "settings.h"
 
 namespace Api {
 namespace {
@@ -25,13 +26,16 @@ namespace {
 constexpr auto kDialogsPerPage = 100;
 constexpr auto kChannelsPerRequest = 100;
 constexpr auto kMessagesPerPage = 50;
+constexpr auto kCachedQueries = 10;
+constexpr auto kCachedMessages = 20000;
 
 } // namespace
 
 PornSearch::PornSearch(not_null<ApiWrap*> api)
 : _session(&api->session())
 , _api(&api->instance())
-, _timer([=] { pump(); }) {
+, _timer([=] { pump(); })
+, _cache(kCachedQueries, kCachedMessages) {
 	const auto settingsChanged = [=] {
 		LOG(("Search Info: supplemental concurrency %1, request interval %2 ms.")
 			.arg(EnhancedSettings::SearchPornConcurrency())
@@ -43,6 +47,13 @@ PornSearch::PornSearch(not_null<ApiWrap*> api)
 	EnhancedSettings::SearchPornRequestIntervalChanges(
 	) | rpl::on_next(settingsChanged, _lifetime);
 	using Flag = Data::PeerUpdate::Flag;
+	rpl::merge(
+		_session->changes().realtimePeerUpdates(Flag::UnavailableReason),
+		_session->changes().realtimePeerUpdates(Flag::ChannelAmIn),
+		_session->changes().realtimePeerUpdates(Flag::Migration)
+	) | rpl::on_next([=](const Data::PeerUpdate &update) {
+		invalidateMessages(update.peer->id);
+	}, _lifetime);
 	_session->changes().peerUpdates(
 		Flag::UnavailableReason
 		| Flag::ChannelAmIn
@@ -53,17 +64,12 @@ PornSearch::PornSearch(not_null<ApiWrap*> api)
 		if (!channel) {
 			return;
 		}
-		if (channel->amIn() && !_catalog.contains(channel->id)) {
-			const auto history = _session->data().historyLoaded(channel->id);
-			if (history && history->folderKnown()) {
-				const auto folder = history->folder() ? 1 : 0;
-				_catalog[channel->id] = folder;
-				_folders[folder].seen.insert(channel->id);
-			} else if (update.flags & Flag::ChannelAmIn) {
-				invalidate();
-			}
+		if (update.flags & (Flag::UnavailableReason
+			| Flag::ChannelAmIn | Flag::Migration)) {
+			_folderFailed.erase(channel->id);
 		}
-		refreshMetadata();
+		peerChanged(channel);
+		_metadataDirty = true;
 		schedule();
 	}, _lifetime);
 	_session->changes().historyUpdates(
@@ -72,11 +78,21 @@ PornSearch::PornSearch(not_null<ApiWrap*> api)
 		if (const auto channel = update.history->peer->asChannel()) {
 			if (channel->amIn() && update.history->folderKnown()) {
 				const auto folder = update.history->folder() ? 1 : 0;
-				_catalog[channel->id] = folder;
-				_folders[folder].seen.insert(channel->id);
-				schedule();
+				updateFolder(channel->id, folder);
 			}
 		}
+	}, _lifetime);
+	using MessageFlag = Data::MessageUpdate::Flag;
+	rpl::merge(
+		_session->changes().realtimeMessageUpdates(MessageFlag::NewAdded),
+		_session->changes().realtimeMessageUpdates(MessageFlag::NewMaybeAdded),
+		_session->changes().realtimeMessageUpdates(MessageFlag::Destroyed)
+	) | rpl::on_next([=](const Data::MessageUpdate &update) {
+		invalidateMessages(update.item->history()->peer->id);
+	}, _lifetime);
+	_session->data().channelDifferenceTooLong(
+	) | rpl::on_next([=](not_null<ChannelData*> channel) {
+		invalidateMessages(channel->id);
 	}, _lifetime);
 }
 
@@ -86,7 +102,17 @@ PornSearch::QueryId PornSearch::start(
 		PornSearchRequest request,
 		Callback done) {
 	const auto id = ++_nextQuery;
-	_queries.emplace(id, Query{ std::move(request), std::move(done) });
+	auto cached = _cache.take(request);
+	const auto before = cached
+		? cached->before
+		: std::numeric_limits<TimeId>::max();
+	_queries.emplace(id, Query{
+		.request = std::move(request),
+		.done = std::move(done),
+		.cached = std::move(cached),
+		.before = before,
+	});
+	adoptLoadedFolders();
 	LOG(("Search Info: supplemental query %1 started, "
 		"concurrency %2, request interval %3 ms.")
 		.arg(id)
@@ -101,17 +127,39 @@ void PornSearch::cancel(QueryId id) {
 	if (i == end(_queries)) {
 		return;
 	}
-	for (const auto &[peer, source] : i->second.sources.entries()) {
-		cancelTask(source.task);
+	for (auto &[peer, source] : i->second.sources.entries()) {
+		if (const auto task = base::take(source.task)) {
+			cancelTask(task);
+			source.retry = true;
+		}
 	}
+	cacheQuery(i->second);
 	_queries.erase(i);
 	if (!folderNeeded(0)) {
 		cancelCatalogTasks();
 	}
-	if (_queries.empty()) {
+	if (_queries.empty() && !_preloading) {
 		_timer.cancel();
 	} else {
 		schedule();
+	}
+}
+
+void PornSearch::cacheQuery(Query &query) {
+	if (!query.sources.ready() && !query.cached) {
+		return;
+	}
+	auto cached = query.sources.ready()
+		? CachedQuery{ std::move(query.sources.entries()), query.before }
+		: std::move(*query.cached);
+	auto count = std::size_t(0);
+	for (const auto &[peer, source] : cached.sources) {
+		count += source.messages.size();
+	}
+	if (_cache.put(query.request, std::move(cached), count)) {
+		LOG(("Search Info: supplemental cache retained %1 queries, %2 message IDs.")
+			.arg(_cache.size())
+			.arg(_cache.cost()));
 	}
 }
 
@@ -138,25 +186,152 @@ void PornSearch::retry(QueryId id) {
 			folder.dialogsFailed = folder.pinnedFailed = false;
 		}
 		_metadataFailed.clear();
+		_folderPending.insert(begin(_folderFailed), end(_folderFailed));
+		_folderFailed.clear();
 		refreshMetadata();
 	}
 	i->second.dirty = true;
 	schedule();
 }
 
+void PornSearch::preload() {
+	_preloading = true;
+	_preloadArchive = GetEnhancedBool("search_main_and_archive");
+	adoptLoadedFolders();
+	refreshMetadata();
+	schedule();
+}
+
+void PornSearch::adoptLoadedFolders() {
+	if (!_adoptLoadedFolders) {
+		return;
+	}
+	for (auto folder = 0; folder != int(_folders.size()); ++folder) {
+		auto &state = _folders[folder];
+		const auto local = folder
+			? _session->data().folderLoaded(Data::Folder::kId)
+			: nullptr;
+		if ((state.dialogsDone && state.pinnedDone)
+			|| (folder && !local)
+			|| !_session->data().chatsListLoaded(local)) {
+			continue;
+		}
+		cancelTask(state.dialogsTask);
+		cancelTask(state.pinnedTask);
+		state = {};
+		state.dialogsDone = state.pinnedDone = true;
+		const auto remember = [&](not_null<PeerData*> peer) {
+			const auto channel = peer->asChannel();
+			if (!channel || !channel->amIn()) {
+				return;
+			}
+			const auto history = _session->data().historyLoaded(peer->id);
+			if (history && history->folderKnown()) {
+				if (int(history->folder() != nullptr) == folder) {
+					updateFolder(peer->id, folder);
+				}
+			} else if (channel->isLoaded()
+				&& channel->hasPornRestriction()
+				&& !_catalog.contains(peer->id)
+				&& !_folderFailed.contains(peer->id)) {
+				_folderPending.insert(peer->id);
+			}
+		};
+		_session->data().enumerateGroups(remember);
+		_session->data().enumerateBroadcasts([&](not_null<ChannelData*> channel) {
+			remember(channel);
+		});
+		checkFolder(folder);
+		LOG(("Search Info: supplemental catalog reused loaded folder %1, "
+			"%2 channels.").arg(folder).arg(state.seen.size()));
+	}
+	refreshMetadata();
+}
+
+void PornSearch::peerChanged(not_null<ChannelData*> channel) {
+	if (!channel->isLoaded()) {
+		return;
+	}
+	if (!channel->amIn()) {
+		forgetPeer(channel->id);
+		return;
+	}
+	const auto history = _session->data().historyLoaded(channel->id);
+	if (history && history->folderKnown()) {
+		updateFolder(channel->id, history->folder() ? 1 : 0);
+	} else if (!channel->hasPornRestriction()) {
+		_folderPending.erase(channel->id);
+		_folderFailed.erase(channel->id);
+	} else if (!_catalog.contains(channel->id)
+		&& !_folderFailed.contains(channel->id)) {
+		_folderPending.insert(channel->id);
+	}
+}
+
+void PornSearch::updateFolder(PeerId peer, int folder) {
+	if (!peerIsChannel(peer) || folder < 0 || folder >= int(_folders.size())) {
+		return;
+	}
+	_catalog[peer] = folder;
+	_metadataDirty = true;
+	_folders[folder].seen.insert(peer);
+	_folders[1 - folder].seen.erase(peer);
+	_folderPending.erase(peer);
+	_folderFailed.erase(peer);
+	schedule();
+}
+
+void PornSearch::forgetPeer(PeerId peer) {
+	_catalog.erase(peer);
+	for (auto &folder : _folders) {
+		folder.seen.erase(peer);
+	}
+	_metadataPending.erase(peer);
+	_metadataFailed.erase(peer);
+	_folderPending.erase(peer);
+	_folderFailed.erase(peer);
+}
+
 void PornSearch::invalidate() {
 	cancelCatalogTasks();
 	_folders = {};
+	_catalog.clear();
 	_metadataFailed.clear();
+	_folderPending.clear();
+	_folderFailed.clear();
+	_cache.clear();
+	_adoptLoadedFolders = false;
 	refreshMetadata();
 	for (auto &[id, query] : _queries) {
+		query.cached.reset();
+		for (auto &[peer, source] : query.sources.entries()) {
+			source.changed = true;
+		}
 		if (!query.sources.ready()) {
 			query.dirty = true;
 		}
 	}
 	LOG(("Search Info: supplemental chat catalog invalidated; "
 		"confirmed search sources remain fixed."));
-	schedule();
+	preload();
+}
+
+void PornSearch::invalidateMessages(PeerId peer) {
+	if (!peer) {
+		return;
+	}
+	const auto mark = [&](auto &sources) {
+		PornSearchPolicy::InvalidateSources(sources, peer);
+	};
+	for (auto &[id, query] : _queries) {
+		mark(query.sources.entries());
+		if (query.cached) {
+			mark(query.cached->sources);
+		}
+	}
+	_cache.forEach([&](CachedQuery &query) {
+		mark(query.sources);
+	});
 }
 
 void PornSearch::applyFloodWait(const MTP::Error &error) {
@@ -208,10 +383,11 @@ void PornSearch::cancelCatalogTasks() {
 }
 
 bool PornSearch::folderNeeded(int folder) const {
-	return ranges::any_of(_queries, [&](const auto &entry) {
-		return !entry.second.sources.ready()
-			&& (!folder || entry.second.request.fromArchive);
-	});
+	return (_preloading && (!folder || _preloadArchive))
+		|| ranges::any_of(_queries, [&](const auto &entry) {
+			return !entry.second.sources.ready()
+				&& (!folder || entry.second.request.fromArchive);
+		});
 }
 
 bool PornSearch::metadataNeeded(PeerId peer) const {
@@ -220,7 +396,7 @@ bool PornSearch::metadataNeeded(PeerId peer) const {
 }
 
 void PornSearch::schedule() {
-	if (!_queries.empty()) {
+	if (!_queries.empty() || _preloading) {
 		_timer.callOnce(0);
 	}
 }
@@ -231,7 +407,22 @@ void PornSearch::reconcile() {
 			continue;
 		}
 		if (query.sources.prepare(catalogStatus(query.request).complete, [&] {
-			return collectSources(query.request);
+			auto sources = collectSources(query.request);
+			if (query.cached) {
+				const auto reused = PornSearchPolicy::RestoreSources(
+					sources,
+					std::move(query.cached->sources),
+					[&](FullMsgId id) {
+						return _session->data().message(id) != nullptr;
+					});
+				query.cached.reset();
+				LOG(("Search Info: supplemental query %1 reused %2/%3 "
+					"cached sources; changed or unloaded sources will be searched.")
+					.arg(id)
+					.arg(reused)
+					.arg(sources.size()));
+			}
+			return sources;
 		})) {
 			query.dirty = true;
 			LOG(("Search Info: supplemental query %1 confirmed %2 marked chats; "
@@ -261,6 +452,8 @@ PornSearch::CatalogStatus PornSearch::catalogStatus(
 	};
 	result.scanning |= ranges::any_of(_metadataPending, relevant);
 	result.failed += int(ranges::count_if(_metadataFailed, relevant));
+	result.scanning |= !_folderPending.empty();
+	result.failed += int(_folderFailed.size());
 	result.complete &= !result.scanning && !result.failed;
 	return result;
 }
@@ -292,7 +485,23 @@ std::map<PeerId, PornSearch::Source> PornSearch::collectSources(
 
 void PornSearch::pump() {
 	_requestGate.setInterval(EnhancedSettings::SearchPornRequestInterval());
+	if (_metadataDirty) {
+		refreshMetadata();
+	}
 	reconcile();
+	if (_preloading) {
+		const auto status = catalogStatus({ .fromArchive = _preloadArchive });
+		if (!status.scanning) {
+			_preloading = false;
+			LOG(("Search Info: supplemental catalog preparation finished; "
+				"%1 channels, %2 failures.")
+				.arg(_catalog.size())
+				.arg(status.failed));
+		}
+	}
+	if (_queries.empty() && !_preloading) {
+		return;
+	}
 	if (_requestGate.waiting(crl::now())) {
 		_timer.callOnce(_requestGate.delay(crl::now()));
 		publish();
@@ -305,11 +514,33 @@ void PornSearch::pump() {
 	}
 	const auto limit = EnhancedSettings::SearchPornConcurrency();
 	while (_tasks.size() < std::size_t(limit)
-		&& !_queries.empty()) {
+		&& (!_queries.empty() || _preloading)) {
 		const auto now = crl::now();
 		if (!_requestGate.canStart(now, _tasks.size(), limit)) {
 			_timer.callOnce(_requestGate.delay(now));
 			break;
+		}
+		if (sendReadySearch(true)) {
+			continue;
+		}
+		auto unknown = std::vector<PeerId>();
+		if (folderNeeded(0)) {
+			for (const auto peer : _folderPending) {
+				const auto running = ranges::any_of(_tasks, [&](const auto &entry) {
+					return entry.second.type == TaskType::PeerDialogs
+						&& ranges::contains(entry.second.peers, peer);
+				});
+				if (!running) {
+					unknown.push_back(peer);
+					if (unknown.size() == kChannelsPerRequest) {
+						break;
+					}
+				}
+			}
+		}
+		if (!unknown.empty()) {
+			sendPeerDialogs(std::move(unknown));
+			continue;
 		}
 		auto metadata = std::vector<PeerId>();
 		for (const auto peer : _metadataPending) {
@@ -347,7 +578,7 @@ void PornSearch::pump() {
 				break;
 			}
 		}
-		if (!sent && !sendReadySearch(true) && !sendReadySearch(false)) {
+		if (!sent && !sendReadySearch(false)) {
 			break;
 		}
 	}
@@ -384,14 +615,14 @@ void PornSearch::rememberDialogs(
 		}
 		const auto peer = peerFromMTP(value.c_dialog().vpeer());
 		if (peerIsChannel(peer)) {
-			_catalog[peer] = folder;
-			_folders[folder].seen.insert(peer);
+			updateFolder(peer, folder);
 		}
 	}
 	refreshMetadata();
 }
 
 void PornSearch::refreshMetadata() {
+	_metadataDirty = false;
 	_metadataPending.clear();
 	for (const auto &[peer, folder] : _catalog) {
 		const auto channel = _session->data().channel(peerToChannel(peer));
@@ -509,6 +740,54 @@ void PornSearch::sendDialogs(int folder, bool pinned) {
 			state.dialogsFailed = true;
 		});
 		checkFolder(folder);
+	}).fail([=](const MTP::Error &error) {
+		taskFailed(taskId, error);
+	}).handleFloodErrors().send();
+}
+
+void PornSearch::sendPeerDialogs(std::vector<PeerId> peers) {
+	_requestGate.started(crl::now());
+	const auto taskId = ++_nextTask;
+	auto dialogs = QVector<MTPInputDialogPeer>();
+	for (const auto peer : peers) {
+		dialogs.push_back(MTP_inputDialogPeer(_session->data().peer(peer)->input()));
+	}
+	_tasks.emplace(taskId, Task{
+		.type = TaskType::PeerDialogs,
+		.peers = peers,
+	});
+	_tasks[taskId].requestId = _api.request(MTPmessages_GetPeerDialogs(
+		MTP_vector<MTPInputDialogPeer>(std::move(dialogs))
+	)).done([=](const MTPmessages_PeerDialogs &result) {
+		if (!_tasks.erase(taskId)) {
+			return;
+		}
+		const auto &data = result.data();
+		_session->data().processUsers(data.vusers());
+		_session->data().processChats(data.vchats());
+		for (const auto &value : data.vdialogs().v) {
+			if (value.type() == mtpc_dialog) {
+				const auto &dialog = value.c_dialog();
+				updateFolder(
+					peerFromMTP(dialog.vpeer()),
+					dialog.vfolder_id().value_or_empty());
+			}
+		}
+		for (const auto peer : peers) {
+			if (_folderPending.erase(peer)) {
+				const auto channel = _session->data().channel(peerToChannel(peer));
+				if (channel->amIn()) {
+					_folderFailed.insert(peer);
+				} else {
+					forgetPeer(peer);
+				}
+			}
+		}
+		refreshMetadata();
+		for (auto &[id, query] : _queries) {
+			query.dirty = true;
+		}
+		schedule();
 	}).fail([=](const MTP::Error &error) {
 		taskFailed(taskId, error);
 	}).handleFloodErrors().send();
@@ -672,6 +951,8 @@ void PornSearch::taskFailed(TaskId taskId, const MTP::Error &error) {
 			? u"messages.getDialogs"_q
 			: (task.type == TaskType::Pinned)
 			? u"messages.getPinnedDialogs"_q
+			: (task.type == TaskType::PeerDialogs)
+			? u"messages.getPeerDialogs"_q
 			: (task.type == TaskType::Metadata)
 			? u"channels.getChannels"_q
 			: u"messages.search"_q;
@@ -695,6 +976,15 @@ void PornSearch::taskFailed(TaskId taskId, const MTP::Error &error) {
 		_folders[task.folder].pinnedTask = 0;
 		_folders[task.folder].pinnedFailed = !flood;
 		break;
+	case TaskType::PeerDialogs:
+		if (!flood) {
+			for (const auto peer : task.peers) {
+				if (_folderPending.erase(peer)) {
+					_folderFailed.insert(peer);
+				}
+			}
+		}
+		break;
 	case TaskType::Metadata:
 		if (!flood) {
 			_metadataFailed.insert(begin(task.peers), end(task.peers));
@@ -710,6 +1000,7 @@ void PornSearch::taskFailed(TaskId taskId, const MTP::Error &error) {
 			source.started = true;
 			source.exhausted = MTP::IgnoreError(error)
 				|| error.type() == u"SEARCH_QUERY_EMPTY"_q;
+			source.changed |= source.exhausted;
 			source.failed = !source.exhausted;
 		}
 	} break;

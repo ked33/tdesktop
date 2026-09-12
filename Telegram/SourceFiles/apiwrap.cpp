@@ -1123,6 +1123,7 @@ void ApiWrap::dialogsLoadFinish(Data::Folder *folder) {
 	const auto notify = [&] {
 		Core::App().postponeCall(crl::guard(_session, [=] {
 			_session->data().chatsListDone(folder);
+			pornSearch().preload();
 		}));
 	};
 	const auto state = dialogsLoadState(folder);
@@ -5817,6 +5818,18 @@ Api::PornSearch &ApiWrap::pornSearch() {
 void ApiWrap::invalidatePornSearch() {
 	if (_pornSearch) {
 		_pornSearch->invalidate();
+	}
+}
+
+void ApiWrap::invalidatePornSearchMessages(PeerId peer) {
+	if (_pornSearch) {
+		_pornSearch->invalidateMessages(peer);
+	}
+}
+
+void ApiWrap::updatePornSearchFolder(PeerId peer, int folder) {
+	if (_pornSearch) {
+		_pornSearch->updateFolder(peer, folder);
 	}
 }
 

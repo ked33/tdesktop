@@ -517,6 +517,7 @@ void Updates::differenceDone(const MTPupdates_Difference &result) {
 		stateDone(d.vstate());
 	} break;
 	case mtpc_updates_differenceTooLong: {
+		api().invalidatePornSearch();
 		LOG(("API Error: updates.differenceTooLong is not supported by 64Gram Desktop!"));
 	} break;
 	};
@@ -692,8 +693,6 @@ void Updates::getDifference() {
 	if (requestingDifference()) {
 		return;
 	}
-	api().invalidatePornSearch();
-
 	_bySeqUpdates.clear();
 	_bySeqTimer.cancel();
 
@@ -1392,6 +1391,7 @@ void Updates::applyUpdateNoPtsCheck(const MTPUpdate &update) {
 		for (const auto &peer : data.vfolder_peers().v) {
 			peer.match([&](const MTPDfolderPeer &data) {
 				const auto peerId = peerFromMTP(data.vpeer());
+				api().updatePornSearchFolder(peerId, data.vfolder_id().v);
 				if (const auto history = owner.historyLoaded(peerId)) {
 					if (const auto folderId = data.vfolder_id().v) {
 						history->setFolder(owner.folder(folderId));
@@ -2493,6 +2493,7 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 		if (const auto channel = session().data().channelLoaded(d.vchannel_id())) {
 			const auto pts = d.vpts();
 			if (!pts || channel->pts() < pts->v) {
+				api().invalidatePornSearchMessages(channel->id);
 				getChannelDifference(channel);
 			}
 		}
@@ -2576,6 +2577,7 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 
 	case mtpc_updateChannelAvailableMessages: {
 		const auto &d = update.c_updateChannelAvailableMessages();
+		api().invalidatePornSearchMessages(peerFromChannel(d.vchannel_id()));
 		if (const auto channel = session().data().channelLoaded(d.vchannel_id())) {
 			channel->setAvailableMinId(d.vavailable_min_id().v);
 			if (const auto history = session().data().historyLoaded(channel)) {
