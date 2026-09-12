@@ -11,12 +11,58 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <set>
 #include <string>
 #include <type_traits>
 #include <vector>
 
 namespace Api::PornSearchPolicy {
+
+template <typename Key, typename Source>
+class SourceSnapshot final {
+public:
+	using Entries = std::map<Key, Source>;
+
+	template <typename Collect>
+	[[nodiscard]] bool prepare(bool complete, Collect collect);
+	[[nodiscard]] bool ready() const;
+	[[nodiscard]] Entries &entries();
+	[[nodiscard]] const Entries &entries() const;
+
+private:
+	Entries _entries;
+	bool _ready = false;
+
+};
+
+template <typename Key, typename Source>
+template <typename Collect>
+bool SourceSnapshot<Key, Source>::prepare(bool complete, Collect collect) {
+	if (_ready || !complete) {
+		return false;
+	}
+	_entries = collect();
+	_ready = true;
+	return true;
+}
+
+template <typename Key, typename Source>
+bool SourceSnapshot<Key, Source>::ready() const {
+	return _ready;
+}
+
+template <typename Key, typename Source>
+auto SourceSnapshot<Key, Source>::entries()
+-> Entries & {
+	return _entries;
+}
+
+template <typename Key, typename Source>
+auto SourceSnapshot<Key, Source>::entries() const
+-> const Entries & {
+	return _entries;
+}
 
 class RequestGate final {
 public:

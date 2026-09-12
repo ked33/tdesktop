@@ -88,9 +88,15 @@ private:
 	struct Query {
 		PornSearchRequest request;
 		Callback done;
-		std::map<PeerId, Source> sources;
+		PornSearchPolicy::SourceSnapshot<PeerId, Source> sources;
 		TimeId before = std::numeric_limits<TimeId>::max();
 		bool dirty = true;
+	};
+
+	struct CatalogStatus {
+		int failed = 0;
+		bool complete = false;
+		bool scanning = false;
 	};
 
 	struct Folder {
@@ -126,6 +132,10 @@ private:
 	void pump();
 	void publish();
 	void reconcile();
+	[[nodiscard]] CatalogStatus catalogStatus(
+		const PornSearchRequest &request) const;
+	[[nodiscard]] std::map<PeerId, Source> collectSources(
+		const PornSearchRequest &request) const;
 	void checkFolder(int folder);
 	void rememberDialogs(int folder, const QVector<MTPDialog> &dialogs);
 	void refreshMetadata();
