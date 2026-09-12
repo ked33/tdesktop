@@ -8650,6 +8650,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_font_not_found" = "Font not found.";
 
 "lng_search_tab_my_messages" = "My Messages";
+"lng_search_tab_special" = "Special Search";
 "lng_search_tab_this_topic" = "This Topic";
 "lng_search_tab_this_chat" = "This Chat";
 "lng_search_tab_this_channel" = "This Channel";

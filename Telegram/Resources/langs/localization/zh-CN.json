@@ -49,6 +49,7 @@
     "lng_settings_search_porn_interval_placeholder": "0–5000 ms（默认 500）",
     "lng_settings_search_porn_interval_invalid": "请输入 0 至 5000 之间的整数。",
     "lng_settings_search_porn_interval_about": "间隔控制请求的发送频率。0 ms 表示仅限制并发数。间隔越短，请求越频繁；若 Telegram 要求等待，搜索会暂停并在等待结束后自动继续。",
+    "lng_search_tab_special": "特殊搜索",
     "lng_search_porn_scanning": "正在检查聊天…",
     "lng_search_porn_progress": "已搜索 {progress} 个聊天",
     "lng_search_porn_loading": "正在加载更多消息…",

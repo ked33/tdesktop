@@ -549,7 +549,8 @@ Widget::Widget(
 	_inner->changeSearchFilterRequests(
 	) | rpl::filter([=](ChatTypeFilter filter) {
 		return (_searchState.filter != filter)
-			&& (_searchState.tab == ChatSearchTab::MyMessages);
+			&& (_searchState.tab == ChatSearchTab::MyMessages
+				|| _searchState.tab == ChatSearchTab::PornMessages);
 	}) | rpl::on_next([=](ChatTypeFilter filter) {
 		auto copy = _searchState;
 		copy.filter = filter;
@@ -558,7 +559,8 @@ Widget::Widget(
 	_inner->changeSearchFromArchiveRequests(
 	) | rpl::filter([=](bool fromArchive) {
 		return (_searchState.fromArchive != fromArchive)
-			&& (_searchState.tab == ChatSearchTab::MyMessages);
+			&& (_searchState.tab == ChatSearchTab::MyMessages
+				|| _searchState.tab == ChatSearchTab::PornMessages);
 	}) | rpl::on_next([=](bool fromArchive) {
 		auto copy = _searchState;
 		copy.fromArchive = fromArchive;
@@ -566,7 +568,8 @@ Widget::Widget(
 	}, lifetime());
 	_inner->resetSearchRestrictionsRequests(
 	) | rpl::filter([=] {
-		return (_searchState.tab == ChatSearchTab::MyMessages)
+		return (_searchState.tab == ChatSearchTab::MyMessages
+				|| _searchState.tab == ChatSearchTab::PornMessages)
 			&& ((_searchState.filter != ChatTypeFilter::All)
 				|| !_searchState.fromArchive);
 	}) | rpl::on_next([=] {
@@ -3109,6 +3112,9 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 		_processingSearch = false;
 		listScrollUpdated();
 	});
+	if (_searchState.tab == ChatSearchTab::PornMessages) {
+		return searchPornMessages(inCache);
+	}
 
 	auto result = false;
 	const auto query = _searchState.query.trimmed();
@@ -3296,10 +3302,50 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 	return result;
 }
 
+bool Widget::searchPornMessages(bool inCache) {
+	const auto query = _searchState.query.trimmed();
+	const auto empty = query.isEmpty() || query == u"#"_q;
+	const auto changed = (_searchQuery != query)
+		|| (_searchQueryTab != ChatSearchTab::PornMessages)
+		|| (_searchQueryFilter != _searchState.filter)
+		|| (_searchQueryFromArchive != _searchState.fromArchive);
+	if (inCache && changed && !empty) {
+		return false;
+	}
+	if (changed || empty) {
+		cancelSearchRequest();
+		_searchQuery = query;
+		_searchQueryTab = ChatSearchTab::PornMessages;
+		_searchQueryFrom = nullptr;
+		_searchQueryTags.clear();
+		_searchQueryCommunity = nullptr;
+		_searchQueryFilter = _searchState.filter;
+		_searchQueryFromArchive = _searchState.fromArchive;
+		_searchProcess.lastPeer = nullptr;
+		_searchProcess.lastId = 0;
+		_searchProcess.lastDate = 0;
+		_searchProcess.nextRate = 0;
+		_searchProcess.full = true;
+		_migratedProcess.full = true;
+		_postsProcess.full = true;
+		_nativeSearchFailed = false;
+		_peerSearch.clear();
+		_api.request(base::take(_topicSearchRequest)).cancel();
+		_topicSearchFull = true;
+		peerSearchReceived({});
+		_inner->searchReceived({}, nullptr, { .start = true }, 0);
+	}
+	updatePornSearch();
+	updateNativeSearchState();
+	return true;
+}
+
 void Widget::updatePornSearch() {
 	const auto query = _searchState.query.trimmed();
-	if (!EnhancedSettings::SearchIncludePorn()
-		|| _searchState.tab != ChatSearchTab::MyMessages
+	const auto enabled = (_searchState.tab == ChatSearchTab::PornMessages)
+		|| (_searchState.tab == ChatSearchTab::MyMessages
+			&& EnhancedSettings::SearchIncludePorn());
+	if (!enabled
 		|| _searchState.filter == ChatTypeFilter::Private
 		|| query.isEmpty()
 		|| query == u"#"_q
@@ -3355,7 +3401,8 @@ void Widget::retryPornSearch() {
 		return;
 	}
 	session().api().pornSearch().retry(_pornSearchQuery);
-	if (_nativeSearchFailed && !_searchProcess.requestId) {
+	if (_searchState.tab != ChatSearchTab::PornMessages
+		&& _nativeSearchFailed && !_searchProcess.requestId) {
 		_nativeSearchFailed = false;
 		_searchProcess.full = false;
 		requestMessages(!_searchProcess.lastId);
@@ -3364,11 +3411,12 @@ void Widget::retryPornSearch() {
 
 void Widget::updateNativeSearchState() {
 	const auto waiting = _nativeSearchRetryTimer.isActive();
+	const auto onlyPorn = (_searchState.tab == ChatSearchTab::PornMessages);
 	_inner->setNativeSearchState(
-		_searchProcess.requestId != 0 || waiting,
-		_searchProcess.full,
-		_nativeSearchFailed,
-		waiting);
+		!onlyPorn && (_searchProcess.requestId != 0 || waiting),
+		onlyPorn || _searchProcess.full,
+		!onlyPorn && _nativeSearchFailed,
+		!onlyPorn && waiting);
 }
 
 void Widget::showSearchFloodToast() {
@@ -3503,6 +3551,9 @@ void Widget::searchMore() {
 		if (_searchProcess.lastDate && _searchProcess.lastDate < before) {
 			return;
 		}
+	}
+	if (_searchState.tab == ChatSearchTab::PornMessages) {
+		return;
 	}
 	const auto process = currentSearchProcess();
 	if (process->requestId
@@ -3658,7 +3709,8 @@ void Widget::requestPublicPosts(bool fromStart) {
 }
 
 void Widget::requestMessages(bool fromStart) {
-	if (_searchProcess.requestId) {
+	if (_searchProcess.requestId
+		|| _searchState.tab == ChatSearchTab::PornMessages) {
 		return;
 	}
 	if (!_searchProcess.lastId || !_searchProcess.lastPeer) {
@@ -4303,7 +4355,8 @@ bool Widget::applySearchState(SearchState state) {
 			: (state.community || _openedCommunity)
 			? ChatSearchTab::ThisCommunity
 			: ChatSearchTab::MyMessages;
-	} else if (!state.inChat
+	} else if (state.tab != ChatSearchTab::PornMessages
+		&& !state.inChat
 		&& _searchHashOrCashtag == HashOrCashtag::None) {
 		const auto archive = _openedFolder
 			&& ((folder == _openedFolder)
@@ -5096,6 +5149,7 @@ void Widget::cancelSearchRequest() {
 
 PeerData *Widget::searchInPeer() const {
 	return (_searchState.tab == ChatSearchTab::MyMessages
+		|| _searchState.tab == ChatSearchTab::PornMessages
 		|| _searchState.tab == ChatSearchTab::PublicPosts
 		|| _searchState.tab == ChatSearchTab::Archive
 		|| _searchState.tab == ChatSearchTab::ThisCommunity)
@@ -5212,6 +5266,7 @@ bool Widget::cancelSearch(CancelSearchOptions options) {
 	}
 	if ((updatedState.tab == ChatSearchTab::Archive
 		|| updatedState.tab == ChatSearchTab::ThisCommunity
+		|| updatedState.tab == ChatSearchTab::PornMessages
 		|| updatedState.tab == ChatSearchTab::PublicPosts)
 		&& (forceFullCancel || !clearingQuery)) {
 		updatedState.tab = ChatSearchTab::MyMessages;
