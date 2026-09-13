@@ -237,10 +237,10 @@ void TestFragmentSeeks() {
 		const auto seek = index->seek(target, read);
 		Check(bool(seek), "on-demand seek locates the requested fragment");
 		if (target < 2000) {
-			Check(seek->empty(), "the first fragment needs no prefix patch");
+			Check(seek->patches.empty(), "the first fragment needs no prefix patch");
 		} else {
 			auto header = std::array<char, 16>();
-			for (const auto &patch : *seek) {
+			for (const auto &patch : seek->patches) {
 				patch.apply(fixture.offsets.front(), header);
 			}
 			const auto atom = details::ParseAtom(
@@ -249,8 +249,10 @@ void TestFragmentSeeks() {
 			Check(atom && atom->is("free"), "the prefix becomes a skippable box");
 			Check(atom->size + fixture.offsets.front() == fixture.offsets[target / 2000],
 				"the prefix ends at the preceding independent fragment");
-			Check(seek->size() == 2, "only the 16-byte prefix header changes");
+			Check(seek->patches.size() == 2, "only the 16-byte prefix header changes");
 		}
+		Check(seek->start == (target / 2000) * 2.,
+			"the view reports the earliest retained fragment time");
 		Check(bytesRead - before <= fragment_details::kReadBudget, "each seek has a bounded probe budget");
 	}
 	Check(!index->seek(-1, read), "negative timestamps are rejected");
@@ -283,7 +285,7 @@ void TestFragmentProbeWindows() {
 		Check(bytesRead - before <= fragment_details::kReadBudget,
 			"sequential probe recovery respects the per-seek read budget");
 		auto header = std::array<char, 16>();
-		for (const auto &patch : *patches) {
+		for (const auto &patch : patches->patches) {
 			patch.apply(fixture.offsets.front(), header);
 		}
 		const auto atom = details::ParseAtom(
@@ -326,9 +328,11 @@ void TestFragmentPresentationAndEmptyTracks() {
 	auto index = FragmentIndex::Create(fixture.bytes.size(), 64000, read);
 	Check(bool(index), "composition offsets are supported");
 	const auto before = index->seek(2030, read);
-	Check(before && before->empty(), "a seek before the next keyframe presentation keeps the prior fragment");
+	Check(before && before->patches.empty(), "a seek before the next keyframe presentation keeps the prior fragment");
 	const auto after = index->seek(2090, read);
-	Check(after && after->size() == 2, "a seek after the next keyframe presentation skips the prefix");
+	Check(after && after->patches.size() == 2, "a seek after the next keyframe presentation skips the prefix");
+	Check(after && after->start == 2.,
+		"the view start includes audio before the video composition offset");
 	auto empty = Atom("mfhd", Integers({ 0, 1 }));
 	auto traf = Atom("tfhd", Integers({ 0, 2 }));
 	Append(traf, Atom("tfdt", Integers({ 0, 0 })));
@@ -344,7 +348,7 @@ void TestFragmentPresentationAndEmptyTracks() {
 	Check(index && index->seek(59000, read), "empty leading track fragments do not disable on-demand seeks");
 	index = FragmentIndex::Create(fixture.bytes.size(), 70000, read);
 	const auto tail = index ? index->seek(69000, read) : std::nullopt;
-	Check(tail && tail->size() == 2, "overstated duration still locates the final physical fragment");
+	Check(tail && tail->patches.size() == 2, "overstated duration still locates the final physical fragment");
 	index = FragmentIndex::Create(
 		fixture.bytes.size(),
 		std::numeric_limits<std::int64_t>::max(),
@@ -411,10 +415,11 @@ void TestTrackFragmentValidation() {
 	const auto seek = index ? index->seek(positionMs, read) : std::nullopt;
 	std::cout << "{\"on_demand\":" << (index ? "true" : "false")
 		<< ",\"ready\":" << (seek ? "true" : "false")
+		<< ",\"start\":" << (seek ? seek->start : -1.)
 		<< ",\"patches\":[";
 	if (seek) {
-		for (auto i = std::size_t(0); i != seek->size(); ++i) {
-			const auto &patch = (*seek)[i];
+		for (auto i = std::size_t(0); i != seek->patches.size(); ++i) {
+			const auto &patch = seek->patches[i];
 			std::cout << (i ? "," : "") << "{\"offset\":" << patch.offset << ",\"bytes\":[";
 			for (auto j = 0; j != patch.size; ++j) {
 				std::cout << (j ? "," : "") << int(static_cast<unsigned char>(patch.bytes[j]));
