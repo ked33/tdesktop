@@ -125,6 +125,7 @@ private:
 	void handleLog(const QJsonObject &message);
 	void beginLoggedSeek(LoggedSeek seek);
 	void clearLoggedSeek();
+	void diagnostic(const char *event, QJsonObject details = {}) const;
 	void request(QJsonArray command, int id = 0);
 	void queryPosition();
 	void checkCompletedSeek();
@@ -213,6 +214,7 @@ IndexReload::IndexReload(
 	connect(&_timer, &QTimer::timeout, this, [=] {
 		poll();
 	});
+	diagnostic("created", { { u"expected_duration"_q, _expectedDuration } });
 	_timer.start(100);
 }
 
@@ -222,7 +224,8 @@ void IndexReload::poll() {
 		&& !_logsRequested
 		&& _socket.state() == QLocalSocket::ConnectedState) {
 		_logsRequested = true;
-		request({ u"request_log_messages"_q, u"debug"_q });
+		diagnostic("log-subscription-requested");
+		request({ u"request_log_messages"_q, u"debug"_q }, 10);
 	}
 	const auto unknownDuration = _played
 		&& (_expectedDuration <= 0. || _duration + 1. < _expectedDuration);
@@ -244,8 +247,10 @@ void IndexReload::poll() {
 		&& canReload(_path)) {
 		if (!_revision) {
 			_revision = _control.request(std::int64_t(_target * 1000));
+			diagnostic("index-requested");
 		}
 		if (_revision && _control.ready(_revision)) {
+			diagnostic("index-ready");
 			_reloading = true;
 			_onDemandReload = true;
 			_reloadRevision = _revision;
@@ -271,6 +276,7 @@ void IndexReload::poll() {
 }
 
 void IndexReload::connected() {
+	diagnostic("connected");
 	const auto properties = {
 		u"path"_q,
 		u"pause"_q,
@@ -310,6 +316,7 @@ void IndexReload::queryPosition() {
 		_seekPaused = _paused;
 	}
 	_positionQuery = ++_querySequence;
+	diagnostic("position-query");
 	request({ u"get_property"_q, u"time-pos"_q }, _positionQuery);
 }
 
@@ -333,12 +340,18 @@ void IndexReload::checkCompletedSeek() {
 }
 
 void IndexReload::seekTo(double position, bool fromLog) {
+	const auto details = QJsonObject{
+		{ u"value"_q, position },
+		{ u"from_log"_q, fromLog },
+	};
 	if (!std::isfinite(position) || position < 0.
 		|| position >= double(std::numeric_limits<std::int64_t>::max() / 1000)
 		|| (!_played && position <= 0.)) {
+		diagnostic("target-invalid", details);
 		return;
 	}
 	if (_queryDuringReload && std::abs(position - _position) < 0.1) {
+		diagnostic("target-matches-reload", details);
 		return;
 	}
 	if (fromLog) {
@@ -350,16 +363,51 @@ void IndexReload::seekTo(double position, bool fromLog) {
 			_loggedSeek.observed = true;
 		}
 		if (_loggedTarget >= 0.) {
+			diagnostic("target-protected", details);
 			return;
 		}
 	}
 	if (_target >= 0. && std::abs(position - _target) < 0.001) {
+		diagnostic("target-unchanged", details);
 		return;
 	}
 	_target = position;
 	_revision = 0;
 	_seekStarted = std::chrono::steady_clock::now();
 	++_seekSerial;
+	diagnostic("target-accepted", details);
+}
+
+void IndexReload::diagnostic(const char *event, QJsonObject details) const {
+	if (!_control.diagnostic) {
+		return;
+	}
+	details.insert(u"event"_q, QString::fromLatin1(event));
+	details.insert(u"controller"_q, _endpoint.right(36));
+	details.insert(u"target"_q, _target);
+	details.insert(u"logged_target"_q, _loggedTarget);
+	details.insert(u"fallback_position"_q, _fallbackPosition);
+	details.insert(u"candidate"_q, _loggedSeek.target);
+	details.insert(u"candidate_valid"_q, _loggedSeek.valid);
+	details.insert(u"candidate_observed"_q, _loggedSeek.observed);
+	details.insert(u"serial"_q, double(_seekSerial));
+	details.insert(u"reload_serial"_q, double(_reloadSerial));
+	details.insert(u"revision"_q, double(_revision));
+	details.insert(u"reload_revision"_q, double(_reloadRevision));
+	details.insert(u"index_state"_q, int(_control.state()));
+	details.insert(u"loaded"_q, _loaded);
+	details.insert(u"idle_known"_q, _idleKnown);
+	details.insert(u"can_reload"_q, canReload(_path));
+	details.insert(u"seeking"_q, _seeking);
+	details.insert(u"reloading"_q, _reloading);
+	details.insert(u"paused"_q, _paused);
+	details.insert(u"seek_paused"_q, _seekPaused);
+	details.insert(u"position_query"_q, _positionQuery);
+	details.insert(u"completion_query"_q, _completionQuery);
+	details.insert(u"query_restarted"_q, _queryRestarted);
+	details.insert(u"awaiting_restart"_q, _awaitingLoggedRestart);
+	_control.diagnostic(QString::fromUtf8(
+		QJsonDocument(details).toJson(QJsonDocument::Compact)));
 }
 
 bool IndexReload::owns(const QString &path) const {
@@ -425,9 +473,11 @@ void IndexReload::handle(const QJsonObject &message) {
 			updatePause(data.toBool());
 		} else if (name == u"duration"_q) {
 			_duration = data.toDouble(-1.);
+			diagnostic("duration", { { u"value"_q, _duration } });
 		} else if (name == u"seeking"_q) {
 			_seeking = data.toBool();
 			_played = _played || (_loaded && !_seeking);
+			diagnostic("seeking");
 		} else if (name == u"time-pos"_q
 			&& _positionOutstanding
 			&& !_queryRestarted
@@ -445,12 +495,15 @@ void IndexReload::handle(const QJsonObject &message) {
 			_played = _played || (_loaded && !_seeking && _duration > 0.);
 		}
 	} else if (event == u"start-file"_q) {
+		diagnostic("start-file");
 		clearLoggedSeek();
 	} else if (event == u"file-loaded"_q) {
 		_loaded = true;
 		_ended = false;
+		diagnostic("file-loaded");
 	} else if (event == u"end-file"_q && _idleGuarded) {
 		const auto reason = message.value(u"reason"_q).toString();
+		diagnostic("end-file", { { u"reason"_q, reason } });
 		if (_reloading) {
 			if (reason == u"eof"_q || reason == u"error"_q) {
 				stop(true);
@@ -463,8 +516,10 @@ void IndexReload::handle(const QJsonObject &message) {
 			stop(true);
 		}
 	} else if (event == u"seek"_q) {
+		diagnostic("seek-event");
 		queryPosition();
 	} else if (event == u"playback-restart"_q) {
+		diagnostic("playback-restart");
 		_played = true;
 		_queryRestarted = true;
 		if (_onDemandReload && _reloading) {
@@ -474,6 +529,10 @@ void IndexReload::handle(const QJsonObject &message) {
 	} else if (message.value(u"request_id"_q).toInt() == _positionQuery) {
 		_positionOutstanding = false;
 		const auto data = message.value(u"data"_q);
+		diagnostic("position-reply", {
+			{ u"value"_q, data },
+			{ u"error"_q, message.value(u"error"_q) },
+		});
 		if (data.isDouble()) {
 			seekTo(data.toDouble());
 			if (_queryRestarted) {
@@ -482,6 +541,10 @@ void IndexReload::handle(const QJsonObject &message) {
 		}
 	} else if (message.value(u"request_id"_q).toInt() == _completionQuery) {
 		const auto data = message.value(u"data"_q);
+		diagnostic("completion-reply", {
+			{ u"value"_q, data },
+			{ u"error"_q, message.value(u"error"_q) },
+		});
 		if (_completionSerial == _seekSerial
 			&& data.isDouble()
 			&& !_seeking
@@ -521,9 +584,11 @@ void IndexReload::handle(const QJsonObject &message) {
 		reload();
 	} else if (message.value(u"request_id"_q).toInt() == 3) {
 		const auto failed = message.value(u"error"_q).toString() != u"success"_q;
+		diagnostic("reload-reply", { { u"error"_q, message.value(u"error"_q) } });
 		if (!_onDemandReload || failed) {
 			stop(failed);
 		} else if (_reloadSerial == _seekSerial) {
+			diagnostic("reload-target-cleared");
 			_target = -1.;
 			_revision = 0;
 		}
@@ -546,10 +611,15 @@ void IndexReload::handle(const QJsonObject &message) {
 		} else {
 			reload();
 		}
+	} else if (message.value(u"request_id"_q).toInt() == 10) {
+		diagnostic("log-subscription-reply", {
+			{ u"error"_q, message.value(u"error"_q) },
+		});
 	}
 }
 
 void IndexReload::finishSeek() {
+	diagnostic("seek-completed");
 	_target = -1.;
 	_revision = 0;
 	_positionOutstanding = false;
@@ -560,6 +630,7 @@ void IndexReload::finishSeek() {
 }
 
 void IndexReload::clearLoggedSeek() {
+	diagnostic("logged-target-cleared");
 	_loggedSeek = {};
 	_loggedTarget = -1.;
 	_otherLoggedSeek = false;
@@ -567,6 +638,10 @@ void IndexReload::clearLoggedSeek() {
 }
 
 void IndexReload::beginLoggedSeek(LoggedSeek seek) {
+	diagnostic("seek-command", {
+		{ u"command_target"_q, seek.target },
+		{ u"command_valid"_q, seek.valid },
+	});
 	clearLoggedSeek();
 	++_seekSerial;
 	_revision = 0;
@@ -597,17 +672,23 @@ void IndexReload::handleLog(const QJsonObject &message) {
 			&& !text.contains(u"mark"_q))) {
 		_otherLoggedSeek = true;
 	} else if (IsPositionPropertyLog(text)) {
+		diagnostic("position-property-command");
 		beginLoggedSeek({});
 	} else if (text.startsWith(u"Run command: loadfile,"_q)
 		|| text.startsWith(u"Run command: stop,"_q)
 		|| text.startsWith(u"Run command: quit,"_q)
 		|| text.startsWith(u"Starting playback..."_q)
 		|| text.startsWith(u"finished playback,"_q)) {
+		diagnostic("playback-command-cleared");
 		clearLoggedSeek();
 	} else if ((_loggedSeek.valid || _otherLoggedSeek)
 		&& text.startsWith(u"hr-seek, skipping to "_q)) {
 		const auto position = ParseLoggedPosition(text);
 		const auto duration = (_duration > 0.) ? _duration : _expectedDuration;
+		diagnostic("execution-log", {
+			{ u"value"_q, position ? QJsonValue(*position) : QJsonValue() },
+			{ u"duration"_q, duration },
+		});
 		if (position && *position >= 0. && *position <= duration) {
 			if (_otherLoggedSeek) {
 				beginLoggedSeek({});
@@ -623,6 +704,9 @@ void IndexReload::handleLog(const QJsonObject &message) {
 		}
 	} else if (text.startsWith(u"playback restart complete @ "_q)) {
 		const auto position = ParseLoggedRestart(text);
+		diagnostic("restart-log", {
+			{ u"value"_q, position ? QJsonValue(*position) : QJsonValue() },
+		});
 		if (!position) {
 			return;
 		}
@@ -647,6 +731,7 @@ void IndexReload::handleLog(const QJsonObject &message) {
 }
 
 void IndexReload::reload() {
+	diagnostic("reload-requested", { { u"start"_q, _position } });
 	if (_onDemandReload && !_idleGuarded) {
 		_idleGuarded = true;
 		request({ u"set_property"_q, u"idle"_q, u"yes"_q }, 9);
@@ -678,6 +763,7 @@ void IndexReload::stop(bool abandoned) {
 	if (_stopped) {
 		return;
 	}
+	diagnostic("stopped", { { u"abandoned"_q, abandoned } });
 	_stopped = true;
 	_timer.stop();
 	if (abandoned) {
