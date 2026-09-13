@@ -34,6 +34,19 @@ while IFS='' read -r line || [[ -n "$line" ]]; do
   eval $1="$2"
 done < "$FullScriptPath/version"
 
+if [ "$TDESKTOP_UPDATE_V2" == "1" ]; then
+  if [ "$AppVersion" -lt 7002000 ]; then
+    Error "The v2 update format requires version 7.2 or newer."
+  fi
+  if [ "$AlphaVersion" != "0" ]; then
+    Error "The v2 update format has no alpha channel."
+  fi
+  case "$AppVersionStr" in
+    *.*.*) ;;
+    *) Error "AppVersionStr '$AppVersionStr' must have three components for the v2 names." ;;
+  esac
+fi
+
 if [ "$AlphaVersion" != "0" ]; then
   AppVersion="$AlphaVersion"
   AppVersionStrFull="${AppVersionStr}_${AlphaVersion}"
@@ -99,10 +112,10 @@ MacUpdateFile="tmacupd$AppVersion"
 ARMacUpdateFile="tarmacupd$AppVersion"
 MacSetupFile="tsetup.$AppVersionStrFull.dmg"
 WinUpdateFile="tupdate$AppVersion"
-WinSetupFile="tsetup.$AppVersionStrFull.exe"
+WinSetupFile="64Gram-setup.$AppVersionStrFull.exe"
 WinPortableFile="tportable.$AppVersionStrFull.zip"
 Win64UpdateFile="tx64upd$AppVersion"
-Win64SetupFile="tsetup-x64.$AppVersionStrFull.exe"
+Win64SetupFile="64Gram-setup-x64.$AppVersionStrFull.exe"
 Win64PortableFile="tportable-x64.$AppVersionStrFull.zip"
 WinArmUpdateFile="tarm64upd$AppVersion"
 WinArmSetupFile="tsetup-arm64.$AppVersionStrFull.exe"
@@ -114,31 +127,25 @@ LinuxSetupFile="tsetup.$AppVersionStrFull.tar.xz"
 # build.bat (updates, installers and portables alike) into the v2
 # platform folders.
 if [ "$TDESKTOP_UPDATE_V2" == "1" ]; then
-  if [ "$AlphaVersion" != "0" ]; then
-    Error "The v2 update format has no alpha channel."
-  fi
-  case "$AppVersionStr" in
-    *.*.*) ;;
-    *) Error "AppVersionStr '$AppVersionStr' must have three components for the v2 names." ;;
-  esac
-  V2Suffix=""
+  ArtifactSuffix=""
   if [ "$BetaChannel" != "0" ]; then
-    V2Suffix="-beta"
+    ArtifactSuffix="-beta"
   fi
-  MacUpdateFile="td-update-mac-x64-$AppVersion$V2Suffix"
-  ARMacUpdateFile="td-update-mac-arm-$AppVersion$V2Suffix"
-  MacSetupFile="td-setup-mac-$AppVersionStr$V2Suffix.dmg"
-  WinUpdateFile="td-update-win-x86-$AppVersion$V2Suffix"
-  WinSetupFile="td-setup-win-x86-$AppVersionStr$V2Suffix.exe"
-  WinPortableFile="td-portable-win-x86-$AppVersionStr$V2Suffix.zip"
-  Win64UpdateFile="td-update-win-x64-$AppVersion$V2Suffix"
-  Win64SetupFile="td-setup-win-x64-$AppVersionStr$V2Suffix.exe"
-  Win64PortableFile="td-portable-win-x64-$AppVersionStr$V2Suffix.zip"
-  WinArmUpdateFile="td-update-win-arm-$AppVersion$V2Suffix"
-  WinArmSetupFile="td-setup-win-arm-$AppVersionStr$V2Suffix.exe"
-  WinArmPortableFile="td-portable-win-arm-$AppVersionStr$V2Suffix.zip"
-  LinuxUpdateFile="td-update-linux-x64-$AppVersion$V2Suffix"
-  LinuxSetupFile="td-setup-linux-x64-$AppVersionStr$V2Suffix.tar.xz"
+  MacUpdateFile="td-update-mac-x64-$AppVersion$ArtifactSuffix"
+  ARMacUpdateFile="td-update-mac-arm-$AppVersion$ArtifactSuffix"
+  MacSetupFile="td-setup-mac-$AppVersionStr$ArtifactSuffix.dmg"
+  WinUpdateFile="td-update-win-x86-$AppVersion$ArtifactSuffix"
+  WinSetupFile="td-setup-win-x86-$AppVersionStr$ArtifactSuffix.exe"
+  WinPortableFile="td-portable-win-x86-$AppVersionStr$ArtifactSuffix.zip"
+  Win64UpdateFile="td-update-win-x64-$AppVersion$ArtifactSuffix"
+  Win64SetupFile="td-setup-win-x64-$AppVersionStr$ArtifactSuffix.exe"
+  Win64PortableFile="td-portable-win-x64-$AppVersionStr$ArtifactSuffix.zip"
+  WinArmUpdateFile="td-update-win-arm-$AppVersion$ArtifactSuffix"
+  WinArmSetupFile="td-setup-win-arm-$AppVersionStr$ArtifactSuffix.exe"
+  WinArmPortableFile="td-portable-win-arm-$AppVersionStr$ArtifactSuffix.zip"
+  LinuxUpdateFile="td-update-linux-x64-$AppVersion$ArtifactSuffix"
+  LinuxSetupFile="td-setup-linux-x64-$AppVersionStr$ArtifactSuffix.tar.xz"
+
   MacRemoteFolder="mac"
   WinRemoteFolder="win-x86"
   Win64RemoteFolder="win-x64"

@@ -126,6 +126,7 @@ def prepareSources():
 pp = pprint.PrettyPrinter(indent=2)
 url = 'https://api.github.com/'
 
+update_v2 = (os.environ.get('TDESKTOP_UPDATE_V2') == '1')
 version_parts = version.split('.')
 
 stable = 1
@@ -136,6 +137,9 @@ if len(version_parts) < 2:
   sys.exit(1)
 if len(version_parts) > 4:
   print('Error: bad version passed ' + version)
+  sys.exit(1)
+if update_v2 and (int(version_parts[0]), int(version_parts[1])) < (7, 2):
+  print('Error: the v2 update format requires version 7.2 or newer.')
   sys.exit(1)
 version_major = version_parts[0] + '.' + version_parts[1]
 if len(version_parts) == 2:
@@ -197,7 +201,6 @@ files.append({
 # them to the arch-explicit platform folders, see the same switch in
 # build.sh, build.bat and deploy.sh. The release assets are uploaded from
 # those exact files, so they follow the same names and folders.
-update_v2 = (os.environ.get('TDESKTOP_UPDATE_V2') == '1')
 v2_suffix = '-beta' if beta == 1 else ''
 win_x86_folder = 'win-x86' if update_v2 else 'tsetup'
 win_x64_folder = 'win-x64' if update_v2 else 'tx64'
@@ -216,7 +219,7 @@ def appendFile(v1_name, v2_name, backup_folder, mime, label):
   })
 
 appendFile(
-  'tsetup.' + version_full + '.exe',
+  '64Gram-setup.' + version_full + '.exe',
   'td-setup-win-x86-' + version + v2_suffix + '.exe',
   win_x86_folder,
   'application/octet-stream',
@@ -228,7 +231,7 @@ appendFile(
   'application/zip',
   'Windows 32 bit: Portable')
 appendFile(
-  'tsetup-x64.' + version_full + '.exe',
+  '64Gram-setup-x64.' + version_full + '.exe',
   'td-setup-win-x64-' + version + v2_suffix + '.exe',
   win_x64_folder,
   'application/octet-stream',

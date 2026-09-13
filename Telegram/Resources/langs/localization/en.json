@@ -143,8 +143,8 @@
     "lng_settings_experimental_alternative_scroll_processing_desc": "Revert the profile cover scroll to the previous filler-based implementation.",
     "lng_settings_experimental_mac_cmd_reply_immediately": "Mac: instant reply on Cmd + Up/Down",
     "lng_settings_experimental_mac_cmd_reply_immediately_desc": "Reply to the previous or next message right away on Cmd + Up/Down, instead of first moving the text cursor to the start or end of the input field. Hold Shift to move the cursor as before.",
-    "lng_settings_experimental_qscroller": "Use QScroller for touchpad scrolling",
-    "lng_settings_experimental_qscroller_desc": "Provide kinetic scrolling and overscroll.",
+    "lng_settings_experimental_kinetic_scroller": "Custom kinetic scrolling for touchpads",
+    "lng_settings_experimental_kinetic_scroller_desc": "Continue touchpad scrolling with smooth inertia after you lift your fingers.",
     "lng_settings_experimental_ffmpeg_multithread": "Multi-thread video decoding",
     "lng_settings_experimental_ffmpeg_multithread_desc": "Allow FFmpeg to use a thread pool for decoding, typically one thread per CPU thread.",
 

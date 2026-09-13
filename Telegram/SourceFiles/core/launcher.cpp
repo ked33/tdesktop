@@ -14,15 +14,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/platform/base_platform_file_utilities.h"
 #include "ui/main_queue_processor.h"
 #include "core/crash_reports.h"
+#include "core/experimental_options.h"
 #include "core/update_checker.h"
 #include "core/sandbox.h"
 #include "core/version.h"
 #include "base/concurrent_timer.h"
-#include "base/options.h"
 
 #include <QtCore/QLoggingCategory>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QLibraryInfo>
+
+extern "C" {
+#include <libavutil/log.h>
+} // extern "C"
 
 namespace Core {
 namespace {
@@ -391,10 +395,11 @@ int Launcher::exec() {
 
 	// Must be started before Platform is started.
 	Logs::start();
-	base::options::init(cWorkingDir() + "tdata/experimental_options.json");
+	InitExperimentalOptions(cWorkingDir() + u"tdata/experimental_options.json"_q);
 
 	// Must be called after options are inited.
 	initHighDpi();
+	initFFmpegMessageLogging();
 
 	if (Logs::DebugEnabled()) {
 		const auto openalLogPath = QDir::toNativeSeparators(
@@ -517,11 +522,45 @@ void Launcher::initQtMessageLogging() {
 		if (OriginalMessageHandler) {
 			OriginalMessageHandler(type, context, msg);
 		}
-		if (Logs::DebugEnabled() || !Logs::started()) {
+		// Warnings carry RHI and DirectComposition diagnostics of user reports.
+		if (Logs::DebugEnabled()
+			|| !Logs::started()
+			|| type == QtWarningMsg
+			|| type == QtCriticalMsg) {
 			if (!Logs::WritingEntry()) {
 				// Sometimes Qt logs something inside our own logging.
 				LOG((msg));
 			}
+		}
+	});
+}
+
+void Launcher::initFFmpegMessageLogging() {
+	av_log_set_level(AV_LOG_WARNING);
+	av_log_set_callback([](void *ptr, int level, const char *fmt, va_list vl) {
+		va_list copy;
+		va_copy(copy, vl);
+		av_log_default_callback(ptr, level, fmt, copy);
+		va_end(copy);
+
+		// The callback is called for all the levels, we filter ourselves,
+		// the color tint is in the high byte of the level.
+		if (!Logs::DebugEnabled() || (level & 0xff) > av_log_get_level()) {
+			return;
+		}
+
+		// One message can be logged in several calls and it can be cut
+		// together with the trailing newline, so check the full length.
+		thread_local auto prefix = 1;
+		thread_local auto accumulated = QByteArray();
+		char line[1024] = { 0 };
+		const auto length = av_log_format_line2(
+			ptr, level, fmt, vl, line, sizeof(line), &prefix);
+		accumulated.append(line);
+		if (accumulated.endsWith('\n') || length >= int(sizeof(line))) {
+			const auto msg = accumulated.trimmed();
+			accumulated.clear();
+			LOG((QString::fromUtf8(msg)));
 		}
 	});
 }
