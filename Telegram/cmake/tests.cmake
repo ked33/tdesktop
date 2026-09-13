@@ -86,6 +86,28 @@ set_target_properties(test_mp4_index PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE
 
 add_dependencies(Telegram test_mp4_index)
 
+add_executable(test_mpv_index_reload)
+init_target(test_mpv_index_reload "(tests)")
+
+target_include_directories(test_mpv_index_reload PRIVATE ${src_loc})
+
+nice_target_sources(test_mpv_index_reload ${src_loc}
+PRIVATE
+    media/streaming/media_streaming_mpv_index.cpp
+    media/streaming/media_streaming_mpv_index.h
+    test/test_mpv_index_reload.cpp
+)
+
+target_link_libraries(test_mpv_index_reload
+PRIVATE
+    desktop-app::lib_base
+    desktop-app::external_qt
+)
+
+set_target_properties(test_mpv_index_reload PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
+add_dependencies(Telegram test_mpv_index_reload)
+
 add_executable(test_streaming_read_stall)
 init_target(test_streaming_read_stall "(tests)")
 
