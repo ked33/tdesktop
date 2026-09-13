@@ -436,6 +436,7 @@ InnerWidget::InnerWidget(
 				sponsored->button = {};
 			}
 		}
+		repaintPornSearchHeader();
 	}, lifetime());
 
 	session().downloaderTaskFinished(
@@ -689,6 +690,11 @@ InnerWidget::InnerWidget(
 		};
 		update(previous);
 		update(next);
+		refreshSearchResultSelection(next);
+	}, lifetime());
+
+	_chosenRow.events() | rpl::on_next([=](const ChosenRow &row) {
+		refreshSearchResultSelection({ row.key, row.message.fullId });
 	}, lifetime());
 
 	_controller->activeChatsFilter(
@@ -1731,59 +1737,12 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 		p.fillRect(0, 0, fullWidth, pornSearchStatusHeight(), currentBg());
 		p.translate(0, pornSearchStatusHeight());
 		if (!_searchResults.empty() || _pornSearchEnabled) {
-			const auto text = _pornSearchEnabled
-				? pornSearchSummary()
-				: showUnreadInSearchResults
-				? u"Search results"_q
-				: (_searchState.tab == ChatSearchTab::PublicPosts && !_searchIn)
-				? (_searchState.query.isEmpty()
-					? tr::lng_posts_subtitle_empty(tr::now)
-					: tr::lng_posts_subtitle(tr::now))
-				: tr::lng_search_found_results(
-					tr::now,
-					lt_count,
-					_searchedMigratedCount + _searchedCount);
+			if (!_pornSearchHeader) {
+				paintSearchHeader(p);
+			}
 			const auto searchLowerText = (_searchHashOrCashtag == HashOrCashtag::None)
 				? _searchState.query.toLower()
 				: QString();
-			p.fillRect(0, 0, fullWidth, st::searchedBarHeight, st::searchedBarBg);
-			p.setFont(st::searchedBarFont);
-			p.setPen(st::searchedBarFg);
-			auto textWidth = fullWidth - 2 * st::searchedBarPosition.x();
-			const auto filterOver = _selectedChatTypeFilter
-				|| _pressedChatTypeFilter;
-			const auto filterFont = filterOver
-				? st::searchedBarFont->underline()
-				: st::searchedBarFont;
-			if (hasChatTypeFilter()) {
-				const auto text = (_searchState.filter == ChatTypeFilter::All
-					&& !_searchState.fromArchive)
-					? tr::lng_search_filter_non_archived(tr::now)
-					: ChatTypeFilterLabel(_searchState.filter);
-				if (!_chatTypeFilterWidth) {
-					_chatTypeFilterWidth = filterFont->width(text);
-				}
-				textWidth -= _chatTypeFilterWidth + st::searchedBarPosition.x();
-				p.setFont(filterFont);
-				p.drawTextLeft(
-					(width()
-						- st::searchedBarPosition.x()
-						- _chatTypeFilterWidth),
-					st::searchedBarPosition.y(),
-					width(),
-					text);
-			}
-			p.setFont(st::searchedBarFont);
-			p.drawTextLeft(
-				st::searchedBarPosition.x(),
-				st::searchedBarPosition.y(),
-				width(),
-				_pornSearchEnabled
-					? st::searchedBarFont->elided(
-						text,
-						std::max(textWidth, 0),
-						Qt::ElideMiddle)
-					: text);
 			p.translate(0, st::searchedBarHeight);
 
 			auto skip = searchedOffset();
@@ -2515,8 +2474,13 @@ void InnerWidget::selectByMouse(QPoint globalPosition) {
 			}
 		}
 		if (!_searchResults.empty()) {
-			auto skip = searchedOffset();
-			auto searchedSelected = (mouseY >= skip) ? ((mouseY - skip) / _st->height) : -1;
+			const auto skip = searchedOffset();
+			const auto from = searchHeaderTop();
+			const auto inHeader = (mouseY >= from)
+				&& (mouseY < from + st::searchedBarHeight);
+			auto searchedSelected = (mouseY >= skip && !inHeader)
+				? ((mouseY - skip) / _st->height)
+				: -1;
 			if (searchedSelected < 0 || searchedSelected >= _searchResults.size()) {
 				searchedSelected = -1;
 			}
@@ -2526,8 +2490,7 @@ void InnerWidget::selectByMouse(QPoint globalPosition) {
 				updateSelectedRow();
 			}
 			auto selectedChatTypeFilter = false;
-			const auto from = skip - st::searchedBarHeight;
-			if (hasChatTypeFilter() && mouseY <= skip && mouseY >= from) {
+			if (hasChatTypeFilter() && inHeader) {
 				const auto left = width()
 					- _chatTypeFilterWidth
 					- 2 * st::searchedBarPosition.x();
@@ -2538,6 +2501,7 @@ void InnerWidget::selectByMouse(QPoint globalPosition) {
 			if (_selectedChatTypeFilter != selectedChatTypeFilter) {
 				update(0, from, width(), st::searchedBarHeight);
 				_selectedChatTypeFilter = selectedChatTypeFilter;
+				repaintPornSearchHeader();
 			}
 		}
 		if (!inTags && wasSelected != isSelected()) {
@@ -2591,6 +2555,7 @@ void InnerWidget::mousePressEvent(QMouseEvent *e) {
 	setCommunityPressed(_communitySelected);
 	_pressedMorePosts = _selectedMorePosts;
 	_pressedChatTypeFilter = _selectedChatTypeFilter;
+	repaintPornSearchHeader();
 
 	const auto alt = (e->modifiers() & Qt::AltModifier);
 	if (alt && showChatPreview()) {
@@ -3129,6 +3094,7 @@ void InnerWidget::mouseDoubleClickEvent(QMouseEvent *e) {
 		return RpWidget::mouseDoubleClickEvent(e);
 	}
 	const auto itemNotNull = not_null<HistoryItem*>(item);
+	setSearchResultSelection(_searchedSelected);
 
 	if (toggleSearchResultSelection(itemNotNull)) {
 		clearPendingSearchResultClick();
@@ -3184,6 +3150,7 @@ void InnerWidget::mousePressReleased(
 	_pressedMorePosts = false;
 	const auto pressedChatTypeFilter = _pressedChatTypeFilter;
 	_pressedChatTypeFilter = false;
+	repaintPornSearchHeader();
 	if (wasDragging) {
 		selectByMouse(globalPosition);
 	}
@@ -3415,6 +3382,7 @@ void InnerWidget::resizeEvent(QResizeEvent *e) {
 	resizeEmpty();
 	moveSearchIn();
 	updateCommunityRequestableGeometry();
+	refreshPornSearchHeader();
 }
 
 void InnerWidget::moveSearchIn() {
@@ -4030,6 +3998,7 @@ void InnerWidget::deselectAllRows() {
 		= _peerSearchSelected
 		= _hashtagSelected
 		= -1;
+	repaintPornSearchHeader();
 	setCursor(style::cur_default);
 }
 
@@ -4568,8 +4537,11 @@ void InnerWidget::clearSearchResults(bool alsoPeerSearchResults) {
 	_nativeSearchWaiting = false;
 	_pornSearchResult = {};
 	_pornSearchStatus.destroy();
+	_pornSearchHeader.destroy();
 	_pornSearchTimer.cancel();
 	_pornSearchElapsed = {};
+	_searchResultSelection = {};
+	_searchResultSelectionIndex = -1;
 	_searchedCount = _searchedMigratedCount = 0;
 }
 
@@ -4794,6 +4766,7 @@ void InnerWidget::visibleTopBottomUpdated(
 	}
 	_visibleTop = visibleTop;
 	_visibleBottom = visibleBottom;
+	refreshPornSearchHeader();
 	preloadRowsData();
 	const auto loadTill = _visibleTop
 		+ PreloadHeightsCount * (_visibleBottom - _visibleTop);
@@ -5019,6 +4992,36 @@ void InnerWidget::refreshPornSearchCounts() {
 			_nativeSearchResults,
 			[](const auto &row) { return row->item()->fullId(); }))
 		: 0;
+	refreshSearchResultSelection(_searchResultSelection
+		? RowDescriptor(Key(), _searchResultSelection)
+		: _controller->activeChatEntryCurrent());
+}
+
+void InnerWidget::refreshSearchResultSelection(const RowDescriptor &entry) {
+	const auto i = _pornSearchEnabled
+		? ranges::find_if(_searchResults, [&](const auto &row) {
+			return isSearchResultActive(row.get(), entry);
+		})
+		: end(_searchResults);
+	setSearchResultSelection(i == end(_searchResults)
+		? -1
+		: int(i - begin(_searchResults)));
+}
+
+void InnerWidget::setSearchResultSelection(int index) {
+	if (!_pornSearchEnabled
+		|| !base::in_range(index, 0, _searchResults.size())) {
+		index = -1;
+	}
+	const auto id = (index >= 0)
+		? _searchResults[index]->item()->fullId()
+		: FullMsgId();
+	if (_searchResultSelection == id && _searchResultSelectionIndex == index) {
+		return;
+	}
+	_searchResultSelection = id;
+	_searchResultSelectionIndex = index;
+	repaintPornSearchHeader();
 }
 
 QString InnerWidget::pornSearchSummary() const {
@@ -5053,7 +5056,7 @@ QString InnerWidget::pornSearchSummary() const {
 			? tr::lng_search_porn_loaded_all(tr::now, lt_count, count)
 			: tr::lng_search_porn_loaded(tr::now, lt_count, count);
 	}
-	return tr::lng_search_porn_summary(
+	const auto summary = tr::lng_search_porn_summary(
 		tr::now,
 		lt_progress,
 		QString::number(result.searched) + '/'
@@ -5063,6 +5066,9 @@ QString InnerWidget::pornSearchSummary() const {
 		lt_duration,
 		QString::fromStdString(Api::PornSearchPolicy::FormatDuration(
 			_pornSearchElapsed.elapsed(crl::now()) / 1000)));
+	return (_searchResultSelectionIndex >= 0)
+		? summary + u" [%1]"_q.arg(_searchResultSelectionIndex + 1)
+		: summary;
 }
 
 void InnerWidget::refreshPornSearchTimer() {
@@ -5079,14 +5085,93 @@ void InnerWidget::refreshPornSearchTimer() {
 	}
 }
 
-void InnerWidget::repaintPornSearchHeader() {
-	if (_pornSearchEnabled && _state == WidgetState::Filtered) {
-		update(
-			0,
-			searchedOffset() - st::searchedBarHeight,
-			width(),
-			st::searchedBarHeight);
+void InnerWidget::refreshPornSearchHeader() {
+	if (!_pornSearchEnabled || _state != WidgetState::Filtered) {
+		_pornSearchHeader.destroy();
+		return;
 	}
+	if (!_pornSearchHeader) {
+		_pornSearchHeader.create(this);
+		_pornSearchHeader->setAttribute(Qt::WA_OpaquePaintEvent);
+		_pornSearchHeader->setMouseTracking(true);
+		_pornSearchHeader->paintRequest() | rpl::on_next([=] {
+			auto p = Painter(_pornSearchHeader);
+			p.setInactive(_controller->isGifPausedAtLeastFor(
+				Window::GifPauseReason::Any));
+			paintSearchHeader(p);
+		}, _pornSearchHeader->lifetime());
+	}
+	_pornSearchHeader->setGeometry(
+		0,
+		searchHeaderTop(),
+		width(),
+		st::searchedBarHeight);
+	_pornSearchHeader->raise();
+	_pornSearchHeader->show();
+}
+
+void InnerWidget::repaintPornSearchHeader() {
+	if (_pornSearchHeader) {
+		_pornSearchHeader->update();
+	}
+}
+
+int InnerWidget::searchHeaderTop() const {
+	const auto top = searchedOffset() - st::searchedBarHeight;
+	return (_pornSearchEnabled && _state == WidgetState::Filtered)
+		? std::max(top, _visibleTop)
+		: top;
+}
+
+void InnerWidget::paintSearchHeader(Painter &p) {
+	const auto text = _pornSearchEnabled
+		? pornSearchSummary()
+		: uniqueSearchResults()
+		? u"Search results"_q
+		: (_searchState.tab == ChatSearchTab::PublicPosts && !_searchIn)
+		? (_searchState.query.isEmpty()
+			? tr::lng_posts_subtitle_empty(tr::now)
+			: tr::lng_posts_subtitle(tr::now))
+		: tr::lng_search_found_results(
+			tr::now,
+			lt_count,
+			_searchedMigratedCount + _searchedCount);
+	p.fillRect(0, 0, width(), st::searchedBarHeight, st::searchedBarBg);
+	p.setFont(st::searchedBarFont);
+	p.setPen(st::searchedBarFg);
+	auto textWidth = width() - 2 * st::searchedBarPosition.x();
+	const auto filterOver = _selectedChatTypeFilter
+		|| _pressedChatTypeFilter;
+	const auto filterFont = filterOver
+		? st::searchedBarFont->underline()
+		: st::searchedBarFont;
+	if (hasChatTypeFilter()) {
+		const auto text = (_searchState.filter == ChatTypeFilter::All
+			&& !_searchState.fromArchive)
+			? tr::lng_search_filter_non_archived(tr::now)
+			: ChatTypeFilterLabel(_searchState.filter);
+		if (!_chatTypeFilterWidth) {
+			_chatTypeFilterWidth = filterFont->width(text);
+		}
+		textWidth -= _chatTypeFilterWidth + st::searchedBarPosition.x();
+		p.setFont(filterFont);
+		p.drawTextLeft(
+			width() - st::searchedBarPosition.x() - _chatTypeFilterWidth,
+			st::searchedBarPosition.y(),
+			width(),
+			text);
+	}
+	p.setFont(st::searchedBarFont);
+	p.drawTextLeft(
+		st::searchedBarPosition.x(),
+		st::searchedBarPosition.y(),
+		width(),
+		_pornSearchEnabled
+			? st::searchedBarFont->elided(
+				text,
+				std::max(textWidth, 0),
+				Qt::ElideMiddle)
+			: text);
 }
 
 rpl::producer<> InnerWidget::retryPornSearchRequests() const {
@@ -5368,6 +5453,8 @@ void InnerWidget::refresh(bool toTop) {
 		preloadRowsData();
 	}
 	updateCommunityRequestableGeometry();
+	refreshPornSearchHeader();
+	repaintPornSearchHeader();
 	update();
 }
 
@@ -5629,6 +5716,10 @@ bool InnerWidget::hasFilteredResults() const {
 	return !_filterResults.empty() && _hashtagResults.empty();
 }
 
+bool InnerWidget::hasMessageSearchResults() const {
+	return !_searchResults.empty();
+}
+
 auto InnerWidget::searchTagsChanges() const
 -> rpl::producer<std::vector<Data::ReactionId>> {
 	return _searchTags
@@ -5810,6 +5901,7 @@ void InnerWidget::clearFilter() {
 		clearPeerSearchResults();
 		_searchResults.clear();
 		_nativeSearchLoadedCount = 0;
+		setSearchResultSelection(-1);
 		_previewResults.clear();
 		_trackedHistories.clear();
 		_trackedLifetime.destroy();
@@ -5821,6 +5913,7 @@ void InnerWidget::clearFilter() {
 void InnerWidget::setState(WidgetState state) {
 	_state = state;
 	updateCommunityRequestableGeometry();
+	refreshPornSearchHeader();
 }
 
 void InnerWidget::selectSkip(int32 direction) {
@@ -5924,6 +6017,7 @@ void InnerWidget::selectSkip(int32 direction) {
 }
 
 void InnerWidget::scrollToFilteredSelected() {
+	setSearchResultSelection(_searchedSelected);
 	if (base::in_range(_hashtagSelected, 0, _hashtagResults.size())) {
 		const auto from = _hashtagSelected * st::mentionHeight;
 		scrollToItem(from, st::mentionHeight);
@@ -6024,6 +6118,12 @@ void InnerWidget::selectSkipPage(int32 pixels, int32 direction) {
 }
 
 void InnerWidget::scrollToItem(int top, int height) {
+	if (_pornSearchEnabled
+		&& _state == WidgetState::Filtered
+		&& top >= searchedOffset()) {
+		top -= st::searchedBarHeight;
+		height += st::searchedBarHeight;
+	}
 	_mustScrollTo.fire({ top, top + height });
 }
 
