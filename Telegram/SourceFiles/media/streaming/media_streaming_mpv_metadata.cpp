@@ -8,12 +8,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_mpv_index.h"
 
 #include "base/bytes.h"
+#include "media/streaming/media_streaming_debug.h"
+#include "media/streaming/media_streaming_mp4_fragment.h"
 #include "media/streaming/media_streaming_mp4_index.h"
 #include "media/streaming/media_streaming_mpv_http.h"
 #include "media/streaming/media_streaming_reader.h"
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <map>
 #include <mutex>
 #include <thread>
 
@@ -23,7 +27,11 @@ struct PreparedIndex::State {
 	std::atomic<IndexState> status = IndexState::Unknown;
 	crl::semaphore ready;
 	mutable std::mutex mutex;
+	std::condition_variable changed;
 	std::optional<Mp4::IndexCache> cache;
+	std::map<std::uint64_t, std::shared_ptr<const std::vector<Mp4::HeaderPatch>>> patches;
+	std::atomic<std::uint64_t> revision = 0;
+	std::int64_t positionMs = 0;
 };
 
 PreparedIndex::PreparedIndex() : _state(std::make_shared<State>()) {
@@ -46,8 +54,45 @@ bool PreparedIndex::prepare() {
 
 void PreparedIndex::cancel() {
 	_state->status.store(IndexState::Unavailable);
+	{
+		const auto lock = std::lock_guard(_state->mutex);
+		_state->cache.reset();
+		_state->patches.clear();
+	}
+	_state->changed.notify_all();
+}
+
+std::uint64_t PreparedIndex::request(std::int64_t positionMs) {
 	const auto lock = std::lock_guard(_state->mutex);
-	_state->cache.reset();
+	if (state() != IndexState::OnDemand || positionMs < 0) {
+		return 0;
+	}
+	_state->positionMs = positionMs;
+	const auto revision = ++_state->revision;
+	_state->changed.notify_all();
+	return revision;
+}
+
+bool PreparedIndex::ready(std::uint64_t revision) const {
+	return bool(patches(revision));
+}
+
+void PreparedIndex::settle() {
+	const auto lock = std::lock_guard(_state->mutex);
+	if (state() == IndexState::OnDemand) {
+		_state->positionMs = -1;
+		++_state->revision;
+		_state->changed.notify_all();
+	}
+}
+
+auto PreparedIndex::patches(std::uint64_t revision) const
+-> std::shared_ptr<const std::vector<Mp4::HeaderPatch>> {
+	const auto lock = std::lock_guard(_state->mutex);
+	const auto i = _state->patches.find(revision);
+	return (i != _state->patches.end())
+		? i->second
+		: nullptr;
 }
 
 std::size_t PreparedIndex::copy(
@@ -60,7 +105,9 @@ std::size_t PreparedIndex::copy(
 	return _state->cache ? _state->cache->copy(offset, buffer) : 0;
 }
 
-void PreparedIndex::start(std::shared_ptr<Reader> reader) {
+void PreparedIndex::start(
+		std::shared_ptr<Reader> reader,
+		std::int64_t durationMs) {
 	if (!reader) {
 		cancel();
 		return;
@@ -73,38 +120,108 @@ void PreparedIndex::start(std::shared_ptr<Reader> reader) {
 	// media reads, including the seek that needs this index. Metadata mode
 	// limits this reader to the blocks intersecting its small current read.
 	reader->setLoaderPriority(2);
-	std::thread(&PreparedIndex::Prepare, _state, std::move(reader)).detach();
+	std::thread(
+		&PreparedIndex::Prepare,
+		_state,
+		std::move(reader),
+		durationMs).detach();
 }
 
 void PreparedIndex::Prepare(
 		std::shared_ptr<State> state,
-		std::shared_ptr<Reader> reader) {
+		std::shared_ptr<Reader> reader,
+		std::int64_t durationMs) {
 	reader->headerDone();
+	auto revision = std::uint64_t(0);
+	auto reads = std::uint64_t(0);
+	auto bytes = std::uint64_t(0);
 	const auto cancelled = [&] {
-		return state->status.load() != IndexState::Preparing;
+		return state->status.load() == IndexState::Unavailable
+			|| (revision && state->revision.load() != revision);
 	};
-	auto cache = Mp4::BuildIndexCache(
-		reader->size(),
-		[&](std::int64_t offset, std::span<char> buffer) {
-			return Http::ReadChunk([&] {
-				const auto result = reader->fill(
-					offset,
-					bytes::span(
-						reinterpret_cast<bytes::type*>(buffer.data()),
-						buffer.size()),
-					&state->ready,
-					ReadMode::Metadata);
-				if (result == Reader::FillState::Success) {
-					return Http::ReadResult::Success;
-				} else if (result == Reader::FillState::Failed) {
-					return Http::ReadResult::Failed;
-				}
-				return Http::ReadResult::Waiting;
-			}, cancelled, [] {
-				std::this_thread::sleep_for(std::chrono::milliseconds(10));
-				return true;
-			}) == Http::ReadResult::Success;
-		});
+	const auto read = [&](std::int64_t offset, std::span<char> buffer) {
+		++reads;
+		bytes += buffer.size();
+		return Http::ReadChunk([&] {
+			const auto result = reader->fill(
+				offset,
+				bytes::span(
+					reinterpret_cast<bytes::type*>(buffer.data()),
+					buffer.size()),
+				&state->ready,
+				ReadMode::Metadata);
+			if (result == Reader::FillState::Success) {
+				return Http::ReadResult::Success;
+			} else if (result == Reader::FillState::Failed) {
+				return Http::ReadResult::Failed;
+			}
+			return Http::ReadResult::Waiting;
+		}, cancelled, [] {
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+			return true;
+		}) == Http::ReadResult::Success;
+	};
+	auto fragments = Mp4::FragmentIndex::Create(reader->size(), durationMs, read);
+	if (fragments) {
+		auto expected = IndexState::Preparing;
+		if (state->status.compare_exchange_strong(expected, IndexState::OnDemand)) {
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: MPV index on-demand ready "
+				"reads=%1 bytes=%2.")
+				.arg(qulonglong(reads)).arg(qulonglong(bytes)));
+		}
+	}
+	while (fragments && state->status.load() == IndexState::OnDemand) {
+		auto positionMs = std::int64_t(0);
+		{
+			auto lock = std::unique_lock(state->mutex);
+			state->changed.wait(lock, [&] {
+				return state->status.load() != IndexState::OnDemand
+					|| state->revision.load() != revision;
+			});
+			if (state->status.load() != IndexState::OnDemand) {
+				break;
+			}
+			revision = state->revision.load();
+			positionMs = state->positionMs;
+		}
+		if (positionMs < 0) {
+			continue;
+		}
+		reads = bytes = 0;
+		const auto started = std::chrono::steady_clock::now();
+		auto seek = fragments->seek(positionMs, read);
+		if (cancelled()) {
+			continue;
+		} else if (!seek) {
+			auto expected = IndexState::OnDemand;
+			if (state->status.compare_exchange_strong(expected, IndexState::Preparing)) {
+				VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: MPV index fallback "
+					"target_ms=%1 reads=%2 bytes=%3.")
+					.arg(qlonglong(positionMs))
+					.arg(qulonglong(reads)).arg(qulonglong(bytes)));
+			}
+			break;
+		}
+		const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - started).count();
+		const auto lock = std::lock_guard(state->mutex);
+		if (!cancelled()) {
+			state->patches.emplace(
+				revision,
+				std::make_shared<const std::vector<Mp4::HeaderPatch>>(std::move(*seek)));
+			while (state->patches.size() > 8) {
+				state->patches.erase(state->patches.begin());
+			}
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: MPV index seek ready "
+				"revision=%1 target_ms=%2 reads=%3 bytes=%4 elapsed_ms=%5.")
+				.arg(qulonglong(revision)).arg(qlonglong(positionMs))
+				.arg(qulonglong(reads)).arg(qulonglong(bytes)).arg(qlonglong(elapsed)));
+		}
+	}
+	revision = 0;
+	auto cache = (state->status.load() == IndexState::Preparing)
+		? Mp4::BuildIndexCache(reader->size(), read)
+		: std::nullopt;
 	crl::on_main([
 		state,
 		reader = std::move(reader),
@@ -120,6 +237,33 @@ void PreparedIndex::Prepare(
 			state->cache.reset();
 		}
 	});
+}
+
+IndexControl ControlIndex(std::weak_ptr<PreparedIndex> index) {
+	return {
+		.state = [=] {
+			const auto strong = index.lock();
+			return strong ? strong->state() : IndexState::Unavailable;
+		},
+		.request = [=](std::int64_t positionMs) {
+			const auto strong = index.lock();
+			return strong ? strong->request(positionMs) : 0;
+		},
+		.ready = [=](std::uint64_t revision) {
+			const auto strong = index.lock();
+			return strong && strong->ready(revision);
+		},
+		.settled = [=] {
+			if (const auto strong = index.lock()) {
+				strong->settle();
+			}
+		},
+		.abandoned = [=] {
+			if (const auto strong = index.lock()) {
+				strong->cancel();
+			}
+		},
+	};
 }
 
 } // namespace Media::Streaming::Mpv
