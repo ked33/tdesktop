@@ -391,7 +391,10 @@ def serve_file(source: Path, metadata: dict, records: list,
             revision = int(parse_qs(urlsplit(self.path).query).get("tdesktop_index", ["0"])[0])
             prepared = seek_patches(revision) if seek_patches and revision else []
             if prepared is None:
-                self.send_error(404)
+                try:
+                    self.send_error(404)
+                except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                    pass
                 return
             current_patches = patches + [(p["offset"], bytes(p["bytes"])) for p in prepared]
             size = source_size

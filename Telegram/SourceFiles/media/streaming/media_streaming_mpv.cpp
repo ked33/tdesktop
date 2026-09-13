@@ -826,7 +826,24 @@ private:
 			const auto releaseGuard = gsl::finally([&] {
 				release(request.token, entry);
 			});
-			const auto seekPatches = entry->mp4Index->patches(request.indexRevision);
+			const auto disconnected = [&] {
+				socket.waitForReadyRead(0);
+				return entry->removeWhenIdle.load()
+					|| socket.state() != QAbstractSocket::ConnectedState;
+			};
+			const auto waitForRead = [&] {
+				socket.waitForReadyRead(kReadCancelCheckInterval);
+				return true;
+			};
+			const auto seekPatches = request.indexRevision
+				? entry->mp4Index->waitForPatches(
+					request.indexRevision,
+					disconnected,
+					waitForRead)
+				: nullptr;
+			if (disconnected()) {
+				return;
+			}
 			if (request.indexRevision && !seekPatches) {
 				if (!SendResponse(socket, "404 Not Found", {
 					{ "Connection", "close" },
@@ -863,15 +880,6 @@ private:
 				false,
 				range.range.from,
 				range.range.length);
-			const auto disconnected = [&] {
-				socket.waitForReadyRead(0);
-				return entry->removeWhenIdle.load()
-					|| socket.state() != QAbstractSocket::ConnectedState;
-			};
-			const auto waitForRead = [&] {
-				socket.waitForReadyRead(kReadCancelCheckInterval);
-				return true;
-			};
 			if (entry->mp4Layout.load() == 0
 				&& range.range.from == 0) {
 				const auto lock = std::unique_lock(entry->fillMutex);

@@ -38,6 +38,7 @@ struct IndexControl {
 	std::function<IndexState()> state;
 	std::function<std::uint64_t(std::int64_t)> request;
 	std::function<bool(std::uint64_t)> ready;
+	std::function<double(std::uint64_t)> seekStart;
 	std::function<void()> settled;
 	std::function<void()> abandoned;
 	std::function<void(const QString &)> diagnostic;
@@ -55,8 +56,14 @@ public:
 	[[nodiscard]] std::uint64_t request(std::int64_t positionMs);
 	void settle();
 	[[nodiscard]] bool ready(std::uint64_t revision) const;
+	[[nodiscard]] double seekStart(std::uint64_t revision) const;
 	[[nodiscard]] std::shared_ptr<const std::vector<Mp4::HeaderPatch>> patches(
 		std::uint64_t revision) const;
+	[[nodiscard]] auto waitForPatches(
+		std::uint64_t revision,
+		const std::function<bool()> &cancelled,
+		const std::function<bool()> &wait) const
+	-> std::shared_ptr<const std::vector<Mp4::HeaderPatch>>;
 	[[nodiscard]] std::size_t copy(
 		std::int64_t offset,
 		std::span<char> buffer) const;
