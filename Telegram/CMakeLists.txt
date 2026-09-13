@@ -1564,6 +1564,7 @@ PRIVATE
     media/streaming/media_streaming_loader_mtproto.cpp
     media/streaming/media_streaming_loader_mtproto.h
     media/streaming/media_streaming_mp4_header.h
+    media/streaming/media_streaming_mp4_fragment.h
     media/streaming/media_streaming_mp4_index.h
     media/streaming/media_streaming_mp4_seek.h
     media/streaming/media_streaming_mpv.cpp

@@ -77,6 +77,7 @@ target_include_directories(test_mp4_index PRIVATE ${src_loc})
 nice_target_sources(test_mp4_index ${src_loc}
 PRIVATE
     media/streaming/media_streaming_mp4_header.h
+    media/streaming/media_streaming_mp4_fragment.h
     media/streaming/media_streaming_mp4_index.h
     test/test_mp4_index.cpp
 )
