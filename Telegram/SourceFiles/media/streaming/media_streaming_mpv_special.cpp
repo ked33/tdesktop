@@ -36,6 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QStandardPaths>
 #include <QtCore/QUuid>
 #include <QtCore/QUrl>
+#include <QtCore/QUrlQuery>
 #include <QtNetwork/QHostAddress>
 #include <QtNetwork/QTcpServer>
 #include <QtNetwork/QTcpSocket>
@@ -144,6 +145,7 @@ struct ParsedRequest {
 	QByteArray method;
 	QString token;
 	QByteArray rangeHeader;
+	std::uint64_t indexRevision = 0;
 	bool valid = false;
 };
 
@@ -361,7 +363,8 @@ struct Entry {
 	if (method != "GET" && method != "HEAD") {
 		return {};
 	}
-	const auto path = QUrl::fromEncoded(parts[1].trimmed()).path();
+	const auto url = QUrl::fromEncoded(parts[1].trimmed());
+	const auto path = url.path();
 	if (!path.startsWith(QLatin1String(kPathPrefix))) {
 		return {};
 	}
@@ -370,6 +373,13 @@ struct Entry {
 		.token = path.mid(kPathPrefixLength),
 		.valid = true,
 	};
+	const auto revision = QUrlQuery(url).queryItemValue(u"tdesktop_index"_q);
+	if (!revision.isEmpty()) {
+		result.indexRevision = revision.toULongLong(&result.valid);
+		if (!result.valid || !result.indexRevision) {
+			return {};
+		}
+	}
 	for (auto i = 1; i != lines.size(); ++i) {
 		const auto line = lines[i].trimmed();
 		if (line.isEmpty()) {
@@ -732,6 +742,16 @@ private:
 			const auto releaseGuard = gsl::finally([&] {
 				release(request.token, entry);
 			});
+			const auto seekPatches = entry->mp4Index->patches(request.indexRevision);
+			if (request.indexRevision && !seekPatches) {
+				if (!SendResponse(socket, "404 Not Found", {
+					{ "Connection", "close" },
+					{ "Content-Length", "0" },
+				})) {
+					MPV_STREAMING_LOG(("MPV Streaming (Special): Expired index response disconnected."));
+				}
+				return;
+			}
 			const auto range = ParseRange(request.rangeHeader, entry->size);
 				if (!range.valid) {
 					MPV_STREAMING_LOG(("MPV Streaming (Special): Invalid range '%1' for size %2.")
@@ -800,9 +820,10 @@ private:
 						if (index->prepare()) {
 							const auto document = entry->document;
 							const auto origin = entry->origin;
+							const auto duration = entry->duration;
 							crl::on_main(&document->session(), [=] {
 								if (index->state() == Mpv::IndexState::Preparing) {
-									index->start(CreateDedicatedReader(document, origin));
+									index->start(CreateDedicatedReader(document, origin), duration);
 								}
 							});
 						}
@@ -998,6 +1019,13 @@ private:
 					supersededSeek = true;
 					break;
 				}
+				if (seekPatches) {
+					for (const auto &patch : *seekPatches) {
+						patch.apply(
+							offset,
+							std::span(buffer.data(), std::size_t(size)));
+					}
+				}
 				headerPatch.apply(
 					offset,
 					std::span(buffer.data(), std::size_t(buffer.size())));
@@ -1053,14 +1081,7 @@ private:
 	const auto raw = process.get();
 	raw->setProgram(program);
 	raw->setArguments(arguments);
-	Mpv::ManageIndexReload(raw, [weak = std::weak_ptr(launch.index)] {
-		const auto index = weak.lock();
-		return index ? index->state() : Mpv::IndexState::Unavailable;
-	}, launch.duration, [weak = std::weak_ptr(launch.index)] {
-		if (const auto index = weak.lock()) {
-			index->cancel();
-		}
-	});
+	Mpv::ManageIndexReload(raw, Mpv::ControlIndex(launch.index), launch.duration);
 	raw->setWorkingDirectory(QFileInfo(program).absolutePath());
 	raw->setProcessEnvironment(LaunchEnvironment());
 	raw->setStandardOutputFile(QProcess::nullDevice());
