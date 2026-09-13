@@ -24,6 +24,7 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 
 def run(command: list[str], timeout: float = 60) -> str:
@@ -129,6 +130,12 @@ def fixtures(ffmpeg: str, output: Path) -> list[tuple[Path, int, bool]]:
             command += ["-movflags", flags]
         run(command + [str(path)])
         result.append((path, layout, False))
+    path = output / "fragmented-b-frames.mp4"
+    run([ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-n",
+        "-i", str(regular), "-map", "0", "-c:v", "libx264", "-preset", "veryfast",
+        "-bf", "3", "-g", "50", "-crf", "20", "-c:a", "copy", "-movflags",
+        "+frag_keyframe+empty_moov+default_base_moof+skip_trailer", str(path)])
+    result.append((path, 1, False))
     return result
 
 
@@ -284,9 +291,79 @@ class PreparedIndex:
         return max(0, min(maximum, begin + length - offset))
 
 
+class OnDemandIndex:
+    def __init__(self, source: Path, duration_ms: int, executable: str,
+            initial: dict, remote: RemoteBlocks):
+        self.source = source
+        self.duration_ms = duration_ms
+        self.executable = executable
+        self.initial = initial
+        self.remote = remote
+        self.revision = 0
+        self.position = 0
+        self.patches = {}
+        self.records = []
+        self.error = None
+        self.lock = threading.Lock()
+        self.changed = threading.Event()
+        self.worker = threading.Thread(target=self.prepare, daemon=True)
+
+    def request(self, position: float) -> int:
+        with self.lock:
+            self.revision += 1
+            self.position = round(position * 1000)
+            self.changed.set()
+            return self.revision
+
+    def seek_patches(self, revision: int):
+        with self.lock:
+            return self.patches.get(revision)
+
+    def prepare(self):
+        revision = 0
+        plan = self.initial
+        while not self.remote.stopped.is_set():
+            started = time.monotonic()
+            try:
+                for offset, count in plan["reads"]:
+                    self.remote.read(offset, count, "index",
+                        cancelled=lambda: self.revision != revision)
+                if revision:
+                    if not plan["ready"]:
+                        raise AssertionError("On-demand lookup fell back to a full scan")
+                    with self.lock:
+                        if self.revision == revision:
+                            self.patches[revision] = plan["patches"]
+                            self.records.append({"revision": revision,
+                                "position_ms": self.position,
+                                "seconds": round(time.monotonic() - started, 3),
+                                "read_bytes": sum(count for _, count in plan["reads"])})
+            except ConnectionAbortedError:
+                pass
+            except Exception as error:
+                self.error = error
+                return
+            while not self.remote.stopped.is_set():
+                self.changed.wait(.1)
+                with self.lock:
+                    if self.revision != revision:
+                        revision, position = self.revision, self.position
+                        self.changed.clear()
+                        break
+            else:
+                return
+            try:
+                plan = json.loads(run([self.executable, "--seek", str(self.source),
+                    str(self.duration_ms), str(position)]))
+            except Exception as error:
+                self.error = error
+                return
+
+
 def serve_file(source: Path, metadata: dict, records: list,
-        remote: RemoteBlocks | None = None, index: PreparedIndex | None = None):
-    size = metadata["file_size"]
+        remote: RemoteBlocks | None = None, index: PreparedIndex | None = None,
+        seek_patches=None):
+    source_size = metadata["file_size"]
     patches = [(metadata["patch_offset"], bytes(metadata["patch_bytes"]))]
     patches.extend((value["offset"], bytes(value["bytes"]))
         for value in metadata.get("duration_patches", []))
@@ -311,6 +388,13 @@ def serve_file(source: Path, metadata: dict, records: list,
                 return True
 
         def serve(self, body):
+            revision = int(parse_qs(urlsplit(self.path).query).get("tdesktop_index", ["0"])[0])
+            prepared = seek_patches(revision) if seek_patches and revision else []
+            if prepared is None:
+                self.send_error(404)
+                return
+            current_patches = patches + [(p["offset"], bytes(p["bytes"])) for p in prepared]
+            size = source_size
             match = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers.get("Range", ""))
             start, end = 0, size - 1
             if match:
@@ -336,7 +420,7 @@ def serve_file(source: Path, metadata: dict, records: list,
                 self.end_headers()
                 if body:
                     with source.open("rb") as stream:
-                        stream.seek(start)
+                        stream.seek(min(start, source_size))
                         offset = start
                         while offset <= end:
                             count = min(65536, end - offset + 1)
@@ -349,7 +433,7 @@ def serve_file(source: Path, metadata: dict, records: list,
                             data = bytearray(stream.read(count))
                             if not data:
                                 raise EOFError("Fixture changed during playback")
-                            for patch_offset, patch in patches:
+                            for patch_offset, patch in current_patches:
                                 begin = max(offset, patch_offset)
                                 finish = min(offset + len(data), patch_offset + len(patch))
                                 if begin < finish:
@@ -367,17 +451,53 @@ def serve_file(source: Path, metadata: dict, records: list,
     return server
 
 
-def wait_position(ipc: Ipc, target: float, timeout: float, progress=None):
+def wait_position(ipc: Ipc, target: float, timeout: float, progress=None,
+        require_audio=True):
     deadline = time.monotonic() + timeout
     position = None
+    audio = None
+    has_audio = require_audio and any(t.get("type") == "audio" and t.get("selected")
+        for t in ipc.property("track-list") or [])
+    stable_since = None
     while time.monotonic() < deadline:
         position = ipc.property("time-pos")
-        if position is not None and abs(position - target) < 0.2 and ipc.property("seeking") is False:
-            return
+        audio = ipc.property("audio-pts") if has_audio else target
+        if (position is not None and abs(position - target) < 0.2
+                and audio is not None and abs(audio - target) < 0.2
+                and ipc.property("seeking") is False):
+            stable_since = stable_since or time.monotonic()
+            if time.monotonic() - stable_since >= 0.3:
+                return
+        else:
+            stable_since = None
         if progress:
             progress()
         time.sleep(0.05)
-    raise TimeoutError(f"Seek to {target:.3f}; position={position}")
+    raise TimeoutError(f"Seek to {target:.3f}; position={position}, audio={audio}")
+
+
+def check_decoding(ipc: Ipc, target: float, timeout: float):
+    tracks = ipc.property("track-list") or []
+    has_audio = any(t.get("type") == "audio" and t.get("selected") for t in tracks)
+    stable_since = None
+    ipc.request("set_property", "pause", False)
+    deadline = time.monotonic() + min(timeout, 8)
+    try:
+        while time.monotonic() < deadline:
+            position = ipc.property("time-pos")
+            audio = ipc.property("audio-pts") if has_audio else position
+            if (position is not None and target - 0.2 <= position <= target + 2
+                    and audio is not None and abs(audio - position) < 0.3
+                    and ipc.property("seeking") is False):
+                stable_since = stable_since or time.monotonic()
+                if time.monotonic() - stable_since >= 0.3:
+                    return
+            else:
+                stable_since = None
+            time.sleep(0.05)
+        raise TimeoutError(f"Playback after seek to {target:.3f}; position={position}, audio={audio}")
+    finally:
+        ipc.request("set_property", "pause", True)
 
 
 def check_playback(source: Path, metadata: dict, options,
@@ -386,10 +506,17 @@ def check_playback(source: Path, metadata: dict, options,
     remote = RemoteBlocks(options.latency_ms / 1000)
     index = None
     if metadata["layout"] == 1 and not options.previous_behavior:
-        plan = json.loads(run([options.index_test, "--inspect", str(source)]))
-        index = PreparedIndex(source, plan, remote)
+        plan = json.loads(run([options.index_test, "--seek", str(source),
+            str(metadata["duration_ms"]), "0"]))
+        if plan["on_demand"]:
+            index = OnDemandIndex(source, metadata["duration_ms"], options.index_test, plan, remote)
+        else:
+            plan = json.loads(run([options.index_test, "--inspect", str(source)]))
+            index = PreparedIndex(source, plan, remote)
         index.worker.start()
-    server = serve_file(source, metadata, records, remote, index)
+    on_demand = isinstance(index, OnDemandIndex)
+    server = serve_file(source, metadata, records, remote,
+        None if on_demand else index, index.seek_patches if on_demand else None)
     endpoint = (r"\\.\pipe\tdesktop-seek-" + uuid.uuid4().hex if os.name == "nt"
         else str(options.output / (uuid.uuid4().hex + ".sock")))
     log = options.output / f"{source.stem}-mpv.log"
@@ -404,9 +531,29 @@ def check_playback(source: Path, metadata: dict, options,
     ipc = None
     started = time.monotonic()
     result = {"file": source.name, "layout": metadata["layout"],
-        "patched": bool(metadata["patch_bytes"]), "seeks": []}
+        "patched": bool(metadata["patch_bytes"]), "on_demand": on_demand, "seeks": []}
+    active_target = None
+    revision = 0
+    loaded_revision = 0
 
     def prepare_seek():
+        nonlocal revision, loaded_revision
+        if on_demand:
+            if index.error:
+                raise index.error
+            if not revision:
+                revision = index.request(active_target)
+            if index.seek_patches(revision) is not None and loaded_revision != revision:
+                paused = ipc.property("pause")
+                response = ipc.request("loadfile", url + "?tdesktop_index=" + str(revision),
+                    "replace", -1, {"start": str(active_target),
+                        "pause": "yes" if paused else "no",
+                        "demuxer-lavf-o": lavf.split("=", 1)[1]})
+                if response.get("error") != "success":
+                    raise AssertionError(f"On-demand reload failed: {response}")
+                loaded_revision = revision
+                result["index_reloads"] = result.get("index_reloads", 0) + 1
+            return
         if not index or not index.ready.is_set() or result.get("index_reloaded"):
             return
         if not ipc.property("seeking") or ipc.property("path") != url:
@@ -423,8 +570,13 @@ def check_playback(source: Path, metadata: dict, options,
         result["reload_target"] = target
 
     try:
+        environment = os.environ.copy()
+        for name in list(environment):
+            if name.lower() in ("http_proxy", "https_proxy", "all_proxy"):
+                del environment[name]
+        environment["NO_PROXY"] = "127.0.0.1,localhost"
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=options.output,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=options.output, env=environment,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         ipc = Ipc(endpoint, process, 5)
         deadline = started + options.startup_timeout
@@ -437,7 +589,7 @@ def check_playback(source: Path, metadata: dict, options,
         result["startup_seconds"] = round(time.monotonic() - started, 3)
         result["startup_requests"] = len(records)
         result["startup_written_bytes"] = sum(x["written"] for x in records)
-        result["index_ready_at_startup"] = bool(index and index.ready.is_set())
+        result["index_ready_at_startup"] = bool(index and not on_demand and index.ready.is_set())
         if ipc.property("seekable") is not True:
             raise AssertionError("MPV considers the HTTP stream unseekable")
         duration = ipc.property("duration")
@@ -445,14 +597,16 @@ def check_playback(source: Path, metadata: dict, options,
             raise AssertionError("Missing media duration")
         for fraction in (0.9, 0.15, 0.95, 0.4, 0.85):
             target = duration * fraction
+            active_target, revision = target, 0
             seek_started = time.monotonic()
             before = len(records)
             response = ipc.request("seek", target, "absolute+exact")
             if response.get("error") != "success":
                 raise AssertionError(f"Seek command failed: {response}")
-            wait_position(ipc, target, options.timeout, prepare_seek)
+            wait_position(ipc, target, options.timeout, prepare_seek, require_audio=False)
             if ipc.property("pause") is not True:
                 raise AssertionError("The indexed reload changed the pause state")
+            check_decoding(ipc, target, options.timeout)
             count = len(records) - before
             result["seeks"].append({"target": round(target, 3),
                 "seconds": round(time.monotonic() - seek_started, 3), "requests": count})
@@ -465,10 +619,27 @@ def check_playback(source: Path, metadata: dict, options,
             response = ipc.request("seek", target, "absolute+exact")
             if response.get("error") != "success":
                 raise AssertionError(f"Rapid seek command failed: {response}")
-        wait_position(ipc, target, options.timeout, prepare_seek)
+        active_target, revision = target, 0
+        wait_position(ipc, target, options.timeout, prepare_seek, require_audio=False)
+        check_decoding(ipc, target, options.timeout)
         result["rapid_seek"] = {"commands": 6, "target": round(target, 3),
             "seconds": round(time.monotonic() - seek_started, 3),
             "requests": len(records) - before}
+        active_target, revision = duration * 0.4, 0
+        ipc.request("seek", active_target, "absolute+exact")
+        wait_position(ipc, active_target, options.timeout, prepare_seek, require_audio=False)
+        check_decoding(ipc, active_target, options.timeout)
+        ipc.request("set_property", "pause", False)
+        time.sleep(3)
+        continued = ipc.property("time-pos")
+        if continued is None or continued < active_target + 2 or ipc.property("eof-reached"):
+            raise AssertionError("Playback stopped after the indexed seek")
+        audio = ipc.property("audio-pts")
+        has_audio = any(t.get("type") == "audio" and t.get("selected")
+            for t in ipc.property("track-list") or [])
+        if has_audio and (audio is None or abs(audio - continued) > 0.3):
+            raise AssertionError("Audio and video diverged after the indexed seek")
+        result["continued_to"] = round(continued, 3)
         result["passed"] = True
     except Exception as error:
         result["passed"] = False
@@ -496,7 +667,9 @@ def check_playback(source: Path, metadata: dict, options,
     result["written_bytes"] = sum(x["written"] for x in records)
     result["remote_blocks"] = len(remote.records)
     result["metadata_served_bytes"] = sum(x["metadata_bytes"] for x in records)
-    if index:
+    if on_demand:
+        result["index_preparations"] = index.records
+    elif index:
         result["metadata_cache_bytes"] = index.metadata["size"]
         result["metadata_prepare_seconds"] = index.seconds
     (options.output / f"{source.stem}-requests.json").write_text(
@@ -542,6 +715,7 @@ def main() -> int:
         duration_ms = round(float(details["format"]["duration"]) * 1000)
         metadata = json.loads(run([options.header_test, "--inspect", str(source),
             str(duration_ms)]))
+        metadata["duration_ms"] = duration_ms
         if layout is not None and metadata["layout"] != layout:
             raise AssertionError(f"Unexpected MP4 layout: {source.name}")
         if patched is not None and bool(metadata["patch_bytes"]) != patched:
