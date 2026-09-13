@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/vertical_layout.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/widgets/buttons.h"
+#include "ui/widgets/kinetic_scroller.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/vertical_list.h"
@@ -29,6 +30,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/options.h"
 #include "boxes/moderate_messages_box.h"
 #include "core/application.h"
+#include "core/experimental_options.h"
 #include "core/launcher.h"
 #include "core/sandbox.h"
 #include "chat_helpers/tabbed_panel.h"
@@ -164,8 +166,10 @@ namespace {
 	} else if (id == HistoryView::Controls::kOptionMacCmdReplyImmediately) {
 		return tr::lng_settings_experimental_mac_cmd_reply_immediately(
 			tr::now);
-	} else if (id == Ui::kOptionQScroller) {
-		return tr::lng_settings_experimental_qscroller(tr::now);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	} else if (id == Ui::kOptionKineticScroller) {
+		return tr::lng_settings_experimental_kinetic_scroller(tr::now);
+#endif
 	} else if (id == FFmpeg::kOptionFFmpegMultiThread) {
 		return tr::lng_settings_experimental_ffmpeg_multithread(tr::now);
 	}
@@ -271,8 +275,10 @@ namespace {
 	} else if (id == HistoryView::Controls::kOptionMacCmdReplyImmediately) {
 		return tr::lng_settings_experimental_mac_cmd_reply_immediately_desc(
 			tr::now);
-	} else if (id == Ui::kOptionQScroller) {
-		return tr::lng_settings_experimental_qscroller_desc(tr::now);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	} else if (id == Ui::kOptionKineticScroller) {
+		return tr::lng_settings_experimental_kinetic_scroller_desc(tr::now);
+#endif
 	} else if (id == FFmpeg::kOptionFFmpegMultiThread) {
 		return tr::lng_settings_experimental_ffmpeg_multithread_desc(tr::now);
 	}
@@ -660,7 +666,9 @@ void SetupExperimental(
 				Ui::GL::kOptionUseQtRhi,
 				Ui::GL::kOptionEnableVulkanRhi,
 				Core::kOptionFreeType,
-				Ui::kOptionQScroller,
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+				Ui::kOptionKineticScroller,
+#endif
 				Window::kOptionDisableTouchbar,
 				Window::kOptionNewWindowsSizeAsFirst,
 			}
@@ -788,7 +796,8 @@ void Experimental::fillTopBarMenu(const Ui::Menu::MenuCallback &addAction) {
 					"a valid experimental settings code."_q);
 				return;
 			}
-			if (!base::options::deserialize(decoded.json)) {
+			if (!base::options::deserialize(
+					Core::MigrateExperimentalOptions(decoded.json))) {
 				window->showToast(u"Experimental settings code is valid"
 					", but data format is not supported."_q);
 				return;

@@ -13,6 +13,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element.h"
 #include "ui/chat/chat_style.h"
 
+#include "styles/style_basic.h"
+
 namespace HistoryView {
 
 ElementHighlighter::ElementHighlighter(
