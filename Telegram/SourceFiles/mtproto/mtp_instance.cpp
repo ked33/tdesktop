@@ -27,6 +27,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer.h"
 #include "base/network_reachability.h"
 #include "settings.h"
+#include "test/test_rpc_retry.h"
+
 #include <algorithm>
 
 namespace MTP {
@@ -1503,75 +1505,89 @@ bool Instance::Private::onErrorDefault(
 			_dependentRequests.emplace(requestId, request->after->requestId);
 		}
 		return true;
-		} else if (code < 0
-			|| code >= 500
-			|| (m1 = FloodWaitRegExp.match(type)).hasMatch()
-			|| (m2 = FloodPremiumWaitRegExp.match(type)).hasMatch()
-			|| ((m3 = SlowmodeWaitRegExp.match(type)).hasMatch()
-				&& m3.captured(1).toInt() < 3)) {
-			if (!requestId) {
-				return false;
-			}
+	} else if (code < 0
+		|| code >= 500
+		|| (m1 = FloodWaitRegExp.match(type)).hasMatch()
+		|| (m2 = FloodPremiumWaitRegExp.match(type)).hasMatch()
+		|| ((m3 = SlowmodeWaitRegExp.match(type)).hasMatch()
+			&& m3.captured(1).toInt() < 3)) {
+		if (!requestId) {
+			return false;
+		}
 
-			auto secs = 1;
-			auto serverWaitSeconds = 0;
-			auto overrideWaitMs = -1;
-			auto nonPremiumDelay = false;
-			if (code < 0 || code >= 500) {
-				const auto it = _requestsDelays.find(requestId);
-				if (it != _requestsDelays.cend()) {
-					secs = (it->second > 60) ? it->second : (it->second *= 2);
-				} else {
-					_requestsDelays.emplace(requestId, secs);
-				}
-			} else if (m1.hasMatch()) {
-				secs = m1.captured(1).toInt();
-	//			if (secs >= 60) return false;
-			} else if (m2.hasMatch()) {
-				secs = m2.captured(1).toInt();
-				serverWaitSeconds = secs;
-				nonPremiumDelay = true;
-			} else if (m3.hasMatch()) {
-				secs = m3.captured(1).toInt();
-			}
-			auto appliedWaitMs = secs * 1000;
-			if (nonPremiumDelay) {
-				const auto overrideValue = GetEnhancedString(
-					u"flood_premium_wait_override_ms"_q).trimmed();
-				if (!overrideValue.isEmpty()) {
-					auto ok = false;
-					const auto parsed = overrideValue.toInt(&ok);
-					if (ok) {
-						overrideWaitMs = std::max(parsed, 0);
-						appliedWaitMs = overrideWaitMs;
-					}
+		auto secs = 1;
+		auto serverWaitSeconds = 0;
+		auto overrideWaitMs = -1;
+		auto nonPremiumDelay = false;
+		if (code < 0 || code >= 500) {
+			auto body = mtpTypeId(0);
+			{
+				QReadLocker locker(&_requestMapLock);
+				const auto i = _requestMap.find(requestId);
+				if (i != _requestMap.cend()
+					&& i->second
+					&& (i->second->size()
+						> SerializedRequest::kMessageBodyPosition)) {
+					body = mtpTypeId((*i->second)[
+						SerializedRequest::kMessageBodyPosition]);
 				}
 			}
-			auto sendAt = crl::now() + appliedWaitMs + 10;
-			auto it = _delayedRequests.begin(), e = _delayedRequests.end();
-			for (; it != e; ++it) {
-				if (it->first == requestId) {
-					return true;
-				} else if (it->second > sendAt) {
-					break;
+			Test::RecordRpcRetry(code, type, body);
+
+			const auto it = _requestsDelays.find(requestId);
+			if (it != _requestsDelays.cend()) {
+				secs = (it->second > 60) ? it->second : (it->second *= 2);
+			} else {
+				_requestsDelays.emplace(requestId, secs);
+			}
+		} else if (m1.hasMatch()) {
+			secs = m1.captured(1).toInt();
+//			if (secs >= 60) return false;
+		} else if (m2.hasMatch()) {
+			secs = m2.captured(1).toInt();
+			serverWaitSeconds = secs;
+			nonPremiumDelay = true;
+		} else if (m3.hasMatch()) {
+			secs = m3.captured(1).toInt();
+		}
+		auto appliedWaitMs = secs * 1000;
+		if (nonPremiumDelay) {
+			const auto overrideValue = GetEnhancedString(
+				u"flood_premium_wait_override_ms"_q).trimmed();
+			if (!overrideValue.isEmpty()) {
+				auto ok = false;
+				const auto parsed = overrideValue.toInt(&ok);
+				if (ok) {
+					overrideWaitMs = std::max(parsed, 0);
+					appliedWaitMs = overrideWaitMs;
 				}
 			}
-			_delayedRequests.insert(it, std::make_pair(requestId, sendAt));
-
-			checkDelayedRequests();
-
-			if (nonPremiumDelay) {
-				_nonPremiumDelayedRequests.fire_copy({
-					requestId,
-					{
-						.serverWaitSeconds = serverWaitSeconds,
-						.overrideWaitMs = overrideWaitMs,
-						.appliedWaitMs = appliedWaitMs + 10,
-					},
-				});
+		}
+		auto sendAt = crl::now() + appliedWaitMs + 10;
+		auto it = _delayedRequests.begin(), e = _delayedRequests.end();
+		for (; it != e; ++it) {
+			if (it->first == requestId) {
+				return true;
+			} else if (it->second > sendAt) {
+				break;
 			}
+		}
+		_delayedRequests.insert(it, std::make_pair(requestId, sendAt));
 
-			return true;
+		checkDelayedRequests();
+
+		if (nonPremiumDelay) {
+			_nonPremiumDelayedRequests.fire_copy({
+				requestId,
+				{
+					.serverWaitSeconds = serverWaitSeconds,
+					.overrideWaitMs = overrideWaitMs,
+					.appliedWaitMs = appliedWaitMs + 10,
+				},
+			});
+		}
+
+		return true;
 	} else if ((code == 401 && type != u"AUTH_KEY_PERM_EMPTY"_q)
 		|| (badGuestDc && _badGuestDcRequests.find(requestId) == _badGuestDcRequests.cend())) {
 		auto dcWithShift = ShiftedDcId(0);

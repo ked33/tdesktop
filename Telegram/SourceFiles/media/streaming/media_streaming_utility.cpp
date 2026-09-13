@@ -12,6 +12,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/painter.h"
 #include "ffmpeg/ffmpeg_utility.h"
 
+#include "styles/style_basic.h"
+
 namespace Media {
 namespace Streaming {
 namespace {
