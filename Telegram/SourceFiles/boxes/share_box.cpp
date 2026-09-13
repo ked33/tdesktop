@@ -45,6 +45,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/peer_list_controllers.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "chat_helpers/share_message_phrase_factory.h"
+#include "crl/crl_on_main.h"
 #include "data/business/data_shortcut_messages.h"
 #include "data/data_channel.h"
 #include "data/data_chat_filters.h"
@@ -60,6 +61,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_forum.h"
 #include "data/data_forum_topic.h"
 #include "data/data_changes.h"
+#include "dialogs/dialogs_indexed_list.h"
 #include "main/main_session.h"
 #include "core/application.h"
 #include "core/core_settings.h"
@@ -70,6 +72,67 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
+
+namespace {
+
+enum class ChatSearchMatch {
+	None,
+	Prefix,
+	Substring,
+};
+
+[[nodiscard]] ChatSearchMatch MatchChatSearchWords(
+		const base::flat_set<QString> &names,
+		const QStringList &words) {
+	auto result = ChatSearchMatch::Prefix;
+	for (const auto &word : words) {
+		auto match = ChatSearchMatch::None;
+		for (const auto &name : names) {
+			const auto position = name.indexOf(word);
+			if (position == 0) {
+				match = ChatSearchMatch::Prefix;
+				break;
+			} else if (position > 0) {
+				match = ChatSearchMatch::Substring;
+			}
+		}
+		if (match == ChatSearchMatch::None) {
+			return match;
+		} else if (match == ChatSearchMatch::Substring) {
+			result = match;
+		}
+	}
+	return result;
+}
+
+[[nodiscard]] std::vector<not_null<Dialogs::Row*>> FilterShareBoxChats(
+		const Dialogs::IndexedList &chats,
+		const QStringList &words) {
+	auto result = std::vector<not_null<Dialogs::Row*>>();
+	if (words.isEmpty()) {
+		return result;
+	}
+	auto substring = std::vector<not_null<Dialogs::Row*>>();
+	for (const auto &row : chats.all()) {
+		const auto match = MatchChatSearchWords(
+			row->entry()->chatListNameWords(),
+			words);
+		switch (match) {
+		case ChatSearchMatch::Prefix:
+			result.push_back(row);
+			break;
+		case ChatSearchMatch::Substring:
+			substring.push_back(row);
+			break;
+		case ChatSearchMatch::None:
+			break;
+		}
+	}
+	result.insert(end(result), begin(substring), end(substring));
+	return result;
+}
+
+} // namespace
 
 class ShareBox::Inner final : public Ui::RpWidget {
 public:
@@ -167,9 +230,12 @@ private:
 		ChangeStateWay useCallback = ChangeStateWay::Default);
 
 	not_null<Chat*> getChat(not_null<Dialogs::Row*> row);
+	not_null<Chat*> getChat(not_null<History*> history);
 	void setActive(int active);
 	void updateUpon(const QPoint &pos);
 
+	void scheduleSearchRefresh();
+	void refreshSearchResults();
 	void refresh();
 
 	const Descriptor &_descriptor;
@@ -199,9 +265,10 @@ private:
 	Fn<void(not_null<Data::Thread*>, bool)> _peerSelectedChangedCallback;
 
 	bool _searching = false;
+	bool _searchRefreshScheduled = false;
 	QString _lastQuery;
-	std::vector<PeerData*> _byUsernameFiltered;
-	std::vector<std::unique_ptr<Chat>> d_byUsernameFiltered;
+	std::vector<not_null<Chat*>> _byUsername;
+	std::vector<not_null<Chat*>> _byUsernameFiltered;
 
 	rpl::event_stream<Ui::ScrollToRequest> _scrollToRequests;
 	rpl::event_stream<> _searchRequests;
@@ -932,6 +999,13 @@ ShareBox::Inner::Inner(
 		_defaultChatsIndexed->peerNameChanged(
 			update.peer,
 			update.oldFirstLetters);
+		if (_customChatsIndexed) {
+			_customChatsIndexed->peerNameChanged(
+				update.peer,
+				update.oldFirstLetters);
+		}
+		updateChat(update.peer);
+		scheduleSearchRefresh();
 	}, lifetime());
 
 	_descriptor.session->downloaderTaskFinished(
@@ -975,16 +1049,6 @@ void ShareBox::Inner::refreshRestrictedRows() {
 			changed = true;
 		}
 	}
-	for (const auto &data : d_byUsernameFiltered) {
-		const auto history = data->history;
-		const auto restriction = Api::ResolveMessageMoneyRestrictions(
-			history->peer,
-			history);
-		if (data->restriction != restriction) {
-			data->restriction = restriction;
-			changed = true;
-		}
-	}
 	if (changed) {
 		update();
 	}
@@ -1002,7 +1066,9 @@ void ShareBox::Inner::activateSkipRow(int direction) {
 }
 
 int ShareBox::Inner::displayedChatsCount() const {
-	return _filter.isEmpty() ? _chatsIndexed->size() : (_filtered.size() + d_byUsernameFiltered.size());
+	return _filter.isEmpty()
+		? _chatsIndexed->size()
+		: (_filtered.size() + _byUsernameFiltered.size());
 }
 
 void ShareBox::Inner::activateSkipColumn(int direction) {
@@ -1085,13 +1151,13 @@ ShareBox::Inner::Chat *ShareBox::Inner::getChatAtIndex(int index) {
 			: nullptr;
 	}();
 	if (row) {
-		return static_cast<Chat*>(row->attached);
+		return getChat(row).get();
 	}
 
 	if (!_filter.isEmpty()) {
 		index -= _filtered.size();
-		if (index >= 0 && index < d_byUsernameFiltered.size()) {
-			return d_byUsernameFiltered[index].get();
+		if (index >= 0 && index < _byUsernameFiltered.size()) {
+			return _byUsernameFiltered[index].get();
 		}
 	}
 	return nullptr;
@@ -1121,7 +1187,7 @@ int ShareBox::Inner::chatIndex(not_null<PeerData*> peer) const {
 			}
 			++index;
 		}
-		for (const auto &row : d_byUsernameFiltered) {
+		for (const auto &row : _byUsernameFiltered) {
 			if (row->peer == peer) {
 				return index;
 			}
@@ -1170,12 +1236,12 @@ void ShareBox::Inner::loadProfilePhotos() {
 
 		const auto uto = std::min(
 			to - int(_filtered.size()),
-			int(d_byUsernameFiltered.size()));
+			int(_byUsernameFiltered.size()));
 		const auto ufrom = std::min(
 			std::max(from - int(_filtered.size()), 0),
 			uto);
 		for (auto i = ufrom; i != uto; ++i) {
-			preloadUserpic(d_byUsernameFiltered[i]->history);
+			preloadUserpic(_byUsernameFiltered[i]->history);
 		}
 	}
 }
@@ -1202,10 +1268,15 @@ auto ShareBox::Inner::getChat(not_null<Dialogs::Row*> row)
 	if (const auto data = static_cast<Chat*>(row->attached)) {
 		return data;
 	}
-	const auto history = row->history();
+	const auto result = getChat(row->history());
+	row->attached = result.get();
+	return result;
+}
+
+auto ShareBox::Inner::getChat(not_null<History*> history)
+-> not_null<Chat*> {
 	const auto peer = history->peer;
 	if (const auto i = _dataMap.find(peer); i != end(_dataMap)) {
-		row->attached = i->second.get();
 		return i->second.get();
 	}
 	const auto &[i, ok] = _dataMap.emplace(
@@ -1215,7 +1286,6 @@ auto ShareBox::Inner::getChat(not_null<Dialogs::Row*> row)
 		}));
 	updateChatName(i->second.get());
 	initChatRestriction(i->second.get());
-	row->attached = i->second.get();
 	return i->second.get();
 }
 
@@ -1347,12 +1417,12 @@ void ShareBox::Inner::paintEvent(QPaintEvent *e) {
 			if (!_byUsernameFiltered.empty()) {
 				if (indexFrom < 0) indexFrom = 0;
 				while (indexFrom < indexTo) {
-					if (indexFrom >= d_byUsernameFiltered.size()) {
+					if (indexFrom >= _byUsernameFiltered.size()) {
 						break;
 					}
 					paintChat(
 						p,
-						d_byUsernameFiltered[indexFrom].get(),
+						_byUsernameFiltered[indexFrom].get(),
 						filteredSize + indexFrom);
 					++indexFrom;
 				}
@@ -1650,28 +1720,65 @@ bool ShareBox::Inner::hasSelected() const {
 }
 
 void ShareBox::Inner::updateFilter(QString filter) {
-	_lastQuery = filter.toLower().trimmed();
-
-	auto words = TextUtilities::PrepareSearchWords(_lastQuery);
+	const auto query = filter.toLower().trimmed();
+	const auto words = TextUtilities::PrepareSearchWords(query);
 	filter = words.isEmpty() ? QString() : words.join(' ');
-	if (_filter != filter) {
-		_filter = filter;
+	if (_lastQuery == query && _filter == filter) {
+		return;
+	}
+	setActive(-1);
+	_lastQuery = query;
+	_filter = std::move(filter);
+	_byUsername.clear();
+	_byUsernameFiltered.clear();
+	_searching = !_filter.isEmpty();
+	refreshSearchResults();
+	if (_searching) {
+		_searchRequests.fire({});
+	}
+}
 
-		_byUsernameFiltered.clear();
-		d_byUsernameFiltered.clear();
+void ShareBox::Inner::scheduleSearchRefresh() {
+	if (_filter.isEmpty() || _searchRefreshScheduled) {
+		return;
+	}
+	_searchRefreshScheduled = true;
+	crl::on_main(this, [=] {
+		_searchRefreshScheduled = false;
+		refreshSearchResults();
+	});
+}
 
-		if (_filter.isEmpty()) {
-			refresh();
-		} else {
-			_filtered = _chatsIndexed->filtered(words);
-			refresh();
-
-			_searching = true;
-			_searchRequests.fire({});
+void ShareBox::Inner::refreshSearchResults() {
+	auto filtered = FilterShareBoxChats(
+		*_chatsIndexed,
+		TextUtilities::PrepareSearchWords(_filter));
+	auto byUsername = std::vector<not_null<Chat*>>();
+	if (!_byUsername.empty()) {
+		auto localPeers = base::flat_set<not_null<PeerData*>>();
+		for (const auto &row : filtered) {
+			localPeers.emplace(row->history()->peer);
 		}
+		byUsername.reserve(_byUsername.size());
+		for (const auto chat : _byUsername) {
+			if (!localPeers.contains(chat->peer)) {
+				byUsername.push_back(chat);
+			}
+		}
+	}
+	if (_filtered == filtered && _byUsernameFiltered == byUsername) {
+		refresh();
+		return;
+	}
+	const auto active = getChatAtIndex(_active);
+	if (_active >= 0) {
 		setActive(-1);
-		loadProfilePhotos();
-		update();
+	}
+	_filtered = std::move(filtered);
+	_byUsernameFiltered = std::move(byUsername);
+	refresh();
+	if (active) {
+		setActive(chatIndex(active->peer));
 	}
 }
 
@@ -1688,6 +1795,8 @@ rpl::producer<> ShareBox::Inner::searchRequests() const {
 }
 
 void ShareBox::Inner::applyChatFilter(FilterId id) {
+	setActive(-1);
+	_filtered.clear();
 	if (!id) {
 		_chatsIndexed = _defaultChatsIndexed.get();
 	} else {
@@ -1709,20 +1818,17 @@ void ShareBox::Inner::applyChatFilter(FilterId id) {
 		const auto &data = _descriptor.session->data();
 		addList(data.chatsFilters().chatsList(id)->indexed());
 	}
-	update();
+	refreshSearchResults();
 }
 
 void ShareBox::Inner::peopleReceived(
 		const QString &query,
 		const QVector<MTPPeer> &my,
 		const QVector<MTPPeer> &people) {
-	_lastQuery = query.toLower().trimmed();
-	if (_lastQuery.at(0) == '@') {
-		_lastQuery = _lastQuery.mid(1);
+	if (_filter.isEmpty() || query.toLower().trimmed() != _lastQuery) {
+		return;
 	}
-	int32 already = _byUsernameFiltered.size();
-	_byUsernameFiltered.reserve(already + my.size() + people.size());
-	d_byUsernameFiltered.reserve(already + my.size() + people.size());
+	_byUsername.reserve(_byUsername.size() + my.size() + people.size());
 	const auto feedList = [&](const QVector<MTPPeer> &list) {
 		for (const auto &data : list) {
 			if (const auto peer = _descriptor.session->data().peerLoaded(
@@ -1733,18 +1839,11 @@ void ShareBox::Inner::peopleReceived(
 					&& !JoinedCommunityChats(peer)
 					&& !_descriptor.filterCallback(history)) {
 					continue;
-				} else if (history && _chatsIndexed->getRow(history)) {
-					continue;
-				} else if (base::contains(_byUsernameFiltered, peer)) {
-					continue;
 				}
-				_byUsernameFiltered.push_back(peer);
-				d_byUsernameFiltered.push_back(std::make_unique<Chat>(
-					history,
-					_st.item,
-					[=] { repaintChat(peer); }));
-				updateChatName(d_byUsernameFiltered.back().get());
-				initChatRestriction(d_byUsernameFiltered.back().get());
+				const auto chat = getChat(history);
+				if (!base::contains(_byUsername, chat)) {
+					_byUsername.push_back(chat);
+				}
 			}
 		}
 	};
@@ -1752,7 +1851,7 @@ void ShareBox::Inner::peopleReceived(
 	feedList(people);
 
 	_searching = false;
-	refresh();
+	refreshSearchResults();
 }
 
 void ShareBox::Inner::refresh() {
