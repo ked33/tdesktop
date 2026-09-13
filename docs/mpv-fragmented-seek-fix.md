@@ -1,5 +1,7 @@
 # MPV 分片 MP4 的缓存外跳转
 
+当前状态：`788b38b` 仍有回跳后进度立即回弹的问题。后续补充状态日志用于继续定位，尚未修复这一现象。
+
 没有全局索引的分片 MP4 按目标时间准备跳转入口，避免每次首次远跳都等待全文件元数据扫描。本次修复进一步保留缓存外反向跳转的原始目标，避免 MPV 已返回旧分片起点后被误判为跳转成功。首播继续使用快速打开选项，普通 MP4 的 Range、大文件头和多 `mdat` 支持保持有效。
 
 ## 原因
@@ -113,6 +115,22 @@ MPV 在原生打开文件的短暂窗口中会拒绝 seek，返回 `error runnin
 另外使用独立 C++ 驱动快照，IPC 接收不加延迟、不丢属性通知，对 regular、large-moov、multiple-mdat、large-moov-multiple-mdat、tail-moov、fragmented-mfra、fragmented-sidx、fragmented-no-index、fragmented-b-frames 九种布局执行 36 → 6 → 38 → 16 → 34 秒跳转。45 次均通过暂停定位及恢复后的音视频检查，退出码均为 0，结果记录在 `layouts-matrix-v1.json` 及各 `live-layouts-<布局>-v1/result.json`。
 
 这些短夹具的原生 seek 均能完成，路径保持原 URL，没有生成额外索引视图或误触发重载；无索引与 B 帧夹具运行了 C++ 按需索引初始化。这组结果验证正常布局和缓存跳转未被破坏，不能代替用户大样本的冷索引反向重载对照。
+
+## 788b38b 的回弹反馈与诊断补充
+
+用户反馈的问题仍存在：从未缓存的较早时间跳转后，进度立即回弹到之前的位置。新日志第 1583、1586 行记录 218.766363 秒的命令和执行目标，第 1641 行却在 499.2 秒恢复；第 3373、3376 行请求 405.420232 秒，第 3420 行在 734.4 秒恢复。安装程序包含上一版新增逻辑，IPC 连接从启动保持到退出。
+
+此前控制器测试和实际 MPV 回归主要检查最终到达目标、音视频同步及资源清理，没有将中途回弹到旧位置作为失败条件。因此这些通过结果不足以证明用户描述的问题已经解决。
+
+新的本机采样没有注入 IPC 延迟或丢弃位置通知，也没有强制提高 cplayer 的命令行日志等级。503.764744 → 218.766363 秒回跳时，位置先报告 218.766363 秒，约 80 ms 后报告 499.32 秒，随后数秒仍播放旧位置。控制器诊断同时显示目标一直保留为 218.766363 秒，索引 revision 2 准备好后才重载。完整样本见 `live-playuser-diagnostics-positions1/position-samples.jsonl` 和 `diagnostic-verification.json`。这个替身 Reader 实验确认了中途回弹，但不能证明真实 Telegram 的索引请求具有相同的完成或取消过程。
+
+本次补充沿用现有播放日志开关，在创建控制器时接入运行诊断。它记录关键状态转换，不记录正常播放时的每次位置更新：
+
+- `MPV controller` 后的 JSON 记录日志订阅请求与响应、输入目标、执行目标、查询响应、目标接受或保护、完成判定和重载响应。`target`、`logged_target`、`candidate`、`value` 使用秒；`serial` 与 `revision` 用于关联同一次操作。
+- `index_state` 对应 Unknown=0、Preparing=1、Ready=2、OnDemand=3、Unavailable=4。加载、暂停、重载和查询状态用于解释未发起重载的条件。
+- `MPV index requested / seek started / seek cancelled / settled` 补齐准备成功之前的过程。取消记录包含原目标、原 revision、当前 revision，以及读取量和耗时；发布前被替换的结果也会记录。
+
+诊断补充已通过独立 MSVC Debug 编译，原有 30 组控制器测试通过；实际 MPV 输出了完整的订阅、目标、错误落点、索引准备和重载记录。另一次连续输入 760 → 127 秒的测试记录了 revision 1 在准备期间被 revision 2 取消、后者完成并到达 127 秒，结果保存在 `live-reloadburst-diagnostics-cancel-early1/`。该变更用于定位真实客户端的决策链，尚未修复中途回弹行为。
 
 ## 时长与验证边界
 

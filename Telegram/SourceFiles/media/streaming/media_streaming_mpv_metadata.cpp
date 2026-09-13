@@ -56,6 +56,10 @@ void PreparedIndex::cancel() {
 	_state->status.store(IndexState::Unavailable);
 	{
 		const auto lock = std::lock_guard(_state->mutex);
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: MPV index cancelled "
+			"revision=%1 target_ms=%2.")
+			.arg(qulonglong(_state->revision.load()))
+			.arg(qlonglong(_state->positionMs)));
 		_state->cache.reset();
 		_state->patches.clear();
 	}
@@ -69,6 +73,9 @@ std::uint64_t PreparedIndex::request(std::int64_t positionMs) {
 	}
 	_state->positionMs = positionMs;
 	const auto revision = ++_state->revision;
+	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: MPV index requested "
+		"revision=%1 target_ms=%2.")
+		.arg(qulonglong(revision)).arg(qlonglong(positionMs)));
 	_state->changed.notify_all();
 	return revision;
 }
@@ -80,6 +87,10 @@ bool PreparedIndex::ready(std::uint64_t revision) const {
 void PreparedIndex::settle() {
 	const auto lock = std::lock_guard(_state->mutex);
 	if (state() == IndexState::OnDemand) {
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: MPV index settled "
+			"revision=%1 target_ms=%2.")
+			.arg(qulonglong(_state->revision.load()))
+			.arg(qlonglong(_state->positionMs)));
 		_state->positionMs = -1;
 		++_state->revision;
 		_state->changed.notify_all();
@@ -189,8 +200,21 @@ void PreparedIndex::Prepare(
 		}
 		reads = bytes = 0;
 		const auto started = std::chrono::steady_clock::now();
+		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: MPV index seek started "
+			"revision=%1 target_ms=%2.")
+			.arg(qulonglong(revision)).arg(qlonglong(positionMs)));
 		auto seek = fragments->seek(positionMs, read);
+		const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - started).count();
 		if (cancelled()) {
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: MPV index seek cancelled "
+				"revision=%1 target_ms=%2 current_revision=%3 state=%4 "
+				"reads=%5 bytes=%6 elapsed_ms=%7.")
+				.arg(qulonglong(revision)).arg(qlonglong(positionMs))
+				.arg(qulonglong(state->revision.load()))
+				.arg(int(state->status.load()))
+				.arg(qulonglong(reads)).arg(qulonglong(bytes))
+				.arg(qlonglong(elapsed)));
 			continue;
 		} else if (!seek) {
 			auto expected = IndexState::OnDemand;
@@ -202,8 +226,6 @@ void PreparedIndex::Prepare(
 			}
 			break;
 		}
-		const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-			std::chrono::steady_clock::now() - started).count();
 		const auto lock = std::lock_guard(state->mutex);
 		if (!cancelled()) {
 			state->patches.emplace(
@@ -216,6 +238,11 @@ void PreparedIndex::Prepare(
 				"revision=%1 target_ms=%2 reads=%3 bytes=%4 elapsed_ms=%5.")
 				.arg(qulonglong(revision)).arg(qlonglong(positionMs))
 				.arg(qulonglong(reads)).arg(qulonglong(bytes)).arg(qlonglong(elapsed)));
+		} else {
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: MPV index seek cancelled "
+				"revision=%1 target_ms=%2 current_revision=%3 phase=publish.")
+				.arg(qulonglong(revision)).arg(qlonglong(positionMs))
+				.arg(qulonglong(state->revision.load())));
 		}
 	}
 	revision = 0;
@@ -240,7 +267,7 @@ void PreparedIndex::Prepare(
 }
 
 IndexControl ControlIndex(std::weak_ptr<PreparedIndex> index) {
-	return {
+	auto result = IndexControl{
 		.state = [=] {
 			const auto strong = index.lock();
 			return strong ? strong->state() : IndexState::Unavailable;
@@ -264,6 +291,13 @@ IndexControl ControlIndex(std::weak_ptr<PreparedIndex> index) {
 			}
 		},
 	};
+	if (PlaybackDebugLogsEnabled()) {
+		result.diagnostic = [](const QString &message) {
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: MPV controller %1")
+				.arg(message));
+		};
+	}
+	return result;
 }
 
 } // namespace Media::Streaming::Mpv

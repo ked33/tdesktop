@@ -40,6 +40,7 @@ struct IndexControl {
 	std::function<bool(std::uint64_t)> ready;
 	std::function<void()> settled;
 	std::function<void()> abandoned;
+	std::function<void(const QString &)> diagnostic;
 };
 
 class PreparedIndex final {
