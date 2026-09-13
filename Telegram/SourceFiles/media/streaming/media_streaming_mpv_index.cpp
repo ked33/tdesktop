@@ -38,11 +38,14 @@ struct LoggedSeek {
 	double target = -1.;
 	bool valid = false;
 	bool observed = false;
+	bool keyframes = false;
+	bool relative = false;
 };
 
 [[nodiscard]] LoggedSeek ParseLoggedSeek(
 		const QString &text,
-		double duration) {
+		double duration,
+		double position) {
 	static const auto pattern = QRegularExpression(
 		uR"mpv(^Run command: seek, flags=\d+, args=\[target="([^"]+)", flags="([^"]*)", legacy="unused"\]\s*$)mpv"_q);
 	const auto match = pattern.match(text);
@@ -75,11 +78,23 @@ struct LoggedSeek {
 	} else if (flags.contains(u"absolute-percent"_q)
 		&& value >= 0. && value <= 100.) {
 		target = duration * value / 100.;
+	} else if (position >= 0.
+		&& (!modeCount || flags.contains(u"relative"_q))) {
+		target = std::max(0., position + value);
+	} else if (position >= 0. && flags.contains(u"relative-percent"_q)) {
+		target = std::max(0., position + duration * value / 100.);
 	}
-	if (target < 0. || target > duration) {
+	if (!std::isfinite(target) || target < 0. || target > duration) {
 		target = -1.;
 	}
-	return { target, target >= 0. };
+	return {
+		.target = target,
+		.valid = target >= 0.,
+		.keyframes = flags.contains(u"keyframes"_q),
+		.relative = !modeCount
+			|| flags.contains(u"relative"_q)
+			|| flags.contains(u"relative-percent"_q),
+	};
 }
 
 [[nodiscard]] std::optional<double> ParseLoggedPosition(const QString &text) {
@@ -134,6 +149,7 @@ private:
 	void seekTo(double position, bool fromLog = false);
 	[[nodiscard]] bool owns(const QString &path) const;
 	[[nodiscard]] bool canReload(const QString &path) const;
+	[[nodiscard]] bool needsNewView() const;
 	void reload();
 	void stop(bool abandoned = false);
 
@@ -151,6 +167,7 @@ private:
 	double _expectedDuration = 0.;
 	double _loggedTarget = -1.;
 	double _fallbackPosition = -1.;
+	double _viewStart = -1.;
 	LoggedSeek _loggedSeek;
 	int _connectAttempts = 0;
 	int _querySequence = 100;
@@ -170,6 +187,9 @@ private:
 	bool _loaded = false;
 	bool _played = false;
 	bool _reloading = false;
+	bool _reloadCommandPending = false;
+	bool _loadingIndex = false;
+	bool _indexFileStarted = false;
 	bool _onDemandReload = false;
 	bool _queryDuringReload = false;
 	bool _queryRestarted = false;
@@ -238,20 +258,25 @@ void IndexReload::poll() {
 		}
 		_socket.connectToServer(_endpoint);
 	} else if (state == IndexState::OnDemand
-		&& (_loaded || _ended)
+		&& (_loaded || _ended || _loadingIndex)
 		&& _idleKnown
-		&& !_reloading
 		&& (!_loggedSeek.valid || _loggedSeek.observed)
 		&& _target >= 0.
-		&& std::chrono::steady_clock::now() - _seekStarted >= kSeekGrace
+		&& (needsNewView()
+			|| std::chrono::steady_clock::now() - _seekStarted >= kSeekGrace)
 		&& canReload(_path)) {
 		if (!_revision) {
 			_revision = _control.request(std::int64_t(_target * 1000));
 			diagnostic("index-requested");
 		}
-		if (_revision && _control.ready(_revision)) {
-			diagnostic("index-ready");
+		const auto ready = _revision && _control.ready(_revision);
+		if (_revision && (ready || needsNewView())
+			&& !_reloadCommandPending
+			&& (_reloadSerial != _seekSerial
+				|| _reloadRevision != _revision)) {
+			diagnostic(ready ? "index-ready" : "index-waiting");
 			_reloading = true;
+			_reloadCommandPending = true;
 			_onDemandReload = true;
 			_reloadRevision = _revision;
 			_reloadSerial = _seekSerial;
@@ -259,12 +284,13 @@ void IndexReload::poll() {
 			request({ u"get_property"_q, u"path"_q }, 2);
 		}
 	} else if (state == IndexState::Ready
-		&& !_reloading
+		&& (!_reloading || (_onDemandReload && !_reloadCommandPending))
 		&& (!_loggedSeek.valid || _loggedSeek.observed)
-		&& (_loaded || _ended)
+		&& (_loaded || _ended || _loadingIndex)
 		&& (_seeking || _target >= 0. || unknownDuration)
 		&& canReload(_path)) {
 		_reloading = true;
+		_reloadCommandPending = true;
 		_onDemandReload = false;
 		if (_target >= 0.) {
 			_position = _target;
@@ -304,6 +330,9 @@ void IndexReload::request(QJsonArray command, int id) {
 }
 
 void IndexReload::queryPosition() {
+	if (_reloadCommandPending || _loadingIndex) {
+		return;
+	}
 	if (_querySequence == std::numeric_limits<int>::max()) {
 		stop(true);
 		return;
@@ -322,7 +351,7 @@ void IndexReload::queryPosition() {
 
 void IndexReload::updatePause(bool paused) {
 	_paused = paused;
-	if (!paused || (_target < 0. && !_seeking && !_reloading)) {
+	if (!paused || _loadingIndex || (_target < 0. && !_seeking && !_reloading)) {
 		_seekPaused = paused;
 	} else if (_querySequence < std::numeric_limits<int>::max()) {
 		_pauseSerial = _seekSerial;
@@ -376,6 +405,9 @@ void IndexReload::seekTo(double position, bool fromLog) {
 	_seekStarted = std::chrono::steady_clock::now();
 	++_seekSerial;
 	diagnostic("target-accepted", details);
+	if (needsNewView()) {
+		poll();
+	}
 }
 
 void IndexReload::diagnostic(const char *event, QJsonObject details) const {
@@ -387,6 +419,7 @@ void IndexReload::diagnostic(const char *event, QJsonObject details) const {
 	details.insert(u"target"_q, _target);
 	details.insert(u"logged_target"_q, _loggedTarget);
 	details.insert(u"fallback_position"_q, _fallbackPosition);
+	details.insert(u"view_start"_q, _viewStart);
 	details.insert(u"candidate"_q, _loggedSeek.target);
 	details.insert(u"candidate_valid"_q, _loggedSeek.valid);
 	details.insert(u"candidate_observed"_q, _loggedSeek.observed);
@@ -400,6 +433,8 @@ void IndexReload::diagnostic(const char *event, QJsonObject details) const {
 	details.insert(u"can_reload"_q, canReload(_path));
 	details.insert(u"seeking"_q, _seeking);
 	details.insert(u"reloading"_q, _reloading);
+	details.insert(u"reload_command_pending"_q, _reloadCommandPending);
+	details.insert(u"loading_index"_q, _loadingIndex);
 	details.insert(u"paused"_q, _paused);
 	details.insert(u"seek_paused"_q, _seekPaused);
 	details.insert(u"position_query"_q, _positionQuery);
@@ -425,7 +460,14 @@ bool IndexReload::owns(const QString &path) const {
 }
 
 bool IndexReload::canReload(const QString &path) const {
-	return owns(path) || (_ended && path.isEmpty());
+	return owns(path) || ((_ended || _loadingIndex) && path.isEmpty());
+}
+
+bool IndexReload::needsNewView() const {
+	return _target >= 0.
+		&& ((_loadingIndex && _reloadSerial != _seekSerial)
+			|| ((_loggedTarget >= 0. || _loggedSeek.observed)
+				&& _target + 0.2 < _viewStart));
 }
 
 void IndexReload::receive() {
@@ -496,16 +538,23 @@ void IndexReload::handle(const QJsonObject &message) {
 		}
 	} else if (event == u"start-file"_q) {
 		diagnostic("start-file");
+		_indexFileStarted = _loadingIndex;
 		clearLoggedSeek();
 	} else if (event == u"file-loaded"_q) {
 		_loaded = true;
 		_ended = false;
+		_loadingIndex = false;
+		_viewStart = _control.seekStart
+			? _control.seekStart(_reloadRevision)
+			: -1.;
 		diagnostic("file-loaded");
 	} else if (event == u"end-file"_q && _idleGuarded) {
 		const auto reason = message.value(u"reason"_q).toString();
 		diagnostic("end-file", { { u"reason"_q, reason } });
 		if (_reloading) {
-			if (reason == u"eof"_q || reason == u"error"_q) {
+			if (!_reloadCommandPending
+				&& (!_loadingIndex || _indexFileStarted)
+				&& (reason == u"eof"_q || reason == u"error"_q)) {
 				stop(true);
 			}
 		} else if ((_target >= 0. || _positionOutstanding)
@@ -522,7 +571,8 @@ void IndexReload::handle(const QJsonObject &message) {
 		diagnostic("playback-restart");
 		_played = true;
 		_queryRestarted = true;
-		if (_onDemandReload && _reloading) {
+		if (_onDemandReload && _reloading
+			&& !_reloadCommandPending && !_loadingIndex) {
 			_reloading = false;
 		}
 		checkCompletedSeek();
@@ -563,11 +613,13 @@ void IndexReload::handle(const QJsonObject &message) {
 		const auto data = message.value(u"data"_q);
 		if (!data.isDouble() || !std::isfinite(data.toDouble())) {
 			_reloading = false;
+			_reloadCommandPending = false;
 			return;
 		}
 		_position = data.toDouble();
 		if (!_played && _position <= 0.) {
 			_reloading = false;
+			_reloadCommandPending = false;
 			return;
 		}
 		request({ u"get_property"_q, u"path"_q }, 2);
@@ -579,18 +631,16 @@ void IndexReload::handle(const QJsonObject &message) {
 			&& (_reloadSerial != _seekSerial
 				|| (_loggedSeek.valid && !_loggedSeek.observed))) {
 			_reloading = false;
+			_reloadCommandPending = false;
 			return;
 		}
 		reload();
 	} else if (message.value(u"request_id"_q).toInt() == 3) {
 		const auto failed = message.value(u"error"_q).toString() != u"success"_q;
 		diagnostic("reload-reply", { { u"error"_q, message.value(u"error"_q) } });
+		_reloadCommandPending = false;
 		if (!_onDemandReload || failed) {
 			stop(failed);
-		} else if (_reloadSerial == _seekSerial) {
-			diagnostic("reload-target-cleared");
-			_target = -1.;
-			_revision = 0;
 		}
 	} else if (message.value(u"request_id"_q).toInt() == 4) {
 		const auto version = message.value(u"data"_q).toString();
@@ -608,6 +658,7 @@ void IndexReload::handle(const QJsonObject &message) {
 		} else if (_reloadSerial != _seekSerial
 			|| (_loggedSeek.valid && !_loggedSeek.observed)) {
 			_reloading = false;
+			_reloadCommandPending = false;
 		} else {
 			reload();
 		}
@@ -642,13 +693,25 @@ void IndexReload::beginLoggedSeek(LoggedSeek seek) {
 		{ u"command_target"_q, seek.target },
 		{ u"command_valid"_q, seek.valid },
 	});
+	if (_loadingIndex && !seek.valid) {
+		return;
+	}
+	const auto sameTarget = seek.valid
+		&& _target >= 0.
+		&& std::abs(seek.target - _target) < 0.001;
 	clearLoggedSeek();
-	++_seekSerial;
-	_revision = 0;
+	if (!sameTarget) {
+		++_seekSerial;
+		_revision = 0;
+		_seekStarted = std::chrono::steady_clock::now();
+	}
 	_completionQuery = -1;
-	_seekStarted = std::chrono::steady_clock::now();
 	_loggedSeek = seek;
-	if (_fallbackPosition >= 0.) {
+	_otherLoggedSeek = seek.relative && !seek.valid;
+	if (_loadingIndex && seek.valid) {
+		_loggedSeek.observed = true;
+		seekTo(seek.target, true);
+	} else if (!sameTarget && _fallbackPosition >= 0.) {
 		seekTo(_fallbackPosition);
 		if (_queryRestarted && !_loggedSeek.valid) {
 			checkCompletedSeek();
@@ -662,9 +725,10 @@ void IndexReload::handleLog(const QJsonObject &message) {
 	}
 	const auto text = message.value(u"text"_q).toString();
 	if (text.startsWith(u"Run command: seek,"_q)) {
-		beginLoggedSeek(ParseLoggedSeek(text, (_duration > 0.)
-			? _duration
-			: _expectedDuration));
+		beginLoggedSeek(ParseLoggedSeek(
+			text,
+			(_duration > 0.) ? _duration : _expectedDuration,
+			_loadingIndex ? _target : -1.));
 	} else if (text.startsWith(u"Run command: sub-seek,"_q)
 		|| text.startsWith(u"Run command: frame-step,"_q)
 		|| text.startsWith(u"Run command: frame-back-step,"_q)
@@ -674,9 +738,10 @@ void IndexReload::handleLog(const QJsonObject &message) {
 	} else if (IsPositionPropertyLog(text)) {
 		diagnostic("position-property-command");
 		beginLoggedSeek({});
+	} else if (text.startsWith(u"Run command: stop,"_q)
+		|| text.startsWith(u"Run command: quit,"_q)) {
+		stop(true);
 	} else if (text.startsWith(u"Run command: loadfile,"_q)
-		|| text.startsWith(u"Run command: stop,"_q)
-		|| text.startsWith(u"Run command: quit,"_q)
 		|| text.startsWith(u"Starting playback..."_q)
 		|| text.startsWith(u"finished playback,"_q)) {
 		diagnostic("playback-command-cleared");
@@ -713,6 +778,11 @@ void IndexReload::handleLog(const QJsonObject &message) {
 		const auto completed = _loggedSeek.valid || _loggedTarget >= 0.;
 		if (_loggedSeek.valid) {
 			const auto target = _loggedSeek.target;
+			if (_loggedSeek.keyframes && *position <= target + 0.2
+				&& !_reloading && _target >= 0.) {
+				finishSeek();
+				return;
+			}
 			_loggedSeek = {};
 			if (target >= 0. && *position > target + 0.2) {
 				seekTo(target, true);
@@ -748,12 +818,26 @@ void IndexReload::reload() {
 	if (!_legacyLoadfile) {
 		command.append(-1);
 	}
-	command.append(QJsonObject{
+	auto options = QJsonObject{
 		{ u"start"_q, QString::number(std::max(0., _position), 'f', 6) },
-		{ u"pause"_q, (_onDemandReload ? _seekPaused : _paused) ? u"yes"_q : u"no"_q },
 		{ u"demuxer-lavf-o"_q, PlaybackDemuxerOptions(_onDemandReload) },
-	});
+	};
+	if (_onDemandReload) {
+		// File-local options can take effect after an asynchronous load
+		// has started and restore their previous values on replacement.
+		// Keep pause global so a user change while awaiting the index
+		// survives both loading and replacement of the pending view.
+		if (_seekPaused != _paused) {
+			request({ u"set_property"_q, u"pause"_q, _seekPaused });
+		}
+	} else {
+		options.insert(u"pause"_q, _paused ? u"yes"_q : u"no"_q);
+	}
+	command.append(options);
 	clearLoggedSeek();
+	_loadingIndex = _onDemandReload;
+	_indexFileStarted = false;
+	_loaded = false;
 	_positionOutstanding = false;
 	_positionQuery = -1;
 	request(std::move(command), 3);

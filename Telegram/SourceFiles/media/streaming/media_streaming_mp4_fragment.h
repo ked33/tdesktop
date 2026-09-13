@@ -300,12 +300,16 @@ template <typename Callback>
 class FragmentIndex final {
 public:
 	using Read = std::function<bool(std::int64_t, std::span<char>)>;
+	struct Seek {
+		std::vector<HeaderPatch> patches;
+		double start = 0.;
+	};
 
 	[[nodiscard]] static std::optional<FragmentIndex> Create(
 		std::int64_t fileSize,
 		std::int64_t durationMs,
 		const Read &read);
-	[[nodiscard]] std::optional<std::vector<HeaderPatch>> seek(
+	[[nodiscard]] std::optional<Seek> seek(
 		std::int64_t positionMs,
 		const Read &read);
 
@@ -638,7 +642,7 @@ inline std::optional<fragment_details::Point> FragmentIndex::find(
 	return std::nullopt;
 }
 
-inline std::optional<std::vector<HeaderPatch>> FragmentIndex::seek(
+inline std::optional<FragmentIndex::Seek> FragmentIndex::seek(
 		std::int64_t positionMs,
 		const Read &read) {
 	if (positionMs < 0 || positionMs >= _durationMs) {
@@ -646,15 +650,17 @@ inline std::optional<std::vector<HeaderPatch>> FragmentIndex::seek(
 	}
 	_budget = fragment_details::kReadBudget;
 	auto first = _fileSize;
+	auto start = double(_durationMs) / 1000.;
 	for (const auto &track : _tracks) {
 		const auto point = find(track, positionMs, read);
 		if (!point) {
 			return {};
 		}
 		first = std::min(first, point->offset);
+		start = std::min(start, double(point->time) / track.timescale);
 	}
 	if (first == _firstFragment) {
-		return std::vector<HeaderPatch>();
+		return Seek();
 	} else if (first - _firstFragment < 16) {
 		return std::nullopt;
 	}
@@ -670,7 +676,7 @@ inline std::optional<std::vector<HeaderPatch>> FragmentIndex::seek(
 	};
 	auto size = HeaderPatch{ .offset = _firstFragment + 8, .size = 8 };
 	details::WriteBigEndian(first - _firstFragment, size.bytes);
-	return std::vector<HeaderPatch>{ header, size };
+	return Seek{ { header, size }, start };
 }
 
 } // namespace Media::Streaming::Mp4
