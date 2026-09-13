@@ -5059,16 +5059,16 @@ QString InnerWidget::pornSearchSummary() const {
 			: tr::lng_search_porn_loaded(tr::now, lt_count, count);
 	}
 	const auto status = complete ? u"\u2705"_q : u"\U0001F504"_q;
-	const auto summary = status + tr::lng_search_porn_summary(
+	const auto summary = status + ' ' + tr::lng_search_porn_summary(
 		tr::now,
+		lt_duration,
+		QString::fromStdString(Api::PornSearchPolicy::FormatDuration(
+			_pornSearchElapsed.elapsed(crl::now()) / 1000)),
 		lt_progress,
 		QString::number(result.searched) + '/'
 			+ (result.totalKnown ? QString::number(result.total) : u"…"_q),
 		lt_messages,
-		messages,
-		lt_duration,
-		QString::fromStdString(Api::PornSearchPolicy::FormatDuration(
-			_pornSearchElapsed.elapsed(crl::now()) / 1000)));
+		messages);
 	return (_searchResultSelectionIndex >= 0)
 		? summary + u" [%1]"_q.arg(_searchResultSelectionIndex + 1)
 		: summary;

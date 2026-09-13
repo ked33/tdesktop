@@ -62,7 +62,7 @@
     "lng_search_porn_loaded_all#other": "{count}",
     "lng_search_porn_loaded_split": "{native} + {additional} = {total}",
     "lng_search_porn_loaded_all_split": "{native} + {additional} = {total}",
-    "lng_search_porn_summary": "【{progress}】{messages} ({duration})",
+    "lng_search_porn_summary": "({duration})【{progress}】{messages}",
     "lng_search_porn_flood": "Telegram 已限制搜索频率，将在 {duration} 后自动继续搜索。",
     "lng_settings_show_group_sender_avatar": "在群组中显示发送者头像",
     "lng_settings_show_seconds": "时间显示秒数",

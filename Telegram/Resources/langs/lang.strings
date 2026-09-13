@@ -8943,7 +8943,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_search_porn_loaded_all#other" = "{count}";
 "lng_search_porn_loaded_split" = "{native} + {additional} = {total}";
 "lng_search_porn_loaded_all_split" = "{native} + {additional} = {total}";
-"lng_search_porn_summary" = "【{progress}】{messages} ({duration})";
+"lng_search_porn_summary" = "({duration})【{progress}】{messages}";
 "lng_search_porn_flood" = "Telegram limited search requests. Searching will resume automatically in {duration}.";
 "lng_settings_show_group_sender_avatar" = "Show sender's avatar in groups";
 "lng_settings_show_seconds" = "Time with seconds";
