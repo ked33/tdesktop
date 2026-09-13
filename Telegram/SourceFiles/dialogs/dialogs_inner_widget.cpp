@@ -5050,13 +5050,16 @@ QString InnerWidget::pornSearchSummary() const {
 				lt_native,
 				native,
 				lt_additional,
-				additional);
+				additional,
+				lt_total,
+				QString::number(count));
 	} else {
 		messages = complete
 			? tr::lng_search_porn_loaded_all(tr::now, lt_count, count)
 			: tr::lng_search_porn_loaded(tr::now, lt_count, count);
 	}
-	const auto summary = tr::lng_search_porn_summary(
+	const auto status = complete ? u"\u2705"_q : u"\U0001F504"_q;
+	const auto summary = status + tr::lng_search_porn_summary(
 		tr::now,
 		lt_progress,
 		QString::number(result.searched) + '/'
