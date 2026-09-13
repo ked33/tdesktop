@@ -302,10 +302,12 @@ private:
 	void updateForceDisplayWide();
 	void scrollToDefault(bool verytop = false);
 	void scrollToDefaultChecked(bool verytop = false);
-	void setupScrollUpButton();
-	void updateScrollUpVisibility();
+	void scrollToLoadedSearchBottom();
+	void setupScrollButtons();
+	void updateScrollButtonsVisibility();
 	void startScrollUpButtonAnimation(bool shown);
-	void updateScrollUpPosition();
+	void startScrollDownButtonAnimation(bool shown);
+	void updateScrollButtonsPosition();
 	void updateLockUnlockPosition();
 	void updateSuggestions(anim::type animated);
 	void processSearchFocusChange();
@@ -389,8 +391,11 @@ private:
 	rpl::variable<float64> _shownProgressValue;
 
 	Ui::Animations::Simple _scrollToTopShown;
+	Ui::Animations::Simple _scrollToBottomShown;
 	object_ptr<Ui::JumpDownButton> _scrollToTop;
+	object_ptr<Ui::JumpDownButton> _scrollToBottom;
 	bool _scrollToTopIsShown = false;
+	bool _scrollToBottomIsShown = false;
 	bool _forumSearchRequested = false;
 	HashOrCashtag _searchHashOrCashtag = {};
 	bool _searchWithPostsPreview = false;
