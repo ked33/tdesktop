@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QProcess>
+#include <QtCore/QRegularExpression>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
 #include <QtCore/QUrlQuery>
@@ -24,6 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <chrono>
 #include <cmath>
 #include <limits>
+#include <optional>
 
 namespace Media::Streaming::Mpv {
 
@@ -31,6 +33,82 @@ namespace {
 
 constexpr auto kSeekGrace = std::chrono::milliseconds(200);
 constexpr auto kRestoreTimeout = std::chrono::milliseconds(1000);
+
+struct LoggedSeek {
+	double target = -1.;
+	bool valid = false;
+	bool observed = false;
+};
+
+[[nodiscard]] LoggedSeek ParseLoggedSeek(
+		const QString &text,
+		double duration) {
+	static const auto pattern = QRegularExpression(
+		uR"mpv(^Run command: seek, flags=\d+, args=\[target="([^"]+)", flags="([^"]*)", legacy="unused"\]\s*$)mpv"_q);
+	const auto match = pattern.match(text);
+	auto valid = false;
+	const auto value = match.captured(1).toDouble(&valid);
+	if (!match.hasMatch() || !valid || !std::isfinite(value)) {
+		return {};
+	}
+	const auto flags = match.captured(2).split('+', Qt::SkipEmptyParts);
+	const auto modes = {
+		u"relative"_q,
+		u"absolute"_q,
+		u"absolute-percent"_q,
+		u"relative-percent"_q,
+	};
+	auto modeCount = 0;
+	for (const auto &flag : flags) {
+		if (std::find(modes.begin(), modes.end(), flag) != modes.end()) {
+			++modeCount;
+		} else if (flag != u"exact"_q && flag != u"keyframes"_q) {
+			return {};
+		}
+	}
+	if (modeCount > 1) {
+		return {};
+	}
+	auto target = -1.;
+	if (flags.contains(u"absolute"_q)) {
+		target = (value < 0.) ? std::max(0., duration + value) : value;
+	} else if (flags.contains(u"absolute-percent"_q)
+		&& value >= 0. && value <= 100.) {
+		target = duration * value / 100.;
+	}
+	if (target < 0. || target > duration) {
+		target = -1.;
+	}
+	return { target, target >= 0. };
+}
+
+[[nodiscard]] std::optional<double> ParseLoggedPosition(const QString &text) {
+	static const auto pattern = QRegularExpression(
+		uR"(^hr-seek, skipping to ([^\s]+)(?: \(no framedrop\))?(?: \(backstep\))?\s*$)"_q);
+	const auto match = pattern.match(text);
+	auto valid = false;
+	const auto result = match.captured(1).toDouble(&valid);
+	return (match.hasMatch() && valid && std::isfinite(result))
+		? std::make_optional(result)
+		: std::nullopt;
+}
+
+[[nodiscard]] std::optional<double> ParseLoggedRestart(const QString &text) {
+	static const auto pattern = QRegularExpression(
+		uR"(^playback restart complete @ ([^,]+), audio=[^,]+, video=[^\s]+(?: \(paused\))?\s*$)"_q);
+	const auto match = pattern.match(text);
+	auto valid = false;
+	const auto result = match.captured(1).toDouble(&valid);
+	return (match.hasMatch() && valid && std::isfinite(result) && result >= 0.)
+		? std::make_optional(result)
+		: std::nullopt;
+}
+
+[[nodiscard]] bool IsPositionPropertyLog(const QString &text) {
+	static const auto pattern = QRegularExpression(
+		uR"(^Set property: (?:time-pos|playback-time|percent-pos|chapter)(?:/full)?(?:=[^\r\n]*)? -> 1\s*$)"_q);
+	return pattern.match(text).hasMatch();
+}
 
 class IndexReload final : public QObject {
 public:
@@ -44,11 +122,15 @@ private:
 	void connected();
 	void receive();
 	void handle(const QJsonObject &message);
+	void handleLog(const QJsonObject &message);
+	void beginLoggedSeek(LoggedSeek seek);
+	void clearLoggedSeek();
 	void request(QJsonArray command, int id = 0);
 	void queryPosition();
 	void checkCompletedSeek();
+	void finishSeek();
 	void updatePause(bool paused);
-	void seekTo(double position);
+	void seekTo(double position, bool fromLog = false);
 	[[nodiscard]] bool owns(const QString &path) const;
 	[[nodiscard]] bool canReload(const QString &path) const;
 	void reload();
@@ -66,6 +148,9 @@ private:
 	double _target = -1.;
 	double _duration = -1.;
 	double _expectedDuration = 0.;
+	double _loggedTarget = -1.;
+	double _fallbackPosition = -1.;
+	LoggedSeek _loggedSeek;
 	int _connectAttempts = 0;
 	int _querySequence = 100;
 	int _positionQuery = -1;
@@ -88,6 +173,9 @@ private:
 	bool _queryDuringReload = false;
 	bool _queryRestarted = false;
 	bool _positionOutstanding = false;
+	bool _logsRequested = false;
+	bool _otherLoggedSeek = false;
+	bool _awaitingLoggedRestart = false;
 	bool _idleKnown = false;
 	bool _idleGuarded = false;
 	bool _ended = false;
@@ -130,6 +218,12 @@ IndexReload::IndexReload(
 
 void IndexReload::poll() {
 	const auto state = _control.state();
+	if (state == IndexState::OnDemand
+		&& !_logsRequested
+		&& _socket.state() == QLocalSocket::ConnectedState) {
+		_logsRequested = true;
+		request({ u"request_log_messages"_q, u"debug"_q });
+	}
 	const auto unknownDuration = _played
 		&& (_expectedDuration <= 0. || _duration + 1. < _expectedDuration);
 	if (state == IndexState::Unavailable) {
@@ -144,6 +238,7 @@ void IndexReload::poll() {
 		&& (_loaded || _ended)
 		&& _idleKnown
 		&& !_reloading
+		&& (!_loggedSeek.valid || _loggedSeek.observed)
 		&& _target >= 0.
 		&& std::chrono::steady_clock::now() - _seekStarted >= kSeekGrace
 		&& canReload(_path)) {
@@ -160,6 +255,7 @@ void IndexReload::poll() {
 		}
 	} else if (state == IndexState::Ready
 		&& !_reloading
+		&& (!_loggedSeek.valid || _loggedSeek.observed)
 		&& (_loaded || _ended)
 		&& (_seeking || _target >= 0. || unknownDuration)
 		&& canReload(_path)) {
@@ -209,6 +305,7 @@ void IndexReload::queryPosition() {
 	_queryDuringReload = _reloading;
 	_queryRestarted = false;
 	_positionOutstanding = true;
+	_fallbackPosition = -1.;
 	if (!_reloading && _target < 0.) {
 		_seekPaused = _paused;
 	}
@@ -235,14 +332,28 @@ void IndexReload::checkCompletedSeek() {
 	}
 }
 
-void IndexReload::seekTo(double position) {
+void IndexReload::seekTo(double position, bool fromLog) {
 	if (!std::isfinite(position) || position < 0.
 		|| position >= double(std::numeric_limits<std::int64_t>::max() / 1000)
 		|| (!_played && position <= 0.)) {
 		return;
-	} else if (_queryDuringReload && std::abs(position - _position) < 0.1) {
+	}
+	if (_queryDuringReload && std::abs(position - _position) < 0.1) {
 		return;
-	} else if (_target >= 0. && std::abs(position - _target) < 0.001) {
+	}
+	if (fromLog) {
+		_loggedTarget = position;
+	} else {
+		_fallbackPosition = position;
+		if (_loggedSeek.valid
+			&& std::abs(position - _loggedSeek.target) < 0.001) {
+			_loggedSeek.observed = true;
+		}
+		if (_loggedTarget >= 0.) {
+			return;
+		}
+	}
+	if (_target >= 0. && std::abs(position - _target) < 0.001) {
 		return;
 	}
 	_target = position;
@@ -270,19 +381,28 @@ bool IndexReload::canReload(const QString &path) const {
 }
 
 void IndexReload::receive() {
-	_buffer += _socket.readAll();
-	if (_buffer.size() > 1024 * 1024) {
-		stop(true);
-		return;
-	}
-	while (true) {
-		const auto end = _buffer.indexOf('\n');
-		if (end < 0) {
+	constexpr auto kMaximumLine = 1024 * 1024;
+	while (_socket.bytesAvailable() > 0) {
+		_buffer += _socket.read(64 * 1024);
+		while (true) {
+			const auto end = _buffer.indexOf('\n');
+			if (end < 0) {
+				break;
+			} else if (end > kMaximumLine) {
+				stop(true);
+				return;
+			}
+			const auto line = _buffer.left(end);
+			_buffer.remove(0, end + 1);
+			handle(QJsonDocument::fromJson(line).object());
+			if (_stopped) {
+				return;
+			}
+		}
+		if (_buffer.size() > kMaximumLine) {
+			stop(true);
 			return;
 		}
-		const auto line = _buffer.left(end);
-		_buffer.remove(0, end + 1);
-		handle(QJsonDocument::fromJson(line).object());
 	}
 }
 
@@ -291,7 +411,9 @@ void IndexReload::handle(const QJsonObject &message) {
 		return;
 	}
 	const auto event = message.value(u"event"_q).toString();
-	if (event == u"property-change"_q) {
+	if (event == u"log-message"_q) {
+		handleLog(message);
+	} else if (event == u"property-change"_q) {
 		const auto name = message.value(u"name"_q).toString();
 		const auto data = message.value(u"data"_q);
 		if (name == u"path"_q) {
@@ -310,11 +432,11 @@ void IndexReload::handle(const QJsonObject &message) {
 			&& _positionOutstanding
 			&& !_queryRestarted
 			&& data.isDouble()) {
-			// MPV publishes the target before it decodes the next frame.
-			// A backward seek outside this view can quickly land on its
-			// first fragment, so a later property query sees that position
-			// instead of the requested target. Keep the event snapshot and
-			// discard the outstanding query before it can replace it.
+			// A target snapshot can arrive before the next frame is decoded.
+			// Keep it ahead of a later query, which may see the wrong landing
+			// position when this view starts after the requested fragment.
+			// MPV can coalesce these updates, so executed seek logs also
+			// preserve the target independently of property notifications.
 			_positionOutstanding = false;
 			_positionQuery = -1;
 			seekTo(data.toDouble());
@@ -322,6 +444,8 @@ void IndexReload::handle(const QJsonObject &message) {
 			_loaded = !data.toBool();
 			_played = _played || (_loaded && !_seeking && _duration > 0.);
 		}
+	} else if (event == u"start-file"_q) {
+		clearLoggedSeek();
 	} else if (event == u"file-loaded"_q) {
 		_loaded = true;
 		_ended = false;
@@ -362,11 +486,10 @@ void IndexReload::handle(const QJsonObject &message) {
 			&& data.isDouble()
 			&& !_seeking
 			&& !_reloading
+			&& !_awaitingLoggedRestart
 			&& _target >= 0.
 			&& std::abs(data.toDouble() - _target) < 0.2) {
-			_target = -1.;
-			_revision = 0;
-			_control.settled();
+			finishSeek();
 		}
 	} else if (message.value(u"request_id"_q).toInt() == _pauseQuery) {
 		const auto data = message.value(u"data"_q);
@@ -389,7 +512,9 @@ void IndexReload::handle(const QJsonObject &message) {
 		if (!canReload(message.value(u"data"_q).toString())) {
 			stop(true);
 			return;
-		} else if (_onDemandReload && _reloadSerial != _seekSerial) {
+		} else if (_onDemandReload
+			&& (_reloadSerial != _seekSerial
+				|| (_loggedSeek.valid && !_loggedSeek.observed))) {
 			_reloading = false;
 			return;
 		}
@@ -415,10 +540,108 @@ void IndexReload::handle(const QJsonObject &message) {
 	} else if (message.value(u"request_id"_q).toInt() == 9) {
 		if (message.value(u"error"_q).toString() != u"success"_q) {
 			stop(true);
-		} else if (_reloadSerial != _seekSerial) {
+		} else if (_reloadSerial != _seekSerial
+			|| (_loggedSeek.valid && !_loggedSeek.observed)) {
 			_reloading = false;
 		} else {
 			reload();
+		}
+	}
+}
+
+void IndexReload::finishSeek() {
+	_target = -1.;
+	_revision = 0;
+	_positionOutstanding = false;
+	_positionQuery = -1;
+	_completionQuery = -1;
+	clearLoggedSeek();
+	_control.settled();
+}
+
+void IndexReload::clearLoggedSeek() {
+	_loggedSeek = {};
+	_loggedTarget = -1.;
+	_otherLoggedSeek = false;
+	_awaitingLoggedRestart = false;
+}
+
+void IndexReload::beginLoggedSeek(LoggedSeek seek) {
+	clearLoggedSeek();
+	++_seekSerial;
+	_revision = 0;
+	_completionQuery = -1;
+	_seekStarted = std::chrono::steady_clock::now();
+	_loggedSeek = seek;
+	if (_fallbackPosition >= 0.) {
+		seekTo(_fallbackPosition);
+		if (_queryRestarted && !_loggedSeek.valid) {
+			checkCompletedSeek();
+		}
+	}
+}
+
+void IndexReload::handleLog(const QJsonObject &message) {
+	if (!_logsRequested || message.value(u"prefix"_q).toString() != u"cplayer"_q) {
+		return;
+	}
+	const auto text = message.value(u"text"_q).toString();
+	if (text.startsWith(u"Run command: seek,"_q)) {
+		beginLoggedSeek(ParseLoggedSeek(text, (_duration > 0.)
+			? _duration
+			: _expectedDuration));
+	} else if (text.startsWith(u"Run command: sub-seek,"_q)
+		|| text.startsWith(u"Run command: frame-step,"_q)
+		|| text.startsWith(u"Run command: frame-back-step,"_q)
+		|| (text.startsWith(u"Run command: revert-seek,"_q)
+			&& !text.contains(u"mark"_q))) {
+		_otherLoggedSeek = true;
+	} else if (IsPositionPropertyLog(text)) {
+		beginLoggedSeek({});
+	} else if (text.startsWith(u"Run command: loadfile,"_q)
+		|| text.startsWith(u"Run command: stop,"_q)
+		|| text.startsWith(u"Run command: quit,"_q)
+		|| text.startsWith(u"Starting playback..."_q)
+		|| text.startsWith(u"finished playback,"_q)) {
+		clearLoggedSeek();
+	} else if ((_loggedSeek.valid || _otherLoggedSeek)
+		&& text.startsWith(u"hr-seek, skipping to "_q)) {
+		const auto position = ParseLoggedPosition(text);
+		const auto duration = (_duration > 0.) ? _duration : _expectedDuration;
+		if (position && *position >= 0. && *position <= duration) {
+			if (_otherLoggedSeek) {
+				beginLoggedSeek({});
+			}
+			_loggedSeek = {};
+			_awaitingLoggedRestart = true;
+			seekTo(*position, true);
+		} else {
+			clearLoggedSeek();
+			if (_queryRestarted) {
+				checkCompletedSeek();
+			}
+		}
+	} else if (text.startsWith(u"playback restart complete @ "_q)) {
+		const auto position = ParseLoggedRestart(text);
+		if (!position) {
+			return;
+		}
+		const auto completed = _loggedSeek.valid || _loggedTarget >= 0.;
+		if (_loggedSeek.valid) {
+			const auto target = _loggedSeek.target;
+			_loggedSeek = {};
+			if (target >= 0. && *position > target + 0.2) {
+				seekTo(target, true);
+			} else if (_fallbackPosition >= 0.) {
+				seekTo(_fallbackPosition);
+			}
+		}
+		_awaitingLoggedRestart = false;
+		if (completed && !_reloading && _target >= 0.
+			&& std::abs(*position - _target) < 0.2) {
+			finishSeek();
+		} else if (completed) {
+			checkCompletedSeek();
 		}
 	}
 }
@@ -445,6 +668,9 @@ void IndexReload::reload() {
 		{ u"pause"_q, (_onDemandReload ? _seekPaused : _paused) ? u"yes"_q : u"no"_q },
 		{ u"demuxer-lavf-o"_q, PlaybackDemuxerOptions(_onDemandReload) },
 	});
+	clearLoggedSeek();
+	_positionOutstanding = false;
+	_positionQuery = -1;
 	request(std::move(command), 3);
 }
 
