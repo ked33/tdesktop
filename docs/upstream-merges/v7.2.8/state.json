@@ -1,0 +1,250 @@
+{
+  "schema_version": 1,
+  "status": "approved-push",
+  "source_checkout": "D:\\D-Software\\source\\Telegram Desktop\\tdesktop - demo",
+  "source_branch": "merge",
+  "source_head": "efa2a4c9c8d1fd6f6a84a57b8c6c363a053ccb11",
+  "official_remote": "https://github.com/telegramdesktop/tdesktop.git",
+  "previous_official_anchor": "2f41383dddd338fe17fd4711afd02688c418fd47",
+  "previous_official_tag": "v7.2.5",
+  "target_tag": "v7.2.8",
+  "target_sha": "272f6f5c2d29d8cdb3aec15907d616b87451a3ca",
+  "isolated_checkout": "D:/D-Software/source/Telegram Desktop/tdesktop-upgrade-v7.2.8",
+  "integration_branch": "upgrade/v7.2.8",
+  "authorizations": {
+    "request": "遵循 docs\\upstream-merge-guide.md 合并到上游的`272f6f5` `v 7.2.8`版本",
+    "preparation": {
+      "covered": true,
+      "basis": "Necessary reversible preparation for the requested merge, in an independent checkout; includes fixed-target fetch, preflight objects, submodule preparation and per-upgrade records."
+    },
+    "merge": {
+      "requested": true,
+      "approved": true,
+      "evidence": "按 F01–F08 推荐方案合并",
+      "decision_ids": [
+        "F01",
+        "F02",
+        "F03",
+        "F04",
+        "F05",
+        "F06",
+        "F07",
+        "F08"
+      ],
+      "scope": "Formal merge and F01-F08 adaptations in the isolated upgrade/v7.2.8 branch; static checks and documentation."
+    },
+    "commit": {
+      "explicitly_requested": true,
+      "approved": true,
+      "evidence": "执行push",
+      "context": "Reply approving the preceding request to create the merge commit and push ked33/upgrade/v7.2.8, triggering the existing Windows x64 Release workflow.",
+      "approved_at_utc": "2026-09-13T23:07:38.054780+00:00",
+      "scope": "Create the reviewed v7.2.8 merge commit including the requested guide and delivery policy updates."
+    },
+    "qr_recovery": {
+      "approved": true,
+      "evidence": "有拦截，已仅放行升级目录，可重试",
+      "scope": "Retry restoring QR files inside the isolated upgrade checkout."
+    },
+    "push": {
+      "explicitly_requested": true,
+      "approved": true,
+      "evidence": [
+        "执行push",
+        "修改合并指南，以后的合并直接推送`merge`分支",
+        "本地`upgrade/*`分支也不需要，先将合并后的代码推送到`merge`分支，然后删除本地`upgrade/*`分支"
+      ],
+      "approved_at_utc": "2026-09-13T23:25:10.852052+00:00",
+      "remote": "ked33",
+      "branch": "merge",
+      "scope": "Direct push after static checks; cloud and runtime verification follow the push.",
+      "cloud_workflow": "build-win-x64.yml",
+      "cloud_configuration": "Release"
+    },
+    "guide_policy": {
+      "approved": true,
+      "evidence": [
+        "修改合并指南，以后的合并直接推送`merge`分支",
+        "本地`upgrade/*`分支也不需要，先将合并后的代码推送到`merge`分支，然后删除本地`upgrade/*`分支"
+      ],
+      "scope": "Update both checkout copies of the merge guide and current delivery records."
+    },
+    "local_upgrade_branch_cleanup": {
+      "approved": true,
+      "evidence": "本地`upgrade/*`分支也不需要，先将合并后的代码推送到`merge`分支，然后删除本地`upgrade/*`分支",
+      "condition": "After remote SHA verification, switch the isolated checkout to merge and delete merged local upgrade/* branches."
+    }
+  },
+  "verification": {
+    "static": "pass",
+    "documentation": "pass",
+    "cloud_build": "not-run",
+    "runtime": "not-run",
+    "report": "verification.md",
+    "source_index_tree": "ff168916ac290361c67d44e2e17b29c69901246d",
+    "source_tree_scope": "Resolved index before staging newly added merge records, local-change documents and guide; includes existing upstream documentation.",
+    "candidate_commit": null,
+    "source_hashes_rechecked": 228,
+    "source_checkout_preserved": true,
+    "document_report": "documentation-checks.json",
+    "source_checkout_allowed_changes": [
+      "docs/upstream-merge-guide.md"
+    ],
+    "source_checkout_preservation_scope": "Original HEAD/status and 56 other protected files preserved; only the guide is changed by explicit request."
+  },
+  "release": {
+    "body": "- Fix some more crashes with bad lottie files.",
+    "draft": false,
+    "html_url": "https://github.com/telegramdesktop/tdesktop/releases/tag/v7.2.8",
+    "name": "v 7.2.8",
+    "prerelease": false,
+    "published_at": "2026-09-10T19:22:48Z",
+    "tag_name": "v7.2.8"
+  },
+  "next_action": "Create the reviewed merge commit, push to ked33/merge, verify remote SHA, switch the isolated checkout to merge, delete the merged local upgrade/v7.2.8 branch and record Actions head_sha.",
+  "merge_base": "2f41383dddd338fe17fd4711afd02688c418fd47",
+  "preflight_tree": "226d514ede822ebc969fbaf21ea3cc0c67a1d86c",
+  "conflict_files": 10,
+  "conflict_regions": 13,
+  "decision_ids": [
+    "F01",
+    "F02",
+    "F03",
+    "F04",
+    "F05",
+    "F06",
+    "F07",
+    "F08"
+  ],
+  "decision_report": "decisions.md",
+  "preparation_verification": {
+    "tag_sha": "verified",
+    "release": "verified official stable",
+    "source_head": "frozen",
+    "independent_clone": "no hardlinks or alternates",
+    "target_objects": "available",
+    "changed_submodule_objects": 6,
+    "declared_fork_url_fetches": "lib_base and cmake exact SHA fetch passed",
+    "local_only_preservation": {
+      "paths": 354,
+      "mismatches": 0
+    },
+    "upstream_only_preservation": {
+      "paths": 181,
+      "mismatches": 0
+    },
+    "remaining_source_issue": null,
+    "scope": "Historical preflight and object-preparation findings.",
+    "resolved_source_issue": "F08 replaced the two obsolete kOptionQScroller references and added startup/import compatibility."
+  },
+  "updated_at_utc": "2026-09-13T23:25:10.852052+00:00",
+  "merge_execution": {
+    "target": "272f6f5c2d29d8cdb3aec15907d616b87451a3ca",
+    "head": "efa2a4c9c8d1fd6f6a84a57b8c6c363a053ccb11",
+    "merge_head": "272f6f5c2d29d8cdb3aec15907d616b87451a3ca",
+    "initial_conflict_files": 10,
+    "initial_conflict_regions": 13,
+    "unmerged_entries": 0,
+    "product_and_upstream_document_paths_changed": 235,
+    "all_decisions_implemented": true,
+    "commit_created": false
+  },
+  "decision_results": {
+    "F01": {
+      "user_choice": "recommended",
+      "implemented": true,
+      "static_result": "字段及对象比较通过：仅 UpstreamVersion 从 7.2.5 改为 7.2.8，其他本地身份资源一致；未执行安装/更新回归。",
+      "runtime": "not-run"
+    },
+    "F02": {
+      "user_choice": "recommended",
+      "implemented": true,
+      "static_result": "三个指定订阅各一处并绑定 lifetime；文件夹接口配套。见 adaptation-checks.json；未运行搜索/切换 UI。",
+      "runtime": "not-run"
+    },
+    "F03": {
+      "user_choice": "recommended",
+      "implemented": true,
+      "static_result": "新手势位移/恢复对称，截图模式保留；两条选择/编辑路径的重点函数体与 source_head 一致。未运行绘制/选择回归。",
+      "runtime": "not-run"
+    },
+    "F04": {
+      "user_choice": "recommended",
+      "implemented": true,
+      "static_result": "固定区 192、controls 256、rounding 48、siblings 64，共 560 float / 2240 bytes，最大写入终点不超分配；RHI 修复保留。未做 GPU 验证。",
+      "runtime": "not-run"
+    },
+    "F05": {
+      "user_choice": "recommended",
+      "implemented": true,
+      "static_result": "除上游观测及缩进外，完整本地等待分支与 source_head 一致；单一 secs、退避、插入和通知路径，helper 注册闭合。未运行网络/延迟回归。",
+      "runtime": "not-run"
+    },
+    "F06": {
+      "user_choice": "recommended",
+      "implemented": true,
+      "static_result": "28 组跨平台 v1/v2、stable/beta 制品名称配套通过；五处最低版本门禁仅限 v2；生产 update checker/Packer 保持本地版本。未执行完整打包/签名/上传/部署。",
+      "runtime": "not-run"
+    },
+    "F07": {
+      "user_choice": "recommended",
+      "implemented": true,
+      "static_result": "39 个递归子模块 HEAD/gitlink 一致且内部 clean；CMake/资源/style 和直接 include 检查通过。Rust/Qt/tlottie 工具链未实际构建。",
+      "runtime": "not-run"
+    },
+    "F08": {
+      "user_choice": "recommended",
+      "implemented": true,
+      "static_result": "新增 core/experimental_options.* 并注册 CMake；启动先应用旧布尔值再 init，避免 QApplication 创建前安排保存 timer。Qt5/6 语法及 27 组静态分支预期已审查，英中 key 配套；未读写真实配置或运行 C++ 迁移。",
+      "runtime": "not-run"
+    }
+  },
+  "delivery": {
+    "commit": "not-created",
+    "integration_push": "not-applicable",
+    "publish_to_ked33_merge": "not-run",
+    "verified_candidate_sha": null,
+    "integration_remote_head": null,
+    "remote_head_after": null,
+    "local_head_after": "efa2a4c9c8d1fd6f6a84a57b8c6c363a053ccb11",
+    "official_upstream_anchor": "pending committed merge",
+    "candidate_official_parent": "272f6f5c2d29d8cdb3aec15907d616b87451a3ca",
+    "next_preflight_base": "Recompute from committed history after completing this merge.",
+    "long_term_remote_before_push": "efa2a4c9c8d1fd6f6a84a57b8c6c363a053ccb11",
+    "integration_remote_before_push": null,
+    "push": "not-run",
+    "push_remote": "ked33",
+    "push_branch": "merge",
+    "pushed_candidate_sha": null,
+    "local_upgrade_branch_cleanup": "pending successful merge push and SHA verification",
+    "local_merge_branch_after": null,
+    "guide_policy_change": {
+      "evidence": [
+        "修改合并指南，以后的合并直接推送`merge`分支",
+        "本地`upgrade/*`分支也不需要，先将合并后的代码推送到`merge`分支，然后删除本地`upgrade/*`分支"
+      ],
+      "original_guide_sha256": "ad74973fc71ada4c2097d2636f3c105d33ad3a6c6c3557c097ab81ca7b43224f",
+      "updated_guide_sha256": "0cf775b3b77cde723619c3239d2e8a215bbcff4be3d2353295d66c8115ede342"
+    }
+  },
+  "push_remote": "ked33",
+  "push_branch": "merge",
+  "initial_integration_branch": "upgrade/v7.2.8",
+  "superseded_delivery_authorizations": {
+    "integration_push": {
+      "explicitly_requested": true,
+      "approved": true,
+      "evidence": "执行push",
+      "context": "Reply approving the preceding request to create the merge commit and push ked33/upgrade/v7.2.8, triggering the existing Windows x64 Release workflow.",
+      "approved_at_utc": "2026-09-13T23:07:38.054780+00:00",
+      "remote": "ked33",
+      "branch": "upgrade/v7.2.8",
+      "cloud_workflow": "build-win-x64.yml",
+      "cloud_configuration": "Release",
+      "scope": "Push the integration branch and verify its remote SHA and Actions run; no publication to ked33/merge."
+    },
+    "publish": {
+      "explicitly_requested": false
+    }
+  }
+}

@@ -1,0 +1,296 @@
+{
+  "checked_at_utc": "2026-09-13T20:37:06.581221+00:00",
+  "method": "Evaluate only extracted, whitelisted variable/conditional naming blocks; release.py AST restricted to naming assignments and files.append. No packaging script, signer, key file, uploader or deployment was executed.",
+  "scenarios": [
+    {
+      "v2": false,
+      "beta": false,
+      "platform": "win-x86",
+      "UpdateFile": "tupdate7000009",
+      "SetupFile": "64Gram-setup.7.0.9.exe",
+      "PortableFile": "tportable.7.0.9.zip",
+      "DeployFolder": "tsetup",
+      "IsccNameParam": "",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": false,
+      "beta": false,
+      "platform": "win-x64",
+      "UpdateFile": "tx64upd7000009",
+      "SetupFile": "64Gram-setup-x64.7.0.9.exe",
+      "PortableFile": "tportable-x64.7.0.9.zip",
+      "DeployFolder": "tx64",
+      "IsccNameParam": "",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": false,
+      "beta": false,
+      "platform": "win-arm",
+      "UpdateFile": "tarm64upd7000009",
+      "SetupFile": "tsetup-arm64.7.0.9.exe",
+      "PortableFile": "tportable-arm64.7.0.9.zip",
+      "DeployFolder": "tarm64",
+      "IsccNameParam": "",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": false,
+      "beta": false,
+      "platform": "linux-x64",
+      "UpdateFile": "tlinuxupd7000009",
+      "SetupFile": "tsetup.7.0.9.tar.xz",
+      "BackupFolder": "tlinux",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": false,
+      "beta": false,
+      "platform": "mac-universal",
+      "UpdateFileAMD64": "tmacupd7000009",
+      "UpdateFileARM64": "tarmacupd7000009",
+      "SetupFile": "tsetup.7.0.9.dmg",
+      "BackupFolder": "tmac",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": false,
+      "beta": false,
+      "platform": "mac-x86_64",
+      "UpdateFileAMD64": "tmacupd7000009",
+      "UpdateFileARM64": "tarmacupd7000009",
+      "SetupFile": "tsetup.x86_64.7.0.9.dmg",
+      "BackupFolder": "tmac",
+      "build_deploy_release_match": "per-arch build names checked; deploy uses universal DMG"
+    },
+    {
+      "v2": false,
+      "beta": false,
+      "platform": "mac-arm64",
+      "UpdateFileAMD64": "tmacupd7000009",
+      "UpdateFileARM64": "tarmacupd7000009",
+      "SetupFile": "tsetup.arm64.7.0.9.dmg",
+      "BackupFolder": "tmac",
+      "build_deploy_release_match": "per-arch build names checked; deploy uses universal DMG"
+    },
+    {
+      "v2": false,
+      "beta": true,
+      "platform": "win-x86",
+      "UpdateFile": "tupdate7000009",
+      "SetupFile": "64Gram-setup.7.0.9.beta.exe",
+      "PortableFile": "tportable.7.0.9.beta.zip",
+      "DeployFolder": "tsetup",
+      "IsccNameParam": "",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": false,
+      "beta": true,
+      "platform": "win-x64",
+      "UpdateFile": "tx64upd7000009",
+      "SetupFile": "64Gram-setup-x64.7.0.9.beta.exe",
+      "PortableFile": "tportable-x64.7.0.9.beta.zip",
+      "DeployFolder": "tx64",
+      "IsccNameParam": "",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": false,
+      "beta": true,
+      "platform": "win-arm",
+      "UpdateFile": "tarm64upd7000009",
+      "SetupFile": "tsetup-arm64.7.0.9.beta.exe",
+      "PortableFile": "tportable-arm64.7.0.9.beta.zip",
+      "DeployFolder": "tarm64",
+      "IsccNameParam": "",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": false,
+      "beta": true,
+      "platform": "linux-x64",
+      "UpdateFile": "tlinuxupd7000009",
+      "SetupFile": "tsetup.7.0.9.beta.tar.xz",
+      "BackupFolder": "tlinux",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": false,
+      "beta": true,
+      "platform": "mac-universal",
+      "UpdateFileAMD64": "tmacupd7000009",
+      "UpdateFileARM64": "tarmacupd7000009",
+      "SetupFile": "tsetup.7.0.9.beta.dmg",
+      "BackupFolder": "tmac",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": false,
+      "beta": true,
+      "platform": "mac-x86_64",
+      "UpdateFileAMD64": "tmacupd7000009",
+      "UpdateFileARM64": "tarmacupd7000009",
+      "SetupFile": "tsetup.x86_64.7.0.9.beta.dmg",
+      "BackupFolder": "tmac",
+      "build_deploy_release_match": "per-arch build names checked; deploy uses universal DMG"
+    },
+    {
+      "v2": false,
+      "beta": true,
+      "platform": "mac-arm64",
+      "UpdateFileAMD64": "tmacupd7000009",
+      "UpdateFileARM64": "tarmacupd7000009",
+      "SetupFile": "tsetup.arm64.7.0.9.beta.dmg",
+      "BackupFolder": "tmac",
+      "build_deploy_release_match": "per-arch build names checked; deploy uses universal DMG"
+    },
+    {
+      "v2": true,
+      "beta": false,
+      "platform": "win-x86",
+      "UpdateFile": "td-update-win-x86-7002008",
+      "SetupFile": "td-setup-win-x86-7.2.8.exe",
+      "PortableFile": "td-portable-win-x86-7.2.8.zip",
+      "DeployFolder": "win-x86",
+      "IsccNameParam": "/dMyOutputBaseFilename=td-setup-win-x86-7.2.8",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": true,
+      "beta": false,
+      "platform": "win-x64",
+      "UpdateFile": "td-update-win-x64-7002008",
+      "SetupFile": "td-setup-win-x64-7.2.8.exe",
+      "PortableFile": "td-portable-win-x64-7.2.8.zip",
+      "DeployFolder": "win-x64",
+      "IsccNameParam": "/dMyOutputBaseFilename=td-setup-win-x64-7.2.8",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": true,
+      "beta": false,
+      "platform": "win-arm",
+      "UpdateFile": "td-update-win-arm-7002008",
+      "SetupFile": "td-setup-win-arm-7.2.8.exe",
+      "PortableFile": "td-portable-win-arm-7.2.8.zip",
+      "DeployFolder": "win-arm",
+      "IsccNameParam": "/dMyOutputBaseFilename=td-setup-win-arm-7.2.8",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": true,
+      "beta": false,
+      "platform": "linux-x64",
+      "UpdateFile": "td-update-linux-x64-7002008",
+      "SetupFile": "td-setup-linux-x64-7.2.8.tar.xz",
+      "BackupFolder": "linux-x64",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": true,
+      "beta": false,
+      "platform": "mac-universal",
+      "UpdateFileAMD64": "td-update-mac-x64-7002008",
+      "UpdateFileARM64": "td-update-mac-arm-7002008",
+      "SetupFile": "td-setup-mac-7.2.8.dmg",
+      "BackupFolder": "mac",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": true,
+      "beta": false,
+      "platform": "mac-x86_64",
+      "UpdateFileAMD64": "td-update-mac-x64-7002008",
+      "UpdateFileARM64": "td-update-mac-arm-7002008",
+      "SetupFile": "td-setup-mac-x64-7.2.8.dmg",
+      "BackupFolder": "mac",
+      "build_deploy_release_match": "per-arch build names checked; deploy uses universal DMG"
+    },
+    {
+      "v2": true,
+      "beta": false,
+      "platform": "mac-arm64",
+      "UpdateFileAMD64": "td-update-mac-x64-7002008",
+      "UpdateFileARM64": "td-update-mac-arm-7002008",
+      "SetupFile": "td-setup-mac-arm-7.2.8.dmg",
+      "BackupFolder": "mac",
+      "build_deploy_release_match": "per-arch build names checked; deploy uses universal DMG"
+    },
+    {
+      "v2": true,
+      "beta": true,
+      "platform": "win-x86",
+      "UpdateFile": "td-update-win-x86-7002008-beta",
+      "SetupFile": "td-setup-win-x86-7.2.8-beta.exe",
+      "PortableFile": "td-portable-win-x86-7.2.8-beta.zip",
+      "DeployFolder": "win-x86",
+      "IsccNameParam": "/dMyOutputBaseFilename=td-setup-win-x86-7.2.8-beta",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": true,
+      "beta": true,
+      "platform": "win-x64",
+      "UpdateFile": "td-update-win-x64-7002008-beta",
+      "SetupFile": "td-setup-win-x64-7.2.8-beta.exe",
+      "PortableFile": "td-portable-win-x64-7.2.8-beta.zip",
+      "DeployFolder": "win-x64",
+      "IsccNameParam": "/dMyOutputBaseFilename=td-setup-win-x64-7.2.8-beta",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": true,
+      "beta": true,
+      "platform": "win-arm",
+      "UpdateFile": "td-update-win-arm-7002008-beta",
+      "SetupFile": "td-setup-win-arm-7.2.8-beta.exe",
+      "PortableFile": "td-portable-win-arm-7.2.8-beta.zip",
+      "DeployFolder": "win-arm",
+      "IsccNameParam": "/dMyOutputBaseFilename=td-setup-win-arm-7.2.8-beta",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": true,
+      "beta": true,
+      "platform": "linux-x64",
+      "UpdateFile": "td-update-linux-x64-7002008-beta",
+      "SetupFile": "td-setup-linux-x64-7.2.8-beta.tar.xz",
+      "BackupFolder": "linux-x64",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": true,
+      "beta": true,
+      "platform": "mac-universal",
+      "UpdateFileAMD64": "td-update-mac-x64-7002008-beta",
+      "UpdateFileARM64": "td-update-mac-arm-7002008-beta",
+      "SetupFile": "td-setup-mac-7.2.8-beta.dmg",
+      "BackupFolder": "mac",
+      "build_deploy_release_match": true
+    },
+    {
+      "v2": true,
+      "beta": true,
+      "platform": "mac-x86_64",
+      "UpdateFileAMD64": "td-update-mac-x64-7002008-beta",
+      "UpdateFileARM64": "td-update-mac-arm-7002008-beta",
+      "SetupFile": "td-setup-mac-x64-7.2.8-beta.dmg",
+      "BackupFolder": "mac",
+      "build_deploy_release_match": "per-arch build names checked; deploy uses universal DMG"
+    },
+    {
+      "v2": true,
+      "beta": true,
+      "platform": "mac-arm64",
+      "UpdateFileAMD64": "td-update-mac-x64-7002008-beta",
+      "UpdateFileARM64": "td-update-mac-arm-7002008-beta",
+      "SetupFile": "td-setup-mac-arm-7.2.8-beta.dmg",
+      "BackupFolder": "mac",
+      "build_deploy_release_match": "per-arch build names checked; deploy uses universal DMG"
+    }
+  ],
+  "minimum_version_guards": "pass in build.bat/build.sh/deploy.sh/release.py/release.sh; only explicit v2 path",
+  "pass": true
+}

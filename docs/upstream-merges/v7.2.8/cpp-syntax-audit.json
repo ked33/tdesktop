@@ -1,0 +1,168 @@
+{
+  "checked_at_utc": "2026-09-13T20:39:23.189038+00:00",
+  "parser": "tree-sitter 0.25.2 / tree-sitter-cpp 0.23.4, isolated scratch install",
+  "scope": "Eight manually adapted C++ paths, Qt 5.15.19 and Qt 6.11.2 preprocessing. Syntax only; not a compiler or API type/link check. Earlier system tree-sitter 0.26 process crashed and its results were discarded.",
+  "results": [
+    {
+      "path": "Telegram/SourceFiles/core/experimental_options.cpp",
+      "qt_version": [
+        5,
+        15,
+        19
+      ],
+      "diagnostic_count": 0,
+      "new_diagnostics": []
+    },
+    {
+      "path": "Telegram/SourceFiles/core/experimental_options.cpp",
+      "qt_version": [
+        6,
+        11,
+        2
+      ],
+      "diagnostic_count": 0,
+      "new_diagnostics": []
+    },
+    {
+      "path": "Telegram/SourceFiles/core/experimental_options.h",
+      "qt_version": [
+        5,
+        15,
+        19
+      ],
+      "diagnostic_count": 0,
+      "new_diagnostics": []
+    },
+    {
+      "path": "Telegram/SourceFiles/core/experimental_options.h",
+      "qt_version": [
+        6,
+        11,
+        2
+      ],
+      "diagnostic_count": 0,
+      "new_diagnostics": []
+    },
+    {
+      "path": "Telegram/SourceFiles/dialogs/dialogs_widget.cpp",
+      "qt_version": [
+        5,
+        15,
+        19
+      ],
+      "diagnostic_count": 0,
+      "new_diagnostics": []
+    },
+    {
+      "path": "Telegram/SourceFiles/dialogs/dialogs_widget.cpp",
+      "qt_version": [
+        6,
+        11,
+        2
+      ],
+      "diagnostic_count": 0,
+      "new_diagnostics": []
+    },
+    {
+      "path": "Telegram/SourceFiles/history/view/history_view_message.cpp",
+      "qt_version": [
+        5,
+        15,
+        19
+      ],
+      "diagnostic_count": 0,
+      "new_diagnostics": []
+    },
+    {
+      "path": "Telegram/SourceFiles/history/view/history_view_message.cpp",
+      "qt_version": [
+        6,
+        11,
+        2
+      ],
+      "diagnostic_count": 0,
+      "new_diagnostics": []
+    },
+    {
+      "path": "Telegram/SourceFiles/media/view/media_view_overlay_opengl.cpp",
+      "qt_version": [
+        5,
+        15,
+        19
+      ],
+      "diagnostic_count": 0,
+      "new_diagnostics": []
+    },
+    {
+      "path": "Telegram/SourceFiles/media/view/media_view_overlay_opengl.cpp",
+      "qt_version": [
+        6,
+        11,
+        2
+      ],
+      "diagnostic_count": 0,
+      "new_diagnostics": []
+    },
+    {
+      "path": "Telegram/SourceFiles/mtproto/mtp_instance.cpp",
+      "qt_version": [
+        5,
+        15,
+        19
+      ],
+      "diagnostic_count": 0,
+      "new_diagnostics": []
+    },
+    {
+      "path": "Telegram/SourceFiles/mtproto/mtp_instance.cpp",
+      "qt_version": [
+        6,
+        11,
+        2
+      ],
+      "diagnostic_count": 0,
+      "new_diagnostics": []
+    },
+    {
+      "path": "Telegram/SourceFiles/core/launcher.cpp",
+      "qt_version": [
+        5,
+        15,
+        19
+      ],
+      "diagnostic_count": 1,
+      "new_diagnostics": []
+    },
+    {
+      "path": "Telegram/SourceFiles/core/launcher.cpp",
+      "qt_version": [
+        6,
+        11,
+        2
+      ],
+      "diagnostic_count": 1,
+      "new_diagnostics": []
+    },
+    {
+      "path": "Telegram/SourceFiles/settings/settings_experimental.cpp",
+      "qt_version": [
+        5,
+        15,
+        19
+      ],
+      "diagnostic_count": 0,
+      "new_diagnostics": []
+    },
+    {
+      "path": "Telegram/SourceFiles/settings/settings_experimental.cpp",
+      "qt_version": [
+        6,
+        11,
+        2
+      ],
+      "diagnostic_count": 0,
+      "new_diagnostics": []
+    }
+  ],
+  "pass": true
+}

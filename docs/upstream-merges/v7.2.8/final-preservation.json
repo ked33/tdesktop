@@ -1,0 +1,34 @@
+{
+  "checked_at_utc": "2026-09-13T21:09:53.908428+00:00",
+  "source_head": "efa2a4c9c8d1fd6f6a84a57b8c6c363a053ccb11",
+  "target_sha": "272f6f5c2d29d8cdb3aec15907d616b87451a3ca",
+  "comparison": "Index mode/blob or gitlink IDs against the same-base local-only and upstream-only sets",
+  "local_only_count": 356,
+  "local_only_differences": [
+    "Telegram/Resources/langs/localization/en.json",
+    "Telegram/Resources/langs/localization/zh-CN.json",
+    "Telegram/SourceFiles/history/history_view_highlight_manager.cpp",
+    "Telegram/SourceFiles/media/streaming/media_streaming_utility.cpp"
+  ],
+  "local_only_explanations": {
+    "Telegram/Resources/langs/localization/en.json": "F08 kinetic scroller localization",
+    "Telegram/Resources/langs/localization/zh-CN.json": "F08 kinetic scroller localization",
+    "Telegram/SourceFiles/history/history_view_highlight_manager.cpp": "Direct style_basic include",
+    "Telegram/SourceFiles/media/streaming/media_streaming_utility.cpp": "Direct style_basic include"
+  },
+  "upstream_only_count": 181,
+  "upstream_only_differences": [
+    "Telegram/build/build.sh",
+    "Telegram/build/deploy.sh",
+    "Telegram/build/release.py",
+    "Telegram/build/release.sh"
+  ],
+  "upstream_only_explanations": {
+    "Telegram/build/build.sh": "F06 preserve default v1 and gate v2",
+    "Telegram/build/deploy.sh": "F06 preserve default v1 and gate v2",
+    "Telegram/build/release.py": "F06 preserve default v1 and gate v2",
+    "Telegram/build/release.sh": "F06 preserve default v1 and gate v2"
+  },
+  "unexpected_differences": [],
+  "pass": true
+}

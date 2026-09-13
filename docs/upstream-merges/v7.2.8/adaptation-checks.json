@@ -1,0 +1,349 @@
+{
+  "checked_at_utc": "2026-09-13T21:09:53.908428+00:00",
+  "source_head": "efa2a4c9c8d1fd6f6a84a57b8c6c363a053ccb11",
+  "target_sha": "272f6f5c2d29d8cdb3aec15907d616b87451a3ca",
+  "method": "Assertions on the resolved source plus exact function-body/local-branch comparisons and GL range arithmetic. No C++ compiler, GPU, API requests, or client execution.",
+  "checks": [
+    {
+      "name": "F01 version header retains all local identity fields",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/core/version.h",
+        "public_version": "7.0.9",
+        "app_version": 7000009,
+        "upstream_version": "7.2.8"
+      }
+    },
+    {
+      "name": "F01/F06 retained local file",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/build/version"
+      }
+    },
+    {
+      "name": "F01/F06 retained local file",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/Resources/winrc/Telegram.rc"
+      }
+    },
+    {
+      "name": "F01/F06 retained local file",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/Resources/winrc/Updater.rc"
+      }
+    },
+    {
+      "name": "F01/F06 retained local file",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/Resources/uwp/AppX/AppxManifest.xml"
+      }
+    },
+    {
+      "name": "F01/F06 retained local file",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/core/update_checker.cpp"
+      }
+    },
+    {
+      "name": "F01/F06 retained local file",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/_other/packer.cpp"
+      }
+    },
+    {
+      "name": "F01/F06 retained local file",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/build/setup.iss"
+      }
+    },
+    {
+      "name": "F02 constructor subscription",
+      "pass": true,
+      "evidence": {
+        "producer": "controller->activeChatsFilter",
+        "action": "switchToChatsFilter(id);",
+        "lifetime": "Widget lifetime"
+      }
+    },
+    {
+      "name": "F02 constructor subscription",
+      "pass": true,
+      "evidence": {
+        "producer": "EnhancedSettings::SearchIncludePornChanges",
+        "action": "updatePornSearch();",
+        "lifetime": "Widget lifetime"
+      }
+    },
+    {
+      "name": "F02 constructor subscription",
+      "pass": true,
+      "evidence": {
+        "producer": "_inner->retryPornSearchRequests",
+        "action": "retryPornSearch();",
+        "lifetime": "Widget lifetime"
+      }
+    },
+    {
+      "name": "F03 screenshot state and new gesture are both retained",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/history/view/history_view_message.cpp"
+      }
+    },
+    {
+      "name": "F03 both avatar paint paths use symmetric gesture shift",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/history/history_inner_widget.cpp"
+      }
+    },
+    {
+      "name": "F03 both avatar paint paths use symmetric gesture shift",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/history/view/history_view_list_widget.cpp"
+      }
+    },
+    {
+      "name": "History/Compose retained function body",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/history/history_widget.cpp",
+        "function": "HistoryWidget::editableMessageNavigationRequest",
+        "overloads": 1,
+        "source_body_sha256": [
+          "c9079889a656d893739b309857690bae1dc0e628cf074052a5368f47b9fb4053"
+        ]
+      }
+    },
+    {
+      "name": "History/Compose retained function body",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/history/history_widget.cpp",
+        "function": "HistoryWidget::setEditableMessageNavigationText",
+        "overloads": 1,
+        "source_body_sha256": [
+          "f1c3107c4bfed62627fd9521544095d92c461194a8000fd291b81102f8b930d3"
+        ]
+      }
+    },
+    {
+      "name": "History/Compose retained function body",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/history/history_widget.cpp",
+        "function": "HistoryWidget::quickCopySelected",
+        "overloads": 1,
+        "source_body_sha256": [
+          "21ddd242ae500fec41007c2a12d6df824b2a92298645785c683ada80d743d1db"
+        ]
+      }
+    },
+    {
+      "name": "History/Compose retained function body",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/history/view/controls/history_view_compose_controls.cpp",
+        "function": "ComposeControls::requestEditableMessageNavigation",
+        "overloads": 1,
+        "source_body_sha256": [
+          "0e9da5c09a43382dcc310d8132bb6fa930d807dc5b2acf4f3822f156492f7ab1"
+        ]
+      }
+    },
+    {
+      "name": "History/Compose retained function body",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/history/view/controls/history_view_compose_controls.cpp",
+        "function": "ComposeControls::editableMessageTextNavigationActive",
+        "overloads": 1,
+        "source_body_sha256": [
+          "fee5add2cc2462addfc5efabc9556634664207f5d33ce8aba77d9b2433e7ad9a"
+        ]
+      }
+    },
+    {
+      "name": "History/Compose retained function body",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/history/view/controls/history_view_compose_controls.cpp",
+        "function": "ComposeControls::resetEditableMessageTextNavigation",
+        "overloads": 1,
+        "source_body_sha256": [
+          "a8e26af1f87328132b77c525f8f213e1b0d98ca8feeb1784f94ce7a5aa8abf67"
+        ]
+      }
+    },
+    {
+      "name": "History/Compose retained function body",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/history/history_inner_widget.cpp",
+        "function": "HistoryInner::toggleItemSelectionAsGroup",
+        "overloads": 1,
+        "source_body_sha256": [
+          "4c097da68280b4f48abdf63798081c367a917ddb20c0cf4bd27f6cb5313e6f94"
+        ]
+      }
+    },
+    {
+      "name": "History/Compose retained function body",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/history/history_inner_widget.cpp",
+        "function": "HistoryInner::applyDragSelection",
+        "overloads": 2,
+        "source_body_sha256": [
+          "00ea782fd00cdeea666082aa5c98fbefffd67884b901b09ce66dc1f4543762a2",
+          "15f1865c5dffb9855d9a0dda6d2fcada5bd624e2d0338471984480b6565dfcdc"
+        ]
+      }
+    },
+    {
+      "name": "History/Compose retained function body",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/history/view/history_view_list_widget.cpp",
+        "function": "ListWidget::toggleItemSelectionAsGroup",
+        "overloads": 1,
+        "source_body_sha256": [
+          "8d75eae3bd588c1e8464b1157a82aea2323ff5a7a0d4922d3400bbdedae5fcc7"
+        ]
+      }
+    },
+    {
+      "name": "History/Compose retained function body",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/history/view/history_view_list_widget.cpp",
+        "function": "ListWidget::applyDragSelection",
+        "overloads": 2,
+        "source_body_sha256": [
+          "082b0ced9533167578cfe65668a5c899cb07a11a6ce5f002f87d3602d91f037b",
+          "99b7ac9c68094c90c400faa42bd33367f63fb7e2b294a2545b713c74a179fda2"
+        ]
+      }
+    },
+    {
+      "name": "F04 buffer is derived from actual fixed layout",
+      "pass": true,
+      "evidence": {
+        "offsets_vertices": {
+          "kNotchOffset": 4,
+          "kRadialLoadingOffset": 8,
+          "kThemePreviewOffset": 12,
+          "kDocumentBubbleOffset": 16,
+          "kSaveMsgOffset": 20,
+          "kChapterOffset": 24,
+          "kSpeedBoostOffset": 28,
+          "kWheelHintOffset": 32,
+          "kFooterOffset": 36,
+          "kCaptionOffset": 40,
+          "kGroupThumbsOffset": 44,
+          "kControlsOffset": 48
+        },
+        "regions": [
+          {
+            "region": "fixed",
+            "start_float": 0,
+            "end_float_exclusive": 192
+          },
+          {
+            "region": "controls",
+            "start_float": 192,
+            "end_float_exclusive": 448
+          },
+          {
+            "region": "rounding",
+            "start_float": 448,
+            "end_float_exclusive": 496
+          },
+          {
+            "region": "stories",
+            "start_float": 496,
+            "end_float_exclusive": 560
+          }
+        ],
+        "floats": 560,
+        "bytes": 2240,
+        "control_indices_reviewed": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "story_index_guard": "index >= 0 && index < kStoriesSiblingPartsCount"
+      }
+    },
+    {
+      "name": "F04 upstream hidden RHI pass retained",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/media/view/media_view_overlay_rhi.cpp"
+      }
+    },
+    {
+      "name": "F05 local retry branch preserved apart from observation and indentation",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/mtproto/mtp_instance.cpp",
+        "single_backoff": true,
+        "single_secs": true,
+        "single_observation": true,
+        "single_insert": true,
+        "single_notification": true,
+        "notification_units": {
+          "serverWaitSeconds": "seconds",
+          "overrideWaitMs": "milliseconds",
+          "appliedWaitMs": "milliseconds including existing +10ms"
+        }
+      }
+    },
+    {
+      "name": "F05 required direct headers",
+      "pass": true,
+      "evidence": {
+        "path": "Telegram/SourceFiles/mtproto/mtp_instance.cpp"
+      }
+    },
+    {
+      "name": "F08 old boolean is applied before options path initialization",
+      "pass": true,
+      "evidence": {
+        "reason": "BasicOption::set schedules call_delayed only when LocalPath is nonempty; Launcher::exec initializes options before QCoreApplication construction."
+      }
+    },
+    {
+      "name": "F08 startup and import boundaries call the compatibility helper",
+      "pass": true,
+      "evidence": {
+        "paths": [
+          "Telegram/SourceFiles/core/launcher.cpp",
+          "Telegram/SourceFiles/settings/settings_experimental.cpp"
+        ]
+      }
+    },
+    {
+      "name": "F08 old value is boolean-only and new key presence wins",
+      "pass": true,
+      "evidence": {
+        "qt_condition": "QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)"
+      }
+    }
+  ],
+  "count": 31,
+  "pass": true
+}

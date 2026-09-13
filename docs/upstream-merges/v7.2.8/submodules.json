@@ -1,0 +1,74 @@
+[
+  {
+    "path": "Telegram/lib_base",
+    "local": "11f28747ed59443cde31c82030705b5ed5ae6640",
+    "target": "de35c7abcbf6464a0845695a55568bdac12a5fba",
+    "declared_local_url": "https://github.com/TDesktop-x64/lib_base.git",
+    "official_url": "https://github.com/desktop-app/lib_base.git",
+    "worktree_head": "de35c7abcbf6464a0845695a55568bdac12a5fba",
+    "object_ready": true,
+    "independent_clone": true,
+    "summary": "1 file changed, 4 insertions(+), 4 deletions(-)",
+    "worktree_synced": true
+  },
+  {
+    "path": "Telegram/lib_lottie",
+    "local": "192a35ab144bb52260f112433363f397363aec1e",
+    "target": "46e0f003a13a29402a80e19bc88eabcbd4f8d65d",
+    "declared_local_url": "https://github.com/desktop-app/lib_lottie.git",
+    "official_url": "https://github.com/desktop-app/lib_lottie.git",
+    "worktree_head": "46e0f003a13a29402a80e19bc88eabcbd4f8d65d",
+    "object_ready": true,
+    "independent_clone": true,
+    "summary": "11 files changed, 333 insertions(+), 153 deletions(-)",
+    "worktree_synced": true
+  },
+  {
+    "path": "Telegram/lib_spellcheck",
+    "local": "ac399e5c25d6a56b9e222ef4a52f548d911635ba",
+    "target": "7d6227183eec145bc2c02d6c55f9829f920d0f26",
+    "declared_local_url": "https://github.com/desktop-app/lib_spellcheck",
+    "official_url": "https://github.com/desktop-app/lib_spellcheck",
+    "worktree_head": "7d6227183eec145bc2c02d6c55f9829f920d0f26",
+    "object_ready": true,
+    "independent_clone": true,
+    "summary": "5 files changed, 77 insertions(+), 16 deletions(-)",
+    "worktree_synced": true
+  },
+  {
+    "path": "Telegram/lib_ui",
+    "local": "90f0acbd9d3896ed631e54c5348a6cb770c706a2",
+    "target": "09f35036fd4f2d2f67422d294740f9a92c38827f",
+    "declared_local_url": "https://github.com/desktop-app/lib_ui.git",
+    "official_url": "https://github.com/desktop-app/lib_ui.git",
+    "worktree_head": "09f35036fd4f2d2f67422d294740f9a92c38827f",
+    "object_ready": true,
+    "independent_clone": true,
+    "summary": "41 files changed, 4886 insertions(+), 1241 deletions(-)",
+    "worktree_synced": true
+  },
+  {
+    "path": "Telegram/lib_webview",
+    "local": "71301e35911f0801ee2890c8b4f04555e34d4f72",
+    "target": "d1e3c3d705806324bc68da66765860ff7f0b3bd6",
+    "declared_local_url": "https://github.com/desktop-app/lib_webview.git",
+    "official_url": "https://github.com/desktop-app/lib_webview.git",
+    "worktree_head": "d1e3c3d705806324bc68da66765860ff7f0b3bd6",
+    "object_ready": true,
+    "independent_clone": true,
+    "summary": "2 files changed, 57 insertions(+), 1 deletion(-)",
+    "worktree_synced": true
+  },
+  {
+    "path": "cmake",
+    "local": "ce47e85122cfa87d4ba4550049377f5167d31226",
+    "target": "5e21e7ac353138128145ec4419c0666dc9959347",
+    "declared_local_url": "https://github.com/TDesktop-x64/cmake_helpers.git",
+    "official_url": "https://github.com/desktop-app/cmake_helpers.git",
+    "worktree_head": "5e21e7ac353138128145ec4419c0666dc9959347",
+    "object_ready": true,
+    "independent_clone": true,
+    "summary": "7 files changed, 80 insertions(+), 152 deletions(-)",
+    "worktree_synced": true
+  }
+]

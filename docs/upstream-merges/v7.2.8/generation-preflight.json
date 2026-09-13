@@ -1,0 +1,8 @@
+{
+  "new_source_files": 26,
+  "missing_source_registrations": [],
+  "animations_qrc_parse": "pass",
+  "animations_qrc_entries": 114,
+  "animations_qrc_missing": [],
+  "scope": "Preflight source/resource registration only; not a compiler, not final resolved-tree checks."
+}

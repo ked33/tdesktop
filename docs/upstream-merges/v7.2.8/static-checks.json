@@ -1,0 +1,592 @@
+{
+  "checked_at_utc": "2026-09-13T21:12:32.239893+00:00",
+  "scope": "Resolved main repository index before staging newly added merge records and local-change documents. Static checks only, no C++ build or client execution.",
+  "source_head": "efa2a4c9c8d1fd6f6a84a57b8c6c363a053ccb11",
+  "target_sha": "272f6f5c2d29d8cdb3aec15907d616b87451a3ca",
+  "source_index_tree": "ff168916ac290361c67d44e2e17b29c69901246d",
+  "changed_paths": 235,
+  "text_files": 223,
+  "binary_files": 5,
+  "bom": [],
+  "line_endings": [],
+  "conflict_markers": [],
+  "parse_errors": [],
+  "parsed": {
+    "python": [
+      {
+        "path": ".agents/skills/process-inbox/scripts/workspace.py",
+        "syntax": "Python 3.10 compatible AST"
+      },
+      {
+        "path": ".agents/skills/process-inbox/scripts/workspace_test.py",
+        "syntax": "Python 3.10 compatible AST"
+      },
+      {
+        "path": "Telegram/build/prepare/prepare.py",
+        "syntax": "Python 3.10 compatible AST"
+      },
+      {
+        "path": "Telegram/build/qt_version.py",
+        "syntax": "Python 3.10 compatible AST"
+      },
+      {
+        "path": "Telegram/build/release.py",
+        "syntax": "Python 3.10 compatible AST"
+      },
+      {
+        "path": "Telegram/build/sign_update.py",
+        "syntax": "Python 3.10 compatible AST"
+      }
+    ],
+    "xml": [
+      "Telegram/Resources/icons/menu/text_style_opaque.svg",
+      "Telegram/Resources/icons/photo_editor/camera.svg",
+      "Telegram/Resources/qrc/telegram/animations.qrc"
+    ],
+    "json": [
+      "Telegram/Resources/langs/localization/en.json",
+      "Telegram/Resources/langs/localization/zh-CN.json"
+    ],
+    "yaml": [
+      "snap/snapcraft.yaml"
+    ],
+    "shell": [
+      {
+        "path": "Telegram/build/build.sh",
+        "method": "bash -n with normalized stdin; no execution"
+      },
+      {
+        "path": "Telegram/build/deploy.sh",
+        "method": "bash -n with normalized stdin; no execution"
+      },
+      {
+        "path": "Telegram/build/release.sh",
+        "method": "bash -n with normalized stdin; no execution"
+      }
+    ]
+  },
+  "new_source_registrations": [
+    {
+      "path": "Telegram/SourceFiles/calls/calls_rate_call.cpp",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 488
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/calls/calls_rate_call.h",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 489
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/core/experimental_options.cpp",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 593
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/core/experimental_options.h",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 594
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/editor/scene/scene_item_animated.cpp",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/cmake/td_ui.cmake",
+          "line": 186
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/editor/scene/scene_item_animated.h",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/cmake/td_ui.cmake",
+          "line": 187
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/editor/scene/scene_item_video.cpp",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/cmake/td_ui.cmake",
+          "line": 200
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/editor/scene/scene_item_video.h",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/cmake/td_ui.cmake",
+          "line": 201
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/editor/scene/scene_text_editing.cpp",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/cmake/td_ui.cmake",
+          "line": 204
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/editor/scene/scene_text_editing.h",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/cmake/td_ui.cmake",
+          "line": 205
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/storage/storage_folder_archive.cpp",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 1982
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/storage/storage_folder_archive.h",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 1983
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/test/test_activation.cpp",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 2006
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/test/test_activation.h",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 2007
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/test/test_box_button.cpp",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 2010
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/test/test_box_button.h",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 2011
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/test/test_gated_stage.cpp",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 2016
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/test/test_gated_stage.h",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 2017
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/test/test_log_lines.cpp",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 2030
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/test/test_log_lines.h",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 2031
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/test/test_rpc_retry.cpp",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 2042
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/test/test_rpc_retry.h",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 2043
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/test/test_text_reads.cpp",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 2049
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/test/test_text_reads.h",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 2050
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/test/test_via_window.cpp",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 2053
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/test/test_via_window.h",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/CMakeLists.txt",
+          "line": 2054
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/ui/controls/button_context_menu.cpp",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/cmake/td_ui.cmake",
+          "line": 477
+        }
+      ]
+    },
+    {
+      "path": "Telegram/SourceFiles/ui/controls/button_context_menu.h",
+      "occurrences": 1,
+      "registered_in": [
+        {
+          "file": "Telegram/cmake/td_ui.cmake",
+          "line": 478
+        }
+      ]
+    }
+  ],
+  "qrc_entries": 114,
+  "qrc_missing": [],
+  "file_sha256": {
+    ".agents/shared/test-loop.md": "7a0f0570f3f04987ac327269dd92b4205798fbe7c7a2d9d3c2db39baaaa89a35",
+    ".agents/skills/process-inbox/scripts/workspace.py": "78302ab9c5d58613502692c07ddd2cb5eedfe3e7ded34a8258087650d008f2f1",
+    ".agents/skills/process-inbox/scripts/workspace_test.py": "36531f437e04528be7e77c806c484372433717c69971975f3bfb01aee33bf877",
+    ".gitmodules": "927584c14581004dae05b58c9ada6cf0c21d6337b1603a3ce6d16254d130fc48",
+    "AGENTS.md": "90230e1404a18f3d49425dd7b3627d1696164193cd11071145e6bd68330aa55c",
+    "Telegram/CMakeLists.txt": "b0f77d5c551f0c8c95b033288ed410299beb28958ca7f00d257089e070b0b095",
+    "Telegram/Resources/animations/call_rate.tgs": "ab08e9c1a5bbe4d0a7e1f165e9bcdfe77dcdd32ac6c9bb6f208032bec19f2c9c",
+    "Telegram/Resources/animations/photo_editor/text_align.tgs": "e3daa238dc0153f58b949f9e9c0de9e7d2b436c7850ba3ef363901baf73d2407",
+    "Telegram/Resources/icons/calls/call_ended.png": "4f57dc9d278cc7dc2794c60f5ea14ff0ac0832764b7a4636329b32291523d7c3",
+    "Telegram/Resources/icons/calls/call_ended@2x.png": "ae65484a6db1831ecf0c9a608241344f967c04c607035f10056a28b000e05bc4",
+    "Telegram/Resources/icons/calls/call_ended@3x.png": "d6ac1f706b2678b45206d070bf10ffd73eab4761327946fca7d95d2f447b560b",
+    "Telegram/Resources/icons/menu/text_style_opaque.svg": "5e29151573af51eca3b3d0905c64b5932328118eb91c51f3c7cd7d5071f40703",
+    "Telegram/Resources/icons/photo_editor/camera.svg": "10d90efcf4591864d1b262b45d84cf44391a7fcac9a9ab299aa83c638934e82c",
+    "Telegram/Resources/langs/lang.strings": "2f9c9a51c84d20dbfdd595f9ce01c48682cbb87bb9cdb1c35189dad0feda7e82",
+    "Telegram/Resources/langs/localization/en.json": "3d76a637d8b9b3c4d758e8eea2ea34c61b5641486bc0dd6e5eb544d0d69f98c2",
+    "Telegram/Resources/langs/localization/zh-CN.json": "41c957a9733a5f7a1cf1ca490c6a4b57abc1ec2f0cd6189e8c94091bb6667446",
+    "Telegram/Resources/qrc/telegram/animations.qrc": "a08ad183c567a7f24274592fb7824b3d513beeb9af156dea35430eba740c6079",
+    "Telegram/SourceFiles/api/api_stickers_creator.cpp": "d8ed308dfd66963b0060f1f0c6f58bc5e16ac90098b3f44952d1a9dd6667b922",
+    "Telegram/SourceFiles/api/api_stickers_creator.h": "2c18643ee94d6d1681f3c3bd3a40b68d40377a73e576379b5fc9d8f54a70c1ec",
+    "Telegram/SourceFiles/apiwrap.cpp": "23e13fdcc83f958156fe7f0a8bca5e73fd662eca18772a592dbf8b1893423ac7",
+    "Telegram/SourceFiles/boxes/connection_box.cpp": "b65b0e34a63d1e6599ec6ab34d0a4f3f6601f46bf9956be5980c9e1e73923c00",
+    "Telegram/SourceFiles/boxes/edit_caption_box.cpp": "769386a9d4dcf155efe107c27cd13e0ffc727356c0f24420164505c5b16e035d",
+    "Telegram/SourceFiles/boxes/send_files_box.cpp": "f7513358377723f3a628ebd8e6c00a1fc3bd9b590525750600352fbb3cbc2c2a",
+    "Telegram/SourceFiles/boxes/send_gif_with_caption_box.cpp": "c7bfe206690076e3653c26f18a6ab220166f9c40f1f24c7940fb8f76b325abe4",
+    "Telegram/SourceFiles/boxes/send_gif_with_caption_box.h": "26eb43dd2cafccc1ec61b4b2c6038470a08d9efb5a9a527f1875978dc175581d",
+    "Telegram/SourceFiles/boxes/sticker_creator_box.cpp": "3e99f407bb47c42c5f7197754ebf6b6946d86806251a2fe4dd2005d53374ec35",
+    "Telegram/SourceFiles/boxes/sticker_creator_box.h": "39f4190585c7339b147ed2ff5be7343e2c099befa4063d250da2c1d79ba09d31",
+    "Telegram/SourceFiles/boxes/sticker_set_box.cpp": "daa2e49190b4e290772d1a6430b1869d0ed63b2f9c582f85c4091e4313e038bf",
+    "Telegram/SourceFiles/boxes/stickers_box.cpp": "b114f7b6c13e8bd068642bdebe130d2ca9060cc136b38b0d027d682c1612bdc4",
+    "Telegram/SourceFiles/calls/calls.style": "1ff5c9b8413b1df89c49168bd11f373aa4006c57768e6cbcd877225192d7d3e6",
+    "Telegram/SourceFiles/calls/calls_call.cpp": "2b0b065dbd2a8020d362badcd69100ba163c4e42a721ee84905d6cb4beb429c6",
+    "Telegram/SourceFiles/calls/calls_call.h": "63ac33d377b06c3de51ea82cad02d0c2fede56bf4659a6fc991e2387894408a4",
+    "Telegram/SourceFiles/calls/calls_instance.cpp": "89e6b1266f696891fb0b8294dcd018f798c6329e7274943e8d70fd2181303b02",
+    "Telegram/SourceFiles/calls/calls_panel.cpp": "90d92628a8d129a5c10abfb655d7e41c0113710ae2c3356a7a519632f7d73390",
+    "Telegram/SourceFiles/calls/calls_panel.h": "da285b22d0ed155929cbd3d877bb7eac1c337c6b03d63ad6b9d105fe9e0956fd",
+    "Telegram/SourceFiles/calls/calls_panel_background.cpp": "98ddeac779cc15cb5d7d828542b9b165bed5de9fb519c1e5407455f34ef6bee4",
+    "Telegram/SourceFiles/calls/calls_panel_background.h": "2c42b0ad0dc05856109ab01cbf5e92e69335e8a0b7ecb5ab7edb3b96d6a01b88",
+    "Telegram/SourceFiles/calls/calls_rate_call.cpp": "cab188210af4130ab9b2a057f292d7a9c8f88ab61e5d593364466e9c67d0ee93",
+    "Telegram/SourceFiles/calls/calls_rate_call.h": "43a033624a360b5622dfb4776a39a74ebfc7661fa50cb9aa7bb0943aa4aa7b0e",
+    "Telegram/SourceFiles/chat_helpers/chat_helpers.style": "e3199cd3be97af2d46c790e47712a4e4eb68d323f712c9a7bce969fe316d602e",
+    "Telegram/SourceFiles/chat_helpers/compose/compose_features.h": "6c5e1b08df701898e89ad300d8745b127d7958ae3c8fccea4a7db19c0e303944",
+    "Telegram/SourceFiles/chat_helpers/field_autocomplete.cpp": "8f74513ef68da77d672e0ad5a789c115c35050e8434edac7f7d48902e39e63d9",
+    "Telegram/SourceFiles/chat_helpers/stickers_list_footer.cpp": "00127cb4d591b23c5aceccbce5321a268d7a37045fc495dc57ef624aefbd9025",
+    "Telegram/SourceFiles/chat_helpers/stickers_list_widget.cpp": "b391f81ac0bfda7d7b48c783c91baa935fb2825af848551eb19507823b534a81",
+    "Telegram/SourceFiles/chat_helpers/stickers_list_widget.h": "bef8a1d5bcdaf6d0c52eb5e47d19759a7bf5affd69156797878383d073081a03",
+    "Telegram/SourceFiles/chat_helpers/tabbed_selector.cpp": "bd24c4fec9eea04d17092d9382b9e23094f0696c83896f581123e3217389e319",
+    "Telegram/SourceFiles/chat_helpers/tabbed_selector.h": "648726bb2eccd06ffa1dc10089cc7385f9b4b02a4dd6a20fa8ceae59ec48c16d",
+    "Telegram/SourceFiles/core/application.cpp": "f3f74d7ee5b32773669a87910381e60d9b25e6000ac1cb949b52ad807b5ab8ce",
+    "Telegram/SourceFiles/core/application.h": "5765010c733ede6787964aac49f98b5037fefc724b27747334d80819b0a756b6",
+    "Telegram/SourceFiles/core/experimental_options.cpp": "129578d15280d9f68d020da424e176073350fce73508ccf92a496c34d806bf7b",
+    "Telegram/SourceFiles/core/experimental_options.h": "34511ca5820f11fce7b8182494bc6f307b9e1ec6a758ced3f525161632b8e168",
+    "Telegram/SourceFiles/core/external_control.cpp": "cccb266b8724cc64da63d2ff96cd25ce0d41c99c76b9c4285a23daf39621cc43",
+    "Telegram/SourceFiles/core/launcher.cpp": "44b3e014d8d5e9803ffe7009158cfe4c00c303726434b9cd8a7735dbb04aa823",
+    "Telegram/SourceFiles/core/launcher.h": "122839176a11989a79d55f22e00de3930fb838411e28dcc45664f4b288e7b171",
+    "Telegram/SourceFiles/core/ui_integration.cpp": "ae35c4da71256c17cd5fc1dbc475c203cab01e98b31ecdd14b1f0f306998dc37",
+    "Telegram/SourceFiles/core/ui_integration.h": "a53374827e2b9e6bfd74bb14e6a313c51dc5f1699bbb935c3341d6e3740b3d8c",
+    "Telegram/SourceFiles/core/version.h": "0fc0e214fb33cdd68f8fd9d69f27e99c48033f6629746a7f6ad512101eb423f1",
+    "Telegram/SourceFiles/dialogs/dialogs.style": "99b6606195e17f3210fd4a87a778e6914f7c16173dd5005402cf9c9634811bd9",
+    "Telegram/SourceFiles/dialogs/dialogs_inner_widget.cpp": "d78655a4fa8b48e2cdfd715ef61044dfccdfe19e7aa299204dcc35adb93a5fe4",
+    "Telegram/SourceFiles/dialogs/dialogs_inner_widget.h": "f1308e409e69cac92aa1fcbfc67434e42a7d6fd4f2f50b841c5ddbbbf5614379",
+    "Telegram/SourceFiles/dialogs/dialogs_widget.cpp": "39c42a277510f685a2c4ad95478d6898d0417f0470d1b21198d8f711f7119b94",
+    "Telegram/SourceFiles/dialogs/dialogs_widget.h": "373760c063db213bf514caa015cd85c74a715cb3bdb7690089d6cc75245029f2",
+    "Telegram/SourceFiles/dialogs/ui/dialogs_layout.cpp": "5f6bf3530ae997aecb67237147c83c74e662f428dac6236ef7c625eb9c6ec785",
+    "Telegram/SourceFiles/dialogs/ui/dialogs_video_userpic.cpp": "eec49a493d9cbb0e66ef4ab46d81d58ce241a2da9c6d8fbcc22479eeddef5151",
+    "Telegram/SourceFiles/editor/controllers/stickers_panel_controller.cpp": "afa945c8a9c61f5e73f5959b0bb32164228147cc858713f50509daa7e366f179",
+    "Telegram/SourceFiles/editor/controllers/stickers_panel_controller.h": "d82607c2256d349cd7277c35ea8e95a8a2045ec72287db11fcb0ba4575809293",
+    "Telegram/SourceFiles/editor/editor.style": "825842492f4e58e619bde87c5433edd83f8fba53db2e25a51b1bcf8a044849c2",
+    "Telegram/SourceFiles/editor/editor_crop.cpp": "9ee0b6dc08c98fd066b5cda7f020ef6efacde8f28051bae6fd7f0c10409054de",
+    "Telegram/SourceFiles/editor/editor_crop.h": "9e9c6233142b17f957fd2db28a3f771015907f7234447fa18d198269453026d8",
+    "Telegram/SourceFiles/editor/editor_paint.cpp": "58d86e4a757a86d3ebbde60c233c59fb7514c153d62e94704dd08a500490c2ec",
+    "Telegram/SourceFiles/editor/editor_paint.h": "c0d75067d6d79836d33fac27da7408bd884fe84314d54db5b89b776f0bafd37a",
+    "Telegram/SourceFiles/editor/photo_editor.cpp": "31c0b9399f632bf59fd8773fd5240b3eaa52b80eed8df4588fc906e010dcf79e",
+    "Telegram/SourceFiles/editor/photo_editor.h": "d14e84b408b83325cd8519b97db63e3e8e6d2d72b56fb0d51249208e4e0cfe3e",
+    "Telegram/SourceFiles/editor/photo_editor_common.cpp": "40c4e1a8e4a058d97968802bc1f6916bf2d3300b1f0a40fa835d870ca1886bdc",
+    "Telegram/SourceFiles/editor/photo_editor_common.h": "3fa978adbe1af3cd4e58e16da968e770261db05d5d4a98d8e6ea4ab97b84769f",
+    "Telegram/SourceFiles/editor/photo_editor_content.cpp": "690fb5a70f795fb07ad3ef1dc20dfe124ceda43f68f1c6962fb47918ce0e855b",
+    "Telegram/SourceFiles/editor/photo_editor_content.h": "76f5012c09929dbf7efd22972b817df87e85e5498d655e66432edf6d75bea82c",
+    "Telegram/SourceFiles/editor/photo_editor_controls.cpp": "ddfd6ae17ef76196470fa4fd08089e248f44d5d9fead9b65dba6f2f72c636808",
+    "Telegram/SourceFiles/editor/photo_editor_inner_common.h": "0a13a6deff72f728e6a78127501ec90146dfd2891da68cde54d06bd6eff3529d",
+    "Telegram/SourceFiles/editor/photo_editor_layer_widget.cpp": "462a52b05ec8a68b005811291a8179e07af97e471f415f8b5e3aef5cfd98f880",
+    "Telegram/SourceFiles/editor/photo_editor_layer_widget.h": "569bc7cbdcccea60a0bde16d86f9846ea84e79197b467f4ac2d1716f17d32458",
+    "Telegram/SourceFiles/editor/scene/scene.cpp": "1f0927ebbec6130110b8241648471c4ce54fc75a50b0fd368d9f5abcdffa8f3c",
+    "Telegram/SourceFiles/editor/scene/scene.h": "57d6d552b4556d0834c26e9552e5e03e3f59f4540e8ea7edcb41fe96a0ea3ddc",
+    "Telegram/SourceFiles/editor/scene/scene_emoji_document.cpp": "7ca389eab30926117548c1e9bc1bd54ac7d6c0f29908b8220b64130fafed0844",
+    "Telegram/SourceFiles/editor/scene/scene_emoji_document.h": "927fbe59b28fe60a86a40a991b5368ce733f743c907cdc3e2c79108cc580062d",
+    "Telegram/SourceFiles/editor/scene/scene_item_animated.cpp": "cfca205bad2acbc75997a721e1a61e142ccd5cb0dc6b243f4646099e13547cb7",
+    "Telegram/SourceFiles/editor/scene/scene_item_animated.h": "73537ea6553f1515c0b7e062452cc5cc9e2e27a294a0df63b672f3da8d0658e6",
+    "Telegram/SourceFiles/editor/scene/scene_item_base.cpp": "d20cde1bac5c3e28ecf675869eb65db4940bdaf1dca48d8b4ffc5f75d33697eb",
+    "Telegram/SourceFiles/editor/scene/scene_item_base.h": "90b62a15472c38cb2d19b2fb3934e88161e88496c4cf751f3b1fefe0243041ae",
+    "Telegram/SourceFiles/editor/scene/scene_item_image.cpp": "30c061f492347f19ea1c398447556673b2fc40dca5f6a7dd2e2460b2a621eac7",
+    "Telegram/SourceFiles/editor/scene/scene_item_sticker.cpp": "4452ba4a91a31ef6cb291cdc6a85bc83dc37921987563fd8dd33b1a0e64db528",
+    "Telegram/SourceFiles/editor/scene/scene_item_sticker.h": "7a2dacd35466ab4fe82ada83d9533527ce0d0988dea9056e3d57f3042abb8767",
+    "Telegram/SourceFiles/editor/scene/scene_item_text.cpp": "8fb601b22c5d94ca0e439f3a32e5b3445de551d81d6a63ceec74b2e025a60044",
+    "Telegram/SourceFiles/editor/scene/scene_item_text.h": "20e413f49666ec09688e9f77e9ec07448ee16b841594b31de7209c37b49ac43a",
+    "Telegram/SourceFiles/editor/scene/scene_item_video.cpp": "7e904a85ccdae23ec72c129e7b3f85932638070fbbe7b240379e6917b4574ade",
+    "Telegram/SourceFiles/editor/scene/scene_item_video.h": "fa10e9c3a1fd491bb837876113916265092d4b15de1f5f188db92119e870d39f",
+    "Telegram/SourceFiles/editor/scene/scene_text_editing.cpp": "4c7c25d7c840862c14dff1d68647fb6820d6711d870753eecbfad54d07d1817e",
+    "Telegram/SourceFiles/editor/scene/scene_text_editing.h": "081040a94f2b4d1e7a99f782d5fc53b7e818b02472fa7a10193e84810ad510ff",
+    "Telegram/SourceFiles/editor/video/video_editor.cpp": "95143e4f024f9ad06ce26d3c5f68e5319472250f0cdb6472fa82fdac8edea334",
+    "Telegram/SourceFiles/editor/video/video_editor.h": "ba191bfa8cd22c80b3f7d54d748e47ef3c29dec81eb0f6e96e98f50f0a8f2877",
+    "Telegram/SourceFiles/editor/video/video_editor_common.cpp": "bafa7748d4c6d228459a82a05c544360bc99c7b9667aa81e737503ec1ba778b1",
+    "Telegram/SourceFiles/editor/video/video_editor_common.h": "d29ef2968bf7bac132ca66c03b65e5bc93f4c02957b38ac5ecdfee0474af3f0b",
+    "Telegram/SourceFiles/editor/video/video_editor_layer.cpp": "09f8df3f51e6d3bcb09fa3076b700da8f1fb3cd3eadc63c7927887427317fd46",
+    "Telegram/SourceFiles/editor/video/video_editor_layer.h": "09ea30c36bbe3fbc0ad49017f275be988f2f9b699d24bbb3e76c4efa6b32f7d6",
+    "Telegram/SourceFiles/editor/video/video_timeline.cpp": "a5967c9c114f3316f0106e1c32265def0a0ddb50879a674c76ef2e09f09e43d2",
+    "Telegram/SourceFiles/editor/video/video_timeline.h": "22c71d0096f43bcf48ff6500ab81e80e7b817743817aa9f2266e24a0bc5bf61e",
+    "Telegram/SourceFiles/ffmpeg/ffmpeg_utility.h": "286b46fe9a8944fdc59e32b96dd17888ceb5c491c60c96ee201f0d674a4b4065",
+    "Telegram/SourceFiles/history/history_drag_area.cpp": "2e83a5b73a5ed483095e7d3d67fedfc41332c460fa5fc1878d2d1e11fe15e914",
+    "Telegram/SourceFiles/history/history_drag_area.h": "792c81f596c6259c294e90cc6535a71f5b8984b902c001522e5167e425e8a31a",
+    "Telegram/SourceFiles/history/history_inner_widget.cpp": "d72ef07420d7de3dd6be5c75e7abd4dca20ee6b7136639374214080361b3b977",
+    "Telegram/SourceFiles/history/history_view_highlight_manager.cpp": "d26bb2b2263e1b05ff841403cf994d32cad9995f3a74d69ef33c87ec93dbbf19",
+    "Telegram/SourceFiles/history/history_widget.cpp": "389cb6f9aa067428c0f17cf66ee0614be04795fc76513e0764b66292669465c3",
+    "Telegram/SourceFiles/history/view/controls/history_view_compose_controls.cpp": "16575ea35c5d7d72fbc2ab64d66efb954428559d8fcfc4f69c3b0d429df099c1",
+    "Telegram/SourceFiles/history/view/history_view_chat_section.cpp": "ac478fda2b052bd8d0b3fb89734dd4f1252e4f67e28ca19adf76c54b72fbf6c4",
+    "Telegram/SourceFiles/history/view/history_view_keyboard_text_selection.cpp": "e7802f72f303355c9e93b1ca56e4b5e6cf9ce12d55c69e10b7a02d6ab6c5a3dc",
+    "Telegram/SourceFiles/history/view/history_view_list_widget.cpp": "6a6eb1183abdc3801de0744a7f4e095cbac45e41f28ee836eae6bf76184efc23",
+    "Telegram/SourceFiles/history/view/history_view_message.cpp": "44d4a11b8f7f88ea43e2d4d8490fa4edeea85afa4270799ed516689d4d0b4d12",
+    "Telegram/SourceFiles/history/view/history_view_reaction_preview.cpp": "2d53c4ca830751c66950973d00a57953e6b5a3c81e3dfbf2b891b1e2d78e9754",
+    "Telegram/SourceFiles/history/view/history_view_scheduled_section.cpp": "eb43e672e68d284ac3d6a0e352938cbcb8a60cc1387e9565a0094216489250b8",
+    "Telegram/SourceFiles/history/view/history_view_top_bar_widget.cpp": "c8b11ebbfd9accf86476132c4f1f16045c272712babbf5e5cfc850714465e3c8",
+    "Telegram/SourceFiles/history/view/history_view_top_bar_widget.h": "0603521202f77a85f4ba60fba02074e97ccf6b54e033affb27a2c9bf7436a1db",
+    "Telegram/SourceFiles/history/view/media/history_view_document.cpp": "aa7e01f21abca629bbb9f2265064e8696290d4e67fdf0ae1fb64a3c9a6574f10",
+    "Telegram/SourceFiles/history/view/media/history_view_gif.cpp": "f4495456e98113722c84f983ecbe526c504c55dcd745d6f3f1904206f145f18c",
+    "Telegram/SourceFiles/history/view/media/history_view_gif.h": "8b5fc07784a8981c2f1c77379f21e9efc9332f2520f8523a21d0bcdcb1e29376",
+    "Telegram/SourceFiles/info/profile/info_profile_top_bar.cpp": "b85dfea96ec83a14afda803577860edca773deb74c7e7abd5d80300082ca49ea",
+    "Telegram/SourceFiles/inline_bots/inline_bot_layout_internal.cpp": "50542dcf3ad6a72b5fef4f2bd1af9bcb058c86ffaf0d103ad493e10be4fffdf2",
+    "Telegram/SourceFiles/inline_bots/inline_bot_layout_internal.h": "8658dbe1263aabc3b659ac00846ae7065b6f67b7585bbf6c07f6d17c715ee854",
+    "Telegram/SourceFiles/iv/editor/iv_editor_clipboard.cpp": "08f21f931fcf166d450b697f339900684f64b18112073cd0a759b146998434eb",
+    "Telegram/SourceFiles/iv/editor/iv_editor_session.cpp": "8a8413c590b2f4636276ebca9e4d4ab36b95d0ed46ba0b0c179cb6f7557507f1",
+    "Telegram/SourceFiles/iv/editor/iv_editor_widget.cpp": "8dfb1ae3847aa7c6da7658c73b74060cb19ce9d397f923f5cdb427d289c467c8",
+    "Telegram/SourceFiles/iv/editor/iv_editor_widget.h": "50850123a94ad51204ac8116e731ba7128dc204144bb197d3501e7599dd35a02",
+    "Telegram/SourceFiles/iv/markdown/iv_markdown_article.cpp": "e34b0262f1e0442fc6ca95033948b68ea2d5dd9db17ab78ed6f85f4ac92105a0",
+    "Telegram/SourceFiles/iv/markdown/iv_markdown_article_layout_blocks.cpp": "a65cc66906cc8492186f981b1d4166fd624b6c8ca978c0624aae32c04570025c",
+    "Telegram/SourceFiles/iv/markdown/iv_markdown_article_text.cpp": "9ba1df8709cc6249c4cb15542749de9b0edd9346848e6e4d58ff3583b7a8ecb5",
+    "Telegram/SourceFiles/iv/markdown/iv_markdown_article_text.h": "cf75d6e5ad9a3d5eecb1ca8fa1eb55512d3d78e504ebd7cab7c00733fca06ac7",
+    "Telegram/SourceFiles/iv/markdown/iv_markdown_button_row.cpp": "b241534aa669b92df4273cebf66eddd1a7e4d9e642e28e6ae2f08d3e5883220f",
+    "Telegram/SourceFiles/iv/markdown/iv_markdown_button_row.h": "e8698737521cc5274629de6c9f6516884dc47e892c491e4850a2b6a0f553febe",
+    "Telegram/SourceFiles/media/clip/media_clip_reader.cpp": "e6ceb925ada7864d01bb4e68823e51386853519c294492be88899a1140ee2e79",
+    "Telegram/SourceFiles/media/media_video_encode.cpp": "1544c83e24b8efa88426389a56f9fac8d98de962541084cdd9026c80d761a7d4",
+    "Telegram/SourceFiles/media/media_video_encode.h": "e693c2b00605ba5d32c6628acf68b717bd6835896eba79ed60029a59c2a25268",
+    "Telegram/SourceFiles/media/media_video_frames.cpp": "482848b3c97c64c17b32176b04a580d38bfe6ca02ec7295f537ec9eaceff86df",
+    "Telegram/SourceFiles/media/media_video_frames.h": "873d31efa5a7fedd6f11495d09c498970a62f635782711854edabf11dde25c50",
+    "Telegram/SourceFiles/media/streaming/media_streaming_utility.cpp": "4317a979132d8dc44dd0f483dbcde0d9835e4a8322cac933a3912ec4ad2a4167",
+    "Telegram/SourceFiles/media/view/media_view.style": "830883c8a558e5971517e1f1bc4f7acdd1ae545e2349c41235a8a7427597e814",
+    "Telegram/SourceFiles/media/view/media_view_overlay_opengl.cpp": "c0556f8065c24f27ee73490800fb3db56b67a0bf8c3196908fc47fce542c66e5",
+    "Telegram/SourceFiles/media/view/media_view_overlay_rhi.cpp": "af2b1f10f64504a85b35e93a745fa136ea0c4abdb8ecae42c813dbc5c5978bd4",
+    "Telegram/SourceFiles/menu/menu_item_download_files.cpp": "3476a4eeebd85f01352a339bd4407f27f5596b4652dd7db2156c7c421b548dea",
+    "Telegram/SourceFiles/mtproto/mtp_instance.cpp": "cb1d9f7b0893ca5b4886fad821822f37fe7ec3c874e452c0a16ddaff12b5f0c4",
+    "Telegram/SourceFiles/mtproto/mtproto_proxy_data.cpp": "5f77bb9092344ca037d5f2c2f1bbab6af0a5eda128bb90e2c56e48e1ecfb7a8d",
+    "Telegram/SourceFiles/mtproto/mtproto_proxy_data.h": "e1c7760d0849667b11f42a52e36fabe391f01e0d1570071055fcac141ebcaa3c",
+    "Telegram/SourceFiles/mtproto/web_proxy/web_proxy_transport.cpp": "530444159e8bc64fb839cc77b66a1ae962ba31922f38325f14550d05d764e986",
+    "Telegram/SourceFiles/mtproto/web_proxy/web_proxy_webview.cpp": "befc6e8538a873d05950436047fd39b8e7de02329397154695cda2e4c9d4ea6e",
+    "Telegram/SourceFiles/overview/overview_layout.cpp": "8c4fda726afcdd8c218923909db85c17a09d0704c7e21b922c65a62e3deb5333",
+    "Telegram/SourceFiles/overview/overview_layout.h": "961afa34f42f52bd693607f15f2e893e82cfde5c96f486964fe04e1b42e43409",
+    "Telegram/SourceFiles/platform/mac/main_window_mac.mm": "04fc3f7d8ea89a875b77ca341956f04c05fa0aea871161906ec0f5359b2653ca",
+    "Telegram/SourceFiles/platform/mac/specific_mac_p.mm": "3c6dfa92c90f21bf1e10acb0b1afa89926de0d1ae5aac4ab4321aa94a5677342",
+    "Telegram/SourceFiles/settings/sections/settings_information.cpp": "8003fee4a61e57d710fc4a0d246b9bdd130b621020e802aee0a1c0e1de7ec02b",
+    "Telegram/SourceFiles/settings/settings_experimental.cpp": "1e271c34b5dcae7396f4f293c7638281232317c1053a5a59ea97c359dc0f90a5",
+    "Telegram/SourceFiles/storage/file_download.cpp": "7e360c7f37e07acdb0c5971e60e25d245eda8c8fc4a3efaa38f5ec784ee19696",
+    "Telegram/SourceFiles/storage/file_download.h": "efe83efb50e8a2284eb340e9fd29fd540068711badca7180af0ad54a7111148a",
+    "Telegram/SourceFiles/storage/file_upload.cpp": "24e9aaab8a62a8bf6261064e60e8981c48287ace5c4cd6fa39a507a193ce6ea5",
+    "Telegram/SourceFiles/storage/file_upload.h": "9c25247094bca41afd587a90840b3ad9bdb5e0db612e768b8bef66ee894f923a",
+    "Telegram/SourceFiles/storage/localimageloader.cpp": "1e1df4f2cda894da51d7c7f719a241b1ca2ccd0e3c5966cbbfed6b7891e9fdb7",
+    "Telegram/SourceFiles/storage/localimageloader.h": "f9eaea6b29362f93eca0eb4de9d8503259e025bcd3de672847869cd4abe0b165",
+    "Telegram/SourceFiles/storage/storage_folder_archive.cpp": "66b98e8dae8f5ce0caf3213c38581146cb058468c2b0cce0ca5ced61e743369b",
+    "Telegram/SourceFiles/storage/storage_folder_archive.h": "3bfc003e8afa7b574937a7bfce40bd565610aa206b5eeb169dc230d4603d512b",
+    "Telegram/SourceFiles/storage/storage_media_prepare.cpp": "44cdf42fb8788d6442edae9ac9689f99594e47d0f6e5c55c6fa1ffbe3c7c2e9f",
+    "Telegram/SourceFiles/storage/storage_media_prepare.h": "6fe6236433d748e4bce611a1523a6abd6107d88756556c4a91a998bc4e1eb63b",
+    "Telegram/SourceFiles/test/README.md": "6b18ec8bfde24d914bf08e1cdf57e53bb06d12c9c5bdda1a302c05590bb37112",
+    "Telegram/SourceFiles/test/test_activation.cpp": "7c773d3e883b048c37950da1854104a91e195f675573ddc3323c79f1ad68595a",
+    "Telegram/SourceFiles/test/test_activation.h": "d7afb01218766d0eac6cfd609af1398d53b656cbb629c7884582a71f5fbbcd30",
+    "Telegram/SourceFiles/test/test_box_button.cpp": "2459118feefb658ded61a25f28f3d626753427a160ca809312687fa72b91ec2e",
+    "Telegram/SourceFiles/test/test_box_button.h": "63b420b69f7a981e7725f6f98928b6de5be0cde31f914bb91f1a6933e1a16a2f",
+    "Telegram/SourceFiles/test/test_capture.cpp": "bc960d2bfb94613d5618b70703abd2363bebd5607ee285d77353e96c4d9c4264",
+    "Telegram/SourceFiles/test/test_capture.h": "9ff84b719bafd74ed8f2decc281855d5c0a91852430fd51eaaff46f0702a58a3",
+    "Telegram/SourceFiles/test/test_gated_stage.cpp": "50a937ca92843116ac48d337887600b7ce72cbfa1b204ee4c9d4b303220d4d85",
+    "Telegram/SourceFiles/test/test_gated_stage.h": "1c79f85dfd86ab340be174a953495a231773f992e7cefb8d4b8613961732894e",
+    "Telegram/SourceFiles/test/test_layer_root.cpp": "f4030cd2fafc1d08551036b1ab69dcf1c6e1217ef871c4089f811fb735db5de5",
+    "Telegram/SourceFiles/test/test_log.cpp": "b4e63f060d7cb079dc3fcebd2ee4116245c0dc97112df161e92471c9f726a9d3",
+    "Telegram/SourceFiles/test/test_log.h": "d6c65ee4c42434e74bf09720b076a12da75bb8eff940b3d8c19f3683ced4d8d2",
+    "Telegram/SourceFiles/test/test_log_lines.cpp": "bbff09541442228120af84f7d9622a83837f03e3a172bb429f75c19dfc1a185d",
+    "Telegram/SourceFiles/test/test_log_lines.h": "20aa22a818eac1b20ba13592b9a8612a82a3ece752a7d4e115ed9cf9f3580bef",
+    "Telegram/SourceFiles/test/test_rpc_retry.cpp": "1f5447cbafbd4ef85ce1184fd90a0cdbafeeaabd352bc1a9863f81e7697e12a6",
+    "Telegram/SourceFiles/test/test_rpc_retry.h": "e1be5677cc8781b61922f9cc80801d670849a9cbaf02fef75bfe590f027d77f8",
+    "Telegram/SourceFiles/test/test_runner.cpp": "4e88c054580cbe4c0ea8398a4a0d8f111614ef4b01163eeb86f69f2be88713d5",
+    "Telegram/SourceFiles/test/test_runner.h": "64d526b200679ad80d53b3fda54767190074a1412c0c5ba4e77d80f2abf68524",
+    "Telegram/SourceFiles/test/test_text_reads.cpp": "1518d1bfbaa1e0c58dce0e7f8db5a2bb6bee0b4ad057d75e79e6f74120399f3b",
+    "Telegram/SourceFiles/test/test_text_reads.h": "cfb5212a54d2600edd24e9d38a202e83d67c82db8023b58f31917757798b795d",
+    "Telegram/SourceFiles/test/test_via_window.cpp": "cb677231b426e8abeb58540ed7753f2f6dd88d5ec275de2c052a1ff5ee081276",
+    "Telegram/SourceFiles/test/test_via_window.h": "93aae425260f4206cebacdbbd72997a072e03168f02ae942571694c2ceff181f",
+    "Telegram/SourceFiles/test/test_widgets.cpp": "5fdeb4ccae117d99cdcf15fc97962202650044ccb869255852662689cebf42a8",
+    "Telegram/SourceFiles/test/test_widgets.h": "e930a56f982ae48f57043723ede8018d6406e27063b065a22b9f63f6cc8ad92f",
+    "Telegram/SourceFiles/tests/test_main.cpp": "d6db9b0ce1c10a96d688e9135f5d28513a4d316d084d512e2f0f017838aa6a1e",
+    "Telegram/SourceFiles/tests/test_main.h": "eca0d151d2bae79000c9452eccaa8abc6b03cf63af969166ea8127c1cb82aeac",
+    "Telegram/SourceFiles/ui/chat/attach/attach_album_thumbnail.cpp": "d8f9ed22c1c7ddddce468803ac2a784abdacf53862eed393c1f2d1e1f0f31586",
+    "Telegram/SourceFiles/ui/chat/attach/attach_prepare.cpp": "8e6551cd567cdb7c3d33a595cf6cc4b7004f51fdc1f520bf5f5ae125d9781e70",
+    "Telegram/SourceFiles/ui/chat/attach/attach_prepare.h": "3d5c53e08ed4ee13ed88876a434fdddf97783a3d81c1494c11a49d88deb81071",
+    "Telegram/SourceFiles/ui/chat/attach/attach_single_file_preview.cpp": "78926503e5923137d0b1f545d6038b290d04ad47778db9624c35327f1aa3a985",
+    "Telegram/SourceFiles/ui/controls/button_context_menu.cpp": "93db0496855212b35875d92ac91fa785810a2c5aa3b2320b08b89506d26914b3",
+    "Telegram/SourceFiles/ui/controls/button_context_menu.h": "d397ce5de601552b0866c517ed25bca37b25bd45f9c947f7036e8ea9e8ca7d05",
+    "Telegram/SourceFiles/ui/controls/popup_selector.cpp": "0cb191c95ce0f60b8c14242a1ce552b8c46c0b4c2111af654b23f3947014dbe5",
+    "Telegram/SourceFiles/ui/controls/popup_selector.h": "e913a97255c5043557a2a6deb72bf524b7e9a4e05173b55a9e16259bbda6ce99",
+    "Telegram/SourceFiles/ui/controls/swipe_handler.cpp": "65be099ee1b93a5e4b1647428b486454c72a048df51508ef4b2205df90366615",
+    "Telegram/SourceFiles/ui/controls/swipe_handler_data.h": "e40cb1192d328768a2a3308e28436514fbb49d918b392fb718ab3271ad4e94da",
+    "Telegram/SourceFiles/ui/menu_icons.style": "55affe8fc75d7a9e30802a5dc6ccf026f8e37999decc6e3956cb8fe1538d82d8",
+    "Telegram/SourceFiles/ui/peer/video_userpic_player.cpp": "96f9887ca7fb353a34a7baa245c91147f8db0e5cb41032b777bd3c8108d2f1bf",
+    "Telegram/SourceFiles/ui/peer/video_userpic_player.h": "4a001d17e6b07ff29b30cb32f73dd6b875d8d0558cea329d027929923c2ca7f5",
+    "Telegram/SourceFiles/window/notifications_manager.cpp": "b45f22dd41183d85d9582359ff11f8c6681cef53aff1ab0969fd241547ec8051",
+    "Telegram/SourceFiles/window/window_peer_menu.cpp": "4fe4b7babff626e3bed89d3f03f7bb381e1a9ef9929ce8d573ee793a0571320f",
+    "Telegram/SourceFiles/window/window_saved_windows.cpp": "2df693f7ab4af2b1cc1e30e00cc634395cb47b6927ba868b4783409c07a16c9a",
+    "Telegram/SourceFiles/window/window_saved_windows.h": "bec087e973c42ac4d3ad586fafa2683b58a4b22ea79c19708c9978d53dbeea12",
+    "Telegram/SourceFiles/window/window_separate_id.cpp": "2d2b53ef5b662828093c827040046050109ade5259ea64ecf96ace9f69b79819",
+    "Telegram/SourceFiles/window/window_separate_id.h": "1cf49851e90ae99675a45a3d9554da299e054747f50049ef449ea3d70aa5ab03",
+    "Telegram/SourceFiles/window/window_session_controller.cpp": "2034b245b9951ac396d78a500a861af17784fa787ccf92d214305c5fc6270b54",
+    "Telegram/SourceFiles/window/window_session_controller.h": "98d9881e58aac725143b82de0040fd2e023f83e9b15c84023eaeea1d790b0596",
+    "Telegram/build/build.bat": "6175bfb0d14c96abdb8a7ebdfabc85785d1d97f736a28c194decba1abcb0aab7",
+    "Telegram/build/build.sh": "5478d0be48b20dee6532e4375517cd03e891b4edb359eb033ed399a23e450c67",
+    "Telegram/build/deploy.sh": "becab9bc796c74ea1748a291772bd93459685d61c385d220b92a4934f8687005",
+    "Telegram/build/docker/centos_env/Dockerfile": "17c5fc2189b50acc7034eca2349b41aaccef6421838bb3b53bbd2c128126eddd",
+    "Telegram/build/prepare/prepare.py": "15b8a7d13c90b8abf603dd43019d06b0a85eaec891ae21aae558949cf0d52fc2",
+    "Telegram/build/qt_version.py": "466a3a45a05130ff980ce29cbaed69b20f0209d4479d39ded07b10b06567e4c2",
+    "Telegram/build/release.py": "5c11dd5b96d47af988e3ecd3d6eeb3f79f729107fb20c711ebb876c8b72c519a",
+    "Telegram/build/release.sh": "d15667bdffe75ff9a32a351e89d543395693ce3d7d64eef01d5082670df80125",
+    "Telegram/build/sign_update.py": "9231c26da94d42e1c6c70b6f82167ed9c756cc175e2c85aa62a67fa80f703ac3",
+    "Telegram/cmake/td_ui.cmake": "3cf531824488cd3b3559058a585600e1d2c7fe7312726e28881a001a5d2d5e82",
+    "changelog.txt": "b1704a65f2c787edecf6ad74da56d3835fba0e3aa35e00f69a026aa87bb556cf",
+    "docs/web-proxy-plan.md": "04da146793037a72e661e897771699911067df12dd2c4cbdc0c220cabbfab0e1",
+    "snap/snapcraft.yaml": "e6479244ca5074a11357eb38b08e73b2e82bad042b3a3789bb71fb1261b57455"
+  },
+  "unmerged_entries": 0,
+  "worktree_whitespace": {
+    "exit_code": 0,
+    "output": ""
+  },
+  "index_whitespace": {
+    "exit_code": 0,
+    "output": ""
+  },
+  "basic_pass": true
+}

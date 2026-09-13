@@ -1,0 +1,244 @@
+{
+  "head_unchanged": true,
+  "protected_files": [
+    {
+      "path": ".git/index",
+      "unchanged": true
+    },
+    {
+      "path": ".git/config",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merge-guide.md",
+      "unchanged": false,
+      "authorized_change": true,
+      "evidence": [
+        "修改合并指南，以后的合并直接推送`merge`分支",
+        "本地`upgrade/*`分支也不需要，先将合并后的代码推送到`merge`分支，然后删除本地`upgrade/*`分支"
+      ],
+      "before_sha256": "ad74973fc71ada4c2097d2636f3c105d33ad3a6c6c3557c097ab81ca7b43224f",
+      "after_sha256": "0cf775b3b77cde723619c3239d2e8a215bbcff4be3d2353295d66c8115ede342"
+    },
+    {
+      "path": "docs/local-changes.md",
+      "unchanged": true
+    },
+    {
+      "path": "docs/local-changes-history.md",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/README.md",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/api-boundaries.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/automatic-review.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/automatic-review.md",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/build-audit.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/ci-adapter-new-calls.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/ci-build-repair.md",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/ci-failure-34009340974.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/ci-repair-verification.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/ci-run-34016317983.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/ci-style-visibility.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/ci-verification-34016317983.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/conflict-evidence.md",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/conflict-regions.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/conflicts.md",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/cpp-syntax-verification.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/decision-summary.md",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/decisions-batch-1.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/decisions-batch-1.md",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/decisions-batch-2.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/decisions-batch-2.md",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/decisions-batch-3.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/decisions-batch-3.md",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/decisions-batch-4.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/decisions-batch-4.md",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/decisions-batch-5.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/decisions-batch-5.md",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/decisions-batch-6.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/decisions-batch-6.md",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/decisions-batch-7.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/decisions-batch-7.md",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/delivery.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/execution-result.md",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/final-state-verification.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/g02-audit.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/g03-audit.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/g04-audit.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/g05-audit.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/g06-audit.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/integration-verification.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/integration.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/inventory.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/isolation.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/merge-tree-raw.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/preflight.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/state.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/submodule-fetches.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/submodule-verification.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/submodules.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/submodules.md",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/supplemental-verification.json",
+      "unchanged": true
+    },
+    {
+      "path": "docs/upstream-merges/v7.2.5/verification.json",
+      "unchanged": true
+    }
+  ],
+  "status_matches": true,
+  "checked_at_utc": "2026-09-13T23:25:10.852052+00:00",
+  "expected_changes_only": true,
+  "unauthorized_changes": []
+}

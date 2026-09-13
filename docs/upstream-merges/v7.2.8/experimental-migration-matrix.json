@@ -1,0 +1,412 @@
+{
+  "recorded_at_utc": "2026-09-13T21:09:53.908428+00:00",
+  "status": "static branch review of constructed inputs",
+  "cpp_executed": false,
+  "real_user_configuration_accessed": false,
+  "case_count": 27,
+  "defaults": {
+    "Windows": false,
+    "macOS": false,
+    "all_other": true
+  },
+  "import_semantics": "Successful imports retain existing base::options reset-then-apply semantics. Unknown keys are ignored. Invalid registered Qt6 values fail validation before reset. Qt5 registers neither old nor new scroller key.",
+  "startup_semantics": "Legacy bool is applied while LocalPath is empty, then normal init reads registered keys. Startup does not rewrite the original JSON or schedule a save timer. A present new key blocks legacy fallback even when its value has the wrong type.",
+  "export_semantics": "Normal serializer emits only registered nondefault options. It emits kinetic-scroller when needed on Qt6 and never emits qscroller; a value equal to the platform default is omitted.",
+  "cases": [
+    {
+      "case": "empty",
+      "constructed_json": "{}",
+      "qt6_startup_expected": "platform default",
+      "qt6_import_expected": {
+        "accepted": true,
+        "kinetic_value": "platform default",
+        "legacy_renamed": false
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "legacy_true",
+      "constructed_json": "{\"qscroller\":true}",
+      "qt6_startup_expected": true,
+      "qt6_import_expected": {
+        "accepted": true,
+        "kinetic_value": true,
+        "legacy_renamed": true
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "legacy_false",
+      "constructed_json": "{\"qscroller\":false}",
+      "qt6_startup_expected": false,
+      "qt6_import_expected": {
+        "accepted": true,
+        "kinetic_value": false,
+        "legacy_renamed": true
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "new_true",
+      "constructed_json": "{\"kinetic-scroller\":true}",
+      "qt6_startup_expected": true,
+      "qt6_import_expected": {
+        "accepted": true,
+        "kinetic_value": true,
+        "legacy_renamed": false
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "new_false",
+      "constructed_json": "{\"kinetic-scroller\":false}",
+      "qt6_startup_expected": false,
+      "qt6_import_expected": {
+        "accepted": true,
+        "kinetic_value": false,
+        "legacy_renamed": false
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "both_False_False",
+      "constructed_json": "{\"qscroller\": false, \"kinetic-scroller\": false}",
+      "qt6_startup_expected": false,
+      "qt6_import_expected": {
+        "accepted": true,
+        "kinetic_value": false,
+        "legacy_renamed": false
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "both_False_True",
+      "constructed_json": "{\"qscroller\": false, \"kinetic-scroller\": true}",
+      "qt6_startup_expected": true,
+      "qt6_import_expected": {
+        "accepted": true,
+        "kinetic_value": true,
+        "legacy_renamed": false
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "both_True_False",
+      "constructed_json": "{\"qscroller\": true, \"kinetic-scroller\": false}",
+      "qt6_startup_expected": false,
+      "qt6_import_expected": {
+        "accepted": true,
+        "kinetic_value": false,
+        "legacy_renamed": false
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "both_True_True",
+      "constructed_json": "{\"qscroller\": true, \"kinetic-scroller\": true}",
+      "qt6_startup_expected": true,
+      "qt6_import_expected": {
+        "accepted": true,
+        "kinetic_value": true,
+        "legacy_renamed": false
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "invalid_legacy_string",
+      "constructed_json": "{\"qscroller\": \"true\"}",
+      "qt6_startup_expected": "platform default",
+      "qt6_import_expected": {
+        "accepted": true,
+        "kinetic_value": "platform default",
+        "legacy_renamed": false
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "invalid_new_string",
+      "constructed_json": "{\"qscroller\": true, \"kinetic-scroller\": \"true\"}",
+      "qt6_startup_expected": "platform default",
+      "qt6_import_expected": {
+        "accepted": false,
+        "existing_options_preserved": true
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "invalid_legacy_zero",
+      "constructed_json": "{\"qscroller\": 0}",
+      "qt6_startup_expected": "platform default",
+      "qt6_import_expected": {
+        "accepted": true,
+        "kinetic_value": "platform default",
+        "legacy_renamed": false
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "invalid_new_zero",
+      "constructed_json": "{\"qscroller\": true, \"kinetic-scroller\": 0}",
+      "qt6_startup_expected": "platform default",
+      "qt6_import_expected": {
+        "accepted": false,
+        "existing_options_preserved": true
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "invalid_legacy_one",
+      "constructed_json": "{\"qscroller\": 1}",
+      "qt6_startup_expected": "platform default",
+      "qt6_import_expected": {
+        "accepted": true,
+        "kinetic_value": "platform default",
+        "legacy_renamed": false
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "invalid_new_one",
+      "constructed_json": "{\"qscroller\": true, \"kinetic-scroller\": 1}",
+      "qt6_startup_expected": "platform default",
+      "qt6_import_expected": {
+        "accepted": false,
+        "existing_options_preserved": true
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "invalid_legacy_null",
+      "constructed_json": "{\"qscroller\": null}",
+      "qt6_startup_expected": "platform default",
+      "qt6_import_expected": {
+        "accepted": true,
+        "kinetic_value": "platform default",
+        "legacy_renamed": false
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "invalid_new_null",
+      "constructed_json": "{\"qscroller\": true, \"kinetic-scroller\": null}",
+      "qt6_startup_expected": "platform default",
+      "qt6_import_expected": {
+        "accepted": false,
+        "existing_options_preserved": true
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "invalid_legacy_array",
+      "constructed_json": "{\"qscroller\": []}",
+      "qt6_startup_expected": "platform default",
+      "qt6_import_expected": {
+        "accepted": true,
+        "kinetic_value": "platform default",
+        "legacy_renamed": false
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "invalid_new_array",
+      "constructed_json": "{\"qscroller\": true, \"kinetic-scroller\": []}",
+      "qt6_startup_expected": "platform default",
+      "qt6_import_expected": {
+        "accepted": false,
+        "existing_options_preserved": true
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "invalid_legacy_object",
+      "constructed_json": "{\"qscroller\": {}}",
+      "qt6_startup_expected": "platform default",
+      "qt6_import_expected": {
+        "accepted": true,
+        "kinetic_value": "platform default",
+        "legacy_renamed": false
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "invalid_new_object",
+      "constructed_json": "{\"qscroller\": true, \"kinetic-scroller\": {}}",
+      "qt6_startup_expected": "platform default",
+      "qt6_import_expected": {
+        "accepted": false,
+        "existing_options_preserved": true
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "legacy_with_other_key",
+      "constructed_json": "{\"qscroller\":true,\"unrelated-option\":1}",
+      "qt6_startup_expected": true,
+      "qt6_import_expected": {
+        "accepted": true,
+        "kinetic_value": true,
+        "legacy_renamed": true
+      },
+      "qt5_import_expected": {
+        "accepted": true,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "array_root",
+      "constructed_json": "[]",
+      "qt6_startup_expected": "platform default",
+      "qt6_import_expected": {
+        "accepted": false,
+        "existing_options_preserved": true
+      },
+      "qt5_import_expected": {
+        "accepted": false,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "null_root",
+      "constructed_json": "null",
+      "qt6_startup_expected": "platform default",
+      "qt6_import_expected": {
+        "accepted": false,
+        "existing_options_preserved": true
+      },
+      "qt5_import_expected": {
+        "accepted": false,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "scalar_root",
+      "constructed_json": "true",
+      "qt6_startup_expected": "platform default",
+      "qt6_import_expected": {
+        "accepted": false,
+        "existing_options_preserved": true
+      },
+      "qt5_import_expected": {
+        "accepted": false,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "string_root",
+      "constructed_json": "\"text\"",
+      "qt6_startup_expected": "platform default",
+      "qt6_import_expected": {
+        "accepted": false,
+        "existing_options_preserved": true
+      },
+      "qt5_import_expected": {
+        "accepted": false,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    },
+    {
+      "case": "malformed_json",
+      "constructed_json": "{\"qscroller\":",
+      "qt6_startup_expected": "platform default",
+      "qt6_import_expected": {
+        "accepted": false,
+        "existing_options_preserved": true
+      },
+      "qt5_import_expected": {
+        "accepted": false,
+        "kinetic_option": "not registered"
+      },
+      "qt5_startup_expected": "no kinetic option registered; normal base::options initialization"
+    }
+  ],
+  "scope_limit": "The expected matrix was checked against the helper, base/options.cpp, launcher ordering and Qt compile guards. This is not execution of the C++ migration or a portable-client regression test."
+}
