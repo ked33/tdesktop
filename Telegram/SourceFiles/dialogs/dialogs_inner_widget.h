@@ -198,6 +198,7 @@ public:
 		return _st;
 	}
 	[[nodiscard]] bool hasFilteredResults() const;
+	[[nodiscard]] bool hasMessageSearchResults() const;
 
 	void searchRequested(bool loading);
 	void applySearchState(SearchState state);
@@ -563,9 +564,14 @@ private:
 	void repaintPreviewResult(FullMsgId id);
 	void rebuildPornSearchResults(bool messagesChanged = true);
 	void refreshPornSearchCounts();
+	void refreshSearchResultSelection(const RowDescriptor &entry);
+	void setSearchResultSelection(int index);
 	void refreshPornSearchStatus();
 	void refreshPornSearchTimer();
+	void refreshPornSearchHeader();
 	void repaintPornSearchHeader();
+	void paintSearchHeader(Painter &p);
+	[[nodiscard]] int searchHeaderTop() const;
 	[[nodiscard]] QString pornSearchSummary() const;
 	[[nodiscard]] int pornSearchStatusHeight() const;
 	void repaintPreviewResult(int index);
@@ -758,9 +764,12 @@ private:
 	MessageIdsList _nativeSearchResults;
 	Api::PornSearchResult _pornSearchResult;
 	object_ptr<Ui::FlatLabel> _pornSearchStatus = { nullptr };
+	object_ptr<Ui::RpWidget> _pornSearchHeader = { nullptr };
 	rpl::event_stream<> _retryPornSearchRequests;
 	base::Timer _pornSearchTimer;
 	Api::PornSearchPolicy::ElapsedTime _pornSearchElapsed;
+	FullMsgId _searchResultSelection;
+	int _searchResultSelectionIndex = -1;
 	int _nativeSearchCount = 0;
 	int _nativeSearchLoadedCount = 0;
 	bool _pornSearchEnabled = false;
