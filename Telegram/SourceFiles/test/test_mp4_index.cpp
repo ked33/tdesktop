@@ -169,7 +169,9 @@ struct FragmentFixture {
 
 [[nodiscard]] FragmentFixture MakeFragments(
 		bool randomAccess = true,
-		std::uint32_t composition = 0) {
+		std::uint32_t composition = 0,
+		std::uint32_t sampleDuration = 1000,
+		std::uint32_t mediaScale = 1) {
 	auto result = FragmentFixture();
 	result.bytes = Atom("ftyp", Bytes(16));
 	auto tracks = Bytes();
@@ -178,12 +180,12 @@ struct FragmentFixture {
 		auto handler = Integers({ 0, 0 });
 		const auto name = (track == 1) ? "vide" : "soun";
 		handler.insert(handler.end(), name, name + 4);
-		auto media = Atom("mdhd", Integers({ 0, 0, 0, 1000, 64000 }));
+		auto media = Atom("mdhd", Integers({ 0, 0, 0, 1000, 64 * sampleDuration }));
 		Append(media, Atom("hdlr", handler));
 		auto data = Atom("tkhd", Integers({ 0, 0, 0, std::uint32_t(track), 0 }));
 		Append(data, Atom("mdia", media));
 		Append(tracks, Atom("trak", data));
-		Append(defaults, Atom("trex", Integers({ 0, std::uint32_t(track), 1, 1000, 8, 0 })));
+		Append(defaults, Atom("trex", Integers({ 0, std::uint32_t(track), 1, sampleDuration, 8, 0 })));
 	}
 	Append(tracks, Atom("mvex", defaults));
 	Append(result.bytes, Atom("moov", tracks));
@@ -194,18 +196,18 @@ struct FragmentFixture {
 			auto data = Atom("tfhd", Integers({
 				0x38,
 				std::uint32_t(track),
-				1000,
+				sampleDuration,
 				8,
 				randomAccess ? 0x2000000U : 0x1010000U,
 			}));
-			Append(data, Atom("tfdt", Integers({ 0x1000000, 0, std::uint32_t(segment * 2000) })));
+			Append(data, Atom("tfdt", Integers({ 0x1000000, 0, segment * 2 * sampleDuration })));
 			Append(data, Atom("trun", (track == 1 && composition)
 				? Integers({ 0x800, 2, composition, composition })
 				: Integers({ 0, 2 })));
 			Append(fragment, Atom("traf", data));
 		}
 		Append(result.bytes, Atom("moof", fragment));
-		auto payload = Bytes((256 + (segment % 5) * 64) * 1024);
+		auto payload = Bytes((256 + (segment % 5) * 64) * 1024 * mediaScale);
 		const auto fake = Atom("moof", Bytes(19, 'x'));
 		std::copy(fake.begin(), fake.end(), payload.begin() + 65532);
 		Append(result.bytes, Atom("mdat", payload));
@@ -258,6 +260,38 @@ void TestFragmentSeeks() {
 	fail = true;
 	Check(!FragmentIndex::Create(fixture.bytes.size(), 64000, read), "initialization is cancellable");
 	Check(!cancelled->seek(25000, read), "an interrupted probe does not publish a seek patch");
+}
+
+void TestFragmentProbeWindows() {
+	const auto fixture = MakeFragments(true, 0, 5000, 4);
+	auto bytesRead = std::size_t(0);
+	const auto read = [&](std::int64_t offset, std::span<char> buffer) {
+		Check(offset >= 0 && std::uint64_t(offset) <= fixture.bytes.size(),
+			"probe-window read starts inside the file");
+		Check(buffer.size() <= fixture.bytes.size() - offset,
+			"probe-window read ends inside the file");
+		bytesRead += buffer.size();
+		std::copy_n(fixture.bytes.data() + offset, buffer.size(), buffer.data());
+		return true;
+	};
+	auto index = FragmentIndex::Create(fixture.bytes.size(), 320000, read);
+	Check(bool(index), "large-media fixture supports on-demand seeks");
+	for (const auto target : { 208748, 85467, 263038, 250565, 123232, 189247 }) {
+		const auto before = bytesRead;
+		const auto patches = index->seek(target, read);
+		Check(bool(patches), "a probe window inside media resumes at a known boundary");
+		Check(bytesRead - before <= fragment_details::kReadBudget,
+			"sequential probe recovery respects the per-seek read budget");
+		auto header = std::array<char, 16>();
+		for (const auto &patch : *patches) {
+			patch.apply(fixture.offsets.front(), header);
+		}
+		const auto atom = details::ParseAtom(
+			header,
+			fixture.bytes.size() - fixture.offsets.front());
+		Check(atom && atom->size + fixture.offsets.front() == fixture.offsets[target / 10000],
+			"cached probes still locate the requested fragment");
+	}
 }
 
 void TestFragmentFallbacks() {
@@ -443,6 +477,7 @@ int main(int argc, char *argv[]) {
 	TestFailuresAndLimits();
 	TestWideMedia();
 	TestFragmentSeeks();
+	TestFragmentProbeWindows();
 	TestFragmentFallbacks();
 	TestFragmentPresentationAndEmptyTracks();
 	TestTrackFragmentValidation();

@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/streaming/media_streaming_mpv_index.h"
 
+#include "base/basic_types.h"
+
 #include <QtCore/QDir>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -178,6 +180,7 @@ void IndexReload::connected() {
 		u"pause"_q,
 		u"duration"_q,
 		u"seeking"_q,
+		u"time-pos"_q,
 		u"idle-active"_q,
 	};
 	auto id = 0;
@@ -303,6 +306,18 @@ void IndexReload::handle(const QJsonObject &message) {
 		} else if (name == u"seeking"_q) {
 			_seeking = data.toBool();
 			_played = _played || (_loaded && !_seeking);
+		} else if (name == u"time-pos"_q
+			&& _positionOutstanding
+			&& !_queryRestarted
+			&& data.isDouble()) {
+			// MPV publishes the target before it decodes the next frame.
+			// A backward seek outside this view can quickly land on its
+			// first fragment, so a later property query sees that position
+			// instead of the requested target. Keep the event snapshot and
+			// discard the outstanding query before it can replace it.
+			_positionOutstanding = false;
+			_positionQuery = -1;
+			seekTo(data.toDouble());
 		} else if (name == u"idle-active"_q && data.isBool()) {
 			_loaded = !data.toBool();
 			_played = _played || (_loaded && !_seeking && _duration > 0.);
