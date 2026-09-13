@@ -600,6 +600,14 @@ inline std::optional<fragment_details::Point> FragmentIndex::find(
 		auto fragment = (offset == before->next)
 			? readFragment(offset, read)
 			: scan(offset, end, read);
+		if (!fragment && offset != before->next) {
+			// An interpolated probe and its ceiling can fall inside the
+			// same media box. Finding no header there does not invalidate
+			// the layout. Resume at the last verified fragment boundary,
+			// keeping the existing read and iteration budgets in effect.
+			offset = before->next;
+			fragment = readFragment(offset, read);
+		}
 		auto matched = false;
 		for (auto follow = 0; fragment && follow != 16; ++follow) {
 			if (!remember(*fragment)) {
