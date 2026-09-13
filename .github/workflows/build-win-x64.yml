@@ -204,7 +204,7 @@ jobs:
         shell: cmd
         run: |
           cd /d %TBUILD%\%REPO_NAME%\out
-          cmake --build . --config Release --target test_streaming_startup test_streaming_cache test_streaming_mpv test_mp4_header test_mp4_index --parallel
+          cmake --build . --config Release --target test_streaming_startup test_streaming_cache test_streaming_mpv test_mp4_header test_mp4_index test_mpv_index_reload --parallel
           if errorlevel 1 exit /b %errorlevel%
           if not exist "Release\test_streaming_startup.exe" exit /b 1
           "Release\test_streaming_startup.exe"
@@ -220,6 +220,9 @@ jobs:
           if errorlevel 1 exit /b %errorlevel%
           if not exist "Release\test_mp4_index.exe" exit /b 1
           "Release\test_mp4_index.exe"
+          if errorlevel 1 exit /b %errorlevel%
+          if not exist "Release\test_mpv_index_reload.exe" exit /b 1
+          "Release\test_mpv_index_reload.exe"
           exit /b %errorlevel%
 
       - name: Build Telegram (Release)
