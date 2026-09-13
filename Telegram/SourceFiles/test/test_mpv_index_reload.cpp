@@ -78,6 +78,8 @@ public:
 	void highResolutionSeek(double target);
 	void restartLog(double position);
 	void releasePositionReply(double position);
+	void completeReload();
+	[[nodiscard]] bool paused() const;
 
 	std::vector<std::int64_t> requests;
 	std::vector<QJsonObject> reloads;
@@ -86,6 +88,10 @@ public:
 	int settled = 0;
 	int abandoned = 0;
 	bool delayNextPositionReply = false;
+	bool indexReady = true;
+	bool finishReloads = true;
+	bool restartReloads = true;
+	double viewStart = -1.;
 
 private:
 	void receive();
@@ -96,6 +102,7 @@ private:
 	QLocalSocket *_socket = nullptr;
 	QByteArray _buffer;
 	QJsonObject _properties;
+	QJsonObject _reloadOptions;
 	std::map<QString, int> _observed;
 	std::unique_ptr<QProcess> _process;
 	std::uint64_t _revision = 0;
@@ -124,7 +131,8 @@ Peer::Peer() : _process(std::make_unique<QProcess>()) {
 			requests.push_back(position);
 			return ++_revision;
 		},
-		.ready = [](std::uint64_t revision) { return revision != 0; },
+		.ready = [=](std::uint64_t revision) { return indexReady && revision != 0; },
+		.seekStart = [=](std::uint64_t) { return viewStart; },
 		.settled = [=] { ++settled; },
 		.abandoned = [=] { ++abandoned; },
 	};
@@ -268,6 +276,7 @@ void Peer::handle(const QJsonObject &message) {
 		property(command[1].toString(), command[2]);
 	} else if (name == u"loadfile"_q) {
 		const auto options = command.last().toObject();
+		_reloadOptions = options;
 		reloads.push_back(options);
 		send(reply);
 		log(u"Run command: loadfile, flags=64, args=[url=\"%1\", "
@@ -279,17 +288,34 @@ void Peer::handle(const QJsonObject &message) {
 		});
 		event(u"start-file"_q);
 		property(u"path"_q, command[1]);
-		property(u"pause"_q, options.value(u"pause"_q).toString() == u"yes"_q);
-		event(u"file-loaded"_q);
-		const auto position = options.value(u"start"_q).toString().toDouble();
-		highResolutionSeek(position);
-		seek(position, position);
-		restartLog(position);
+		property(u"eof-reached"_q, false);
+		property(u"time-pos"_q, QJsonValue());
+		if (finishReloads) {
+			completeReload();
+		}
 		return;
 	} else {
 		Check(false, "controller command is supported by the fake MPV");
 	}
 	send(reply);
+}
+
+void Peer::completeReload() {
+	if (_reloadOptions.contains(u"pause"_q)) {
+		property(u"pause"_q,
+			_reloadOptions.value(u"pause"_q).toString() == u"yes"_q);
+	}
+	event(u"file-loaded"_q);
+	const auto position = _reloadOptions.value(u"start"_q).toString().toDouble();
+	highResolutionSeek(position);
+	seek(position, restartReloads ? std::make_optional(position) : std::nullopt);
+	if (restartReloads) {
+		restartLog(position);
+	}
+}
+
+bool Peer::paused() const {
+	return _properties.value(u"pause"_q).toBool();
 }
 
 void CheckReload(Peer &peer, double target) {
@@ -313,7 +339,7 @@ void TestBackwardSnapshot() {
 	auto peer = Peer();
 	peer.seek(114.4, 570.);
 	CheckReload(peer, 114.4);
-	Check(peer.settled == 0, "a wrong decoded position does not complete the seek");
+	Check(peer.settled == 1, "only the corrected reload completes the seek");
 }
 
 void TestCachedSnapshot() {
@@ -330,7 +356,7 @@ void TestLatestSnapshot() {
 	peer.seek(158.5, 570.);
 	peer.property(u"pause"_q, false);
 	CheckReload(peer, 158.5);
-	Check(peer.reloads.front().value(u"pause"_q).toString() == u"no"_q,
+	Check(!peer.paused(),
 		"resume after dragging is preserved");
 }
 
@@ -424,8 +450,8 @@ void TestLogsBeforeSeekEvent() {
 	peer.seek(114.400759, 570., false);
 	peer.restartLog(570.);
 	CheckReload(peer, 114.400759);
-	Check(peer.settled == 0,
-		"a query after execution logs cannot settle at the wrong landing");
+	Check(peer.settled == 1,
+		"the wrong landing stays pending until the corrected reload completes");
 }
 
 void TestExecutedLogTarget() {
@@ -655,10 +681,277 @@ void TestUnsupportedCommandClearsCandidate() {
 	CheckNoReload(peer, "an unsupported command replaces the prior candidate");
 }
 
+void TestRepeatedPendingTarget() {
+	auto peer = Peer();
+	peer.indexReady = false;
+	peer.seekCommand(u"166.583561"_q);
+	peer.highResolutionSeek(166.583561);
+	peer.seek(166.583561, 429.6, false);
+	peer.restartLog(429.6);
+	Check(WaitUntil([&] { return peer.requests.size() == 1; }),
+		"the uncached target starts preparing its index");
+	peer.seekCommand(u"166.583561"_q);
+	peer.highResolutionSeek(166.583561);
+	peer.seek(166.583561, 429.6, false);
+	peer.restartLog(429.6);
+	Drain();
+	Check(peer.requests == std::vector<std::int64_t>{ 166583 },
+		"repeating the same target preserves its in-flight index");
+	peer.indexReady = true;
+	CheckReload(peer, 166.583561);
+}
+
+void StartIndexedPlayback(Peer &peer) {
+	peer.viewStart = 429.6;
+	peer.seekCommand(u"433.518664"_q);
+	peer.highResolutionSeek(433.518664);
+	peer.seek(433.518664, std::nullopt);
+	CheckReload(peer, 433.518664);
+}
+
+void TestBackwardSeekWaitsInNewView() {
+	auto peer = Peer();
+	StartIndexedPlayback(peer);
+	peer.indexReady = false;
+	peer.finishReloads = false;
+	peer.seekCommand(u"166.583561"_q);
+	peer.highResolutionSeek(166.583561);
+	peer.seek(166.583561, std::nullopt);
+	Check(WaitUntil([&] { return peer.reloads.size() == 2; }, 150),
+		"an impossible backward seek leaves the old view before its wrong restart");
+	Check(peer.requests.back() == 166583,
+		"the waiting view belongs to the original backward target");
+	Check(peer.settled == 1, "waiting for metadata does not complete the new seek");
+	peer.indexReady = true;
+	peer.completeReload();
+	Check(WaitUntil([&] { return peer.settled == 2; }),
+		"the backward seek completes only after its new view starts");
+	Drain();
+	Check(peer.reloads.size() == 2, "the completed waiting view is not reloaded again");
+}
+
+void TestNewTargetDuringIndexLoading() {
+	auto peer = Peer();
+	StartIndexedPlayback(peer);
+	peer.indexReady = false;
+	peer.finishReloads = false;
+	peer.seekCommand(u"166.583561"_q);
+	peer.highResolutionSeek(166.583561);
+	peer.seek(166.583561, std::nullopt);
+	Check(WaitUntil([&] { return peer.reloads.size() == 2; }),
+		"the backward view is opening while metadata is pending");
+	peer.property(u"pause"_q, false);
+	peer.seekCommand(u"194.681993"_q);
+	Check(WaitUntil([&] { return peer.reloads.size() == 3; }),
+		"a command during owned loading replaces the pending view");
+	peer.seekCommand(u"194.681993"_q, u"absolute+keyframes"_q);
+	Drain();
+	Check(peer.requests == std::vector<std::int64_t>{ 433518, 166583, 194681 },
+		"a repeated loading command does not cancel or rebuild its index");
+	Check(peer.reloads.size() == 3,
+		"a repeated loading command does not replace the same pending view");
+	Check(!peer.paused(),
+		"resume during loading is preserved by the replacement view");
+	peer.indexReady = true;
+	peer.completeReload();
+	Check(WaitUntil([&] { return peer.settled == 2; }),
+		"only the latest loading target completes");
+	Check(peer.abandoned == 0, "replacing a pending view keeps the controller");
+}
+
+void TestPauseChangesDuringIndexLoading() {
+	for (const auto paused : { false, true }) {
+		auto peer = Peer();
+		peer.property(u"pause"_q, !paused);
+		StartIndexedPlayback(peer);
+		peer.indexReady = false;
+		peer.finishReloads = false;
+		peer.seekCommand(u"166.583561"_q);
+		peer.highResolutionSeek(166.583561);
+		peer.seek(166.583561, std::nullopt);
+		Check(WaitUntil([&] { return peer.reloads.size() == 2; }),
+			"the backward view waits before applying file options");
+		peer.property(u"pause"_q, paused);
+		Drain();
+		peer.indexReady = true;
+		peer.completeReload();
+		Check(WaitUntil([&] { return peer.settled == 2; }),
+			"the waiting view completes after the pause change");
+		Check(peer.paused() == paused,
+			"late file options cannot overwrite pause changes during loading");
+	}
+}
+
+void TestEofPauseBeforeReload() {
+	for (const auto paused : { false, true }) {
+		auto peer = Peer();
+		peer.property(u"pause"_q, paused);
+		Drain();
+		peer.indexReady = false;
+		peer.seekCommand(u"760.000000"_q);
+		peer.highResolutionSeek(760.);
+		peer.seek(760., std::nullopt);
+		peer.property(u"eof-reached"_q, true);
+		peer.property(u"pause"_q, true);
+		Drain();
+		peer.indexReady = true;
+		CheckReload(peer, 760.);
+		Check(peer.paused() == paused,
+			"reload clears automatic EOF pause while preserving user pause");
+	}
+}
+
+void TestDelayedReloadCompletion() {
+	auto peer = Peer();
+	peer.restartReloads = false;
+	peer.seekCommand(u"760.000000"_q);
+	peer.highResolutionSeek(760.);
+	peer.seek(760., std::nullopt);
+	Check(WaitUntil([&] { return peer.reloads.size() == 1; }),
+		"the indexed file opens before its startup seek completes");
+	Drain();
+	peer.delayNextPositionReply = true;
+	peer.event(u"playback-restart"_q);
+	peer.property(u"seeking"_q, false);
+	peer.restartLog(760.);
+	Check(WaitUntil([&] { return peer.delayedPositionReply.has_value(); }),
+		"the reload completion awaits a position reply");
+	Drain();
+	Check(peer.reloads.size() == 1,
+		"a delayed completion reply cannot reload the same target twice");
+	peer.releasePositionReply(760.);
+	Check(WaitUntil([&] { return peer.settled == 1; }),
+		"the delayed position reply completes the original reload");
+}
+
+void TestNewTargetBeforeReloadRestart() {
+	auto peer = Peer();
+	peer.restartReloads = false;
+	peer.seekCommand(u"349.223368"_q);
+	peer.highResolutionSeek(349.223368);
+	peer.seek(349.223368, std::nullopt);
+	Check(WaitUntil([&] { return peer.reloads.size() == 1; }),
+		"the first reload opens without finishing its startup seek");
+	Drain();
+	peer.indexReady = false;
+	peer.seekCommand(u"606.123317"_q);
+	peer.highResolutionSeek(606.123317);
+	peer.seek(606.123317, std::nullopt);
+	Check(WaitUntil([&] { return peer.requests.size() == 2; }),
+		"a new target prepares before the old reload restarts playback");
+	Check(peer.requests.back() == 606123, "the new reload prepares the latest target");
+	peer.indexReady = true;
+	peer.restartReloads = true;
+	Check(WaitUntil([&] { return peer.reloads.size() == 2; }),
+		"the ready target replaces the old unfinished reload");
+	Check(WaitUntil([&] { return peer.settled == 1; }),
+		"the replacement reload completes at the latest target");
+}
+
+void TestRelativeSeekDuringIndexLoading() {
+	auto peer = Peer();
+	StartIndexedPlayback(peer);
+	peer.indexReady = false;
+	peer.finishReloads = false;
+	peer.seekCommand(u"200.000000"_q);
+	peer.highResolutionSeek(200.);
+	peer.seek(200., std::nullopt);
+	Check(WaitUntil([&] { return peer.reloads.size() == 2; }),
+		"a known target is waiting for its index");
+	peer.seekCommand(u"-5"_q, u"relative+exact"_q);
+	Check(WaitUntil([&] { return peer.reloads.size() == 3; }),
+		"relative loading seeks use the pending target as their base");
+	peer.seekCommand(u"20"_q, u"relative-percent+keyframes"_q);
+	Check(WaitUntil([&] { return peer.reloads.size() == 4; }),
+		"relative percent loading seeks retain the known duration");
+	peer.seekCommand(u"1"_q, u"exact"_q);
+	Check(WaitUntil([&] { return peer.reloads.size() == 5; }),
+		"the default relative mode also works while loading");
+	peer.seekCommand(u"100"_q, u"unsupported"_q);
+	Drain();
+	Check(peer.requests == std::vector<std::int64_t>{
+		433518, 200000, 195000, 364000, 365000,
+	}, "resolved relative targets replace the index without guessing unknown modes");
+	Check(peer.reloads.size() == 5, "an unknown loading command leaves the pending view intact");
+	peer.indexReady = true;
+	peer.completeReload();
+	Check(WaitUntil([&] { return peer.settled == 2; }),
+		"the latest relative target completes after loading");
+}
+
+void TestCachedBackwardInsideView() {
+	auto peer = Peer();
+	StartIndexedPlayback(peer);
+	peer.seekCommand(u"431.000000"_q, u"absolute+keyframes"_q);
+	peer.seek(431., 430.);
+	peer.restartLog(430.);
+	Drain();
+	Check(peer.requests.size() == 1 && peer.reloads.size() == 1,
+		"a cached backward keyframe inside the view uses native seeking");
+}
+
+void TestExecutedRelativeSeekBeforeView() {
+	auto peer = Peer();
+	StartIndexedPlayback(peer);
+	peer.indexReady = false;
+	peer.finishReloads = false;
+	peer.seekCommand(u"-200"_q, u"relative+exact"_q);
+	peer.highResolutionSeek(233.518664);
+	peer.seek(233.518664, std::nullopt, false);
+	Check(WaitUntil([&] { return peer.reloads.size() == 2; }, 150),
+		"an executed relative seek before the view starts waiting immediately");
+	Check(peer.requests.back() == 233518,
+		"the relative seek uses its executed target instead of the prior position");
+	peer.indexReady = true;
+	peer.completeReload();
+	Check(WaitUntil([&] { return peer.settled == 2; }),
+		"the executed relative target completes without a stale fallback");
+}
+
+void TestSwitchWhileIndexLoading() {
+	auto peer = Peer();
+	StartIndexedPlayback(peer);
+	peer.indexReady = false;
+	peer.finishReloads = false;
+	peer.seekCommand(u"166.583561"_q);
+	peer.highResolutionSeek(166.583561);
+	peer.seek(166.583561, std::nullopt);
+	Check(WaitUntil([&] { return peer.reloads.size() == 2; }),
+		"the old file has a pending index view");
+	peer.property(u"path"_q, u"another-file.mp4"_q);
+	Check(WaitUntil([&] { return peer.abandoned == 1; }),
+		"switching files cancels the pending index controller");
+	peer.indexReady = true;
+	Drain();
+	Check(peer.reloads.size() == 2, "late metadata cannot reload the old file");
+}
+
+void TestStopCommandsDuringIndexLoading() {
+	for (const auto &command : { u"stop"_q, u"quit"_q }) {
+		auto peer = Peer();
+		StartIndexedPlayback(peer);
+		peer.indexReady = false;
+		peer.finishReloads = false;
+		peer.seekCommand(u"166.583561"_q);
+		peer.highResolutionSeek(166.583561);
+		peer.seek(166.583561, std::nullopt);
+		Check(WaitUntil([&] { return peer.reloads.size() == 2; }),
+			"the index view is loading before the stop command");
+		peer.log(u"Run command: %1, flags=64, args=[]\n"_q.arg(command));
+		Check(WaitUntil([&] { return peer.abandoned == 1; }),
+			"explicit stop commands cancel the pending index view");
+		peer.indexReady = true;
+		Drain();
+		Check(peer.reloads.size() == 2,
+			"late metadata cannot restart explicitly stopped playback");
+	}
+}
+
 } // namespace
 
 int main(int argc, char *argv[]) {
 	auto application = QCoreApplication(argc, argv);
+	TestRepeatedPendingTarget();
 	TestBackwardSnapshot();
 	TestCachedSnapshot();
 	TestLatestSnapshot();
@@ -689,6 +982,17 @@ int main(int argc, char *argv[]) {
 	TestLoadfileClearsCommand();
 	TestNewFileClearsCommand();
 	TestUnsupportedCommandClearsCandidate();
+	TestBackwardSeekWaitsInNewView();
+	TestNewTargetDuringIndexLoading();
+	TestPauseChangesDuringIndexLoading();
+	TestEofPauseBeforeReload();
+	TestDelayedReloadCompletion();
+	TestNewTargetBeforeReloadRestart();
+	TestRelativeSeekDuringIndexLoading();
+	TestCachedBackwardInsideView();
+	TestExecutedRelativeSeekBeforeView();
+	TestSwitchWhileIndexLoading();
+	TestStopCommandsDuringIndexLoading();
 	std::cout << "MPV index reload checks passed: " << Checks << '\n';
 	return 0;
 }

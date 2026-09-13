@@ -24,12 +24,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Media::Streaming::Mpv {
 
 struct PreparedIndex::State {
+	struct Seek {
+		std::shared_ptr<const std::vector<Mp4::HeaderPatch>> patches;
+		double start = 0.;
+	};
+
 	std::atomic<IndexState> status = IndexState::Unknown;
 	crl::semaphore ready;
 	mutable std::mutex mutex;
 	std::condition_variable changed;
 	std::optional<Mp4::IndexCache> cache;
-	std::map<std::uint64_t, std::shared_ptr<const std::vector<Mp4::HeaderPatch>>> patches;
+	std::map<std::uint64_t, Seek> seeks;
 	std::atomic<std::uint64_t> revision = 0;
 	std::int64_t positionMs = 0;
 };
@@ -61,7 +66,7 @@ void PreparedIndex::cancel() {
 			.arg(qulonglong(_state->revision.load()))
 			.arg(qlonglong(_state->positionMs)));
 		_state->cache.reset();
-		_state->patches.clear();
+		_state->seeks.clear();
 	}
 	_state->changed.notify_all();
 }
@@ -70,6 +75,9 @@ std::uint64_t PreparedIndex::request(std::int64_t positionMs) {
 	const auto lock = std::lock_guard(_state->mutex);
 	if (state() != IndexState::OnDemand || positionMs < 0) {
 		return 0;
+	}
+	if (_state->revision.load() && _state->positionMs == positionMs) {
+		return _state->revision.load();
 	}
 	_state->positionMs = positionMs;
 	const auto revision = ++_state->revision;
@@ -82,6 +90,12 @@ std::uint64_t PreparedIndex::request(std::int64_t positionMs) {
 
 bool PreparedIndex::ready(std::uint64_t revision) const {
 	return bool(patches(revision));
+}
+
+double PreparedIndex::seekStart(std::uint64_t revision) const {
+	const auto lock = std::lock_guard(_state->mutex);
+	const auto i = _state->seeks.find(revision);
+	return (i != _state->seeks.end()) ? i->second.start : -1.;
 }
 
 void PreparedIndex::settle() {
@@ -100,10 +114,39 @@ void PreparedIndex::settle() {
 auto PreparedIndex::patches(std::uint64_t revision) const
 -> std::shared_ptr<const std::vector<Mp4::HeaderPatch>> {
 	const auto lock = std::lock_guard(_state->mutex);
-	const auto i = _state->patches.find(revision);
-	return (i != _state->patches.end())
-		? i->second
+	const auto i = _state->seeks.find(revision);
+	return (i != _state->seeks.end())
+		? i->second.patches
 		: nullptr;
+}
+
+auto PreparedIndex::waitForPatches(
+		std::uint64_t revision,
+		const std::function<bool()> &cancelled,
+		const std::function<bool()> &wait) const
+-> std::shared_ptr<const std::vector<Mp4::HeaderPatch>> {
+	if (!revision) {
+		return nullptr;
+	}
+	while (!cancelled()) {
+		{
+			const auto lock = std::lock_guard(_state->mutex);
+			const auto i = _state->seeks.find(revision);
+			if (i != _state->seeks.end()) {
+				return i->second.patches;
+			} else if (_state->revision.load() != revision
+				|| _state->positionMs < 0
+				|| state() == IndexState::Unavailable) {
+				return nullptr;
+			} else if (state() == IndexState::Ready) {
+				return std::make_shared<const std::vector<Mp4::HeaderPatch>>();
+			}
+		}
+		if (!wait()) {
+			break;
+		}
+	}
+	return nullptr;
 }
 
 std::size_t PreparedIndex::copy(
@@ -228,11 +271,15 @@ void PreparedIndex::Prepare(
 		}
 		const auto lock = std::lock_guard(state->mutex);
 		if (!cancelled()) {
-			state->patches.emplace(
+			state->seeks.emplace(
 				revision,
-				std::make_shared<const std::vector<Mp4::HeaderPatch>>(std::move(*seek)));
-			while (state->patches.size() > 8) {
-				state->patches.erase(state->patches.begin());
+				State::Seek{
+					std::make_shared<const std::vector<Mp4::HeaderPatch>>(
+						std::move(seek->patches)),
+					seek->start,
+				});
+			while (state->seeks.size() > 8) {
+				state->seeks.erase(state->seeks.begin());
 			}
 			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: MPV index seek ready "
 				"revision=%1 target_ms=%2 reads=%3 bytes=%4 elapsed_ms=%5.")
@@ -279,6 +326,10 @@ IndexControl ControlIndex(std::weak_ptr<PreparedIndex> index) {
 		.ready = [=](std::uint64_t revision) {
 			const auto strong = index.lock();
 			return strong && strong->ready(revision);
+		},
+		.seekStart = [=](std::uint64_t revision) {
+			const auto strong = index.lock();
+			return strong ? strong->seekStart(revision) : -1.;
 		},
 		.settled = [=] {
 			if (const auto strong = index.lock()) {
