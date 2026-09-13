@@ -423,6 +423,7 @@ Widget::Widget(
 	object_ptr<Ui::IconButton>(this, st::dialogsLock))
 , _scroll(this)
 , _scrollToTop(_scroll, st::dialogsToUp)
+, _scrollToBottom(_scroll, st::historyToDown)
 , _stories((_layout != Layout::Child)
 	? std::make_unique<Stories::List>(
 		this,
@@ -473,6 +474,7 @@ Widget::Widget(
 		_innerList->resizeToWidth(width);
 	}, _innerList->lifetime());
 	_scrollToTop->raise();
+	_scrollToBottom->raise();
 	_lockUnlock->toggle(false, anim::type::instant);
 
 	_inner->updated(
@@ -751,7 +753,7 @@ Widget::Widget(
 	updateJumpToDateVisibility(true);
 	updateSearchFromVisibility(true);
 	setupSupportMode();
-	setupScrollUpButton();
+	setupScrollButtons();
 	setupTouchChatPreview();
 
 	const auto overscrollBg = [=] {
@@ -1210,18 +1212,33 @@ void Widget::scrollToDefaultChecked(bool verytop) {
 	scrollToDefault(verytop);
 }
 
-void Widget::setupScrollUpButton() {
+void Widget::scrollToLoadedSearchBottom() {
+	if (_scrollToAnimation.animating()
+		|| _inner->state() != WidgetState::Filtered
+		|| !_inner->hasMessageSearchResults()) {
+		return;
+	}
+	const auto bottom = _scroll->scrollTopMax();
+	_scroll->scrollToY(bottom);
+	updateScrollButtonsVisibility();
+}
+
+void Widget::setupScrollButtons() {
 	// The button floats over the bottom of the list, but it is created long
 	// before it, so the scroll has to order the two - and it is an overlay,
 	// not something laid out beside the list.
 	_scroll->setVisualTabOrder(true);
 	_scrollToTop->setVisualTabOrderOverlay(true);
+	_scrollToBottom->setVisualTabOrderOverlay(true);
 
 	_scrollToTop->setClickedCallback([=] { scrollToDefaultChecked(); });
 	_scrollToTop->setAccessibleName(tr::lng_sr_scroll_to_top(tr::now));
 	trackScroll(_scrollToTop);
+	_scrollToBottom->setClickedCallback([=] { scrollToLoadedSearchBottom(); });
+	_scrollToBottom->setAccessibleName(tr::lng_jump_to_bottom(tr::now));
+	trackScroll(_scrollToBottom);
 	trackScroll(this);
-	updateScrollUpVisibility();
+	updateScrollButtonsVisibility();
 }
 
 void Widget::setupTouchChatPreview() {
@@ -1689,14 +1706,19 @@ void Widget::setupShortcuts(not_null<Window::SessionController *> controller) {
 	}, lifetime());
 }
 
-void Widget::updateScrollUpVisibility() {
+void Widget::updateScrollButtonsVisibility() {
 	if (_scrollToAnimation.animating()) {
 		return;
 	}
 
-	startScrollUpButtonAnimation(
-		(_scroll->scrollTop() > (st::historyToDownShownAfter / 2))
-		&& (_scroll->scrollTop() < _scroll->scrollTopMax()));
+	const auto top = _scroll->scrollTop();
+	const auto bottom = _scroll->scrollTopMax();
+	const auto searchResults = (_inner->state() == WidgetState::Filtered)
+		&& _inner->hasMessageSearchResults();
+	startScrollDownButtonAnimation(searchResults && bottom > 0 && top < bottom);
+	startScrollUpButtonAnimation(searchResults
+		? (bottom > 0 && top > 0)
+		: (top > (st::historyToDownShownAfter / 2) && top < bottom));
 }
 
 void Widget::startScrollUpButtonAnimation(bool shown) {
@@ -1708,17 +1730,38 @@ void Widget::startScrollUpButtonAnimation(bool shown) {
 	}
 	_scrollToTopIsShown = shown;
 	_scrollToTopShown.start(
-		[=] { updateScrollUpPosition(); },
+		[=] { updateScrollButtonsPosition(); },
 		_scrollToTopIsShown ? 0. : 1.,
 		_scrollToTopIsShown ? 1. : 0.,
 		smallColumn ? 0 : st::historyToDownDuration);
 }
 
-void Widget::updateScrollUpPosition() {
+void Widget::startScrollDownButtonAnimation(bool shown) {
+	const auto smallColumn = (width() < st::columnMinimalWidthLeft)
+		|| _childList;
+	shown &= !smallColumn;
+	if (_scrollToBottomIsShown == shown) {
+		return;
+	}
+	_scrollToBottomIsShown = shown;
+	_scrollToBottomShown.start(
+		[=] { updateScrollButtonsPosition(); },
+		_scrollToBottomIsShown ? 0. : 1.,
+		_scrollToBottomIsShown ? 1. : 0.,
+		smallColumn ? 0 : st::historyToDownDuration);
+}
+
+void Widget::updateScrollButtonsPosition() {
 	// _scrollToTop is a child widget of _scroll, not me.
-	auto top = anim::interpolate(
+	const auto bottomProgress = _scrollToBottomShown.value(
+		_scrollToBottomIsShown ? 1. : 0.);
+	const auto bottomSkip = anim::interpolate(
 		0,
-		_scrollToTop->height() + st::connectingMargin.top(),
+		_scrollToBottom->height() + st::historyToDownPosition.y(),
+		bottomProgress);
+	const auto top = anim::interpolate(
+		0,
+		_scrollToTop->height() + st::connectingMargin.top() + bottomSkip,
 		_scrollToTopShown.value(_scrollToTopIsShown ? 1. : 0.));
 	_scrollToTop->moveToRight(
 		st::historyToDownPosition.x(),
@@ -1727,6 +1770,18 @@ void Widget::updateScrollUpPosition() {
 		= !_scrollToTopIsShown && !_scrollToTopShown.animating();
 	if (shouldBeHidden != _scrollToTop->isHidden()) {
 		_scrollToTop->setVisible(!shouldBeHidden);
+	}
+	const auto bottom = anim::interpolate(
+		0,
+		_scrollToBottom->height() + st::connectingMargin.top(),
+		bottomProgress);
+	_scrollToBottom->moveToRight(
+		st::historyToDownPosition.x(),
+		_scroll->height() - bottom);
+	const auto bottomHidden
+		= !_scrollToBottomIsShown && !_scrollToBottomShown.animating();
+	if (bottomHidden != _scrollToBottom->isHidden()) {
+		_scrollToBottom->setVisible(!bottomHidden);
 	}
 }
 
@@ -2612,8 +2667,12 @@ void Widget::showSearchInTopBar(anim::type animated) {
 
 QPixmap Widget::grabForFolderSlideAnimation() {
 	const auto hidden = _scrollToTop->isHidden();
+	const auto bottomHidden = _scrollToBottom->isHidden();
 	if (!hidden) {
 		_scrollToTop->hide();
+	}
+	if (!bottomHidden) {
+		_scrollToBottom->hide();
 	}
 
 	const auto rect = QRect(0, 0, width(), rect::bottom(_scroll));
@@ -2621,6 +2680,9 @@ QPixmap Widget::grabForFolderSlideAnimation() {
 
 	if (!hidden) {
 		_scrollToTop->show();
+	}
+	if (!bottomHidden) {
+		_scrollToBottom->show();
 	}
 	return result;
 }
@@ -2754,6 +2816,7 @@ void Widget::scrollToDefault(bool verytop) {
 			// We scroll by animation only if it gets us closer to target.
 			_scroll->scrollToY(animated);
 		}
+		updateScrollButtonsVisibility();
 	};
 
 	_scrollAnimationTo = scrollTo;
@@ -4092,10 +4155,11 @@ void Widget::dropEvent(QDropEvent *e) {
 void Widget::listScrollUpdated() {
 	const auto scrollTop = _scroll->scrollTop();
 	_inner->setVisibleTopBottom(scrollTop, scrollTop + _scroll->height());
-	updateScrollUpVisibility();
+	updateScrollButtonsVisibility();
 
 	// Fix button rendering glitch, Qt bug with WA_OpaquePaintEvent widgets.
 	_scrollToTop->update();
+	_scrollToBottom->update();
 }
 
 void Widget::updateCancelSearch() {
@@ -4946,9 +5010,7 @@ void Widget::updateControlsGeometry() {
 	} else {
 		listScrollUpdated();
 	}
-	if (_scrollToTopIsShown) {
-		updateScrollUpPosition();
-	}
+	updateScrollButtonsPosition();
 
 	if (_childList) {
 		const auto childw = std::max(_narrowWidth, width() - scrollWidth);
