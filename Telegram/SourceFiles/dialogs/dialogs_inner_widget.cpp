@@ -4993,19 +4993,16 @@ void InnerWidget::refreshPornSearchCounts() {
 }
 
 void InnerWidget::refreshSearchResultSelection(const RowDescriptor &entry) {
-	const auto i = _pornSearchEnabled
-		? ranges::find_if(_searchResults, [&](const auto &row) {
-			return isSearchResultActive(row.get(), entry);
-		})
-		: end(_searchResults);
+	const auto i = ranges::find_if(_searchResults, [&](const auto &row) {
+		return isSearchResultActive(row.get(), entry);
+	});
 	setSearchResultSelection(i == end(_searchResults)
 		? -1
 		: int(i - begin(_searchResults)));
 }
 
 void InnerWidget::setSearchResultSelection(int index) {
-	if (!_pornSearchEnabled
-		|| !base::in_range(index, 0, _searchResults.size())) {
+	if (!base::in_range(index, 0, _searchResults.size())) {
 		index = -1;
 	}
 	const auto id = (index >= 0)
@@ -5054,7 +5051,7 @@ QString InnerWidget::pornSearchSummary() const {
 			: tr::lng_search_porn_loaded(tr::now, lt_count, count);
 	}
 	const auto status = complete ? u"\u2705"_q : u"\U0001F504"_q;
-	const auto summary = status + ' ' + tr::lng_search_porn_summary(
+	return status + ' ' + tr::lng_search_porn_summary(
 		tr::now,
 		lt_duration,
 		QString::fromStdString(Api::PornSearchPolicy::FormatDuration(
@@ -5064,9 +5061,6 @@ QString InnerWidget::pornSearchSummary() const {
 			+ (result.totalKnown ? QString::number(result.total) : u"…"_q),
 		lt_messages,
 		messages);
-	return (_searchResultSelectionIndex >= 0)
-		? summary + u" [%1]"_q.arg(_searchResultSelectionIndex + 1)
-		: summary;
 }
 
 void InnerWidget::refreshPornSearchTimer() {
@@ -5084,7 +5078,7 @@ void InnerWidget::refreshPornSearchTimer() {
 }
 
 void InnerWidget::refreshPornSearchHeader() {
-	if (!_pornSearchEnabled || _state != WidgetState::Filtered) {
+	if (!searchHeaderPinned()) {
 		_pornSearchHeader.destroy();
 		return;
 	}
@@ -5116,13 +5110,18 @@ void InnerWidget::repaintPornSearchHeader() {
 
 int InnerWidget::searchHeaderTop() const {
 	const auto top = searchedOffset() - st::searchedBarHeight;
-	return (_pornSearchEnabled && _state == WidgetState::Filtered)
+	return searchHeaderPinned()
 		? std::max(top, _visibleTop)
 		: top;
 }
 
+bool InnerWidget::searchHeaderPinned() const {
+	return (_state == WidgetState::Filtered)
+		&& (_pornSearchEnabled || !_searchResults.empty());
+}
+
 void InnerWidget::paintSearchHeader(Painter &p) {
-	const auto text = _pornSearchEnabled
+	auto text = _pornSearchEnabled
 		? pornSearchSummary()
 		: uniqueSearchResults()
 		? u"Search results"_q
@@ -5134,6 +5133,9 @@ void InnerWidget::paintSearchHeader(Painter &p) {
 			tr::now,
 			lt_count,
 			_searchedMigratedCount + _searchedCount);
+	if (_searchResultSelectionIndex >= 0) {
+		text += u" [%1]"_q.arg(_searchResultSelectionIndex + 1);
+	}
 	p.fillRect(0, 0, width(), st::searchedBarHeight, st::searchedBarBg);
 	p.setFont(st::searchedBarFont);
 	p.setPen(st::searchedBarFg);
@@ -5451,6 +5453,11 @@ void InnerWidget::refresh(bool toTop) {
 		preloadRowsData();
 	}
 	updateCommunityRequestableGeometry();
+	if (_state == WidgetState::Filtered && !_searchResults.empty()) {
+		refreshSearchResultSelection(_searchResultSelection
+			? RowDescriptor(Key(), _searchResultSelection)
+			: _controller->activeChatEntryCurrent());
+	}
 	refreshPornSearchHeader();
 	repaintPornSearchHeader();
 	update();
@@ -6116,9 +6123,7 @@ void InnerWidget::selectSkipPage(int32 pixels, int32 direction) {
 }
 
 void InnerWidget::scrollToItem(int top, int height) {
-	if (_pornSearchEnabled
-		&& _state == WidgetState::Filtered
-		&& top >= searchedOffset()) {
+	if (searchHeaderPinned() && top >= searchedOffset()) {
 		top -= st::searchedBarHeight;
 		height += st::searchedBarHeight;
 	}
