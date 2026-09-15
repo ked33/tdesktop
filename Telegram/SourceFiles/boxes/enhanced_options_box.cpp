@@ -287,6 +287,7 @@ void DownloadBoostProfilesBox::prepare() {
 			title,
 			false,
 			st::defaultBoxCheckbox));
+		store->setAllowTextLines();
 		Ui::AddSkip(_content, st::onlinePlaybackProfilesTitleSkip);
 		_content->add(object_ptr<Ui::FlatLabel>(
 			_content,
@@ -332,11 +333,6 @@ void DownloadBoostProfilesBox::prepare() {
 		6,
 		tr::lng_online_playback_profile_waiting_buffer_ms(tr::now),
 		tr::lng_online_playback_profile_waiting_buffer_ms_about(tr::now));
-	addField(
-		_content,
-		14,
-		tr::lng_online_playback_profile_nonpremium_preload(tr::now),
-		tr::lng_online_playback_profile_nonpremium_preload_about(tr::now));
 	addCheck(
 		_seekCancel,
 		tr::lng_online_playback_profile_seek_cancel_enabled(tr::now),
@@ -400,6 +396,11 @@ void DownloadBoostProfilesBox::prepare() {
 		tr::lng_settings_online_playback_smart_desc(tr::now),
 		st::onlinePlaybackProfilesAbout));
 	Ui::AddSkip(smartContent, st::onlinePlaybackProfilesItemSkip);
+	addField(
+		smartContent,
+		14,
+		tr::lng_online_playback_profile_nonpremium_preload(tr::now),
+		tr::lng_online_playback_profile_nonpremium_preload_about(tr::now));
 	addField(
 		smartContent,
 		15,
