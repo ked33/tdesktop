@@ -13,12 +13,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/scroll_area.h"
+#include "ui/rp_widget.h"
 #include "ui/vertical_list.h"
 #include "ui/wrap/vertical_layout.h"
 #include "ui/style/style_core.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 #include "styles/style_passcode_box.h"
+#include "styles/style_widgets.h"
 #include "ui/boxes/confirm_box.h"
 #include "core/application.h"
 #include "core/enhanced_settings.h"
@@ -221,52 +223,145 @@ void DownloadBoostProfilesBox::prepare() {
 	_content->add(object_ptr<Ui::FlatLabel>(
 		_content,
 		tr::lng_settings_online_playback_parameters_desc(tr::now),
-		st::boxLabel));
+		st::onlinePlaybackProfilesAbout));
+	Ui::AddSkip(_content, st::onlinePlaybackProfilesSectionSkip);
 
-	const auto addField = [&](int index, const QString &description) {
+	const auto addField = [&](
+			int index,
+			const QString &title,
+			const QString &about) {
 		_content->add(object_ptr<Ui::FlatLabel>(
 			_content,
-			description,
-			st::boxLabel));
-		_fields[index] = _content->add(object_ptr<Ui::InputField>(
+			title,
+			st::onlinePlaybackProfilesTitle));
+		Ui::AddSkip(_content, st::onlinePlaybackProfilesTitleSkip);
+		_content->add(object_ptr<Ui::FlatLabel>(
 			_content,
-			st::defaultInputField,
-			tr::lng_settings_online_playback_integer_placeholder()));
+			about,
+			st::onlinePlaybackProfilesAbout));
+		Ui::AddSkip(_content, st::onlinePlaybackProfilesFieldSkip);
+		const auto row = _content->add(object_ptr<Ui::RpWidget>(_content));
+		const auto field = Ui::CreateChild<Ui::InputField>(
+			row,
+			st::onlinePlaybackProfilesField,
+			tr::lng_settings_online_playback_integer_placeholder());
+		_fields[index] = field;
+		const auto label = Ui::CreateChild<Ui::FlatLabel>(
+			row,
+			QString(),
+			st::defaultInputFieldLimit);
+		label->setAttribute(Qt::WA_TransparentForMouseEvents);
+		_defaultLabels[index] = label;
+		rpl::combine(
+			row->widthValue(),
+			field->heightValue(),
+			label->sizeValue()
+		) | rpl::on_next([=](int width, int fieldHeight, QSize labelSize) {
+			if (field->width() != st::onlinePlaybackProfilesFieldWidth) {
+				field->resizeToWidth(st::onlinePlaybackProfilesFieldWidth);
+			}
+			field->moveToLeft(0, 0);
+			label->moveToLeft(
+				field->width() + st::onlinePlaybackProfilesDefaultSkip,
+				std::max((fieldHeight - labelSize.height()) / 2, 0));
+			row->resize(
+				width,
+				std::max(fieldHeight, label->y() + labelSize.height()));
+		}, row->lifetime());
+		Ui::AddSkip(_content, st::onlinePlaybackProfilesItemSkip);
+	};
+	const auto addCheck = [&](
+			Ui::Checkbox *&store,
+			const QString &title,
+			const QString &about) {
+		store = _content->add(object_ptr<Ui::Checkbox>(
+			_content,
+			title,
+			false,
+			st::defaultBoxCheckbox));
+		Ui::AddSkip(_content, st::onlinePlaybackProfilesTitleSkip);
+		_content->add(object_ptr<Ui::FlatLabel>(
+			_content,
+			about,
+			st::onlinePlaybackProfilesAbout));
+		Ui::AddSkip(_content, st::onlinePlaybackProfilesItemSkip);
 	};
 	Ui::AddSubsectionTitle(
 		_content,
 		tr::lng_online_playback_group_playback_reader());
-	addField(0, tr::lng_online_playback_profile_requests_limit(tr::now));
-	addField(1, tr::lng_online_playback_profile_preload_parts(tr::now));
-	addField(2, tr::lng_online_playback_profile_tail_prefetch_parts(tr::now));
-	addField(3, tr::lng_online_playback_profile_seek_jump_parts(tr::now));
-	addField(4, tr::lng_online_playback_profile_seek_guard_parts(tr::now));
-	addField(5, tr::lng_online_playback_profile_load_ahead_ms(tr::now));
-	addField(6, tr::lng_online_playback_profile_waiting_buffer_ms(tr::now));
-	addField(14, tr::lng_online_playback_profile_nonpremium_preload(tr::now));
-
-	_seekCancel = _content->add(object_ptr<Ui::Checkbox>(
-		_content,
+	addField(
+		0,
+		tr::lng_online_playback_profile_requests_limit(tr::now),
+		tr::lng_online_playback_profile_requests_limit_about(tr::now));
+	addField(
+		1,
+		tr::lng_online_playback_profile_preload_parts(tr::now),
+		tr::lng_online_playback_profile_preload_parts_about(tr::now));
+	addField(
+		2,
+		tr::lng_online_playback_profile_tail_prefetch_parts(tr::now),
+		tr::lng_online_playback_profile_tail_prefetch_parts_about(tr::now));
+	addField(
+		3,
+		tr::lng_online_playback_profile_seek_jump_parts(tr::now),
+		tr::lng_online_playback_profile_seek_jump_parts_about(tr::now));
+	addField(
+		4,
+		tr::lng_online_playback_profile_seek_guard_parts(tr::now),
+		tr::lng_online_playback_profile_seek_guard_parts_about(tr::now));
+	addField(
+		5,
+		tr::lng_online_playback_profile_load_ahead_ms(tr::now),
+		tr::lng_online_playback_profile_load_ahead_ms_about(tr::now));
+	addField(
+		6,
+		tr::lng_online_playback_profile_waiting_buffer_ms(tr::now),
+		tr::lng_online_playback_profile_waiting_buffer_ms_about(tr::now));
+	addField(
+		14,
+		tr::lng_online_playback_profile_nonpremium_preload(tr::now),
+		tr::lng_online_playback_profile_nonpremium_preload_about(tr::now));
+	addCheck(
+		_seekCancel,
 		tr::lng_online_playback_profile_seek_cancel_enabled(tr::now),
-		false,
-		st::defaultBoxCheckbox));
-	_tailPrefetch = _content->add(object_ptr<Ui::Checkbox>(
-		_content,
+		tr::lng_online_playback_profile_seek_cancel_enabled_about(tr::now));
+	addCheck(
+		_tailPrefetch,
 		tr::lng_online_playback_profile_tail_prefetch_enabled(tr::now),
-		false,
-		st::defaultBoxCheckbox));
+		tr::lng_online_playback_profile_tail_prefetch_enabled_about(tr::now));
 
 	Ui::AddSkip(_content, st::onlinePlaybackProfilesSectionSkip);
 	Ui::AddSubsectionTitle(
 		_content,
 		tr::lng_online_playback_group_download_mpv());
-	addField(7, tr::lng_online_playback_profile_start_waited_parts(tr::now));
-	addField(8, tr::lng_online_playback_profile_max_waited_parts(tr::now));
-	addField(9, tr::lng_online_playback_profile_start_sessions(tr::now));
-	addField(10, tr::lng_online_playback_profile_max_sessions(tr::now));
-	addField(11, tr::lng_online_playback_profile_mpv_tail_prefetch(tr::now));
-	addField(12, tr::lng_online_playback_profile_mpv_cache_max(tr::now));
-	addField(13, tr::lng_online_playback_profile_mpv_cache_back(tr::now));
+	addField(
+		7,
+		tr::lng_online_playback_profile_start_waited_parts(tr::now),
+		tr::lng_online_playback_profile_start_waited_parts_about(tr::now));
+	addField(
+		8,
+		tr::lng_online_playback_profile_max_waited_parts(tr::now),
+		tr::lng_online_playback_profile_max_waited_parts_about(tr::now));
+	addField(
+		9,
+		tr::lng_online_playback_profile_start_sessions(tr::now),
+		tr::lng_online_playback_profile_start_sessions_about(tr::now));
+	addField(
+		10,
+		tr::lng_online_playback_profile_max_sessions(tr::now),
+		tr::lng_online_playback_profile_max_sessions_about(tr::now));
+	addField(
+		11,
+		tr::lng_online_playback_profile_mpv_tail_prefetch(tr::now),
+		tr::lng_online_playback_profile_mpv_tail_prefetch_about(tr::now));
+	addField(
+		12,
+		tr::lng_online_playback_profile_mpv_cache_max(tr::now),
+		tr::lng_online_playback_profile_mpv_cache_max_about(tr::now));
+	addField(
+		13,
+		tr::lng_online_playback_profile_mpv_cache_back(tr::now),
+		tr::lng_online_playback_profile_mpv_cache_back_about(tr::now));
 
 	Ui::AddSkip(_content, st::onlinePlaybackProfilesSectionSkip);
 	Ui::AddSubsectionTitle(
@@ -275,14 +370,36 @@ void DownloadBoostProfilesBox::prepare() {
 	_content->add(object_ptr<Ui::FlatLabel>(
 		_content,
 		tr::lng_settings_online_playback_smart_desc(tr::now),
-		st::boxLabel));
-	addField(15, tr::lng_online_playback_profile_smart_min_preload(tr::now));
-	addField(16, tr::lng_online_playback_profile_smart_min_requests(tr::now));
-	addField(17, tr::lng_online_playback_profile_smart_max_preload(tr::now));
-	addField(18, tr::lng_online_playback_profile_smart_dc_initial(tr::now));
-	addField(19, tr::lng_online_playback_profile_smart_dc_min(tr::now));
-	addField(20, tr::lng_online_playback_profile_smart_dc_max(tr::now));
-	addField(21, tr::lng_online_playback_profile_smart_capacity_floor(tr::now));
+		st::onlinePlaybackProfilesAbout));
+	Ui::AddSkip(_content, st::onlinePlaybackProfilesItemSkip);
+	addField(
+		15,
+		tr::lng_online_playback_profile_smart_min_preload(tr::now),
+		tr::lng_online_playback_profile_smart_min_preload_about(tr::now));
+	addField(
+		16,
+		tr::lng_online_playback_profile_smart_min_requests(tr::now),
+		tr::lng_online_playback_profile_smart_min_requests_about(tr::now));
+	addField(
+		17,
+		tr::lng_online_playback_profile_smart_max_preload(tr::now),
+		tr::lng_online_playback_profile_smart_max_preload_about(tr::now));
+	addField(
+		18,
+		tr::lng_online_playback_profile_smart_dc_initial(tr::now),
+		tr::lng_online_playback_profile_smart_dc_initial_about(tr::now));
+	addField(
+		19,
+		tr::lng_online_playback_profile_smart_dc_min(tr::now),
+		tr::lng_online_playback_profile_smart_dc_min_about(tr::now));
+	addField(
+		20,
+		tr::lng_online_playback_profile_smart_dc_max(tr::now),
+		tr::lng_online_playback_profile_smart_dc_max_about(tr::now));
+	addField(
+		21,
+		tr::lng_online_playback_profile_smart_capacity_floor(tr::now),
+		tr::lng_online_playback_profile_smart_capacity_floor_about(tr::now));
 
 	loadProfile(_editingProfile);
 	showChildren();
@@ -312,9 +429,10 @@ void DownloadBoostProfilesBox::resizeEvent(QResizeEvent *e) {
 	}
 }
 
-void DownloadBoostProfilesBox::loadProfile(int profile) {
-	const auto &value = _profiles[profile];
-	const auto values = std::array<int, kNumericFieldCount>{
+auto DownloadBoostProfilesBox::NumericFieldValues(
+		const Media::Streaming::BoostProfile &value)
+-> std::array<int, kNumericFieldCount> {
+	return {
 		value.requestsLimit,
 		value.preloadPartsAhead,
 		value.tailPrefetchParts,
@@ -338,8 +456,19 @@ void DownloadBoostProfilesBox::loadProfile(int profile) {
 		value.smartMaximumRequestLimit,
 		value.smartCapacityMinimumRequestLimit,
 	};
+}
+
+void DownloadBoostProfilesBox::loadProfile(int profile) {
+	const auto &value = _profiles[profile];
+	const auto values = NumericFieldValues(value);
+	const auto defaults = NumericFieldValues(
+		Media::Streaming::DefaultBoostProfiles()[profile]);
 	for (auto i = 0; i != kNumericFieldCount; ++i) {
 		_fields[i]->setText(QString::number(values[i]));
+		_defaultLabels[i]->setText(tr::lng_online_playback_profile_default(
+			tr::now,
+			lt_value,
+			QString::number(defaults[i])));
 	}
 	_seekCancel->setChecked(
 		value.seekCancelEnabled,
