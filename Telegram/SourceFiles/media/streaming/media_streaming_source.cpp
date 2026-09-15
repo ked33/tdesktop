@@ -7,7 +7,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/streaming/media_streaming_source.h"
 
+#include "media/streaming/media_streaming_boost.h"
+#include "media/streaming/media_streaming_loader.h"
 #include "media/streaming/media_streaming_reader.h"
+#include "settings.h"
+
+#include <algorithm>
 
 namespace Media::Streaming {
 namespace {
@@ -101,9 +106,7 @@ public:
 		_reader->tryRemoveLoaderAsync();
 	}
 
-	void startStreaming() override {
-		_reader->startStreaming();
-	}
+	void startStreaming() override;
 
 	void stopStreaming(bool stillActive) override {
 		_reader->stopStreaming(stillActive);
@@ -139,7 +142,20 @@ public:
 
 private:
 	const std::shared_ptr<Reader> _reader;
+
 };
+
+void ReaderFileSource::startStreaming() {
+	if (_reader->isRemoteLoader()) {
+		const auto &profile = BoostProfileFor(std::clamp(
+			GetEnhancedInt("net_download_speed_boost"),
+			0,
+			6));
+		_reader->requestTailPrefetch(
+			int64(profile.tailPrefetchParts) * Loader::kPartSize);
+	}
+	_reader->startStreaming();
+}
 
 } // namespace
 
