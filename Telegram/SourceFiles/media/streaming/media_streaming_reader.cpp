@@ -93,15 +93,6 @@ using PartsMap = base::flat_map<uint32, QByteArray>;
 		* kPartSize;
 }
 
-[[nodiscard]] bool StreamingTailPrefetchEnabled() {
-	return BoostProfileFor(DownloadBoostLevel()).tailPrefetchParts > 0;
-}
-
-[[nodiscard]] int64 StreamingTailPrefetchBytes() {
-	return int64(BoostProfileFor(DownloadBoostLevel()).tailPrefetchParts)
-		* kPartSize;
-}
-
 // Burst-mode adaptive preload multiplier: 100 = base depth, 200 = 2x.
 // Per-Reader state is stored on the Reader; these free helpers return the
 // static base values and the Reader scales them via atomics before passing
