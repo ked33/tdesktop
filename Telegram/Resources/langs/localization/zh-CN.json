@@ -179,7 +179,7 @@
     "lng_settings_online_playback_parameters_reset": "还原当前档位",
     "lng_settings_online_playback_parameters_saved_restart": "参数已保存。需要重启 Telegram 才会应用新的在线播放参数。",
     "lng_settings_online_playback_parameters_desc": "视频会按每块 128 KB 分段下载。数字越大，通常打开和拖动越快，但也更容易被服务器暂时放慢。先选上方档位，再改这一档；点保存会写入全部档位。",
-    "lng_settings_online_playback_smart_desc": "下面这组只在「智能」档生效。请先选上方「智能」再修改；其他档位保存的这些值不会影响智能档。",
+    "lng_settings_online_playback_smart_desc": "这些参数用于智能档的自动下载和缓冲调节。",
     "lng_online_playback_profile_default": "默认（整数）: {value}",
     "lng_online_playback_group_playback_reader": "打开和播放",
     "lng_online_playback_group_download_mpv": "下载通道",
