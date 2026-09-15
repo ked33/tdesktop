@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/scroll_area.h"
 #include "ui/rp_widget.h"
 #include "ui/vertical_list.h"
+#include "ui/wrap/slide_wrap.h"
 #include "ui/wrap/vertical_layout.h"
 #include "ui/style/style_core.h"
 #include "styles/style_layers.h"
@@ -163,8 +164,12 @@ void DownloadBoostBox::save() {
 }
 
 DownloadBoostProfilesBox::DownloadBoostProfilesBox(QWidget *parent)
-	: _profiles(Media::Streaming::LoadBoostProfiles())
-, _scroll(base::make_unique_q<Ui::ScrollArea>(this, st::boxScroll)) {
+: _profiles(Media::Streaming::LoadBoostProfiles())
+, _scroll(base::make_unique_q<Ui::ScrollArea>(this, st::boxScroll))
+, _editingProfile(std::clamp(
+	GetEnhancedInt("net_download_speed_boost"),
+	0,
+	int(_profiles.size()) - 1)) {
 }
 
 void DownloadBoostProfilesBox::prepare() {
@@ -227,20 +232,21 @@ void DownloadBoostProfilesBox::prepare() {
 	Ui::AddSkip(_content, st::onlinePlaybackProfilesSectionSkip);
 
 	const auto addField = [&](
+			not_null<Ui::VerticalLayout*> container,
 			int index,
 			const QString &title,
 			const QString &about) {
-		_content->add(object_ptr<Ui::FlatLabel>(
-			_content,
+		container->add(object_ptr<Ui::FlatLabel>(
+			container,
 			title,
 			st::onlinePlaybackProfilesTitle));
-		Ui::AddSkip(_content, st::onlinePlaybackProfilesTitleSkip);
-		_content->add(object_ptr<Ui::FlatLabel>(
-			_content,
+		Ui::AddSkip(container, st::onlinePlaybackProfilesTitleSkip);
+		container->add(object_ptr<Ui::FlatLabel>(
+			container,
 			about,
 			st::onlinePlaybackProfilesAbout));
-		Ui::AddSkip(_content, st::onlinePlaybackProfilesFieldSkip);
-		const auto row = _content->add(object_ptr<Ui::RpWidget>(_content));
+		Ui::AddSkip(container, st::onlinePlaybackProfilesFieldSkip);
+		const auto row = container->add(object_ptr<Ui::RpWidget>(container));
 		const auto field = Ui::CreateChild<Ui::InputField>(
 			row,
 			st::onlinePlaybackProfilesField);
@@ -270,7 +276,7 @@ void DownloadBoostProfilesBox::prepare() {
 				width,
 				std::max(fieldHeight, label->y() + label->height()));
 		}, row->lifetime());
-		Ui::AddSkip(_content, st::onlinePlaybackProfilesItemSkip);
+		Ui::AddSkip(container, st::onlinePlaybackProfilesItemSkip);
 	};
 	const auto addCheck = [&](
 			Ui::Checkbox *&store,
@@ -292,34 +298,42 @@ void DownloadBoostProfilesBox::prepare() {
 		_content,
 		tr::lng_online_playback_group_playback_reader());
 	addField(
+		_content,
 		0,
 		tr::lng_online_playback_profile_requests_limit(tr::now),
 		tr::lng_online_playback_profile_requests_limit_about(tr::now));
 	addField(
+		_content,
 		1,
 		tr::lng_online_playback_profile_preload_parts(tr::now),
 		tr::lng_online_playback_profile_preload_parts_about(tr::now));
 	addField(
+		_content,
 		2,
 		tr::lng_online_playback_profile_tail_prefetch_parts(tr::now),
 		tr::lng_online_playback_profile_tail_prefetch_parts_about(tr::now));
 	addField(
+		_content,
 		3,
 		tr::lng_online_playback_profile_seek_jump_parts(tr::now),
 		tr::lng_online_playback_profile_seek_jump_parts_about(tr::now));
 	addField(
+		_content,
 		4,
 		tr::lng_online_playback_profile_seek_guard_parts(tr::now),
 		tr::lng_online_playback_profile_seek_guard_parts_about(tr::now));
 	addField(
+		_content,
 		5,
 		tr::lng_online_playback_profile_load_ahead_ms(tr::now),
 		tr::lng_online_playback_profile_load_ahead_ms_about(tr::now));
 	addField(
+		_content,
 		6,
 		tr::lng_online_playback_profile_waiting_buffer_ms(tr::now),
 		tr::lng_online_playback_profile_waiting_buffer_ms_about(tr::now));
 	addField(
+		_content,
 		14,
 		tr::lng_online_playback_profile_nonpremium_preload(tr::now),
 		tr::lng_online_playback_profile_nonpremium_preload_about(tr::now));
@@ -337,68 +351,87 @@ void DownloadBoostProfilesBox::prepare() {
 		_content,
 		tr::lng_online_playback_group_download_mpv());
 	addField(
+		_content,
 		7,
 		tr::lng_online_playback_profile_start_waited_parts(tr::now),
 		tr::lng_online_playback_profile_start_waited_parts_about(tr::now));
 	addField(
+		_content,
 		8,
 		tr::lng_online_playback_profile_max_waited_parts(tr::now),
 		tr::lng_online_playback_profile_max_waited_parts_about(tr::now));
 	addField(
+		_content,
 		9,
 		tr::lng_online_playback_profile_start_sessions(tr::now),
 		tr::lng_online_playback_profile_start_sessions_about(tr::now));
 	addField(
+		_content,
 		10,
 		tr::lng_online_playback_profile_max_sessions(tr::now),
 		tr::lng_online_playback_profile_max_sessions_about(tr::now));
 	addField(
+		_content,
 		11,
 		tr::lng_online_playback_profile_mpv_tail_prefetch(tr::now),
 		tr::lng_online_playback_profile_mpv_tail_prefetch_about(tr::now));
 	addField(
+		_content,
 		12,
 		tr::lng_online_playback_profile_mpv_cache_max(tr::now),
 		tr::lng_online_playback_profile_mpv_cache_max_about(tr::now));
 	addField(
+		_content,
 		13,
 		tr::lng_online_playback_profile_mpv_cache_back(tr::now),
 		tr::lng_online_playback_profile_mpv_cache_back_about(tr::now));
 
-	Ui::AddSkip(_content, st::onlinePlaybackProfilesSectionSkip);
+	_smartSection = _content->add(
+		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+			_content,
+			object_ptr<Ui::VerticalLayout>(_content)));
+	const auto smartContent = _smartSection->entity();
+	Ui::AddSkip(smartContent, st::onlinePlaybackProfilesSectionSkip);
 	Ui::AddSubsectionTitle(
-		_content,
+		smartContent,
 		tr::lng_online_playback_group_smart());
-	_content->add(object_ptr<Ui::FlatLabel>(
-		_content,
+	smartContent->add(object_ptr<Ui::FlatLabel>(
+		smartContent,
 		tr::lng_settings_online_playback_smart_desc(tr::now),
 		st::onlinePlaybackProfilesAbout));
-	Ui::AddSkip(_content, st::onlinePlaybackProfilesItemSkip);
+	Ui::AddSkip(smartContent, st::onlinePlaybackProfilesItemSkip);
 	addField(
+		smartContent,
 		15,
 		tr::lng_online_playback_profile_smart_min_preload(tr::now),
 		tr::lng_online_playback_profile_smart_min_preload_about(tr::now));
 	addField(
+		smartContent,
 		16,
 		tr::lng_online_playback_profile_smart_min_requests(tr::now),
 		tr::lng_online_playback_profile_smart_min_requests_about(tr::now));
 	addField(
+		smartContent,
 		17,
 		tr::lng_online_playback_profile_smart_max_preload(tr::now),
 		tr::lng_online_playback_profile_smart_max_preload_about(tr::now));
 	addField(
+		smartContent,
 		18,
 		tr::lng_online_playback_profile_smart_dc_initial(tr::now),
 		tr::lng_online_playback_profile_smart_dc_initial_about(tr::now));
 	addField(
+		smartContent,
 		19,
 		tr::lng_online_playback_profile_smart_dc_min(tr::now),
 		tr::lng_online_playback_profile_smart_dc_min_about(tr::now));
 	addField(
+		smartContent,
 		20,
 		tr::lng_online_playback_profile_smart_dc_max(tr::now),
 		tr::lng_online_playback_profile_smart_dc_max_about(tr::now));
 	addField(
+		smartContent,
 		21,
 		tr::lng_online_playback_profile_smart_capacity_floor(tr::now),
 		tr::lng_online_playback_profile_smart_capacity_floor_about(tr::now));
@@ -463,14 +496,11 @@ auto DownloadBoostProfilesBox::NumericFieldValues(
 }
 
 void DownloadBoostProfilesBox::loadProfile(int profile) {
-	constexpr auto kFirstSmartField = 15;
-	const auto smart = (profile == 6);
 	const auto &value = _profiles[profile];
 	const auto values = NumericFieldValues(value);
 	const auto defaults = NumericFieldValues(
 		Media::Streaming::DefaultBoostProfiles()[profile]);
 	for (auto i = 0; i != kNumericFieldCount; ++i) {
-		_fields[i]->setEnabled(i < kFirstSmartField || smart);
 		_fields[i]->setText(QString::number(values[i]));
 		_defaultLabels[i]->setText(tr::lng_online_playback_profile_default(
 			tr::now,
@@ -483,6 +513,7 @@ void DownloadBoostProfilesBox::loadProfile(int profile) {
 	_tailPrefetch->setChecked(
 		value.tailPrefetchParts > 0,
 		Ui::Checkbox::NotifyAboutChange::DontNotify);
+	_smartSection->toggle(profile == 6, anim::type::instant);
 }
 
 bool DownloadBoostProfilesBox::saveCurrentProfile() {
