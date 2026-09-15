@@ -15,7 +15,28 @@ using "intro/intro.style";
 onlinePlaybackProfilesPreferredWidth: 900px;
 onlinePlaybackProfilesMaximumHeight: 1000px;
 onlinePlaybackProfilesOuterSkip: 24px;
-onlinePlaybackProfilesSectionSkip: 12px;
+onlinePlaybackProfilesSectionSkip: 16px;
+onlinePlaybackProfilesItemSkip: 16px;
+onlinePlaybackProfilesTitleSkip: 4px;
+onlinePlaybackProfilesFieldSkip: 8px;
+onlinePlaybackProfilesDefaultSkip: 10px;
+onlinePlaybackProfilesFieldWidth: 168px;
+onlinePlaybackProfilesTitle: FlatLabel(defaultFlatLabel) {
+	minWidth: 0px;
+	style: TextStyle(semiboldTextStyle) {
+		font: font(boxFontSize semibold);
+	}
+}
+onlinePlaybackProfilesAbout: FlatLabel(defaultSubTextLabel) {
+	minWidth: 0px;
+}
+onlinePlaybackProfilesField: InputField(defaultInputField) {
+	textMargins: margins(0px, 8px, 0px, 6px);
+	placeholderShift: 0px;
+	placeholderFont: font(13px);
+	heightMin: 36px;
+	widthMin: 120px;
+}
 
 UserpicsRow {
 	button: UserpicButton;
