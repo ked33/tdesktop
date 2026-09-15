@@ -166,18 +166,8 @@ struct Entry {
 	Entry(
 		not_null<DocumentData*> document,
 		Data::FileOrigin origin,
-		std::shared_ptr<Reader> reader)
-	: document(document)
-	, origin(origin)
-	, reader(std::move(reader))
-	, diagnostics(this->reader->diagnostics())
-	, size(this->reader ? this->reader->size() : 0)
-	, duration(document->duration()) {
-	}
-
-	~Entry() {
-		mp4Index->cancel();
-	}
+		std::shared_ptr<Reader> reader);
+	~Entry();
 
 	not_null<DocumentData*> document;
 	Data::FileOrigin origin;
@@ -199,9 +189,53 @@ struct Entry {
 	const std::shared_ptr<Mpv::PreparedIndex> mp4Index
 		= std::make_shared<Mpv::PreparedIndex>();
 	std::atomic<std::uint64_t> latestSeekGeneration = 0;
+	const int smartPlaybackRate = 0;
+	std::weak_ptr<Reader> smartActiveReader;
+	std::mutex smartStateMutex;
 	std::mutex fillMutex;
 	std::mutex seekFillMutex;
 };
+
+Entry::Entry(
+		not_null<DocumentData*> document,
+		Data::FileOrigin origin,
+		std::shared_ptr<Reader> reader)
+: document(document)
+, origin(origin)
+, reader(std::move(reader))
+, diagnostics(this->reader->diagnostics())
+, size(this->reader ? this->reader->size() : 0)
+, duration(document->duration())
+, smartPlaybackRate(AveragePlaybackBytesPerSecond(document->size, duration))
+, smartActiveReader(this->reader) {
+	if (smartPlaybackRate > 0 && this->reader->smartStreamingEnabled()) {
+		this->reader->setSmartStreamingPlaybackRate(smartPlaybackRate);
+	}
+}
+
+Entry::~Entry() {
+	mp4Index->cancel();
+}
+
+void ActivateSmartReader(
+		const std::shared_ptr<Entry> &entry,
+		const std::shared_ptr<Reader> &reader) {
+	if (!reader
+		|| entry->smartPlaybackRate <= 0
+		|| !reader->smartStreamingEnabled()) {
+		return;
+	}
+	const auto guard = std::lock_guard(entry->smartStateMutex);
+	const auto previous = entry->smartActiveReader.lock();
+	if (previous == reader) {
+		return;
+	}
+	if (previous) {
+		previous->setSmartStreamingPlaybackRate(0);
+	}
+	reader->setSmartStreamingPlaybackRate(entry->smartPlaybackRate);
+	entry->smartActiveReader = reader;
+}
 
 [[nodiscard]] QString StreamingErrorDebugString(std::optional<Error> error) {
 	if (!error) {
@@ -285,6 +319,7 @@ struct Entry {
 		const auto previous = std::move(entry->reader);
 		entry->reader = fresh;
 		entry->headerFinalized = false;
+		ActivateSmartReader(entry, fresh);
 		if (previous) {
 			previous->stopStreamingAsync();
 			previous->tryRemoveLoaderAsync();
@@ -930,6 +965,7 @@ private:
 					fillMutex = &entry->seekFillMutex;
 					readReady = &entry->seekReadReady;
 					usingSeekReader = true;
+					ActivateSmartReader(entry, activeReader);
 					MPV_STREAMING_LOG(("MPV Streaming (Special): Using isolated seek reader for token %1 at offset %2.")
 						.arg(request.token)
 						.arg(range.range.from));
@@ -942,6 +978,7 @@ private:
 			if (!activeReader) {
 				const auto lock = std::unique_lock(entry->fillMutex);
 				activeReader = entry->reader;
+				ActivateSmartReader(entry, activeReader);
 			}
 			diagnostics.useReader(
 				activeReader->diagnostics(),
