@@ -572,6 +572,7 @@ private:
 	void repaintPornSearchHeader();
 	void paintSearchHeader(Painter &p);
 	[[nodiscard]] int searchHeaderTop() const;
+	[[nodiscard]] bool searchHeaderPinned() const;
 	[[nodiscard]] QString pornSearchSummary() const;
 	[[nodiscard]] int pornSearchStatusHeight() const;
 	void repaintPreviewResult(int index);
