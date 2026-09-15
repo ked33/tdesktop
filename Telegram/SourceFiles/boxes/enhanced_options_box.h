@@ -76,12 +76,15 @@ private:
 	bool saveCurrentProfile();
 	bool save();
 	void reset();
+	[[nodiscard]] static std::array<int, kNumericFieldCount> NumericFieldValues(
+		const Media::Streaming::BoostProfile &value);
 
 	Media::Streaming::BoostProfiles _profiles;
 	std::shared_ptr<Ui::RadiobuttonGroup> _profileGroup;
 	base::unique_qptr<Ui::ScrollArea> _scroll;
 	Ui::VerticalLayout *_content = nullptr;
 	std::array<Ui::InputField*, kNumericFieldCount> _fields = {};
+	std::array<Ui::FlatLabel*, kNumericFieldCount> _defaultLabels = {};
 	Ui::Checkbox *_seekCancel = nullptr;
 	Ui::Checkbox *_tailPrefetch = nullptr;
 	int _radioHeight = 0;
