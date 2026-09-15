@@ -243,8 +243,7 @@ void DownloadBoostProfilesBox::prepare() {
 		const auto row = _content->add(object_ptr<Ui::RpWidget>(_content));
 		const auto field = Ui::CreateChild<Ui::InputField>(
 			row,
-			st::onlinePlaybackProfilesField,
-			tr::lng_settings_online_playback_integer_placeholder());
+			st::onlinePlaybackProfilesField);
 		_fields[index] = field;
 		const auto label = Ui::CreateChild<Ui::FlatLabel>(
 			row,
@@ -255,18 +254,21 @@ void DownloadBoostProfilesBox::prepare() {
 		rpl::combine(
 			row->widthValue(),
 			field->heightValue(),
-			label->sizeValue()
-		) | rpl::on_next([=](int width, int fieldHeight, QSize labelSize) {
+			label->naturalWidthValue()
+		) | rpl::on_next([=](int width, int fieldHeight, int) {
 			if (field->width() != st::onlinePlaybackProfilesFieldWidth) {
 				field->resizeToWidth(st::onlinePlaybackProfilesFieldWidth);
 			}
 			field->moveToLeft(0, 0);
+			const auto labelLeft = field->width()
+				+ st::onlinePlaybackProfilesDefaultSkip;
+			label->resizeToNaturalWidth(std::max(width - labelLeft, 0));
 			label->moveToLeft(
-				field->width() + st::onlinePlaybackProfilesDefaultSkip,
-				std::max((fieldHeight - labelSize.height()) / 2, 0));
+				labelLeft,
+				std::max((fieldHeight - label->height()) / 2, 0));
 			row->resize(
 				width,
-				std::max(fieldHeight, label->y() + labelSize.height()));
+				std::max(fieldHeight, label->y() + label->height()));
 		}, row->lifetime());
 		Ui::AddSkip(_content, st::onlinePlaybackProfilesItemSkip);
 	};
@@ -425,7 +427,9 @@ void DownloadBoostProfilesBox::resizeEvent(QResizeEvent *e) {
 		width() - st::boxPadding.left() - st::boxPadding.right(),
 		height() - top - radioHeight - st::boxPadding.bottom());
 	if (_content) {
-		_content->resizeToWidth(_scroll->width());
+		const auto margins = _content->getMargins();
+		_content->resizeToWidth(
+			_scroll->width() - margins.left() - margins.right());
 	}
 }
 
@@ -459,11 +463,14 @@ auto DownloadBoostProfilesBox::NumericFieldValues(
 }
 
 void DownloadBoostProfilesBox::loadProfile(int profile) {
+	constexpr auto kFirstSmartField = 15;
+	const auto smart = (profile == 6);
 	const auto &value = _profiles[profile];
 	const auto values = NumericFieldValues(value);
 	const auto defaults = NumericFieldValues(
 		Media::Streaming::DefaultBoostProfiles()[profile]);
 	for (auto i = 0; i != kNumericFieldCount; ++i) {
+		_fields[i]->setEnabled(i < kFirstSmartField || smart);
 		_fields[i]->setText(QString::number(values[i]));
 		_defaultLabels[i]->setText(tr::lng_online_playback_profile_default(
 			tr::now,

@@ -9028,9 +9028,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_online_playback_parameters_reset" = "Reset selected profile";
 "lng_settings_online_playback_parameters_saved_restart" = "Parameters saved. Restart Telegram to apply the new online playback parameters.";
 "lng_settings_online_playback_parameters_desc" = "Videos are downloaded in 128 KB chunks. Larger numbers usually open and seek faster, but are more likely to be slowed down by the server. Choose a profile above, edit that profile, then Save. Save writes every profile.";
-"lng_settings_online_playback_smart_desc" = "These options apply only to the Smart profile. If you edit them while another profile is selected, the values are still kept for when you switch back to Smart.";
-"lng_settings_online_playback_integer_placeholder" = "Number";
-"lng_online_playback_profile_default" = "Default: {value}";
+"lng_settings_online_playback_smart_desc" = "These options apply only to the Smart profile. Select Smart above to edit them. Values stored in other profiles do not affect Smart.";
+"lng_online_playback_profile_default" = "Default (integer): {value}";
 "lng_online_playback_group_playback_reader" = "Opening and playing";
 "lng_online_playback_group_download_mpv" = "Download channels";
 "lng_online_playback_group_smart" = "Smart profile only";
@@ -9069,7 +9068,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_online_playback_profile_smart_min_requests" = "Minimum chunks downloading at once when slowed";
 "lng_online_playback_profile_smart_min_requests_about" = "When Smart detects a slowdown, it still asks for at least this many chunks at once. Too low, thumbnails and video fight for bandwidth; too high, recovery from a slowdown is harder.";
 "lng_online_playback_profile_smart_max_preload" = "Maximum chunks loaded ahead";
-"lng_online_playback_profile_smart_max_preload_about" = "When the network is fine, Smart will not load more than this many chunks ahead. Higher uses more data.";
+"lng_online_playback_profile_smart_max_preload_about" = "During normal playback, Smart will not load more than this many chunks ahead. Recovery after seeking, buffering stalls or server slowdowns may temporarily exceed this limit to refill the buffer. Higher values can use more data.";
 "lng_online_playback_profile_smart_dc_initial" = "Chunks downloading at once when playback starts";
 "lng_online_playback_profile_smart_dc_initial_about" = "The first time a video is played from a media server, Smart starts with this many chunks downloading at once. It then raises or lowers the number from the actual speed.";
 "lng_online_playback_profile_smart_dc_min" = "Lowest chunks downloading at once";

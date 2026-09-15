@@ -636,6 +636,13 @@ def test_source_structure() -> None:
 			"steady floor helper used",
 		),
 		(
+			"profile.smartMaximumPreload" in fill
+			and fill.index("preloadParts = std::max(preloadParts, localRecoveryPreloadParts);")
+				< fill.index("profile.smartMaximumPreload")
+				< fill.index("_slices.fill("),
+			"configured Smart maximum caps the final read-ahead budget",
+		),
+		(
 			"SmartPolicySelfCheck" in boost and "SmartPolicySelfCheck" in boost_h,
 			"SmartPolicySelfCheck shipped",
 		),
