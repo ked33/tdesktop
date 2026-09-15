@@ -24,6 +24,8 @@ local non-merge author commits reachable from source_head: 330
 
 2026-09-14 v7.2.8 合并更新：F01–F08 已按用户批准的方案落实，保留 64Gram 公开版本 7.0.9，候选 `UpstreamVersion=7.2.8`。目录搜索、手势、RPC、媒体缓冲和实验滚动设置已适配，配套子模块同步到目标。历史附录更新为 330 条。上面两次“定向补录”中的 311 条属于各自当时的旧快照；本轮证据和未验证项见 [升级记录](upstream-merges/v7.2.8/README.md)。
 
+2026-09-15 定向补录：内置媒体查看器双击进入视频内容全屏后，`Ctrl+C` 无法复制当前帧；已改为全屏分支不再吞掉 Ctrl / Alt 组合键。新增 `Ctrl+R` 旋转 90°、`Alt+R` 水平镜像翻转。第 7.1、7.3 节同步更正，并新增第 7.6 节列出查看器全部快捷操作。补录针对当前工作目录中的按键逻辑，未编译或运行客户端。
+
 ## 1. 在线播放、MPV 与流媒体状态机
 
 用户能力：消息右键和鼠标快捷方式调用普通/特殊 MPV 在线播放；支持自定义 `mpv.exe` 路径、调试日志、不同加载档位、Smart 自适应策略、远距离 seek 取消、MP4 tail 预取、高码率提示，以及内置播放器的 Soft Seek/seek map/缓存复用与资源生命周期修复。
@@ -254,19 +256,19 @@ local non-merge author commits reachable from source_head: 330
 
 ## 7. 媒体查看器、预览亮度与播放器快捷键
 
-聊天预览图支持亮度调节；媒体查看器按区域用滚轮控制亮度、音量、切换和 seek，并在重新打开时重置状态；视频播放器增加速度、旋转、镜像、受限频道/群视频帧复制，以及正文隐藏和播放控件布局调整，高码率视频大小可显示提示标记。
+聊天预览图支持亮度调节；媒体查看器按区域用滚轮控制亮度、音量、切换和 seek，并在重新打开时重置状态；视频播放器增加速度、旋转、镜像、受限频道/群视频帧复制，以及正文隐藏和播放控件布局调整，高码率视频大小可显示提示标记。视频内容全屏后仍可用 `Ctrl+C` 复制当前帧；完整快捷操作见第 7.6 节。
 
 关键入口：`Telegram/SourceFiles/history/view/media/history_view_preview_brightness.cpp`、`Telegram/SourceFiles/history/view/media/history_view_preview_brightness.h`、`Telegram/SourceFiles/media/view/media_view_overlay_widget.cpp`、`Telegram/SourceFiles/media/view/media_view_overlay_renderer.h`、`Telegram/SourceFiles/media/view/media_view_overlay_opengl.cpp`、`Telegram/SourceFiles/media/view/media_view_overlay_raster.cpp`、`Telegram/SourceFiles/media/view/media_view_playback_controls.cpp`。
 
 设置：`preview_brightness_enabled`、`preview_brightness`、`media_viewer_wheel_control_enabled`。代表提交：`7303113612`、`55dd0a6c25`、`672beb04aa`、`6256411a4a`、`8042268e0e`。
 
-固定回归：单图/相册/GIF/视频预览；OpenGL/Raster；不同界面缩放；滚轮四区域、OSD、重开重置、视频双击、数字键/长按方向键/PageUp。
+固定回归：单图/相册/GIF/视频预览；OpenGL/Raster；不同界面缩放；滚轮四区域、OSD、重开重置、视频双击、数字键/长按方向键/PageUp；视频内容全屏后的 `Ctrl+C` 复制帧、`Ctrl+R` 旋转和 `Alt+R` 镜像。
 
 ### 7.1 预览亮度、滚轮分区与键盘控制
 
 - 聊天预览亮度只作用于静态图片、GIF/视频缩略图和相册预览，不改变实际播放或媒体查看器亮度；默认关闭，亮度默认 70%，可选 10%–100%，步长 10%。
 - 查看器滚轮增强默认关闭。启用后横向分为三等分：左区上半调亮度、下半调音量，中间切换媒体，右侧对视频 seek；亮度/音量有 OSD 提示。重新打开时重置亮度与音量，不持久化查看器亮度。
-- 数字键 `2` 为 `0.5x`、`3` 为 `2x`；长按右方向键使用 `Media::kSpeedMax` 的 `2.5x`，`PageUp` 旋转视频。
+- 键盘、鼠标和滚轮的完整操作见第 7.6 节。其中数字键 `1` / `2` / `3` 为 `1x` / `0.5x` / `2x`；长按左方向键为 `0.5x`、长按右方向键为 `2x`；长按空格或按住画面为最高 `2.5x`；`PageUp` / `Ctrl+R` 旋转视频，`Alt+R` 水平镜像翻转。
 - 视频/GIF 信息展示、播放器时长、高码率提示与缩放布局需一起回归。
 
 补充代表提交：`1dc38bcc89`、`ac68ee8d45`、`1a1a6f68e2`、`f2dd568e74`、`a95b9a9229`、`875b827372`、`037e9f72d5`。
@@ -282,7 +284,7 @@ local non-merge author commits reachable from source_head: 330
 - 镜像可与旋转、缩放和全屏查看配合使用，旋转后仍按画面水平方向翻转；暂停、拖动进度和切换当前视频画质时保留镜像状态。
 - 切换到其他媒体或关闭查看器后重置；同一媒体的重新排版、旋转或刷新不会清除状态，也不会重写原媒体文件。
 - 图片和视频统一在渲染时翻转，覆盖 OpenGL、RHI 和软件渲染；拖动进度时的临时封面不会重复翻转，GPU 视频路径无需逐帧生成镜像位图。
-- 已有 `H` / `V` 翻转快捷键复用同一状态和处理逻辑；文字识别高亮及鼠标选区同步映射到翻转后的画面。
+- 已有 `H` / `V` 翻转快捷键复用同一状态和处理逻辑；`Alt+R` 与菜单「镜像翻转」相同，触发水平翻转。文字识别高亮及鼠标选区同步映射到翻转后的画面。
 - 新增语言键 `lng_mediaview_flip_horizontal`，简体中文为 `镜像翻转`，英文为 `Flip Horizontally`，复用已有翻转图标。
 
 核对来源：[菜单、状态和坐标映射](../Telegram/SourceFiles/media/view/media_view_overlay_widget.cpp)、[内容几何结构](../Telegram/SourceFiles/media/view/media_view_overlay_widget.h)、[OpenGL 渲染](../Telegram/SourceFiles/media/view/media_view_overlay_opengl.cpp)、[RHI 渲染](../Telegram/SourceFiles/media/view/media_view_overlay_rhi.cpp)、[软件渲染](../Telegram/SourceFiles/media/view/media_view_overlay_raster.cpp)。
@@ -299,10 +301,11 @@ local non-merge author commits reachable from source_head: 330
 - 复制当前显示的视频帧，保留旋转和镜像翻转效果；播放与暂停状态均可使用。
 - 视频帧复制采用独立图片路径，初始加载尚未显示视频画面时不会开放受限媒体复制；普通图片、文件保存及其他内容类型沿用原有处理。
 - 频道和群组中的视频帧复制无需额外开关；复用现有菜单文案和复制图标。
+- `Ctrl+C` 与菜单共用 `copyMedia()`。双击进入视频内容全屏后，全屏按键分支原先无条件 `return`，会吞掉 `Ctrl+C`；当前改为 Ctrl / Alt 组合键继续落到通用处理，全屏下也可复制当前帧。Esc 仍只退出视频全屏，不关闭查看器。
 
 核对来源：[复制条件、菜单与剪贴板处理](../Telegram/SourceFiles/media/view/media_view_overlay_widget.cpp)、[接口声明](../Telegram/SourceFiles/media/view/media_view_overlay_widget.h)。
 
-回归重点：频道、普通群和超级群，初始加载与已有视频帧，播放/暂停，旋转和镜像后的剪贴板图片；普通图片、文件保存及其他受限内容保持原条件。
+回归重点：频道、普通群和超级群，初始加载与已有视频帧，播放/暂停，旋转和镜像后的剪贴板图片；窗口非全屏与视频内容全屏下的 `Ctrl+C`；普通图片、文件保存及其他受限内容保持原条件。
 
 ### 7.4 隐藏媒体消息正文、标签和广告文案
 
@@ -333,6 +336,77 @@ local non-merge author commits reachable from source_head: 330
 核对来源：[时间、进度条及下载进度布局](../Telegram/SourceFiles/media/view/media_view_playback_controls.cpp)、[播放器间距样式](../Telegram/SourceFiles/media/view/media_view.style)。
 
 回归重点：不同界面缩放、长时长、窄窗口、从右向左语言、下载百分比、章节名称/分段、拖动时间更新及操作提示。
+
+### 7.6 内置媒体查看器快捷操作
+
+入口：`Telegram/SourceFiles/media/view/media_view_overlay_widget.cpp` 中的 `handleKeyPress()`、`handleKeyRelease()`、`filterApplicationEvent()`、`handleWheelEvent()`、`handleDoubleClick()`。消息上的普通 / 特殊 MPV 快捷操作见第 1.1 节；底部音频条使用系统媒体键，不走查看器窗口。
+
+视频内容全屏（`_fullScreenVideo`，双击画面、`Ctrl+F` 或 `Ctrl` / `Alt` + `Enter`）与窗口全屏不是同一状态。全屏按键分支原先对所有键 `return`，空的 `else if (ctrl)` 无法把 `Ctrl+C` 交到 `copyMedia()`；当前仅在非 Ctrl / Alt 键或 `Esc` 时返回，全屏下复制当前帧、另存为、缩放、`Ctrl+R` 旋转和 `Alt+R` 镜像恢复可用。`Esc` 仍优先退出视频全屏，不关闭查看器。`Ctrl+R` 在应用事件过滤器中拦截，避免触发全局已读聊天 / 录音快捷键。
+
+有视频流时播放类按键优先于通用按键。主键盘 `1` / `2` / `3` 始终改倍速，即使已进入视频内容全屏也不会跳到 10% / 20% / 30%；全屏进度跳转只覆盖 `0` 与 `4`–`9`。Stories 使用窗口全屏和原有说明文字逻辑，不适用 `H` / `V` / `Alt+R` 翻转。
+
+播放与进度（有视频流时）：
+
+| 操作 | 作用 |
+| --- | --- |
+| `Space` 短按 / 画面单击 | 播放 / 暂停 |
+| `Space` 长按（≥200ms） | 加速到 2.5×，松开恢复 |
+| 按住画面（≥200ms） | 同样加速到 2.5×；按住后左右拖动可在 0.5×–2.5× 之间调节 |
+| `K`、`Enter` / `Return` | 播放 / 暂停 |
+| `J` / `L` | 后退 / 前进 10 秒 |
+| `←` / `→` 点按 | 后退 / 前进 5 秒 |
+| `←` / `→` 长按（≥350ms） | 0.5× / 2×，松开恢复 |
+| `,` / `.`（暂停时） | 上一帧 / 下一帧 |
+| `Alt` + `←` / `→` | 上一 / 下一章节（有时间戳时） |
+
+倍速（有视频流时；须用主键盘，不能带 Ctrl / Alt / Shift / Meta，小键盘无效）：
+
+| 操作 | 作用 |
+| --- | --- |
+| `1` | 1× |
+| `2` | 0.5× |
+| `3`、`PageDown` | 2× |
+| `` ` `` / `~` | 最低速 0.5× |
+
+全屏：
+
+| 操作 | 作用 |
+| --- | --- |
+| `Ctrl+F`、`Ctrl` / `Alt` + `Enter`、视频区域双击 | 切换视频内容全屏 |
+| `Esc`（已在视频内容全屏） | 退出视频内容全屏，不关窗口 |
+| `0`（视频内容全屏） | 跳到开头 |
+| `4`–`9`（视频内容全屏） | 跳到 40%–90% |
+
+设置中的「Toggle video fullscreen」无默认键，可自行绑定。
+
+缩放、旋转与翻转：
+
+| 操作 | 作用 |
+| --- | --- |
+| `Ctrl` + `+` / `=` / `*` / `]` | 放大 |
+| `Ctrl` + `-` / `_` | 缩小 |
+| `Ctrl+0`、中键点击 | 重置缩放 |
+| `Ctrl` + 滚轮 | 缩放 |
+| `PageUp`、`Ctrl+R` | 旋转 90° |
+| `H`、`Alt+R` | 水平翻转（Stories 除外；与右键菜单「镜像翻转」相同） |
+| `V` | 垂直翻转（Stories 除外） |
+
+复制、保存、关闭与切条目：
+
+| 操作 | 作用 |
+| --- | --- |
+| `Ctrl+C` | 视频复制当前帧，图片复制内容；有文字识别选区时复制选区 |
+| `Ctrl+S` | 另存为 |
+| `Esc` | 关闭查看器；下载中则取消下载 |
+| `←` / `→` | 上一条 / 下一条（无视频流，或未在视频内容全屏） |
+
+有视频流时 `←` / `→` 优先用于快进快退。视频内容全屏时非 Ctrl / Alt 键不会切到上 / 下一条。
+
+滚轮（无 `Ctrl`）：默认上一条 / 下一条。开启 `media_viewer_wheel_control_enabled` 后按区域划分，见第 7.1 节；右侧对视频上滚 -1 秒、下滚 +2 秒。
+
+核对来源：[按键、滚轮、双击与复制处理](../Telegram/SourceFiles/media/view/media_view_overlay_widget.cpp)、[倍速上下限](../Telegram/SourceFiles/media/media_common.h)、[全局媒体键](../Telegram/SourceFiles/media/player/media_player_instance.cpp)。
+
+回归重点：窗口非全屏与视频内容全屏下的 `Ctrl+C` / `Ctrl+S` / 缩放 / `Ctrl+R` / `Alt+R`；`Esc` 退出全屏而不关窗口；暂停逐帧；章节跳转；`1`–`3` 改倍速与全屏 `4`–`9` 跳转互不覆盖；长按空格 2.5× 与长按方向键 0.5× / 2×；滚轮增强开 / 关。
 
 ## 8. 对话列表、搜索和视觉主题
 

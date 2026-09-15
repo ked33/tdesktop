@@ -7791,7 +7791,9 @@ void OverlayWidget::handleKeyPress(not_null<QKeyEvent*> e) {
 				const auto index = int(key - Qt::Key_0);
 				restartAtProgress(index / 10.0);
 			}
-			return;
+			if ((!ctrl && !alt) || key == Qt::Key_Escape) {
+				return;
+			}
 		}
 	}
 	if (!_menu && key == Qt::Key_Escape) {
@@ -7822,6 +7824,8 @@ void OverlayWidget::handleKeyPress(not_null<QKeyEvent*> e) {
 		}
 		moveToNext(-1);
 	} else if (key == Qt::Key_H && !_stories) {
+		toggleContentFlip(Qt::Horizontal);
+	} else if (key == Qt::Key_R && alt && !_stories) {
 		toggleContentFlip(Qt::Horizontal);
 	} else if (key == Qt::Key_V && !_stories) {
 		toggleContentFlip(Qt::Vertical);
@@ -9195,6 +9199,10 @@ bool OverlayWidget::filterApplicationEvent(
 		const auto ctrl = event->modifiers().testFlag(Qt::ControlModifier);
 		if (key == Qt::Key_F && ctrl && _streamed) {
 			playbackToggleFullScreen();
+			return true;
+		} else if (key == Qt::Key_R && ctrl && !_stories) {
+			activateControls();
+			playbackControlsRotate();
 			return true;
 		} else if (key == Qt::Key_0 && ctrl) {
 			zoomReset();
