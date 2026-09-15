@@ -25,6 +25,8 @@ namespace Ui {
 	class InputField;
 	class ScrollArea;
 	class VerticalLayout;
+	template <typename Widget>
+	class SlideWrap;
 } // namespace Ui
 
 class NetBoostBox : public Ui::BoxContent {
@@ -83,6 +85,7 @@ private:
 	std::shared_ptr<Ui::RadiobuttonGroup> _profileGroup;
 	base::unique_qptr<Ui::ScrollArea> _scroll;
 	Ui::VerticalLayout *_content = nullptr;
+	Ui::SlideWrap<Ui::VerticalLayout> *_smartSection = nullptr;
 	std::array<Ui::InputField*, kNumericFieldCount> _fields = {};
 	std::array<Ui::FlatLabel*, kNumericFieldCount> _defaultLabels = {};
 	Ui::Checkbox *_seekCancel = nullptr;
