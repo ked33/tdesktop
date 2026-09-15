@@ -2573,6 +2573,17 @@ Reader::FillState Reader::fillFromSlices(
 			buffer.size(),
 			kPartSize,
 			requestsLimit);
+	} else if ((boost == 6)
+		&& !bufferPressure
+		&& !seekCriticalPhase
+		&& !seekLocalRecovery
+		&& !serverLimited
+		&& !serverRecovering
+		&& !readStalled
+		&& !recoveryPreloadPercent) {
+		preloadParts = std::min(
+			preloadParts,
+			profile.smartMaximumPreload);
 	}
 	const auto serverPhase = serverLimited
 		? 1
