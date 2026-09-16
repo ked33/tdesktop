@@ -174,6 +174,9 @@ private:
 	void selectedChanged();
 	void computeStarsCount();
 	void createButtons();
+	void addRememberToggle();
+	void restoreRememberedPeers();
+	void saveRememberedPeers();
 	int getTopScrollSkip() const;
 	int getBottomScrollSkip() const;
 	int contentHeight() const;
