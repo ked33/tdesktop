@@ -803,6 +803,41 @@ ItemPreview Media::toGroupPreview(
 	auto loadingContext = std::vector<std::any>();
 	auto counts = AlbumCounts();
 	auto manyCaptions = false;
+	HistoryItem *firstVideo = nullptr;
+	for (const auto &item : items) {
+		const auto media = item->media();
+		const auto document = media ? media->document() : nullptr;
+		if (document && document->isVideoFile()) {
+			firstVideo = item;
+			break;
+		}
+	}
+	const auto appendPreview = [&](not_null<HistoryItem*> item) {
+		const auto media = item->media();
+		if (!media) {
+			return;
+		}
+		auto copy = options;
+		copy.ignoreGroup = true;
+		const auto already = int(result.images.size());
+		const auto left = kMaxPreviewImages - already;
+		auto single = left ? media->toPreview(copy) : ItemPreview();
+		if (!single.images.empty()) {
+			while (single.images.size() > left) {
+				single.images.pop_back();
+			}
+			result.images.insert(
+				end(result.images),
+				std::make_move_iterator(begin(single.images)),
+				std::make_move_iterator(end(single.images)));
+		}
+		if (single.loadingContext.has_value()) {
+			loadingContext.push_back(std::move(single.loadingContext));
+		}
+	};
+	if (firstVideo) {
+		appendPreview(firstVideo);
+	}
 	for (const auto &item : items) {
 		if (const auto media = item->media()) {
 			if (media->photo()) {
@@ -814,22 +849,8 @@ ItemPreview Media::toGroupPreview(
 					? counts.audios
 					: counts.files)++;
 			}
-			auto copy = options;
-			copy.ignoreGroup = true;
-			const auto already = int(result.images.size());
-			const auto left = kMaxPreviewImages - already;
-			auto single = left ? media->toPreview(copy) : ItemPreview();
-			if (!single.images.empty()) {
-				while (single.images.size() > left) {
-					single.images.pop_back();
-				}
-				result.images.insert(
-					end(result.images),
-					std::make_move_iterator(begin(single.images)),
-					std::make_move_iterator(end(single.images)));
-			}
-			if (single.loadingContext.has_value()) {
-				loadingContext.push_back(std::move(single.loadingContext));
+			if (item.get() != firstVideo) {
+				appendPreview(item);
 			}
 			const auto original = item->originalText();
 			if (!original.text.isEmpty()) {
