@@ -68,7 +68,7 @@
     "lng_settings_show_group_sender_avatar": "Show sender's avatar in groups",
     "lng_settings_show_seconds": "Time with seconds",
     "lng_settings_message_read_reactions_info": "Read / Reactions Info",
-    "lng_settings_show_view_as_json": "Show View As JSON",
+    "lng_settings_show_view_as_json": "JSON (hold Ctrl)",
     "lng_settings_hide_counter": "Hide online users counter",
     "lng_settings_hide_stories": "Hide Stories",
     "lng_settings_screen_shot_mode": "Screenshot Mode",
@@ -219,7 +219,7 @@
     "lng_forward_to_saved_message": "Forward to Saved",
     "lng_context_repeater": "Repeater",
     "lng_context_forward": "Forward",
-    "lng_context_view_as_json": "View As JSON",
+    "lng_context_view_as_json": "JSON",
     "lng_context_delete_own_messages": "Delete own messages",
 
     "lng_settings_enable_hd_video": "Higher video bitrate",
@@ -254,12 +254,12 @@
 
     "lng_blocked_user_hint": "[Blocked User Message]\n",
 
-    "lng_context_stream_in_mpv": "Stream in mpv",
+    "lng_context_stream_in_mpv": "Stream in MPV",
     "lng_context_stream_in_mpv_not_found": "mpv was not found in PATH.",
     "lng_context_stream_in_mpv_failed": "Failed to start mpv streaming.",
     "lng_context_stream_in_mpv_special": "Stream in mpv (Special)",
     "lng_context_stream_in_mpv_special_failed": "Failed to start special mpv streaming.",
-    "lng_settings_mpv_special_desc": "Only shown when you Ctrl+right-click a message. Uses a more conservative compatibility strategy for special videos; prefer the regular \"Stream in mpv\" above for normal videos.",
+    "lng_settings_mpv_special_desc": "Only shown when you Ctrl+right-click a message. Uses a more conservative compatibility strategy for special videos; prefer the regular \"Stream in MPV\" above for normal videos.",
     "lng_settings_mpv_debug_logs": "Write MPV debug logs to log.txt",
     "lng_settings_mpv_path": "mpv Path",
     "lng_settings_mpv_path_desc": "Leave empty to use mpv from PATH.",
