@@ -274,6 +274,16 @@ void PinnedWidget::setupTranslateBar() {
 }
 
 void PinnedWidget::setupShortcuts() {
+	Shortcuts::SelectedActionShortcutRequests(
+	) | rpl::filter([=] {
+		return Ui::AppInFocus()
+			&& isVisible()
+			&& !controller()->isLayerShown()
+			&& (Core::App().activeWindow() == &controller()->window())
+			&& _topBar->showSelectedState();
+	}) | rpl::on_next([=](const QString &key) {
+		_topBar->handleSelectedActionShortcut(key);
+	}, lifetime());
 	Shortcuts::Requests(
 	) | rpl::filter([=] {
 		return Ui::AppInFocus()

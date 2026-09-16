@@ -382,6 +382,61 @@ namespace Settings {
 			Ui::show(Box<QuickCopyTargetsBox>());
 		});
 
+		const auto addSelectedShortcutButton = [&](
+				const QString &key,
+				auto titleFn) {
+			const auto currentLabel = [=] {
+				return ChatSwitchShortcutBox::ShortcutLabel(
+					GetEnhancedString(key));
+			};
+			auto value = rpl::single(
+				currentLabel()
+			) | rpl::then(
+				_SelectedActionShortcutsChanged.events()
+			) | rpl::map([=] {
+				return currentLabel();
+			});
+			auto button = AddButtonWithLabel(
+				inner,
+				titleFn(),
+				std::move(value),
+				st::settingsButtonNoIcon);
+			button->events(
+			) | rpl::on_next([=](not_null<QEvent*> e) {
+				if (e->type() == QEvent::UpdateLater) {
+					_SelectedActionShortcutsChanged.fire({});
+				}
+			}, container->lifetime());
+			button->addClickHandler([=] {
+				Ui::show(Box<ChatSwitchShortcutBox>(
+					key,
+					titleFn(),
+					tr::lng_settings_shortcut_selected_placeholder(),
+					[] {
+						return tr::lng_settings_chat_switch_shortcut_invalid(
+							tr::now);
+					}));
+			});
+		};
+		addSelectedShortcutButton(
+			u"shortcut_selected_forward"_q,
+			[] { return tr::lng_settings_shortcut_selected_forward(); });
+		addSelectedShortcutButton(
+			u"shortcut_selected_forward_no_quote"_q,
+			[] { return tr::lng_settings_shortcut_selected_forward_no_quote(); });
+		addSelectedShortcutButton(
+			u"shortcut_selected_saved"_q,
+			[] { return tr::lng_settings_shortcut_selected_saved(); });
+		addSelectedShortcutButton(
+			u"shortcut_selected_quick_copy"_q,
+			[] { return tr::lng_settings_shortcut_selected_quick_copy(); });
+		addSelectedShortcutButton(
+			u"shortcut_selected_merge_forward"_q,
+			[] { return tr::lng_settings_shortcut_selected_merge_forward(); });
+		addSelectedShortcutButton(
+			u"shortcut_selected_merge_album"_q,
+			[] { return tr::lng_settings_shortcut_selected_merge_album(); });
+
 		const auto currentCustomChatShortcutsLabel = [] {
 			return CustomChatShortcutsBox::ShortcutsLabel(
 				GetEnhancedString("custom_chat_shortcuts"));

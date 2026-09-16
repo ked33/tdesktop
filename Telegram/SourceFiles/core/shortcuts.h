@@ -154,6 +154,7 @@ bool HandlePossibleChatSwitch(not_null<QKeyEvent*> event);
 void ResetChatSwitchState();
 [[nodiscard]] rpl::producer<> JumpToDialogRequests();
 [[nodiscard]] rpl::producer<> GlobalSearchShortcutRequests();
+[[nodiscard]] rpl::producer<QString> SelectedActionShortcutRequests();
 
 struct ChatSwitchRequest {
 	Qt::Key action = Qt::Key_Tab; // Key_Tab, Key_Backtab, Key_Escape or empty.
