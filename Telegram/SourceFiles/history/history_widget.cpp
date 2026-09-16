@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_global_privacy.h"
 #include "api/api_report.h"
 #include "api/api_sending.h"
+#include "api/api_merge_album.h"
 #include "api/api_send_progress.h"
 #include "api/api_unread_things.h"
 #include "base/random.h"
@@ -91,6 +92,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat.h"
 #include "data/data_forum.h"
 #include "data/data_forum_topic.h"
+#include "data/data_thread.h"
 #include "data/data_groups.h"
 #include "data/data_user.h"
 #include "data/data_chat_filters.h"
@@ -1205,6 +1207,14 @@ HistoryWidget::HistoryWidget(
 	_topBar->quickCopySelectionRequest(
 	) | rpl::on_next([=] {
 		quickCopySelected();
+	}, _topBar->lifetime());
+	_topBar->mergeForwardSelectionRequest(
+	) | rpl::on_next([=] {
+		mergeForwardSelected();
+	}, _topBar->lifetime());
+	_topBar->mergeAlbumSelectionRequest(
+	) | rpl::on_next([=] {
+		mergeAlbumSelected();
 	}, _topBar->lifetime());
 	_topBar->deleteSelectionRequest(
 	) | rpl::on_next([=] {
@@ -11270,6 +11280,91 @@ void HistoryWidget::quickCopySelected() {
 			}
 		});
 	}
+}
+
+void HistoryWidget::mergeForwardSelected() {
+	if (!_list) {
+		return;
+	}
+	auto ids = getSelectedItems();
+	if (ids.empty()) {
+		return;
+	}
+	const auto weak = base::make_weak(this);
+	Window::ShowMergeAlbumMessagesBox(controller(), std::move(ids), [=] {
+		if (const auto strong = weak.get()) {
+			strong->clearSelected();
+		}
+	});
+}
+
+void HistoryWidget::mergeAlbumSelected() {
+	if (!_list || !_history) {
+		return;
+	}
+	const auto ids = getSelectedItems();
+	if (ids.empty()) {
+		return;
+	}
+	const auto items = session().data().idsToItems(ids);
+	if (items.empty()) {
+		return;
+	}
+	const auto first = items.front();
+	auto action = first->topic()
+		? Api::SendAction(first->topic())
+		: Api::SendAction(first->history());
+	if (first->topic()) {
+		action.replyTo.topicRootId = first->topicRootId();
+	}
+	action.clearDraft = false;
+	const auto weak = base::make_weak(this);
+	const auto session = &this->session();
+	const auto show = controller()->uiShow();
+	Api::SendMergedAlbums(
+		std::move(action),
+		items,
+		[=](Api::MergeAlbumResult result) {
+			if (!result.error.isEmpty()) {
+				show->showToast(result.error);
+				return;
+			} else if (result.sentMedia <= 0) {
+				show->showToast(tr::lng_merge_album_none(tr::now));
+				return;
+			}
+			auto deleteIds = MessageIdsList();
+			auto kept = 0;
+			for (const auto &id : result.sentSourceIds) {
+				const auto item = session->data().message(id);
+				if (!item) {
+					continue;
+				} else if (item->canDelete()) {
+					deleteIds.push_back(id);
+				} else {
+					++kept;
+				}
+			}
+			if (!deleteIds.empty()) {
+				session->data().histories().deleteMessages(deleteIds, true);
+				session->data().sendHistoryChangeNotifications();
+			}
+			if (kept) {
+				show->showToast(tr::lng_merge_album_done_kept(
+					tr::now,
+					lt_total,
+					QString::number(kept)));
+			} else if (!deleteIds.empty()) {
+				show->showToast(tr::lng_merge_album_done_deleted(
+					tr::now,
+					lt_total,
+					QString::number(int(deleteIds.size()))));
+			} else {
+				show->showToast(tr::lng_merge_album_done(tr::now));
+			}
+			if (const auto strong = weak.get()) {
+				strong->clearSelected();
+			}
+		});
 }
 
 void HistoryWidget::confirmDeleteSelected() {

@@ -1,0 +1,50 @@
+/*
+This file is part of Telegram Desktop,
+the official desktop application for the Telegram messaging service.
+
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
+*/
+#pragma once
+
+#include "api/api_common.h"
+#include "data/data_types.h"
+
+class HistoryItem;
+
+namespace Api {
+
+enum class MergeAlbumKind : uchar {
+	Skip,
+	PhotoVideo,
+	Music,
+	File,
+};
+
+struct MergeAlbumGroup {
+	MergeAlbumKind kind = MergeAlbumKind::Skip;
+	int from = 0;
+	int till = 0;
+};
+
+struct MergeAlbumResult {
+	int albumCount = 0;
+	int sentMedia = 0;
+	int skipped = 0;
+	QString error;
+	MessageIdsList sentSourceIds;
+};
+
+[[nodiscard]] MergeAlbumKind ClassifyMergeAlbumKind(
+	not_null<HistoryItem*> item);
+
+[[nodiscard]] std::vector<MergeAlbumGroup> PackAlbumGroups(
+	const std::vector<MergeAlbumKind> &kinds,
+	int maxItems = 10);
+
+void SendMergedAlbums(
+	SendAction action,
+	const std::vector<not_null<HistoryItem*>> &items,
+	Fn<void(MergeAlbumResult)> done);
+
+} // namespace Api

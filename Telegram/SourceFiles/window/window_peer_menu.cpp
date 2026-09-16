@@ -22,6 +22,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/vertical_layout.h"
 #include "ui/widgets/fields/input_field.h"
 #include "api/api_chat_participants.h"
+#include "api/api_merge_album.h"
 #include "api/api_communities.h"
 #include "api/api_global_privacy.h"
 #include "base/random.h"
@@ -128,6 +129,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_histories.h"
 #include "data/data_chat_filters.h"
 #include "data/data_peer_values.h"
+#include "data/data_chat_participant_status.h"
 #include "dialogs/dialogs_key.h"
 #include "core/application.h"
 #include "core/ui_integration.h"
@@ -3512,6 +3514,118 @@ QPointer<Ui::BoxContent> ShowNewForwardMessagesBox(
 						},
 						.moneyRestrictionError = WriteMoneyRestrictionError,
 					}), Ui::LayerOption::CloseOther);
+	return weak->get();
+}
+
+QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
+		not_null<Window::SessionNavigation*> navigation,
+		MessageIdsList &&msgIds,
+		FnMut<void()> &&successCallback) {
+	if (msgIds.empty()) {
+		return nullptr;
+	}
+	const auto item = navigation->session().data().message(msgIds[0]);
+	if (!item) {
+		return nullptr;
+	}
+	const auto history = item->history();
+	const auto session = &history->session();
+	const auto ids = msgIds;
+	struct State {
+		FnMut<void()> submitCallback;
+		int requestsLeft = 0;
+		int sentMedia = 0;
+		bool failed = false;
+		QString error;
+	};
+	const auto state = std::make_shared<State>();
+	state->submitCallback = std::move(successCallback);
+	const auto weak = std::make_shared<base::weak_qptr<ShareBox>>();
+	*weak = Ui::show(Box<ShareBox>(ShareBox::Descriptor{
+		.session = session,
+		.countMessagesCallback = [=](const TextWithTags &comment) {
+			const auto items = history->owner().idsToItems(ids);
+			auto kinds = std::vector<Api::MergeAlbumKind>();
+			kinds.reserve(items.size());
+			for (const auto &entry : items) {
+				kinds.push_back(Api::ClassifyMergeAlbumKind(entry));
+			}
+			return int(Api::PackAlbumGroups(kinds).size())
+				+ (comment.empty() ? 0 : 1);
+		},
+		.submitCallback = [=](
+				std::vector<not_null<Data::Thread*>> &&result,
+				Fn<bool()> checkPaid,
+				TextWithTags comment,
+				Api::SendOptions options,
+				Data::ForwardOptions) {
+			if (state->requestsLeft) {
+				return;
+			}
+			const auto items = history->owner().idsToItems(ids);
+			if (items.empty() || result.empty()) {
+				return;
+			}
+			const auto error = GetErrorForSending(
+				result,
+				{
+					.text = &comment,
+					.messagesCount = int(items.size()),
+				});
+			if (error.error) {
+				navigation->parentController()->show(
+					MakeSendErrorBox(error, result.size() > 1));
+				return;
+			} else if (!checkPaid()) {
+				return;
+			}
+			state->requestsLeft = int(result.size());
+			const auto show = navigation->parentController()->uiShow();
+			for (const auto &thread : result) {
+				if (!comment.text.isEmpty()) {
+					auto message = Api::MessageToSend(
+						Api::SendAction(thread, options));
+					message.textWithTags = comment;
+					message.action.clearDraft = false;
+					session->api().sendMessage(std::move(message));
+				}
+				auto action = Api::SendAction(thread, options);
+				action.clearDraft = false;
+				Api::SendMergedAlbums(
+					std::move(action),
+					items,
+					[=](Api::MergeAlbumResult sendResult) {
+						state->sentMedia += sendResult.sentMedia;
+						if (!sendResult.error.isEmpty()) {
+							state->failed = true;
+							state->error = sendResult.error;
+						}
+						if (--state->requestsLeft) {
+							return;
+						}
+						if (state->failed) {
+							show->showToast(state->error.isEmpty()
+								? tr::lng_merge_album_failed(tr::now)
+								: state->error);
+						} else if (state->sentMedia <= 0) {
+							show->showToast(
+								tr::lng_merge_album_none(tr::now));
+						} else {
+							show->showToast(
+								tr::lng_merge_album_done(tr::now));
+						}
+						if (state->submitCallback) {
+							state->submitCallback();
+						}
+					});
+			}
+		},
+		.filterCallback = [=](not_null<Data::Thread*> thread) {
+			return Data::CanSendAnything(thread);
+		},
+		.title = tr::lng_selected_merge_forward(),
+		.moneyRestrictionError = WriteMoneyRestrictionError,
+	}), Ui::LayerOption::CloseOther);
 	return weak->get();
 }
 

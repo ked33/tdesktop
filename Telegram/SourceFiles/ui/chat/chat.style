@@ -1372,3 +1372,19 @@ toastCheckIcon: icon {{ "toast/check-36x36", toastFg }};
 
 historySummaryStars: icon {{ "chat/summary_stars-24x24", msgServiceFg }};
 historySummaryArrows: icon {{ "chat/summary_arrows-24x24", msgServiceFg }};
+
+topBarQuickCopyButton: RoundButton(defaultActiveButton) {
+	icon: menuIconQuickCopy;
+	iconPosition: point(-5px, 5px);
+	width: -16px;
+}
+topBarMergeForwardButton: RoundButton(defaultActiveButton) {
+	icon: menuIconMergeForward;
+	iconPosition: point(-5px, 5px);
+	width: -16px;
+}
+topBarMergeAlbumButton: RoundButton(defaultActiveButton) {
+	icon: menuIconMergeAlbum;
+	iconPosition: point(-5px, 5px);
+	width: -16px;
+}

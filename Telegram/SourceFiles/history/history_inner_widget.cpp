@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_inner_widget.h"
 
+#include "api/api_merge_album.h"
 #include "api/api_polls.h"
 #include "chat_helpers/stickers_emoji_pack.h"
 #include "core/application.h"
@@ -6087,6 +6088,9 @@ auto HistoryInner::getSelectionState() const
 		}
 		if (item->allowsForward()) {
 			++result.canForwardCount;
+		}
+		if (Api::ClassifyMergeAlbumKind(item) != Api::MergeAlbumKind::Skip) {
+			++result.canMergeCount;
 		}
 	}
 	result.textSelected = hasSelectedText()
