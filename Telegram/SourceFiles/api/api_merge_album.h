@@ -42,6 +42,10 @@ struct MergeAlbumResult {
 	const std::vector<MergeAlbumKind> &kinds,
 	int maxItems = 10);
 
+[[nodiscard]] QString DedupeMergeText(const QString &text);
+[[nodiscard]] QString SummarizeMergeCaptions(
+	const std::vector<QString> &captions);
+
 void SendMergedAlbums(
 	SendAction action,
 	const std::vector<not_null<HistoryItem*>> &items,

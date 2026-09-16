@@ -26,14 +26,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/chat/attach/attach_prepare.h"
 #include "ui/text/text_entity.h"
 
+#include <QtCore/QRegularExpression>
+#include <QtCore/QSet>
+#include <QtCore/QStringList>
+
 namespace Api {
 namespace {
+
+constexpr auto kMergeMessageTextLimit = 4096;
+constexpr auto kMinSentenceChars = 12;
 
 struct MergeAlbumMedia {
 	PhotoData *photo = nullptr;
 	DocumentData *document = nullptr;
 	Data::FileOrigin origin;
-	TextWithEntities caption;
+	QString caption;
 	FullMsgId sourceId;
 };
 
@@ -80,20 +87,244 @@ struct MergeRefreshItem {
 		MTPstring());
 }
 
-[[nodiscard]] TextWithEntities CaptionForItem(
-		not_null<HistoryItem*> item,
-		int limit) {
-	auto caption = item->originalText();
-	TextUtilities::Trim(caption);
-	if (caption.text.isEmpty() || caption.text.size() > limit) {
-		return {};
+[[nodiscard]] const QRegularExpression &MergeTagTokenRe() {
+	static const auto re = QRegularExpression(
+		QString::fromUtf8(
+			R"((?:https?://|www\.)[^\s<>\[\]{}]+|t\.me/[^\s<>\[\]{}]+|#[^\s#@]+|@[A-Za-z0-9_]{4,32})"),
+		QRegularExpression::CaseInsensitiveOption);
+	return re;
+}
+
+[[nodiscard]] QString MergeTagKey(QString token) {
+	token = token.toLower();
+	const auto strip = u".,;:!?)/"_q;
+	while (!token.isEmpty() && strip.contains(token.back())) {
+		token.chop(1);
 	}
-	return caption;
+	if (token.startsWith(u"http://"_q)) {
+		token = u"https://"_q + token.mid(7);
+	} else if (token.startsWith(u"www."_q)) {
+		token = u"https://"_q + token;
+	} else if (token.startsWith(u"t.me/"_q)) {
+		token = u"https://"_q + token;
+	}
+	while (token.endsWith(u'/')) {
+		token.chop(1);
+	}
+	return token;
+}
+
+[[nodiscard]] QString StripMergeTags(const QString &text) {
+	auto result = text;
+	result.replace(MergeTagTokenRe(), QString());
+	return result;
+}
+
+[[nodiscard]] QString DedupeHashtagsAndMentions(const QString &text) {
+	auto seen = QSet<QString>();
+	auto result = QString();
+	auto last = 0;
+	for (auto it = MergeTagTokenRe().globalMatch(text); it.hasNext();) {
+		const auto match = it.next();
+		result += text.mid(last, match.capturedStart() - last);
+		const auto token = match.captured(0);
+		const auto key = MergeTagKey(token);
+		if (!seen.contains(key)) {
+			seen.insert(key);
+			result += token;
+		}
+		last = match.capturedEnd();
+	}
+	result += text.mid(last);
+	return result;
+}
+
+[[nodiscard]] QString LineFingerprint(const QString &line) {
+	return StripMergeTags(line).simplified().toLower();
+}
+
+[[nodiscard]] int CompactLen(const QString &text) {
+	auto compact = text;
+	compact.remove(QRegularExpression(u"\\s+"_q));
+	auto total = 0;
+	for (const auto &ch : compact) {
+		const auto code = ch.unicode();
+		if (code >= 0x4E00 && code <= 0x9FFF) {
+			total += 2;
+		} else if (ch.isLetterOrNumber()) {
+			total += 1;
+		}
+	}
+	return total;
+}
+
+[[nodiscard]] bool IsSubstantialSentence(const QString &fingerprint) {
+	return CompactLen(fingerprint) >= kMinSentenceChars;
+}
+
+[[nodiscard]] QString ParagraphFingerprint(const QStringList &lines) {
+	auto parts = QStringList();
+	for (const auto &line : lines) {
+		const auto part = LineFingerprint(line);
+		if (!part.isEmpty()) {
+			parts.push_back(part);
+		}
+	}
+	return parts.join(u'\n');
+}
+
+[[nodiscard]] QStringList DedupeLineRuns(QStringList lines) {
+	auto kept = QStringList();
+	auto seenLongLines = QSet<QString>();
+	auto seenPairs = QSet<QString>();
+	auto index = 0;
+	while (index < lines.size()) {
+		auto line = lines[index];
+		while (!line.isEmpty() && line.back().isSpace()) {
+			line.chop(1);
+		}
+		const auto fingerprint = LineFingerprint(line);
+		if (fingerprint.isEmpty()) {
+			if (!line.trimmed().isEmpty()) {
+				kept.push_back(line);
+			}
+			++index;
+			continue;
+		}
+		if (index + 1 < lines.size()) {
+			const auto pair = fingerprint
+				+ u'\n'
+				+ LineFingerprint(lines[index + 1]);
+			if (!QString(pair).remove(u'\n').isEmpty()
+				&& seenPairs.contains(pair)) {
+				index += 2;
+				continue;
+			}
+		}
+		if (IsSubstantialSentence(fingerprint)
+			&& seenLongLines.contains(fingerprint)) {
+			++index;
+			continue;
+		}
+		kept.push_back(line);
+		if (IsSubstantialSentence(fingerprint)) {
+			seenLongLines.insert(fingerprint);
+		}
+		if (kept.size() >= 2) {
+			seenPairs.insert(
+				LineFingerprint(kept[kept.size() - 2])
+				+ u'\n'
+				+ LineFingerprint(kept.back()));
+		}
+		++index;
+	}
+	return kept;
+}
+
+[[nodiscard]] QString DedupeRepeatedParagraphs(const QString &text) {
+	const auto paragraphs = text.split(
+		QRegularExpression(u"\\n\\s*\\n"_q));
+	auto seen = QSet<QString>();
+	auto seenLineFps = QSet<QString>();
+	auto kept = QStringList();
+	for (const auto &paragraph : paragraphs) {
+		auto rawLines = paragraph.split(u'\n');
+		for (auto &line : rawLines) {
+			while (!line.isEmpty() && line.back().isSpace()) {
+				line.chop(1);
+			}
+		}
+		const auto lines = DedupeLineRuns(rawLines);
+		auto cleanedLines = QStringList();
+		for (const auto &line : lines) {
+			if (!line.trimmed().isEmpty()) {
+				cleanedLines.push_back(line);
+			}
+		}
+		const auto cleaned = cleanedLines.join(u'\n');
+		if (cleaned.trimmed().isEmpty()) {
+			continue;
+		}
+		const auto fingerprint = ParagraphFingerprint(cleaned.split(u'\n'));
+		auto lineFps = QStringList();
+		auto lineCount = 0;
+		for (const auto &line : cleaned.split(u'\n')) {
+			if (!line.trimmed().isEmpty()) {
+				++lineCount;
+			}
+			const auto fp = LineFingerprint(line);
+			if (!fp.isEmpty()) {
+				lineFps.push_back(fp);
+			}
+		}
+		const auto substantial = (lineCount >= 2)
+			|| IsSubstantialSentence(fingerprint);
+		if (seen.contains(fingerprint)) {
+			continue;
+		}
+		if (!lineFps.isEmpty()) {
+			auto allSeen = true;
+			for (const auto &fp : lineFps) {
+				if (!seenLineFps.contains(fp)) {
+					allSeen = false;
+					break;
+				}
+			}
+			if (allSeen) {
+				continue;
+			}
+		}
+		if (substantial && !fingerprint.isEmpty()) {
+			seen.insert(fingerprint);
+		}
+		for (const auto &fp : lineFps) {
+			seenLineFps.insert(fp);
+		}
+		kept.push_back(cleaned);
+	}
+	return kept.join(u"\n\n"_q);
+}
+
+[[nodiscard]] std::vector<QString> SplitTextChunks(
+		QString text,
+		int limit) {
+	text = text.trimmed();
+	auto result = std::vector<QString>();
+	if (text.isEmpty()) {
+		return result;
+	} else if (text.size() <= limit) {
+		result.push_back(text);
+		return result;
+	}
+	auto current = QString();
+	const auto lines = text.split(u'\n');
+	for (const auto &line : lines) {
+		auto piece = line.isEmpty() ? u" "_q : line;
+		auto candidate = current.isEmpty()
+			? piece
+			: (current + u'\n' + piece);
+		if (candidate.size() <= limit) {
+			current = std::move(candidate);
+			continue;
+		}
+		if (!current.isEmpty()) {
+			result.push_back(current);
+			current = QString();
+		}
+		while (piece.size() > limit) {
+			result.push_back(piece.left(limit));
+			piece = piece.mid(limit);
+		}
+		current = piece;
+	}
+	if (!current.isEmpty()) {
+		result.push_back(current);
+	}
+	return result;
 }
 
 [[nodiscard]] std::vector<MergeAlbumMedia> CollectMergeMedia(
-		const std::vector<not_null<HistoryItem*>> &items,
-		int captionLimit) {
+		const std::vector<not_null<HistoryItem*>> &items) {
 	auto result = std::vector<MergeAlbumMedia>();
 	result.reserve(items.size());
 	for (const auto &item : items) {
@@ -104,7 +335,7 @@ struct MergeRefreshItem {
 		const auto media = item->media();
 		auto entry = MergeAlbumMedia{
 			.origin = item->fullId(),
-			.caption = CaptionForItem(item, captionLimit),
+			.caption = item->originalText().text.trimmed(),
 			.sourceId = item->fullId(),
 		};
 		if (const auto photo = media->photo()) {
@@ -119,9 +350,23 @@ struct MergeRefreshItem {
 	return result;
 }
 
+void SendTextChunks(
+		SendAction action,
+		const QString &text) {
+	action.clearDraft = false;
+	auto &api = action.history->session().api();
+	for (const auto &chunk : SplitTextChunks(text, kMergeMessageTextLimit)) {
+		auto message = MessageToSend(action);
+		message.textWithTags = { chunk, {} };
+		message.action.clearDraft = false;
+		api.sendMessage(std::move(message));
+	}
+}
+
 void SendMergeGroup(
 		SendAction action,
 		std::vector<MergeAlbumMedia> items,
+		const QString &caption,
 		Fn<void(QString)> done) {
 	Expects(!items.empty());
 
@@ -152,8 +397,8 @@ void SendMergeGroup(
 	auto requests = std::vector<MergeSendRequest>();
 	requests.reserve(items.size());
 	for (auto i = 0; i != int(items.size()); ++i) {
-		auto itemCaption = (i == 0)
-			? items[i].caption
+		auto itemCaption = (i == 0 && !caption.isEmpty())
+			? TextWithEntities{ caption }
 			: TextWithEntities();
 		const auto newId = FullMsgId(
 			peer->id,
@@ -447,6 +692,21 @@ std::vector<MergeAlbumGroup> PackAlbumGroups(
 	return result;
 }
 
+QString DedupeMergeText(const QString &text) {
+	return DedupeRepeatedParagraphs(DedupeHashtagsAndMentions(text));
+}
+
+QString SummarizeMergeCaptions(const std::vector<QString> &captions) {
+	auto parts = QStringList();
+	for (const auto &caption : captions) {
+		const auto text = caption.trimmed();
+		if (!text.isEmpty()) {
+			parts.push_back(text);
+		}
+	}
+	return DedupeMergeText(parts.join(u"\n\n"_q));
+}
+
 void SendMergedAlbums(
 		SendAction action,
 		const std::vector<not_null<HistoryItem*>> &items,
@@ -454,7 +714,7 @@ void SendMergedAlbums(
 	action.clearDraft = false;
 	const auto session = &action.history->session();
 	const auto captionLimit = session->serverConfig().captionLengthMax;
-	auto media = CollectMergeMedia(items, captionLimit);
+	auto media = CollectMergeMedia(items);
 	auto result = MergeAlbumResult{
 		.skipped = int(items.size()) - int(media.size()),
 	};
@@ -512,9 +772,16 @@ void SendMergedAlbums(
 		const auto group = state->groups[state->index++];
 		auto batch = std::vector<MergeAlbumMedia>();
 		batch.reserve(group.till - group.from);
+		auto captions = std::vector<QString>();
 		for (auto i = group.from; i != group.till; ++i) {
 			batch.push_back(state->media[i]);
+			captions.push_back(state->media[i].caption);
 		}
+		const auto mergedText = SummarizeMergeCaptions(captions);
+		const auto caption = (mergedText.size() <= captionLimit)
+			? mergedText
+			: QString();
+		const auto overflowText = caption.isEmpty() ? mergedText : QString();
 		const auto sentIds = [&] {
 			auto ids = MessageIdsList();
 			ids.reserve(batch.size());
@@ -524,7 +791,11 @@ void SendMergedAlbums(
 			return ids;
 		}();
 		const auto count = int(batch.size());
-		SendMergeGroup(state->action, std::move(batch), [=](QString error) {
+		SendMergeGroup(
+			state->action,
+			std::move(batch),
+			caption,
+			[=](QString error) {
 			if (!error.isEmpty()) {
 				state->result.error = error;
 				state->action.history->session().api().finishForwarding(
@@ -542,6 +813,9 @@ void SendMergedAlbums(
 				state->result.sentSourceIds.end(),
 				sentIds.begin(),
 				sentIds.end());
+			if (!overflowText.isEmpty()) {
+				SendTextChunks(state->action, overflowText);
+			}
 			self(self);
 		});
 	};
