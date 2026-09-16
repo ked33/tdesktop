@@ -9148,9 +9148,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_selected_merge_forward" = "转发并合并为相册";
 "lng_selected_merge_here" = "在当前对话合并为相册";
 "lng_merge_album_none" = "选中的消息里没有可合并的图片或视频";
-"lng_merge_album_done" = "已合并为相册";
-"lng_merge_album_done_deleted" = "已合并为相册，并删除：{total} 条";
-"lng_merge_album_done_kept" = "已合并为相册，{total} 条原消息无删除权限已保留";
+"lng_merge_album_done" = "已合并为相册：{total} 条";
+"lng_merge_album_done_deleted" = "已合并为相册：{total} 条，并删除：{deleted} 条";
+"lng_merge_album_done_kept" = "已合并为相册：{total} 条，{kept} 条原消息无删除权限已保留";
 "lng_merge_album_failed" = "合并相册失败";
 "lng_selected_delete_text" = "D";
 
