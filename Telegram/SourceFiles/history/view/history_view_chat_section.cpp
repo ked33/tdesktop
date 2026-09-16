@@ -60,6 +60,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/ui_utility.h"
 #include "base/timer_rpl.h"
 #include "api/api_bot.h"
+#include "api/api_merge_album.h"
 #include "api/api_chat_participants.h"
 #include "api/api_editing.h"
 #include "api/api_sending.h"
@@ -548,6 +549,14 @@ ChatWidget::ChatWidget(
 	_topBar->savedMessagesSelectionRequest(
 	) | rpl::on_next([=] {
 		confirmForwardSelectedToSavedMessages();
+	}, _topBar->lifetime());
+	_topBar->mergeForwardSelectionRequest(
+	) | rpl::on_next([=] {
+		ConfirmMergeForwardSelectedItems(_inner);
+	}, _topBar->lifetime());
+	_topBar->mergeAlbumSelectionRequest(
+	) | rpl::on_next([=] {
+		ConfirmMergeAlbumHereSelectedItems(_inner);
 	}, _topBar->lifetime());
 	_topBar->clearSelectionRequest(
 	) | rpl::on_next([=] {
@@ -5166,6 +5175,12 @@ void ChatWidget::listSelectionChanged(SelectedItems &&items) {
 		}
 		if (item.canForward) {
 			++state.canForwardCount;
+		}
+		if (const auto historyItem = session().data().message(item.msgId)
+			; historyItem
+			&& Api::ClassifyMergeAlbumKind(historyItem)
+				!= Api::MergeAlbumKind::Skip) {
+			++state.canMergeCount;
 		}
 	}
 	_topBar->showSelected(state);

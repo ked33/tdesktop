@@ -195,6 +195,10 @@ QPointer<Ui::BoxContent> ShowNewForwardMessagesBox(
 	MessageIdsList &&items,
 	bool no_quote,
 	FnMut<void()>&& successCallback = nullptr);
+QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
+	not_null<Window::SessionNavigation*> navigation,
+	MessageIdsList &&items,
+	FnMut<void()> &&successCallback = nullptr);
 
 object_ptr<Ui::BoxContent> PrepareChooseRecipientBox(
 	not_null<Main::Session*> session,

@@ -12,7 +12,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_list_widget.h"
 #include "history/view/controls/history_view_compose_search.h"
 #include "api/api_messages_search.h"
+#include "api/api_merge_album.h"
 #include "data/data_forum_topic.h"
+#include "data/data_session.h"
 #include "data/data_chat_participant_status.h"
 #include "history/history.h"
 #include "history/history_item_components.h"
@@ -167,6 +169,14 @@ PinnedWidget::PinnedWidget(
 	_topBar->savedMessagesSelectionRequest(
 	) | rpl::on_next([=] {
 		confirmForwardSelectedToSavedMessages();
+	}, _topBar->lifetime());
+	_topBar->mergeForwardSelectionRequest(
+	) | rpl::on_next([=] {
+		ConfirmMergeForwardSelectedItems(_inner);
+	}, _topBar->lifetime());
+	_topBar->mergeAlbumSelectionRequest(
+	) | rpl::on_next([=] {
+		ConfirmMergeAlbumHereSelectedItems(_inner);
 	}, _topBar->lifetime());
 	_topBar->clearSelectionRequest(
 	) | rpl::on_next([=] {
@@ -712,6 +722,12 @@ void PinnedWidget::listSelectionChanged(SelectedItems &&items) {
 		}
 		if (item.canForward) {
 			++state.canForwardCount;
+		}
+		if (const auto historyItem = session().data().message(item.msgId)
+			; historyItem
+			&& Api::ClassifyMergeAlbumKind(historyItem)
+				!= Api::MergeAlbumKind::Skip) {
+			++state.canMergeCount;
 		}
 	}
 	_topBar->showSelected(state);
