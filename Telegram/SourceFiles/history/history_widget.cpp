@@ -11336,10 +11336,14 @@ void HistoryWidget::mergeAlbumSelected() {
 		items,
 		[=](Api::MergeAlbumResult result) {
 			if (!result.error.isEmpty()) {
-				show->showToast(result.error);
+				show->showToast(
+					result.error,
+					Api::kMergeAlbumToastDuration);
 				return;
 			} else if (result.sentMedia <= 0) {
-				show->showToast(tr::lng_merge_album_none(tr::now));
+				show->showToast(
+					tr::lng_merge_album_none(tr::now),
+					Api::kMergeAlbumToastDuration);
 				return;
 			}
 			auto deleteIds = MessageIdsList();
@@ -11358,18 +11362,34 @@ void HistoryWidget::mergeAlbumSelected() {
 				session->data().histories().deleteMessages(deleteIds, true);
 				session->data().sendHistoryChangeNotifications();
 			}
+			const auto total = result.sentSourceIds.empty()
+				? result.sentMedia
+				: int(result.sentSourceIds.size());
 			if (kept) {
-				show->showToast(tr::lng_merge_album_done_kept(
-					tr::now,
-					lt_total,
-					QString::number(kept)));
+				show->showToast(
+					tr::lng_merge_album_done_kept(
+						tr::now,
+						lt_total,
+						QString::number(total),
+						lt_kept,
+						QString::number(kept)),
+					Api::kMergeAlbumToastDuration);
 			} else if (!deleteIds.empty()) {
-				show->showToast(tr::lng_merge_album_done_deleted(
-					tr::now,
-					lt_total,
-					QString::number(int(deleteIds.size()))));
+				show->showToast(
+					tr::lng_merge_album_done_deleted(
+						tr::now,
+						lt_total,
+						QString::number(total),
+						lt_deleted,
+						QString::number(int(deleteIds.size()))),
+					Api::kMergeAlbumToastDuration);
 			} else {
-				show->showToast(tr::lng_merge_album_done(tr::now));
+				show->showToast(
+					tr::lng_merge_album_done(
+						tr::now,
+						lt_total,
+						QString::number(total)),
+					Api::kMergeAlbumToastDuration);
 			}
 			if (const auto strong = weak.get()) {
 				strong->clearSelected();

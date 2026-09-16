@@ -3535,6 +3535,7 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 		FnMut<void()> submitCallback;
 		int requestsLeft = 0;
 		int sentMedia = 0;
+		int mergedCount = 0;
 		bool failed = false;
 		QString error;
 	};
@@ -3596,6 +3597,11 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 					items,
 					[=](Api::MergeAlbumResult sendResult) {
 						state->sentMedia += sendResult.sentMedia;
+						if (const auto merged = int(sendResult.sentSourceIds.size())) {
+							state->mergedCount = merged;
+						} else if (sendResult.sentMedia > state->mergedCount) {
+							state->mergedCount = sendResult.sentMedia;
+						}
 						if (!sendResult.error.isEmpty()) {
 							state->failed = true;
 							state->error = sendResult.error;
@@ -3604,15 +3610,22 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 							return;
 						}
 						if (state->failed) {
-							show->showToast(state->error.isEmpty()
-								? tr::lng_merge_album_failed(tr::now)
-								: state->error);
+							show->showToast(
+								state->error.isEmpty()
+									? tr::lng_merge_album_failed(tr::now)
+									: state->error,
+								Api::kMergeAlbumToastDuration);
 						} else if (state->sentMedia <= 0) {
 							show->showToast(
-								tr::lng_merge_album_none(tr::now));
+								tr::lng_merge_album_none(tr::now),
+								Api::kMergeAlbumToastDuration);
 						} else {
 							show->showToast(
-								tr::lng_merge_album_done(tr::now));
+								tr::lng_merge_album_done(
+									tr::now,
+									lt_total,
+									QString::number(state->mergedCount)),
+								Api::kMergeAlbumToastDuration);
 						}
 					});
 			}
