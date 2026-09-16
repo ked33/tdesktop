@@ -189,6 +189,8 @@ PRIVATE
     api/api_send_progress.h
     api/api_sending.cpp
     api/api_sending.h
+    api/api_merge_album.cpp
+    api/api_merge_album.h
     api/api_sensitive_content.cpp
     api/api_sensitive_content.h
     api/api_single_message_search.cpp

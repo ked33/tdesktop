@@ -49,6 +49,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/core_settings.h"
 #include "core/phone_click_handler.h"
 #include "apiwrap.h"
+#include "api/api_merge_album.h"
 #include "api/api_who_reacted.h"
 #include "api/api_views.h"
 #include "layout/layout_selection.h"
@@ -88,6 +89,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/crash_reports.h"
 #include "data/components/sponsored_messages.h"
 #include "data/data_session.h"
+#include "data/data_histories.h"
+#include "data/data_forum_topic.h"
+#include "data/data_thread.h"
 #include "data/data_changes.h"
 #include "data/data_folder.h"
 #include "data/data_media_types.h"
@@ -7012,6 +7016,88 @@ void ConfirmForwardSelectedToSavedMessagesItems(not_null<ListWidget*> widget) {
 			strong->cancelSelection();
 		}
 	});
+}
+
+void ConfirmMergeForwardSelectedItems(not_null<ListWidget*> widget) {
+	auto ids = widget->getSelectedIds();
+	if (ids.empty()) {
+		return;
+	}
+	const auto weak = base::make_weak(widget);
+	Window::ShowMergeAlbumMessagesBox(
+		widget->controller(),
+		std::move(ids),
+		[=] {
+			if (const auto strong = weak.get()) {
+				strong->cancelSelection();
+			}
+		});
+}
+
+void ConfirmMergeAlbumHereSelectedItems(not_null<ListWidget*> widget) {
+	const auto ids = widget->getSelectedIds();
+	if (ids.empty()) {
+		return;
+	}
+	const auto session = &widget->session();
+	const auto items = session->data().idsToItems(ids);
+	if (items.empty()) {
+		return;
+	}
+	const auto first = items.front();
+	auto action = first->topic()
+		? Api::SendAction(first->topic())
+		: Api::SendAction(first->history());
+	if (first->topic()) {
+		action.replyTo.topicRootId = first->topicRootId();
+	}
+	action.clearDraft = false;
+	const auto weak = base::make_weak(widget);
+	const auto show = widget->controller()->uiShow();
+	Api::SendMergedAlbums(
+		std::move(action),
+		items,
+		[=](Api::MergeAlbumResult result) {
+			if (!result.error.isEmpty()) {
+				show->showToast(result.error);
+				return;
+			} else if (result.sentMedia <= 0) {
+				show->showToast(tr::lng_merge_album_none(tr::now));
+				return;
+			}
+			auto deleteIds = MessageIdsList();
+			auto kept = 0;
+			for (const auto &id : result.sentSourceIds) {
+				const auto item = session->data().message(id);
+				if (!item) {
+					continue;
+				} else if (item->canDelete()) {
+					deleteIds.push_back(id);
+				} else {
+					++kept;
+				}
+			}
+			if (!deleteIds.empty()) {
+				session->data().histories().deleteMessages(deleteIds, true);
+				session->data().sendHistoryChangeNotifications();
+			}
+			if (kept) {
+				show->showToast(tr::lng_merge_album_done_kept(
+					tr::now,
+					lt_total,
+					QString::number(kept)));
+			} else if (!deleteIds.empty()) {
+				show->showToast(tr::lng_merge_album_done_deleted(
+					tr::now,
+					lt_total,
+					QString::number(int(deleteIds.size()))));
+			} else {
+				show->showToast(tr::lng_merge_album_done(tr::now));
+			}
+			if (const auto strong = weak.get()) {
+				strong->cancelSelection();
+			}
+		});
 }
 
 void ConfirmSendNowSelectedItems(not_null<ListWidget*> widget) {

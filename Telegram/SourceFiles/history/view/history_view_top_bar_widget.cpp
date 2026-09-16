@@ -42,6 +42,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/unread_badge.h"
 #include "ui/controls/button_context_menu.h"
 #include "ui/ui_utility.h"
+#include "rpl/producer.h"
 #include "window/window_adaptive.h"
 #include "window/window_session_controller.h"
 #include "window/window_peer_menu.h"
@@ -62,6 +63,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_changes.h"
 #include "data/data_forum_topic.h"
 #include "data/data_send_action.h"
+#include "data/data_chat_participant_status.h"
 #include "dialogs/dialogs_main_list.h"
 #include "chat_helpers/emoji_interactions.h"
 #include "base/call_delayed.h"
@@ -127,7 +129,9 @@ TopBarWidget::TopBarWidget(
 , _delete(this, GetEnhancedBool("show_emoji_button_as_text") ? tr::lng_selected_delete_text() : tr::lng_selected_delete_emoji(), st::defaultActiveButton)
 , _forwardNoQuote(this, GetEnhancedBool("show_emoji_button_as_text") ? tr::lng_selected_forward_no_quote_text() : tr::lng_selected_forward_no_quote_emoji(), st::defaultActiveButton)
 , _savedMessages(this, GetEnhancedBool("show_emoji_button_as_text") ? tr::lng_forward_to_saved_message_text() : tr::lng_forward_to_saved_message_emoji(), st::defaultActiveButton)
-, _quickCopy(this, tr::lng_selected_quick_copy_to(), st::defaultActiveButton)
+, _quickCopy(this, rpl::single(QString()), st::topBarQuickCopyButton)
+, _mergeForward(this, rpl::single(QString()), st::topBarMergeForwardButton)
+, _mergeAlbum(this, rpl::single(QString()), st::topBarMergeAlbumButton)
 , _oldForward(this, GetEnhancedBool("show_emoji_button_as_text") ? tr::lng_selected_forward_text_classic() : tr::lng_selected_forward_emoji_classic(), st::defaultActiveButton)
 , _back(this, st::historyTopBarBack)
 , _cancelChoose(this, st::topBarCloseChoose)
@@ -163,6 +167,10 @@ TopBarWidget::TopBarWidget(
 	_savedMessages->setWidthChangedCallback([=] { updateControlsGeometry(); });
 	_quickCopy->setClickedCallback([=] { _quickCopySelection.fire({}); });
 	_quickCopy->setWidthChangedCallback([=] { updateControlsGeometry(); });
+	_mergeForward->setClickedCallback([=] { _mergeForwardSelection.fire({}); });
+	_mergeForward->setWidthChangedCallback([=] { updateControlsGeometry(); });
+	_mergeAlbum->setClickedCallback([=] { _mergeAlbumSelection.fire({}); });
+	_mergeAlbum->setWidthChangedCallback([=] { updateControlsGeometry(); });
 	_sendNow->setClickedCallback([=] { _sendNowSelection.fire({}); });
 	_sendNow->setWidthChangedCallback([=] { updateControlsGeometry(); });
 	_delete->setClickedCallback([=] { _deleteSelection.fire({}); });
@@ -299,6 +307,9 @@ TopBarWidget::TopBarWidget(
 	_menuToggle->setAccessibleName(tr::lng_chat_menu(tr::now));
 	_back->setAccessibleName(tr::lng_go_back(tr::now));
 	_cancelChoose->setAccessibleName(tr::lng_cancel(tr::now));
+	_quickCopy->setToolTip(tr::lng_selected_quick_copy_to(tr::now));
+	_mergeForward->setToolTip(tr::lng_selected_merge_forward(tr::now));
+	_mergeAlbum->setToolTip(tr::lng_selected_merge_here(tr::now));
 }
 
 TopBarWidget::~TopBarWidget() = default;
@@ -333,6 +344,9 @@ void TopBarWidget::connectingAnimationCallback() {
 }
 
 void TopBarWidget::refreshLang() {
+	_quickCopy->setToolTip(tr::lng_selected_quick_copy_to(tr::now));
+	_mergeForward->setToolTip(tr::lng_selected_merge_forward(tr::now));
+	_mergeAlbum->setToolTip(tr::lng_selected_merge_here(tr::now));
 	InvokeQueued(this, [this] { updateControlsGeometry(); });
 }
 
@@ -1224,6 +1238,8 @@ void TopBarWidget::updateControlsGeometry() {
 		+ (_controller->adaptive().isOneColumn() ? 0 : st::lineWidth);
 	auto buttonsWidth = (_forward->isHidden() ? 0 : _forward->contentWidth())
 		+ (_quickCopy->isHidden() ? 0 : _quickCopy->contentWidth())
+		+ (_mergeForward->isHidden() ? 0 : _mergeForward->contentWidth())
+		+ (_mergeAlbum->isHidden() ? 0 : _mergeAlbum->contentWidth())
 		+ (_sendNow->isHidden() ? 0 : _sendNow->contentWidth())
 		+ (_delete->isHidden() ? 0 : _delete->contentWidth())
 		+ _clear->width();
@@ -1241,6 +1257,8 @@ void TopBarWidget::updateControlsGeometry() {
 	_forwardNoQuote->setFullWidth(buttonFullWidth);
 	_savedMessages->setFullWidth(buttonFullWidth);
 	_quickCopy->setFullWidth(buttonFullWidth);
+	_mergeForward->setFullWidth(buttonFullWidth);
+	_mergeAlbum->setFullWidth(buttonFullWidth);
 	_sendNow->setFullWidth(buttonFullWidth);
 	_delete->setFullWidth(buttonFullWidth);
 
@@ -1273,6 +1291,16 @@ void TopBarWidget::updateControlsGeometry() {
 		buttonsLeft += _quickCopy->width() + st::topBarActionSkip;
 	}
 
+	_mergeForward->moveToLeft(buttonsLeft, selectedButtonsTop);
+	if (!_mergeForward->isHidden()) {
+		buttonsLeft += _mergeForward->width() + st::topBarActionSkip;
+	}
+
+	_mergeAlbum->moveToLeft(buttonsLeft, selectedButtonsTop);
+	if (!_mergeAlbum->isHidden()) {
+		buttonsLeft += _mergeAlbum->width() + st::topBarActionSkip;
+	}
+
 	_sendNow->moveToLeft(buttonsLeft, selectedButtonsTop);
 	if (!_sendNow->isHidden()) {
 		buttonsLeft += _sendNow->width() + st::topBarActionSkip;
@@ -1288,6 +1316,8 @@ void TopBarWidget::updateControlsGeometry() {
 		const auto buttons = std::array{
 			_forward.data(),
 			_quickCopy.data(),
+			_mergeForward.data(),
+			_mergeAlbum.data(),
 			_sendNow.data(),
 			_delete.data(),
 		};
@@ -1439,6 +1469,8 @@ void TopBarWidget::updateControlsVisibility() {
 	_quickCopy->setVisible(
 		_canForward
 		&& !GetEnhancedString("quick_copy_targets").trimmed().isEmpty());
+	_mergeForward->setVisible(_canForward && visible);
+	_mergeAlbum->setVisible(_canMergeHere && visible);
 	_forward->setVisible(_canForward && visible);
 	_sendNow->setVisible(_canSendNow && visible);
 
@@ -1631,18 +1663,25 @@ void TopBarWidget::updateMembersShowArea() {
 
 bool TopBarWidget::showSelectedState() const {
 	return (_selectedCount > 0)
-		&& (_canDelete || _canForward || _canSendNow);
+		&& (_canDelete || _canForward || _canSendNow || _canMergeHere);
 }
 
 void TopBarWidget::showSelected(SelectedState state) {
 	auto canDelete = (state.count > 0 && state.count == state.canDeleteCount);
 	auto canForward = (state.count > 0 && state.count == state.canForwardCount);
 	auto canSendNow = (state.count > 0 && state.count == state.canSendNowCount);
-	auto count = (!canDelete && !canForward && !canSendNow) ? 0 : state.count;
+	const auto peer = _activeChat.key.peer();
+	auto canMergeHere = (state.canMergeCount >= 2)
+		&& peer
+		&& Data::CanSendAnything(peer);
+	auto count = (!canDelete && !canForward && !canSendNow && !canMergeHere)
+		? 0
+		: state.count;
 	if (_selectedCount == count
 		&& _canDelete == canDelete
 		&& _canForward == canForward
-		&& _canSendNow == canSendNow) {
+		&& _canSendNow == canSendNow
+		&& _canMergeHere == canMergeHere) {
 		return;
 	}
 	if (count == 0) {
@@ -1650,16 +1689,19 @@ void TopBarWidget::showSelected(SelectedState state) {
 		canDelete = _canDelete;
 		canForward = _canForward;
 		canSendNow = _canSendNow;
+		canMergeHere = _canMergeHere;
 	}
 
 	const auto wasSelectedState = showSelectedState();
 	const auto visibilityChanged = (_canDelete != canDelete)
 		|| (_canForward != canForward)
-		|| (_canSendNow != canSendNow);
+		|| (_canSendNow != canSendNow)
+		|| (_canMergeHere != canMergeHere);
 	_selectedCount = count;
 	_canDelete = canDelete;
 	_canForward = canForward;
 	_canSendNow = canSendNow;
+	_canMergeHere = canMergeHere;
 	const auto nowSelectedState = showSelectedState();
 	if (nowSelectedState) {
 		if (!GetEnhancedBool("hide_classic_fwd")) {
@@ -1669,6 +1711,8 @@ void TopBarWidget::showSelected(SelectedState state) {
 		_forwardNoQuote->setNumbersText(_selectedCount);
 		_savedMessages->setNumbersText(_selectedCount);
 		_quickCopy->setNumbersText(_selectedCount);
+		_mergeForward->setNumbersText(_selectedCount);
+		_mergeAlbum->setNumbersText(_selectedCount);
 		_sendNow->setNumbersText(_selectedCount);
 		_delete->setNumbersText(_selectedCount);
 		if (!wasSelectedState) {
@@ -1679,6 +1723,8 @@ void TopBarWidget::showSelected(SelectedState state) {
 			_forwardNoQuote->finishNumbersAnimation();
 			_savedMessages->finishNumbersAnimation();
 			_quickCopy->finishNumbersAnimation();
+			_mergeForward->finishNumbersAnimation();
+			_mergeAlbum->finishNumbersAnimation();
 			_sendNow->finishNumbersAnimation();
 			_delete->finishNumbersAnimation();
 		}

@@ -1142,6 +1142,8 @@ void ConfirmOldForwardSelectedItems(not_null<ListWidget*> widget);
 void ConfirmForwardSelectedItems(not_null<ListWidget*> widget);
 void ConfirmForwardNoQuoteSelectedItems(not_null<ListWidget*> widget);
 void ConfirmForwardSelectedToSavedMessagesItems(not_null<ListWidget*> widget);
+void ConfirmMergeForwardSelectedItems(not_null<ListWidget*> widget);
+void ConfirmMergeAlbumHereSelectedItems(not_null<ListWidget*> widget);
 void ConfirmSendNowSelectedItems(not_null<ListWidget*> widget);
 
 [[nodiscard]] CopyRestrictionType CopyRestrictionTypeFor(

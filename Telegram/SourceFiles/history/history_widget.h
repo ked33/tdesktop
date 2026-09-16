@@ -313,6 +313,8 @@ public:
 	void forwardNoQuoteSelected();
 	void forwardSelectedToSavedMessages();
 	void quickCopySelected();
+	void mergeForwardSelected();
+	void mergeAlbumSelected();
 	void confirmDeleteSelected();
 	void clearSelected();
 
