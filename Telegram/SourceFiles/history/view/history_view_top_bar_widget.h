@@ -59,6 +59,7 @@ public:
 		int canDeleteCount = 0;
 		int canForwardCount = 0;
 		int canSendNowCount = 0;
+		int canMergeCount = 0;
 	};
 	using ActiveChat = Dialogs::EntryState;
 	using Section = ActiveChat::Section;
@@ -119,6 +120,12 @@ public:
 	}
 	[[nodiscard]] rpl::producer<> quickCopySelectionRequest() const {
 		return _quickCopySelection.events();
+	}
+	[[nodiscard]] rpl::producer<> mergeForwardSelectionRequest() const {
+		return _mergeForwardSelection.events();
+	}
+	[[nodiscard]] rpl::producer<> mergeAlbumSelectionRequest() const {
+		return _mergeAlbumSelection.events();
 	}
 	[[nodiscard]] rpl::producer<> sendNowSelectionRequest() const {
 		return _sendNowSelection.events();
@@ -240,13 +247,14 @@ private:
 	bool _canDelete = false;
 	bool _canForward = false;
 	bool _canSendNow = false;
+	bool _canMergeHere = false;
 	bool _searchMode = false;
 
 	Ui::Animations::Simple _selectedShown;
 	Ui::Animations::Simple _searchShown;
 
 	object_ptr<Ui::RoundButton> _clear;
-	object_ptr<Ui::RoundButton> _forward, _sendNow, _delete, _forwardNoQuote, _savedMessages, _quickCopy, _oldForward;
+	object_ptr<Ui::RoundButton> _forward, _sendNow, _delete, _forwardNoQuote, _savedMessages, _quickCopy, _mergeForward, _mergeAlbum, _oldForward;
 	object_ptr<Ui::InputField> _searchField = { nullptr };
 	object_ptr<Ui::FadeWrapScaled<Ui::IconButton>> _chooseFromUser
 		= { nullptr };
@@ -300,6 +308,8 @@ private:
 	rpl::event_stream<> _forwardNoQuoteSelection;
 	rpl::event_stream<> _savedMessagesSelection;
 	rpl::event_stream<> _quickCopySelection;
+	rpl::event_stream<> _mergeForwardSelection;
+	rpl::event_stream<> _mergeAlbumSelection;
 	rpl::event_stream<> _sendNowSelection;
 	rpl::event_stream<> _deleteSelection;
 	rpl::event_stream<> _clearSelection;
