@@ -111,6 +111,12 @@ namespace EnhancedSettings {
 					Media::Streaming::DefaultBoostProfiles()));
 			ensureString(qsl("flood_premium_wait_override_ms"), QString());
 			ensureString(qsl("quick_copy_targets"), qsl("-1002615379741,Saved Messages"));
+			ensureString(qsl("shortcut_selected_forward"), QString());
+			ensureString(qsl("shortcut_selected_forward_no_quote"), QString());
+			ensureString(qsl("shortcut_selected_saved"), QString());
+			ensureString(qsl("shortcut_selected_quick_copy"), QString());
+			ensureString(qsl("shortcut_selected_merge_forward"), QString());
+			ensureString(qsl("shortcut_selected_merge_album"), QString());
 			ensureString(qsl("chat_switch_persistent_shortcut"), QString());
 			ensureString(qsl("jump_to_dialog_shortcut"), qsl("alt+e"));
 			ensureString(qsl("global_search_shortcut"), qsl("ctrl+alt+f"));
@@ -571,6 +577,12 @@ namespace EnhancedSettings {
 		settings.insert(qsl("mpv_path"), "");
 		settings.insert(qsl("flood_premium_wait_override_ms"), "");
 		settings.insert(qsl("quick_copy_targets"), "-1002615379741,Saved Messages");
+		settings.insert(qsl("shortcut_selected_forward"), "");
+		settings.insert(qsl("shortcut_selected_forward_no_quote"), "");
+		settings.insert(qsl("shortcut_selected_saved"), "");
+		settings.insert(qsl("shortcut_selected_quick_copy"), "");
+		settings.insert(qsl("shortcut_selected_merge_forward"), "");
+		settings.insert(qsl("shortcut_selected_merge_album"), "");
 		settings.insert(qsl("chat_switch_persistent_shortcut"), "");
 		settings.insert(qsl("jump_to_dialog_shortcut"), "alt+e");
 		settings.insert(qsl("global_search_shortcut"), "ctrl+alt+f");
@@ -692,6 +704,24 @@ namespace EnhancedSettings {
 		settings.insert(
 			qsl("quick_copy_targets"),
 			GetEnhancedString("quick_copy_targets"));
+		settings.insert(
+			qsl("shortcut_selected_forward"),
+			GetEnhancedString("shortcut_selected_forward"));
+		settings.insert(
+			qsl("shortcut_selected_forward_no_quote"),
+			GetEnhancedString("shortcut_selected_forward_no_quote"));
+		settings.insert(
+			qsl("shortcut_selected_saved"),
+			GetEnhancedString("shortcut_selected_saved"));
+		settings.insert(
+			qsl("shortcut_selected_quick_copy"),
+			GetEnhancedString("shortcut_selected_quick_copy"));
+		settings.insert(
+			qsl("shortcut_selected_merge_forward"),
+			GetEnhancedString("shortcut_selected_merge_forward"));
+		settings.insert(
+			qsl("shortcut_selected_merge_album"),
+			GetEnhancedString("shortcut_selected_merge_album"));
 		settings.insert(
 			qsl("chat_switch_persistent_shortcut"),
 			GetEnhancedString("chat_switch_persistent_shortcut"));
