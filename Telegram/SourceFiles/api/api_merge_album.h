@@ -14,6 +14,8 @@ class HistoryItem;
 
 namespace Api {
 
+inline constexpr auto kMergeAlbumToastDuration = crl::time(3000);
+
 enum class MergeAlbumKind : uchar {
 	Skip,
 	PhotoVideo,
