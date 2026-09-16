@@ -9152,6 +9152,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_merge_album_done_deleted" = "已合并为相册：{total} 条，并删除：{deleted} 条";
 "lng_merge_album_done_kept" = "已合并为相册：{total} 条，{kept} 条原消息无删除权限已保留";
 "lng_merge_album_failed" = "合并相册失败";
+"lng_merge_album_fallback_bot" = "无法作为相册原发，已带来源转发到 @{user}";
+"lng_merge_album_fallback_bot_failed" = "无法作为相册原发，转发到 @{user} 失败";
 "lng_selected_delete_text" = "D";
 
 "lng_admin_log_banned_send_stickers2" = "Send stickers";
