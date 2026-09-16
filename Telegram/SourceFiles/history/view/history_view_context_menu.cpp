@@ -430,6 +430,33 @@ private:
 	return document ? document->filename() : QString();
 }
 
+[[nodiscard]] QString MediaDocumentId(HistoryItem *item) {
+	if (!item) {
+		return {};
+	}
+	const auto media = item->media();
+	const auto document = media ? media->document() : nullptr;
+	return (document && document->id)
+		? QString::number(quint64(document->id))
+		: QString();
+}
+
+[[nodiscard]] QString ShortenFileName(const QString &name) {
+	constexpr auto kMaxChars = 20;
+	if (name.size() <= kMaxChars) {
+		return name;
+	}
+	const auto ellipsis = u"…"_q;
+	const auto lastDot = name.lastIndexOf(u'.');
+	const auto hasExtension = (lastDot > 0) && (lastDot + 1 < name.size());
+	const auto extension = hasExtension ? name.mid(lastDot) : QString();
+	const auto prefixLen = kMaxChars - extension.size();
+	if (prefixLen < 1) {
+		return name.left(kMaxChars) + ellipsis;
+	}
+	return name.left(prefixLen) + ellipsis + extension;
+}
+
 [[nodiscard]] QString FormatResolution(QSize size) {
 	return (size.isValid() && !size.isEmpty())
 		? QString(u"%1x%2"_q).arg(size.width()).arg(size.height())
@@ -596,6 +623,7 @@ void FillDetailsSubmenu(
 		return mime.name().isEmpty() ? mediaMime : mime.name();
 	}();
 	const auto mediaName = MediaName(item);
+	const auto mediaDocumentId = MediaDocumentId(item);
 	const auto mediaResolution = MediaResolution(item);
 	const auto mediaDC = MediaDC(item);
 	const auto videoCodec = VideoCodec(item);
@@ -605,6 +633,7 @@ void FillDetailsSubmenu(
 		|| !mediaSize.isEmpty()
 		|| !mediaMimeName.isEmpty()
 		|| !mediaName.isEmpty()
+		|| !mediaDocumentId.isEmpty()
 		|| !mediaResolution.isEmpty()
 		|| !mediaDC.isEmpty()
 		|| !videoCodec.isEmpty()
@@ -674,17 +703,21 @@ void FillDetailsSubmenu(
 				mediaMimeName));
 		}
 		if (!mediaName.isEmpty()) {
-			const auto shortName = (mediaName.size() > 20)
-				? (u"…"_q + mediaName.mid(mediaName.size() - 20))
-				: mediaName;
 			menu->addAction(CreateTwoTextAction(
 				menu->menu(),
 				&st::menuIconEdit,
 				tr::lng_context_details_file_name(tr::now),
-				shortName,
+				ShortenFileName(mediaName),
 				[=] {
 					QGuiApplication::clipboard()->setText(mediaName);
 				}));
+		}
+		if (!mediaDocumentId.isEmpty()) {
+			menu->addAction(CreateTwoTextAction(
+				menu->menu(),
+				&st::menuIconInfo,
+				tr::lng_context_details_file_id(tr::now),
+				mediaDocumentId));
 		}
 		if (!mediaResolution.isEmpty()) {
 			menu->addAction(CreateTwoTextAction(
@@ -1711,7 +1744,7 @@ void AddViewJSONAction(
 		not_null<Ui::PopupMenu*> menu,
 		const ContextMenuRequest& request,
 		not_null<ListWidget*> list) {
-		if (!GetEnhancedBool("show_json")) {
+		if (!GetEnhancedBool("show_json") || !request.showSpecialMpv) {
 			return;
 		}
 		const auto item = request.item;
@@ -2774,8 +2807,15 @@ void FillContextMenuItems(
 		&& Api::WhoReactedExists(item, Api::WhoReactedList::All);
 
 	AddMessageDetailsAction(result, item, view, list->controller());
-	if (hasWhoReactedItem) {
-		AddWhoReactedAction(result, list, item, list->controller());
+	if (!skipWhoReacted) {
+		if (hasWhoReactedItem) {
+			AddWhoReactedAction(result, list, item, list->controller());
+		} else if (item) {
+			MaybeAddWhenEditedForwardedAction(
+				result,
+				item,
+				list->controller());
+		}
 	}
 
 	AddReplyToMessageAction(result, request, list);
@@ -2954,16 +2994,6 @@ void FillContextMenuItems(
 	if (item) {
 		const auto added = (result->actions().size() > wasAmount);
 		AddSelectRestrictionAction(result, item, !added);
-	}
-	if (!skipWhoReacted) {
-		if (hasWhoReactedItem) {
-			AddWhoReactedAction(result, list, item, list->controller());
-		} else if (item) {
-			MaybeAddWhenEditedForwardedAction(
-				result,
-				item,
-				list->controller());
-		}
 	}
 }
 

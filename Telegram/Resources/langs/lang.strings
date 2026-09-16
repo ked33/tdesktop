@@ -5500,12 +5500,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_context_copy_link" = "Copy Link";
 "lng_context_copy_message_link" = "Copy Message Link";
 "lng_context_copy_post_link" = "Copy Post Link";
-"lng_context_stream_in_mpv" = "Stream in mpv";
+"lng_context_stream_in_mpv" = "Stream in MPV";
 "lng_context_stream_in_mpv_not_found" = "mpv was not found in PATH.";
 "lng_context_stream_in_mpv_failed" = "Failed to start mpv streaming.";
 "lng_context_stream_in_mpv_special" = "Stream in mpv (Special)";
 "lng_context_stream_in_mpv_special_failed" = "Failed to start special mpv streaming.";
-"lng_settings_mpv_special_desc" = "Only shown when you Ctrl+right-click a message. Uses a more conservative compatibility strategy for special videos; prefer the regular \"Stream in mpv\" above for normal videos.";
+"lng_settings_mpv_special_desc" = "Only shown when you Ctrl+right-click a message. Uses a more conservative compatibility strategy for special videos; prefer the regular \"Stream in MPV\" above for normal videos.";
 "lng_settings_mpv_debug_logs" = "Write video playback debug logs to log.txt";
 "lng_settings_mpv_path" = "mpv Path";
 "lng_settings_mpv_path_desc" = "Leave empty to use mpv from PATH.";
@@ -5532,6 +5532,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_context_details_file_size" = "File Size";
 "lng_context_details_mime_type" = "Mime Type";
 "lng_context_details_file_name" = "File Name";
+"lng_context_details_file_id" = "File ID";
 "lng_context_details_resolution" = "Resolution";
 "lng_context_details_datacenter" = "Datacenter";
 "lng_context_details_video_codec" = "Video Codec";
@@ -8964,7 +8965,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_show_group_sender_avatar" = "Show sender's avatar in groups";
 "lng_settings_show_seconds" = "Time with seconds";
 "lng_settings_message_read_reactions_info" = "Read / Reactions Info";
-"lng_settings_show_view_as_json" = "Show View As JSON";
+"lng_settings_show_view_as_json" = "JSON (hold Ctrl)";
 "lng_settings_hide_counter" = "Hide online users counter";
 "lng_settings_hide_stories" = "Hide Stories";
 "lng_settings_preview_brightness" = "Reduce chat preview brightness";
@@ -9175,7 +9176,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_forward_to_saved_message" = "Forward to Saved";
 "lng_context_repeater" = "Repeater";
 "lng_context_forward" = "Forward";
-"lng_context_view_as_json" = "View As JSON";
+"lng_context_view_as_json" = "JSON";
 
 "lng_pinned_message_show" = "Show pinned message";
 "lng_pinned_message_hide" = "Hide pinned message";
