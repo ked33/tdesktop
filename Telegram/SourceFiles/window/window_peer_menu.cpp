@@ -3517,6 +3517,87 @@ QPointer<Ui::BoxContent> ShowNewForwardMessagesBox(
 	return weak->get();
 }
 
+namespace {
+
+constexpr auto kMergeFallbackBotId = UserId(8619990724ULL);
+const auto kMergeFallbackBotUsername = u"ewqgetmsg_bot"_q;
+
+void ForwardSelectedToMergeFallbackBot(
+		not_null<Main::Session*> session,
+		const MessageIdsList &ids,
+		std::shared_ptr<ChatHelpers::Show> show) {
+	const auto toastUser = kMergeFallbackBotUsername;
+	const auto failToast = [=] {
+		if (show->valid()) {
+			show->showToast(
+				tr::lng_merge_album_fallback_bot_failed(
+					tr::now,
+					lt_user,
+					toastUser),
+				Api::kMergeAlbumToastDuration);
+		}
+	};
+	const auto send = [=](not_null<PeerData*> bot) {
+		const auto items = session->data().idsToItems(ids);
+		if (items.empty()) {
+			failToast();
+			return;
+		}
+		auto resolved = items.front()->history()->resolveForwardDraft({
+			.ids = ids,
+			.options = Data::ForwardOptions::PreserveInfo,
+		});
+		if (resolved.items.empty()) {
+			failToast();
+			return;
+		}
+		auto action = Api::SendAction(session->data().history(bot));
+		action.clearDraft = false;
+		action.generateLocal = false;
+		session->api().forwardMessages(
+			std::move(resolved),
+			std::move(action),
+			[=] {
+				if (show->valid()) {
+					show->showToast(
+						tr::lng_merge_album_fallback_bot(
+							tr::now,
+							lt_user,
+							toastUser),
+						Api::kMergeAlbumToastDuration);
+				}
+			});
+	};
+	if (const auto loaded = session->data().userLoaded(kMergeFallbackBotId)
+		; loaded && loaded->accessHash()) {
+		send(loaded);
+		return;
+	}
+	session->api().request(MTPcontacts_ResolveUsername(
+		MTP_flags(0),
+		MTP_string(kMergeFallbackBotUsername),
+		MTP_string()
+	)).done([=](const MTPcontacts_ResolvedPeer &result) {
+		result.match([&](const MTPDcontacts_resolvedPeer &data) {
+			session->data().processUsers(data.vusers());
+			session->data().processChats(data.vchats());
+			const auto peerId = peerFromMTP(data.vpeer());
+			const auto peer = peerId
+				? session->data().peerLoaded(peerId)
+				: nullptr;
+			if (peer && peer->isUser()) {
+				send(peer);
+			} else {
+				failToast();
+			}
+		});
+	}).fail([=](const MTP::Error &) {
+		failToast();
+	}).send();
+}
+
+} // namespace
+
 QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 		not_null<Window::SessionNavigation*> navigation,
 		MessageIdsList &&msgIds,
@@ -3609,7 +3690,13 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 						if (--state->requestsLeft) {
 							return;
 						}
-						if (state->failed) {
+						if (state->failed
+							&& state->error == u"CHAT_FORWARDS_RESTRICTED"_q) {
+							ForwardSelectedToMergeFallbackBot(
+								session,
+								ids,
+								show);
+						} else if (state->failed) {
 							show->showToast(
 								state->error.isEmpty()
 									? tr::lng_merge_album_failed(tr::now)
