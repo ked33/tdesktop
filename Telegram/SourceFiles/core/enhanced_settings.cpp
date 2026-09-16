@@ -96,6 +96,8 @@ namespace EnhancedSettings {
 			ensureBool(qsl("show_message_context_select"), true);
 			ensureBool(qsl("show_message_context_reschedule"), true);
 			ensureBool(qsl("keep_selected_messages_across_chats"), false);
+			ensureBool(qsl("share_box_remember_selection"), true);
+			ensureString(qsl("share_box_remembered_peers"), QString());
 			ensureInt(qsl("message_emoji_size"), kMessageEmojiSizeDefault);
 			ensureInt(qsl("message_sticker_size"), kMessageStickerSizeDefault);
 			ensureBool(qsl("search_main_and_archive"), true);
@@ -565,6 +567,8 @@ namespace EnhancedSettings {
 		settings.insert(qsl("show_message_context_select"), true);
 		settings.insert(qsl("show_message_context_reschedule"), true);
 		settings.insert(qsl("keep_selected_messages_across_chats"), false);
+		settings.insert(qsl("share_box_remember_selection"), true);
+		settings.insert(qsl("share_box_remembered_peers"), "");
 		settings.insert(qsl("message_emoji_size"), kMessageEmojiSizeDefault);
 		settings.insert(qsl("message_sticker_size"), kMessageStickerSizeDefault);
 		settings.insert(qsl("show_json"), false);
@@ -681,6 +685,13 @@ namespace EnhancedSettings {
 		settings.insert(qsl("show_message_context_select"), GetEnhancedBool("show_message_context_select"));
 		settings.insert(qsl("show_message_context_reschedule"), GetEnhancedBool("show_message_context_reschedule"));
 		settings.insert(qsl("keep_selected_messages_across_chats"), GetEnhancedBool("keep_selected_messages_across_chats"));
+		settings.insert(
+			qsl("share_box_remember_selection"),
+			GetEnhancedBool("share_box_remember_selection")
+				|| !gEnhancedOptions.contains("share_box_remember_selection"));
+		settings.insert(
+			qsl("share_box_remembered_peers"),
+			GetEnhancedString("share_box_remembered_peers"));
 		settings.insert(qsl("message_emoji_size"), MessageEmojiSize());
 		settings.insert(qsl("message_sticker_size"), MessageStickerSize());
 		settings.insert(qsl("show_json"), GetEnhancedBool("show_json"));

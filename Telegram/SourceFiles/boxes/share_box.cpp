@@ -65,6 +65,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "core/application.h"
 #include "core/core_settings.h"
+#include "core/enhanced_settings.h"
+#include "ui/widgets/buttons.h"
+#include "styles/style_widgets.h"
 #include "styles/style_calls.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_layers.h"
@@ -132,6 +135,43 @@ enum class ChatSearchMatch {
 	return result;
 }
 
+class RememberSelectionToggle final : public Ui::RippleButton {
+public:
+	RememberSelectionToggle(QWidget *parent, bool checked)
+	: RippleButton(parent, st::defaultRippleAnimation)
+	, _check(
+		this,
+		tr::lng_share_remember_selection(tr::now),
+		checked,
+		st::defaultBoxCheckbox) {
+		_check->setAttribute(Qt::WA_TransparentForMouseEvents);
+		const auto height = st::boxTitleHeight;
+		resize(
+			_check->width() + st::boxPadding.right(),
+			height);
+		_check->move(0, (height - _check->height()) / 2);
+		setClickedCallback([=] {
+			const auto next = !_check->checked();
+			_check->setChecked(next);
+			SetEnhancedValue(u"share_box_remember_selection"_q, next);
+			EnhancedSettings::Write();
+		});
+	}
+
+	[[nodiscard]] bool checked() const {
+		return _check->checked();
+	}
+
+protected:
+	void resizeEvent(QResizeEvent *e) override {
+		RippleButton::resizeEvent(e);
+		_check->move(0, (height() - _check->height()) / 2);
+	}
+
+private:
+	object_ptr<Ui::Checkbox> _check;
+};
+
 } // namespace
 
 class ShareBox::Inner final : public Ui::RpWidget {
@@ -144,6 +184,7 @@ public:
 	void setPeerSelectedChangedCallback(
 		Fn<void(not_null<Data::Thread*> thread, bool selected)> callback);
 	void peerUnselected(not_null<PeerData*> peer);
+	void setPeerChecked(not_null<PeerData*> peer, bool checked);
 
 	[[nodiscard]] std::vector<not_null<Data::Thread*>> selected() const;
 	[[nodiscard]] bool hasSelected() const;
@@ -452,6 +493,10 @@ void ShareBox::prepare() {
 			setCloseByOutsideClick(true);
 		}
 	});
+	if (!IsJumpToDialogMode(_descriptor)) {
+		restoreRememberedPeers();
+		selectedChanged();
+	}
 
 	if (!IsJumpToDialogMode(_descriptor)) {
 		Ui::Emoji::SuggestionsController::Init(
@@ -713,12 +758,69 @@ void ShareBox::showMenu(not_null<Ui::RpWidget*> parent) {
 	}
 }
 
+void ShareBox::addRememberToggle() {
+	const auto enabled = !gEnhancedOptions.contains(
+		u"share_box_remember_selection"_q)
+		|| GetEnhancedBool(u"share_box_remember_selection"_q);
+	addTopButton(
+		object_ptr<RememberSelectionToggle>(nullptr, enabled));
+}
+
+void ShareBox::restoreRememberedPeers() {
+	if (gEnhancedOptions.contains(u"share_box_remember_selection"_q)
+		&& !GetEnhancedBool(u"share_box_remember_selection"_q)) {
+		return;
+	}
+	const auto saved = GetEnhancedString(u"share_box_remembered_peers"_q);
+	if (saved.isEmpty()) {
+		return;
+	}
+	const auto session = _descriptor.session;
+	for (const auto &part : saved.split(',')) {
+		const auto trimmed = part.trimmed();
+		if (trimmed.isEmpty()) {
+			continue;
+		}
+		auto ok = false;
+		const auto value = trimmed.toULongLong(&ok);
+		if (!ok || !value) {
+			continue;
+		}
+		const auto peer = session->data().peerLoaded(PeerId(value));
+		if (!peer) {
+			continue;
+		}
+		const auto history = peer->owner().history(peer);
+		if (_descriptor.filterCallback
+			&& !_descriptor.filterCallback(history)) {
+			continue;
+		}
+		_inner->setPeerChecked(peer, true);
+	}
+}
+
+void ShareBox::saveRememberedPeers() {
+	if (gEnhancedOptions.contains(u"share_box_remember_selection"_q)
+		&& !GetEnhancedBool(u"share_box_remember_selection"_q)) {
+		return;
+	}
+	auto ids = QStringList();
+	for (const auto &thread : _inner->selected()) {
+		ids.push_back(QString::number(thread->peer()->id.value));
+	}
+	SetEnhancedValue(
+		u"share_box_remembered_peers"_q,
+		ids.join(','));
+	EnhancedSettings::Write();
+}
+
 void ShareBox::createButtons() {
 	clearButtons();
 	if (IsJumpToDialogMode(_descriptor)) {
 		addButton(tr::lng_cancel(), [=] { closeBox(); });
 		return;
 	}
+	addRememberToggle();
 	if (_hasSelected) {
 		const auto send = addButton(tr::lng_share_confirm(), [=] {
 			submit({});
@@ -866,6 +968,9 @@ void ShareBox::submit(Api::SendOptions options) {
 		return true;
 	};
 	if (const auto onstack = _descriptor.submitCallback) {
+		if (!IsJumpToDialogMode(_descriptor)) {
+			saveRememberedPeers();
+		}
 		const auto forwardOptions = !_descriptor.forwardOptions.show
 			? Data::ForwardOptions::PreserveInfo
 			: (_forwardOptions.captionsCount
@@ -1679,6 +1784,13 @@ void ShareBox::Inner::peerUnselected(not_null<PeerData*> peer) {
 			i->second.get(),
 			false,
 			ChangeStateWay::SkipCallback);
+	}
+}
+
+void ShareBox::Inner::setPeerChecked(not_null<PeerData*> peer, bool checked) {
+	const auto chat = getChat(peer->owner().history(peer));
+	if (chat->checkbox.checked() != checked) {
+		changePeerCheckState(chat, checked);
 	}
 }
 
