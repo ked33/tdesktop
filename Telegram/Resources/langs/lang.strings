@@ -5987,6 +5987,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_share_at_time_title" = "Share at {time} to";
 "lng_share_copy_link" = "Copy share link";
 "lng_share_confirm" = "Send";
+"lng_share_remember_selection" = "记住选择";
 "lng_share_wrong_user" = "This game was opened from a different user.";
 "lng_share_game_link_copied" = "Game link copied to clipboard.";
 "lng_share_done" = "Done!";
