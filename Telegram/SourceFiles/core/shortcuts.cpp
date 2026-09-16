@@ -47,6 +47,7 @@ QObject *ChatSwitchFilter/* = nullptr*/;
 rpl::event_stream<ChatSwitchRequest> ChatSwitchStream;
 rpl::event_stream<> JumpToDialogStream;
 rpl::event_stream<> GlobalSearchShortcutStream;
+rpl::event_stream<QString> SelectedActionShortcutStream;
 rpl::event_stream<QString> CustomChatJumpStream;
 std::array<Qt::Key, kChatSwitchSpecialKeys.size()> ChatSwitchKeyPressHandled;
 
@@ -1072,6 +1073,24 @@ bool StartGlobalSearchShortcut(not_null<QKeyEvent*> event) {
 	return true;
 }
 
+bool StartSelectedActionShortcut(not_null<QKeyEvent*> event) {
+	static const auto kKeys = {
+		u"shortcut_selected_forward"_q,
+		u"shortcut_selected_forward_no_quote"_q,
+		u"shortcut_selected_saved"_q,
+		u"shortcut_selected_quick_copy"_q,
+		u"shortcut_selected_merge_forward"_q,
+		u"shortcut_selected_merge_album"_q,
+	};
+	for (const auto &key : kKeys) {
+		if (MatchesEnhancedShortcut(event, key)) {
+			SelectedActionShortcutStream.fire_copy(key);
+			return true;
+		}
+	}
+	return false;
+}
+
 bool NavigateChatSwitch(Qt::Key result) {
 	if (!ChatSwitchStarted) {
 		return false;
@@ -1128,6 +1147,10 @@ rpl::producer<> JumpToDialogRequests() {
 
 rpl::producer<> GlobalSearchShortcutRequests() {
 	return GlobalSearchShortcutStream.events();
+}
+
+rpl::producer<QString> SelectedActionShortcutRequests() {
+	return SelectedActionShortcutStream.events();
 }
 
 void ResetChatSwitchState() {
@@ -1210,6 +1233,9 @@ bool HandlePossibleChatSwitch(not_null<QKeyEvent*> event) {
 			return true;
 		}
 		if (StartGlobalSearchShortcut(event)) {
+			return true;
+		}
+		if (StartSelectedActionShortcut(event)) {
 			return true;
 		}
 		if (StartPersistentChatSwitch(event)) {

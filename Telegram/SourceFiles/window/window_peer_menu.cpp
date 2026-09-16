@@ -3614,10 +3614,13 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 							show->showToast(
 								tr::lng_merge_album_done(tr::now));
 						}
-						if (state->submitCallback) {
-							state->submitCallback();
-						}
 					});
+			}
+			if (show->valid()) {
+				show->hideLayer();
+			}
+			if (state->submitCallback) {
+				state->submitCallback();
 			}
 		},
 		.filterCallback = [=](not_null<Data::Thread*> thread) {

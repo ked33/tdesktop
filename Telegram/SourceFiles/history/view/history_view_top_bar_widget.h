@@ -75,6 +75,7 @@ public:
 	void finishAnimating();
 	void showSelected(SelectedState state);
 	[[nodiscard]] bool showSelectedState() const;
+	bool handleSelectedActionShortcut(const QString &key);
 	rpl::producer<bool> membersShowAreaActive() const {
 		return _membersShowAreaActive.events();
 	}

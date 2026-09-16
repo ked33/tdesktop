@@ -5518,6 +5518,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_quick_copy_targets_title" = "Quick copy to...";
 "lng_settings_quick_copy_targets_placeholder" = "-1002615379741,Saved Messages";
 "lng_settings_quick_copy_targets_disabled" = "Disabled";
+"lng_settings_shortcut_selected_forward" = "多选转发快捷键";
+"lng_settings_shortcut_selected_forward_no_quote" = "多选无引用转发快捷键";
+"lng_settings_shortcut_selected_saved" = "多选转发到收藏快捷键";
+"lng_settings_shortcut_selected_quick_copy" = "多选一键复制快捷键";
+"lng_settings_shortcut_selected_merge_forward" = "多选转发合并相册快捷键";
+"lng_settings_shortcut_selected_merge_album" = "多选当前对话合并相册快捷键";
+"lng_settings_shortcut_selected_placeholder" = "例如 Ctrl+Shift+F，留空则禁用";
 "lng_quick_copy_targets_none" = "No valid quick-copy targets. Open the target chats once and check Enhanced Settings.";
 "lng_quick_copy_targets_skipped" = "Some quick-copy targets were skipped.";
 "lng_quick_copy_done_deleted" = "无引用转发完成，已删除：{total} 条";

@@ -1666,6 +1666,43 @@ bool TopBarWidget::showSelectedState() const {
 		&& (_canDelete || _canForward || _canSendNow || _canMergeHere);
 }
 
+bool TopBarWidget::handleSelectedActionShortcut(const QString &key) {
+	if (!showSelectedState()) {
+		return false;
+	}
+	const auto fireIfShown = [&](
+			not_null<Ui::RoundButton*> button,
+			Fn<void()> fire) {
+		if (button->isHidden()) {
+			return false;
+		}
+		fire();
+		return true;
+	};
+	if (key == u"shortcut_selected_forward"_q) {
+		return fireIfShown(_forward, [=] { _forwardSelection.fire({}); });
+	} else if (key == u"shortcut_selected_forward_no_quote"_q) {
+		return fireIfShown(_forwardNoQuote, [=] {
+			_forwardNoQuoteSelection.fire({});
+		});
+	} else if (key == u"shortcut_selected_saved"_q) {
+		return fireIfShown(_savedMessages, [=] {
+			_savedMessagesSelection.fire({});
+		});
+	} else if (key == u"shortcut_selected_quick_copy"_q) {
+		return fireIfShown(_quickCopy, [=] { _quickCopySelection.fire({}); });
+	} else if (key == u"shortcut_selected_merge_forward"_q) {
+		return fireIfShown(_mergeForward, [=] {
+			_mergeForwardSelection.fire({});
+		});
+	} else if (key == u"shortcut_selected_merge_album"_q) {
+		return fireIfShown(_mergeAlbum, [=] {
+			_mergeAlbumSelection.fire({});
+		});
+	}
+	return false;
+}
+
 void TopBarWidget::showSelected(SelectedState state) {
 	auto canDelete = (state.count > 0 && state.count == state.canDeleteCount);
 	auto canForward = (state.count > 0 && state.count == state.canForwardCount);

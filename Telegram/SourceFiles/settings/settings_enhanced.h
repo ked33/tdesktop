@@ -48,6 +48,7 @@ namespace Settings {
 			rpl::event_stream<QString> _NoForwardsBadgeColorChanged;
 			rpl::event_stream<QString> _PreviewBrightnessChanged;
 			rpl::event_stream<QString> _QuickCopyTargetsChanged;
+			rpl::event_stream<QString> _SelectedActionShortcutsChanged;
 			rpl::event_stream<QString> _SearchMessageHighlightBgColorChanged;
 
 			mtpRequestId _requestId = 0;
