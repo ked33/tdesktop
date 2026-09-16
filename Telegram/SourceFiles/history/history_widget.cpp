@@ -2766,6 +2766,16 @@ void HistoryWidget::tryProcessKeyInput(not_null<QKeyEvent*> e) {
 }
 
 void HistoryWidget::setupShortcuts() {
+	Shortcuts::SelectedActionShortcutRequests(
+	) | rpl::filter([=] {
+		return _history
+			&& Ui::AppInFocus()
+			&& !controller()->isLayerShown()
+			&& window()->isActiveWindow()
+			&& _topBar->showSelectedState();
+	}) | rpl::on_next([=](const QString &key) {
+		_topBar->handleSelectedActionShortcut(key);
+	}, lifetime());
 	Shortcuts::Requests(
 	) | rpl::filter([=] {
 		return _history
