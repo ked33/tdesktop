@@ -135,6 +135,7 @@ namespace EnhancedSettings {
 
 			ensureBool(qsl("media_viewer_wheel_control_enabled"), false);
 			ensureBool(qsl("label_channel_user"), true);
+			ensureBool(qsl("multiple_chat_windows"), true);
 			ensureBool(qsl("translate_to_tc"), false);
 			ensureString(qsl("translation_provider"), qsl("google"));
 			ensureBool(qsl("translation_keep_protected_format"), true);
@@ -246,6 +247,12 @@ namespace EnhancedSettings {
 
 	bool SearchIncludePorn() {
 		return gEnhancedOptions.value(u"search_include_porn"_q, true).toBool();
+	}
+
+	bool MultipleChatWindows() {
+		return gEnhancedOptions.value(
+			qsl("multiple_chat_windows"),
+			true).toBool();
 	}
 
 	rpl::producer<bool> SearchIncludePornChanges() {
@@ -600,6 +607,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("preview_brightness"), 70);
 		settings.insert(qsl("media_viewer_wheel_control_enabled"), false);
 		settings.insert(qsl("label_channel_user"), true);
+		settings.insert(qsl("multiple_chat_windows"), true);
 
 		auto document = QJsonDocument();
 		document.setObject(settings);
@@ -770,6 +778,9 @@ namespace EnhancedSettings {
 		settings.insert(
 			qsl("label_channel_user"),
 			GetEnhancedBool("label_channel_user"));
+		settings.insert(
+			qsl("multiple_chat_windows"),
+			MultipleChatWindows());
 
 		auto document = QJsonDocument();
 		document.setObject(settings);

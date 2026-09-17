@@ -30,6 +30,7 @@ namespace EnhancedSettings {
 	[[nodiscard]] bool SearchIncludePorn();
 	[[nodiscard]] rpl::producer<bool> SearchIncludePornChanges();
 	void SetSearchIncludePorn(bool enabled);
+	[[nodiscard]] bool MultipleChatWindows();
 	[[nodiscard]] int SearchPornConcurrency();
 	[[nodiscard]] rpl::producer<int> SearchPornConcurrencyChanges();
 	void SetSearchPornConcurrency(int value);

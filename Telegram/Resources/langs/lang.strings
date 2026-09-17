@@ -8942,6 +8942,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_disable_cloud_draft_sync" = "Stop syncing drafts from cloud";
 "lng_settings_hide_classic_forward" = "Hide Classic Forward";
 "lng_settings_keep_selected_messages_across_chats" = "Keep selected messages across chats";
+"lng_settings_multiple_chat_windows" = "Allow the same chat in multiple windows";
+"lng_settings_multiple_chat_windows_about" = "When enabled, Open in new window creates another window even if that chat is already open.";
 "lng_settings_show_phone_number" = "Show Phone Number";
 "lng_settings_show_scheduled_button" = "Always show scheduled button";
 "lng_settings_voice_chat" = "Voice Chat";
