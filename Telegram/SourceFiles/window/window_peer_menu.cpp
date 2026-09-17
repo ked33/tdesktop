@@ -3615,6 +3615,7 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 	const auto ids = msgIds;
 	struct State {
 		FnMut<void()> submitCallback;
+		MessageIdsList sentSourceIds;
 		int requestsLeft = 0;
 		int sentMedia = 0;
 		int mergedCount = 0;
@@ -3631,7 +3632,10 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 			auto kinds = std::vector<Api::MergeAlbumKind>();
 			kinds.reserve(items.size());
 			for (const auto &entry : items) {
-				kinds.push_back(Api::ClassifyMergeAlbumKind(entry));
+				const auto kind = Api::ClassifyMergeAlbumKind(entry);
+				if (kind != Api::MergeAlbumKind::Skip) {
+					kinds.push_back(kind);
+				}
 			}
 			return int(Api::PackAlbumGroups(kinds).size())
 				+ (comment.empty() ? 0 : 1);
@@ -3679,6 +3683,11 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 					items,
 					[=](Api::MergeAlbumResult sendResult) {
 						state->sentMedia += sendResult.sentMedia;
+						if (sendResult.error.isEmpty()
+							&& state->sentSourceIds.empty()
+							&& !sendResult.sentSourceIds.empty()) {
+							state->sentSourceIds = sendResult.sentSourceIds;
+						}
 						if (const auto merged = int(sendResult.sentSourceIds.size())) {
 							state->mergedCount = merged;
 						} else if (sendResult.sentMedia > state->mergedCount) {
@@ -3708,12 +3717,38 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 								tr::lng_merge_album_none(tr::now),
 								Api::kMergeAlbumToastDuration);
 						} else {
-							show->showToast(
-								tr::lng_merge_album_done(
-									tr::now,
-									lt_total,
-									QString::number(state->mergedCount)),
-								Api::kMergeAlbumToastDuration);
+							const auto cleanup = Api::CleanupMergedSources(
+								session,
+								state->sentSourceIds);
+							const auto total = state->sentSourceIds.empty()
+								? state->mergedCount
+								: int(state->sentSourceIds.size());
+							if (cleanup.kept) {
+								show->showToast(
+									tr::lng_merge_album_done_kept(
+										tr::now,
+										lt_total,
+										QString::number(total),
+										lt_kept,
+										QString::number(cleanup.kept)),
+									Api::kMergeAlbumToastDuration);
+							} else if (cleanup.deleted) {
+								show->showToast(
+									tr::lng_merge_album_done_deleted(
+										tr::now,
+										lt_total,
+										QString::number(total),
+										lt_deleted,
+										QString::number(cleanup.deleted)),
+									Api::kMergeAlbumToastDuration);
+							} else {
+								show->showToast(
+									tr::lng_merge_album_done(
+										tr::now,
+										lt_total,
+										QString::number(total)),
+									Api::kMergeAlbumToastDuration);
+							}
 						}
 					});
 			}
