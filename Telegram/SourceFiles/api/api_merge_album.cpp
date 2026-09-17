@@ -18,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_histories.h"
 #include "data/data_photo.h"
 #include "data/data_session.h"
+#include "data/data_types.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/history_item_helpers.h"
@@ -367,13 +368,26 @@ struct MergeSlot {
 	QString text;
 	FullMsgId sourceId;
 	int mediaIndex = -1;
+	int sourceKey = -1;
 };
 
-[[nodiscard]] std::vector<MergeSlot> PrepareMergeSlots(
+struct MergePrepared {
+	std::vector<MergeSlot> slots;
+	int sourceCount = 0;
+};
+
+struct SourceCaptionTarget {
+	QStringList parts;
+	int packedGroup = -1;
+};
+
+[[nodiscard]] MergePrepared PrepareMergeSlots(
 		const std::vector<not_null<HistoryItem*>> &items) {
-	auto slots = std::vector<MergeSlot>();
-	slots.reserve(items.size());
+	auto prepared = MergePrepared();
+	prepared.slots.reserve(items.size());
 	auto mediaItemIndices = std::vector<int>();
+	auto lastGroupId = MessageGroupId();
+	auto lastWasGrouped = false;
 	for (auto i = 0; i != int(items.size()); ++i) {
 		const auto item = items[i];
 		const auto kind = ClassifyMergeAlbumKind(item);
@@ -393,9 +407,19 @@ struct MergeSlot {
 				slot.media.document = media->document();
 			}
 			if (slot.media.photo || slot.media.document) {
+				const auto groupId = item->groupId();
+				if (!groupId
+					|| !lastWasGrouped
+					|| groupId != lastGroupId) {
+					slot.sourceKey = prepared.sourceCount++;
+					lastGroupId = groupId;
+					lastWasGrouped = bool(groupId);
+				} else {
+					slot.sourceKey = prepared.sourceCount - 1;
+				}
 				slot.mediaIndex = int(mediaItemIndices.size());
 				mediaItemIndices.push_back(i);
-				slots.push_back(std::move(slot));
+				prepared.slots.push_back(std::move(slot));
 				continue;
 			}
 			slot = MergeSlot{ .sourceId = item->fullId() };
@@ -404,16 +428,76 @@ struct MergeSlot {
 			slot.type = MergeSlot::Type::Text;
 			slot.text = item->originalText().text.trimmed();
 		}
-		slots.push_back(std::move(slot));
+		prepared.slots.push_back(std::move(slot));
 	}
-	for (auto i = 0; i != int(slots.size()); ++i) {
-		if (slots[i].type == MergeSlot::Type::Text) {
-			slots[i].mediaIndex = FindNearestMediaIndex(
+	for (auto i = 0; i != int(prepared.slots.size()); ++i) {
+		if (prepared.slots[i].type == MergeSlot::Type::Text) {
+			prepared.slots[i].mediaIndex = FindNearestMediaIndex(
 				mediaItemIndices,
 				i);
 		}
 	}
-	return slots;
+	return prepared;
+}
+
+[[nodiscard]] std::vector<SourceCaptionTarget> AssignSourceCaptions(
+		const std::vector<MergeSlot> &slots,
+		const std::vector<MergeAlbumGroup> &groups,
+		int sourceCount) {
+	struct Range {
+		int first = -1;
+		int last = -1;
+		QStringList parts;
+	};
+	auto ranges = std::vector<Range>(sourceCount);
+	auto mediaSourceKeys = std::vector<int>();
+	for (const auto &slot : slots) {
+		if (slot.type != MergeSlot::Type::Media || slot.sourceKey < 0) {
+			continue;
+		}
+		if (slot.mediaIndex >= int(mediaSourceKeys.size())) {
+			mediaSourceKeys.resize(slot.mediaIndex + 1, -1);
+		}
+		mediaSourceKeys[slot.mediaIndex] = slot.sourceKey;
+		auto &range = ranges[slot.sourceKey];
+		if (range.first < 0) {
+			range.first = slot.mediaIndex;
+		}
+		range.last = slot.mediaIndex;
+		if (!slot.media.caption.isEmpty()) {
+			range.parts.push_back(slot.media.caption);
+		}
+	}
+	const auto groupOf = [&](int mediaIndex) {
+		for (auto i = 0; i != int(groups.size()); ++i) {
+			if (mediaIndex >= groups[i].from
+				&& mediaIndex < groups[i].till) {
+				return i;
+			}
+		}
+		return -1;
+	};
+	auto result = std::vector<SourceCaptionTarget>(sourceCount);
+	for (auto key = 0; key != sourceCount; ++key) {
+		const auto &range = ranges[key];
+		if (range.first < 0) {
+			continue;
+		}
+		const auto firstGroup = groupOf(range.first);
+		const auto lastGroup = groupOf(range.last);
+		auto packed = firstGroup;
+		if (firstGroup >= 0
+			&& firstGroup != lastGroup
+			&& groups[firstGroup].from < int(mediaSourceKeys.size())
+			&& mediaSourceKeys[groups[firstGroup].from] != key) {
+			packed = lastGroup;
+		}
+		result[key] = {
+			.parts = range.parts,
+			.packedGroup = packed,
+		};
+	}
+	return result;
 }
 
 void SendTextChunks(
@@ -780,13 +864,13 @@ void SendMergedAlbums(
 	action.clearDraft = false;
 	const auto session = &action.history->session();
 	const auto captionLimit = session->serverConfig().captionLengthMax;
-	auto slots = PrepareMergeSlots(items);
+	auto prepared = PrepareMergeSlots(items);
 	auto media = std::vector<MergeAlbumMedia>();
 	auto kinds = std::vector<MergeAlbumKind>();
 	auto skipped = 0;
-	media.reserve(slots.size());
-	kinds.reserve(slots.size());
-	for (const auto &slot : slots) {
+	media.reserve(prepared.slots.size());
+	kinds.reserve(prepared.slots.size());
+	for (const auto &slot : prepared.slots) {
 		if (slot.type == MergeSlot::Type::Media) {
 			media.push_back(slot.media);
 			kinds.push_back(slot.kind);
@@ -810,21 +894,29 @@ void SendMergedAlbums(
 		}
 		return;
 	}
+	auto sourceCaptions = AssignSourceCaptions(
+		prepared.slots,
+		groups,
+		prepared.sourceCount);
 
 	struct State {
 		SendAction action;
 		std::vector<MergeSlot> slots;
 		std::vector<MergeAlbumMedia> media;
 		std::vector<MergeAlbumGroup> groups;
+		std::vector<SourceCaptionTarget> sourceCaptions;
+		int sourceCount = 0;
 		MergeAlbumResult result;
 		int index = 0;
 		Fn<void(MergeAlbumResult)> done;
 	};
 	const auto state = std::make_shared<State>(State{
 		.action = action,
-		.slots = std::move(slots),
+		.slots = std::move(prepared.slots),
 		.media = std::move(media),
 		.groups = groups,
+		.sourceCaptions = std::move(sourceCaptions),
+		.sourceCount = prepared.sourceCount,
 		.result = std::move(result),
 		.index = 0,
 		.done = std::move(done),
@@ -840,7 +932,8 @@ void SendMergedAlbums(
 			}
 			return;
 		}
-		const auto group = state->groups[state->index++];
+		const auto groupIndex = state->index++;
+		const auto group = state->groups[groupIndex];
 		auto batch = std::vector<MergeAlbumMedia>();
 		batch.reserve(group.till - group.from);
 		for (auto i = group.from; i != group.till; ++i) {
@@ -848,6 +941,7 @@ void SendMergedAlbums(
 		}
 		auto captions = std::vector<QString>();
 		auto sentIds = MessageIdsList();
+		auto emittedSources = std::vector<char>(state->sourceCount, 0);
 		captions.reserve(state->slots.size());
 		sentIds.reserve(state->slots.size());
 		for (const auto &slot : state->slots) {
@@ -855,10 +949,17 @@ void SendMergedAlbums(
 				|| slot.mediaIndex >= group.till) {
 				continue;
 			} else if (slot.type == MergeSlot::Type::Media) {
-				if (!slot.media.caption.isEmpty()) {
-					captions.push_back(slot.media.caption);
-				}
 				sentIds.push_back(slot.sourceId);
+				const auto key = slot.sourceKey;
+				if (key >= 0
+					&& key < state->sourceCount
+					&& !emittedSources[key]
+					&& state->sourceCaptions[key].packedGroup == groupIndex) {
+					emittedSources[key] = 1;
+					for (const auto &part : state->sourceCaptions[key].parts) {
+						captions.push_back(part);
+					}
+				}
 			} else if (slot.type == MergeSlot::Type::Text) {
 				if (!slot.text.isEmpty()) {
 					captions.push_back(slot.text);
@@ -901,6 +1002,29 @@ void SendMergedAlbums(
 		});
 	};
 	sendNext(sendNext);
+}
+
+MergeAlbumCleanup CleanupMergedSources(
+		not_null<Main::Session*> session,
+		const MessageIdsList &ids) {
+	auto result = MergeAlbumCleanup();
+	auto deleteIds = MessageIdsList();
+	for (const auto &id : ids) {
+		const auto item = session->data().message(id);
+		if (!item) {
+			continue;
+		} else if (item->canDelete()) {
+			deleteIds.push_back(id);
+		} else {
+			++result.kept;
+		}
+	}
+	if (!deleteIds.empty()) {
+		session->data().histories().deleteMessages(deleteIds, true);
+		session->data().sendHistoryChangeNotifications();
+	}
+	result.deleted = int(deleteIds.size());
+	return result;
 }
 
 } // namespace Api

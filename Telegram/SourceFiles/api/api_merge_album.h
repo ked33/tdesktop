@@ -12,6 +12,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 class HistoryItem;
 
+namespace Main {
+class Session;
+} // namespace Main
+
 namespace Api {
 
 inline constexpr auto kMergeAlbumToastDuration = crl::time(3000);
@@ -37,6 +41,11 @@ struct MergeAlbumResult {
 	MessageIdsList sentSourceIds;
 };
 
+struct MergeAlbumCleanup {
+	int deleted = 0;
+	int kept = 0;
+};
+
 [[nodiscard]] MergeAlbumKind ClassifyMergeAlbumKind(
 	not_null<HistoryItem*> item);
 
@@ -52,5 +61,9 @@ void SendMergedAlbums(
 	SendAction action,
 	const std::vector<not_null<HistoryItem*>> &items,
 	Fn<void(MergeAlbumResult)> done);
+
+MergeAlbumCleanup CleanupMergedSources(
+	not_null<Main::Session*> session,
+	const MessageIdsList &ids);
 
 } // namespace Api

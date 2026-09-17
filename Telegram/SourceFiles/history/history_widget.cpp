@@ -11346,42 +11346,29 @@ void HistoryWidget::mergeAlbumSelected() {
 					Api::kMergeAlbumToastDuration);
 				return;
 			}
-			auto deleteIds = MessageIdsList();
-			auto kept = 0;
-			for (const auto &id : result.sentSourceIds) {
-				const auto item = session->data().message(id);
-				if (!item) {
-					continue;
-				} else if (item->canDelete()) {
-					deleteIds.push_back(id);
-				} else {
-					++kept;
-				}
-			}
-			if (!deleteIds.empty()) {
-				session->data().histories().deleteMessages(deleteIds, true);
-				session->data().sendHistoryChangeNotifications();
-			}
+			const auto cleanup = Api::CleanupMergedSources(
+				session,
+				result.sentSourceIds);
 			const auto total = result.sentSourceIds.empty()
 				? result.sentMedia
 				: int(result.sentSourceIds.size());
-			if (kept) {
+			if (cleanup.kept) {
 				show->showToast(
 					tr::lng_merge_album_done_kept(
 						tr::now,
 						lt_total,
 						QString::number(total),
 						lt_kept,
-						QString::number(kept)),
+						QString::number(cleanup.kept)),
 					Api::kMergeAlbumToastDuration);
-			} else if (!deleteIds.empty()) {
+			} else if (cleanup.deleted) {
 				show->showToast(
 					tr::lng_merge_album_done_deleted(
 						tr::now,
 						lt_total,
 						QString::number(total),
 						lt_deleted,
-						QString::number(int(deleteIds.size()))),
+						QString::number(cleanup.deleted)),
 					Api::kMergeAlbumToastDuration);
 			} else {
 				show->showToast(
