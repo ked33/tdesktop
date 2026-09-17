@@ -23,6 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/fields/input_field.h"
 #include "api/api_chat_participants.h"
 #include "api/api_merge_album.h"
+#include "base/debug_log.h"
 #include "api/api_communities.h"
 #include "api/api_global_privacy.h"
 #include "base/random.h"
@@ -3597,74 +3598,87 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 				}
 				auto action = Api::SendAction(thread, options);
 				action.clearDraft = false;
-				Api::CopyThenMergeAlbums(
-					std::move(action),
-					items,
-					[=](Api::MergeAlbumResult sendResult) {
-						state->sentMedia += sendResult.sentMedia;
-						if (sendResult.error.isEmpty()
-							&& !sendResult.sentSourceIds.empty()) {
-							state->sentSourceIds.insert(
-								state->sentSourceIds.end(),
-								sendResult.sentSourceIds.begin(),
-								sendResult.sentSourceIds.end());
-						}
-						if (const auto merged = int(sendResult.sentSourceIds.size())) {
-							state->mergedCount = merged;
-						} else if (sendResult.sentMedia > state->mergedCount) {
-							state->mergedCount = sendResult.sentMedia;
-						}
-						if (!sendResult.error.isEmpty()) {
-							state->failed = true;
-							state->error = sendResult.error;
-						}
-						if (--state->requestsLeft) {
-							return;
-						}
-						if (state->failed) {
+				const auto finish = [=](Api::MergeAlbumResult sendResult) {
+					state->sentMedia += sendResult.sentMedia;
+					if (sendResult.error.isEmpty()
+						&& !sendResult.sentSourceIds.empty()) {
+						state->sentSourceIds.insert(
+							state->sentSourceIds.end(),
+							sendResult.sentSourceIds.begin(),
+							sendResult.sentSourceIds.end());
+					}
+					if (const auto merged = int(sendResult.sentSourceIds.size())) {
+						state->mergedCount = merged;
+					} else if (sendResult.sentMedia > state->mergedCount) {
+						state->mergedCount = sendResult.sentMedia;
+					}
+					if (!sendResult.error.isEmpty()) {
+						state->failed = true;
+						state->error = sendResult.error;
+					}
+					if (--state->requestsLeft) {
+						return;
+					}
+					if (state->failed) {
+						show->showToast(
+							state->error.isEmpty()
+								? tr::lng_merge_album_failed(tr::now)
+								: state->error,
+							Api::kMergeAlbumToastDuration);
+					} else if (state->sentMedia <= 0) {
+						show->showToast(
+							tr::lng_merge_album_none(tr::now),
+							Api::kMergeAlbumToastDuration);
+					} else {
+						const auto cleanup = Api::CleanupMergedSources(
+							session,
+							state->sentSourceIds);
+						const auto total = state->sentSourceIds.empty()
+							? state->mergedCount
+							: int(state->sentSourceIds.size());
+						if (cleanup.kept) {
 							show->showToast(
-								state->error.isEmpty()
-									? tr::lng_merge_album_failed(tr::now)
-									: state->error,
+								tr::lng_merge_album_done_kept(
+									tr::now,
+									lt_total,
+									QString::number(total),
+									lt_kept,
+									QString::number(cleanup.kept)),
 								Api::kMergeAlbumToastDuration);
-						} else if (state->sentMedia <= 0) {
+						} else if (cleanup.deleted) {
 							show->showToast(
-								tr::lng_merge_album_none(tr::now),
+								tr::lng_merge_album_done_deleted(
+									tr::now,
+									lt_total,
+									QString::number(total),
+									lt_deleted,
+									QString::number(cleanup.deleted)),
 								Api::kMergeAlbumToastDuration);
 						} else {
-							const auto cleanup = Api::CleanupMergedSources(
-								session,
-								state->sentSourceIds);
-							const auto total = state->sentSourceIds.empty()
-								? state->mergedCount
-								: int(state->sentSourceIds.size());
-							if (cleanup.kept) {
-								show->showToast(
-									tr::lng_merge_album_done_kept(
-										tr::now,
-										lt_total,
-										QString::number(total),
-										lt_kept,
-										QString::number(cleanup.kept)),
-									Api::kMergeAlbumToastDuration);
-							} else if (cleanup.deleted) {
-								show->showToast(
-									tr::lng_merge_album_done_deleted(
-										tr::now,
-										lt_total,
-										QString::number(total),
-										lt_deleted,
-										QString::number(cleanup.deleted)),
-									Api::kMergeAlbumToastDuration);
-							} else {
-								show->showToast(
-									tr::lng_merge_album_done(
-										tr::now,
-										lt_total,
-										QString::number(total)),
-									Api::kMergeAlbumToastDuration);
-							}
+							show->showToast(
+								tr::lng_merge_album_done(
+									tr::now,
+									lt_total,
+									QString::number(total)),
+								Api::kMergeAlbumToastDuration);
 						}
+					}
+				};
+				Api::SendMergedAlbums(
+					action,
+					items,
+					[=](Api::MergeAlbumResult sendResult) {
+						if (sendResult.error == u"CHAT_FORWARDS_RESTRICTED"_q
+							&& action.history != items.front()->history()) {
+							LOG(("MergeAlbum: fallback copy-then-merge dest=%1"
+							).arg(action.history->peer->id.value));
+							Api::CopyThenMergeAlbums(
+								action,
+								items,
+								finish);
+							return;
+						}
+						finish(std::move(sendResult));
 					});
 			}
 			if (show->valid()) {

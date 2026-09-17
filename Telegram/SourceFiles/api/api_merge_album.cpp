@@ -925,16 +925,13 @@ void SendMergedAlbums(
 	auto prepared = PrepareMergeSlots(items);
 	auto media = std::vector<MergeAlbumMedia>();
 	auto kinds = std::vector<MergeAlbumKind>();
-	auto sourcePeers = std::vector<PeerId>();
 	auto skipped = 0;
 	media.reserve(prepared.slots.size());
 	kinds.reserve(prepared.slots.size());
-	sourcePeers.reserve(prepared.slots.size());
 	for (const auto &slot : prepared.slots) {
 		if (slot.type == MergeSlot::Type::Media) {
 			media.push_back(slot.media);
 			kinds.push_back(slot.kind);
-			sourcePeers.push_back(slot.media.sourceId.peer);
 		} else if (slot.type == MergeSlot::Type::Skip
 			|| slot.mediaIndex < 0) {
 			++skipped;
@@ -952,11 +949,7 @@ void SendMergedAlbums(
 		return;
 	}
 	Expects(kinds.size() == media.size());
-	Expects(sourcePeers.size() == media.size());
-	const auto groups = PackAlbumGroups(
-		kinds,
-		sourcePeers,
-		Ui::MaxAlbumItems());
+	const auto groups = PackAlbumGroups(kinds, Ui::MaxAlbumItems());
 	if (groups.empty()) {
 		if (done) {
 			done(std::move(result));
