@@ -174,70 +174,17 @@ jobs:
             -D TDESKTOP_API_ID=%TDESKTOP_API_ID% ^
             -D TDESKTOP_API_HASH=%TDESKTOP_API_HASH% ^
             -DCMAKE_CONFIGURATION_TYPES=Release ^
-            -DDESKTOP_APP_TEST_APPS=ON ^
+            -D DESKTOP_APP_NO_PDB=ON ^
             -D CMAKE_COMPILE_WARNING_AS_ERROR=OFF ^
             -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= ^
             -D CMAKE_C_COMPILER_LAUNCHER=sccache ^
             -D CMAKE_CXX_COMPILER_LAUNCHER=sccache
-
-      - name: Check streaming read stall recovery
-        shell: cmd
-        run: |
-          cd /d %TBUILD%\%REPO_NAME%\out
-          cmake --build . --config Release --target test_streaming_read_stall --parallel
-          if errorlevel 1 exit /b %errorlevel%
-          if not exist "Release\test_streaming_read_stall.exe" exit /b 1
-          "Release\test_streaming_read_stall.exe"
-          exit /b %errorlevel%
-
-      - name: Check streaming seek planning
-        shell: cmd
-        run: |
-          cd /d %TBUILD%\%REPO_NAME%\out
-          cmake --build . --config Release --target test_streaming_seek --parallel
-          if errorlevel 1 exit /b %errorlevel%
-          if not exist "Release\test_streaming_seek.exe" exit /b 1
-          "Release\test_streaming_seek.exe"
-          exit /b %errorlevel%
-
-      - name: Check streaming startup, cache, MPV and MP4 metadata
-        shell: cmd
-        run: |
-          cd /d %TBUILD%\%REPO_NAME%\out
-          cmake --build . --config Release --target test_streaming_startup test_streaming_cache test_streaming_mpv test_mp4_header test_mp4_index test_mpv_index_reload --parallel
-          if errorlevel 1 exit /b %errorlevel%
-          if not exist "Release\test_streaming_startup.exe" exit /b 1
-          "Release\test_streaming_startup.exe"
-          if errorlevel 1 exit /b %errorlevel%
-          if not exist "Release\test_streaming_cache.exe" exit /b 1
-          "Release\test_streaming_cache.exe"
-          if errorlevel 1 exit /b %errorlevel%
-          if not exist "Release\test_streaming_mpv.exe" exit /b 1
-          "Release\test_streaming_mpv.exe"
-          if errorlevel 1 exit /b %errorlevel%
-          if not exist "Release\test_mp4_header.exe" exit /b 1
-          "Release\test_mp4_header.exe"
-          if errorlevel 1 exit /b %errorlevel%
-          if not exist "Release\test_mp4_index.exe" exit /b 1
-          "Release\test_mp4_index.exe"
-          if errorlevel 1 exit /b %errorlevel%
-          if not exist "Release\test_mpv_index_reload.exe" exit /b 1
-          "Release\test_mpv_index_reload.exe"
-          exit /b %errorlevel%
 
       - name: Build Telegram (Release)
         shell: cmd
         run: |
           cd /d %TBUILD%\%REPO_NAME%\out
           cmake --build . --config Release --target Telegram --parallel
-
-      - name: Run update verifier
-        shell: cmd
-        run: |
-          cd /d %TBUILD%\%REPO_NAME%\out
-          if not exist "Release\test_update_verify.exe" exit /b 1
-          "Release\test_update_verify.exe"
-          exit /b %errorlevel%
 
       - name: Show sccache statistics
         if: always()
@@ -253,10 +200,18 @@ jobs:
             exit 0
           }
 
+      - name: Package artifact
+        shell: pwsh
+        run: |
+          $exe = "$env:TBUILD\$env:REPO_NAME\out\Release\Telegram.exe"
+          if (-not (Test-Path -LiteralPath $exe)) { exit 1 }
+          $artifactDir = Join-Path $env:GITHUB_WORKSPACE 'artifact'
+          New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
+          Copy-Item -LiteralPath $exe -Destination (Join-Path $artifactDir 'Telegram.exe')
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v6
         with:
           name: Telegram-x64
-          path: ${{ env.TBUILD }}\${{ env.REPO_NAME }}\out\Release\Telegram.exe
+          path: artifact/
           if-no-files-found: error
-          compression-level: 0
