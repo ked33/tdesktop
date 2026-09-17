@@ -2326,13 +2326,11 @@ bool ListWidget::isEmpty() const {
 }
 
 bool ListWidget::hasCopyRestriction(HistoryItem *item) const {
-	return _delegate->listCopyRestrictionType(item)
-		!= CopyRestrictionType::None;
+	return false;
 }
 
 bool ListWidget::hasCopyMediaRestriction(not_null<HistoryItem*> item) const {
-	return _delegate->listCopyMediaRestrictionType(item)
-		!= CopyRestrictionType::None;
+	return false;
 }
 
 bool ListWidget::showCopyRestriction(HistoryItem *item) {
@@ -2365,20 +2363,6 @@ bool ListWidget::showCopyMediaRestriction(not_null<HistoryItem*> item) {
 }
 
 bool ListWidget::hasCopyRestrictionForSelected() const {
-	const auto selected = effectiveSelectedMessages();
-	if (selected.empty()) {
-		if (_selectedTextItem && _selectedTextItem->forbidsForward()) {
-			return true;
-		}
-	}
-	for (const auto &[itemId, selection] : selected) {
-		if (const auto item = session().data().message(itemId)) {
-			if (CopyRestrictionTypeFor(item->history()->peer, item)
-				!= CopyRestrictionType::None) {
-				return true;
-			}
-		}
-	}
 	return false;
 }
 
@@ -2402,9 +2386,7 @@ bool ListWidget::showCopyRestrictionForSelected() {
 }
 
 bool ListWidget::hasSelectRestriction() const {
-	return session().frozen()
-		|| (_delegate->listSelectRestrictionType()
-			!= CopyRestrictionType::None);
+	return false;
 }
 
 Element *ListWidget::lookupItemByY(int y) const {
