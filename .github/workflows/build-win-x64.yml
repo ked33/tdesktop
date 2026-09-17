@@ -8,10 +8,15 @@ jobs:
   build:
     runs-on: avrea-windows-2025-8-vcpu
     timeout-minutes: 720
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
-      SCCACHE_IDLE_TIMEOUT: "0"
+    # GitHub-hosted (windows-2022) sccache via ghac. Disabled on Avrea:
+    # meson wraps cl.exe with sccache while configuring liblcms2, then
+    # sccache hits results-receiver.actions.githubusercontent.com and
+    # gets HTTP 400 (invalid request body / ghac). Restore this env
+    # block when switching runs-on back to windows-2022.
+    # env:
+    #   SCCACHE_GHA_ENABLED: "true"
+    #   SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
+    #   SCCACHE_IDLE_TIMEOUT: "0"
 
     steps:
       - name: Prepare directories
@@ -89,10 +94,15 @@ jobs:
             win64-qt-release-
             win64-qt-${{ env.CACHE_KEY }}
 
-      - name: Set up sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696
-        with:
-          version: "v0.15.0"
+      # GitHub-hosted (windows-2022): puts sccache.exe on PATH and uses
+      # the ghac backend. On Avrea that PATH wrap makes meson treat
+      # "sccache.exe cl" as the compiler and fail as above. Restore this
+      # step (and the job env / CMAKE_*_COMPILER_LAUNCHER flags) when
+      # switching runs-on back to windows-2022.
+      # - name: Set up sccache
+      #   uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696
+      #   with:
+      #     version: "v0.15.0"
 
       - name: Configure MSVC environment
         shell: cmd
@@ -127,6 +137,15 @@ jobs:
         id: prepare_libraries
         shell: cmd
         run: |
+          rem Avrea images may still expose sccache on PATH. meson auto-wraps
+          rem cl.exe with it; the ghac backend is broken on this runner.
+          rem Drop the next five set lines when switching runs-on back to
+          rem windows-2022 and restoring sccache-action / SCCACHE_GHA_ENABLED.
+          set SCCACHE_GHA_ENABLED=
+          set CC=cl
+          set CXX=cl
+          set CMAKE_C_COMPILER_LAUNCHER=
+          set CMAKE_CXX_COMPILER_LAUNCHER=
           cd /d %TBUILD%
           %REPO_NAME%\Telegram\build\prepare\win.bat silent
 
@@ -176,9 +195,10 @@ jobs:
             -DCMAKE_CONFIGURATION_TYPES=Release ^
             -D DESKTOP_APP_NO_PDB=ON ^
             -D CMAKE_COMPILE_WARNING_AS_ERROR=OFF ^
-            -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= ^
-            -D CMAKE_C_COMPILER_LAUNCHER=sccache ^
-            -D CMAKE_CXX_COMPILER_LAUNCHER=sccache
+            -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=
+            rem GitHub-hosted (windows-2022): restore these two with sccache-action:
+            rem -D CMAKE_C_COMPILER_LAUNCHER=sccache
+            rem -D CMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build Telegram (Release)
         shell: cmd
@@ -186,19 +206,20 @@ jobs:
           cd /d %TBUILD%\%REPO_NAME%\out
           cmake --build . --config Release --target Telegram --parallel
 
-      - name: Show sccache statistics
-        if: always()
-        shell: pwsh
-        run: |
-          if ($env:SCCACHE_PATH) {
-            & $env:SCCACHE_PATH --show-stats
-          } else {
-            sccache --show-stats
-          }
-          if ($LASTEXITCODE -ne 0) {
-            Write-Warning "sccache statistics unavailable"
-            exit 0
-          }
+      # GitHub-hosted (windows-2022): restore with the sccache-action step.
+      # - name: Show sccache statistics
+      #   if: always()
+      #   shell: pwsh
+      #   run: |
+      #     if ($env:SCCACHE_PATH) {
+      #       & $env:SCCACHE_PATH --show-stats
+      #     } else {
+      #       sccache --show-stats
+      #     }
+      #     if ($LASTEXITCODE -ne 0) {
+      #       Write-Warning "sccache statistics unavailable"
+      #       exit 0
+      #     }
 
       - name: Package artifact
         shell: pwsh
