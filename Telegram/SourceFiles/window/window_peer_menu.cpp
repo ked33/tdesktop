@@ -23,6 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/fields/input_field.h"
 #include "api/api_chat_participants.h"
 #include "api/api_merge_album.h"
+#include "base/debug_log.h"
 #include "api/api_communities.h"
 #include "api/api_global_privacy.h"
 #include "base/random.h"
@@ -3539,8 +3540,12 @@ void ForwardSelectedToMergeFallbackBot(
 		}
 	};
 	const auto send = [=](not_null<PeerData*> bot) {
+		LOG(("MergeAlbum: fallback forward to bot=%1 ids=%2"
+		).arg(bot->id.value
+		).arg(ids.size()));
 		const auto items = session->data().idsToItems(ids);
 		if (items.empty()) {
+			LOG(("MergeAlbum: fallback abort, items empty"));
 			failToast();
 			return;
 		}
@@ -3549,6 +3554,7 @@ void ForwardSelectedToMergeFallbackBot(
 			.options = Data::ForwardOptions::PreserveInfo,
 		});
 		if (resolved.items.empty()) {
+			LOG(("MergeAlbum: fallback abort, forward draft empty"));
 			failToast();
 			return;
 		}
@@ -3559,6 +3565,8 @@ void ForwardSelectedToMergeFallbackBot(
 			std::move(resolved),
 			std::move(action),
 			[=] {
+				LOG(("MergeAlbum: fallback forward done bot=%1"
+				).arg(bot->id.value));
 				if (show->valid()) {
 					show->showToast(
 						tr::lng_merge_album_fallback_bot(
@@ -3589,10 +3597,12 @@ void ForwardSelectedToMergeFallbackBot(
 			if (peer && peer->isUser()) {
 				send(peer);
 			} else {
+				LOG(("MergeAlbum: fallback resolve got no user"));
 				failToast();
 			}
 		});
-	}).fail([=](const MTP::Error &) {
+	}).fail([=](const MTP::Error &error) {
+		LOG(("MergeAlbum: fallback resolve fail error=%1").arg(error.type()));
 		failToast();
 	}).send();
 }
@@ -3702,6 +3712,10 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 						}
 						if (state->failed
 							&& state->error == u"CHAT_FORWARDS_RESTRICTED"_q) {
+							LOG(("MergeAlbum: fallback trigger error=%1 merged=%2 sentMedia=%3"
+							).arg(state->error
+							).arg(state->mergedCount
+							).arg(state->sentMedia));
 							ForwardSelectedToMergeFallbackBot(
 								session,
 								ids,
