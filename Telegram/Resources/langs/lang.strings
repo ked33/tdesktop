@@ -7916,6 +7916,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_filters_title" = "Folders";
 "lng_filters_subtitle" = "My folders";
 "lng_filters_no_chats" = "No chats";
+"lng_filters_preview_mutual" = "mutual contact";
+"lng_filters_preview_contact" = "contact";
+"lng_filters_preview_non_contact" = "non-contact";
+"lng_filters_preview_legacy_group" = "legacy group";
+"lng_filters_preview_not_member" = "not a member";
+"lng_filters_preview_not_subscribed" = "not subscribed";
+"lng_filters_preview_forum" = "forum";
+"lng_filters_preview_monoforum" = "monoforum";
+"lng_filters_preview_supergroup" = "supergroup";
+"lng_filters_preview_owner" = "owner";
 "lng_filters_chats_count#one" = "{count} chat";
 "lng_filters_chats_count#other" = "{count} chats";
 "lng_filters_create" = "Create new folder";

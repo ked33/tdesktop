@@ -8,7 +8,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/filters/edit_filter_chats_preview.h"
 
 #include "boxes/filters/edit_filter_chats_list.h"
+#include "data/data_channel.h"
+#include "data/data_chat.h"
 #include "data/data_peer.h"
+#include "data/data_user.h"
 #include "history/history.h"
 #include "lang/lang_keys.h"
 #include "ui/text/text_options.h"
@@ -104,6 +107,10 @@ void FilterChatsPreview::paintEvent(QPaintEvent *e) {
 	const auto nameLeft = st.namePosition.x();
 	p.setFont(st::windowFilterSmallItem.nameStyle.font);
 	const auto nameTop = st.namePosition.y();
+	const auto chatNameLeft = st::windowFilterChatNamePosition.x();
+	const auto chatNameTop = st::windowFilterChatNamePosition.y();
+	const auto chatDescLeft = st::windowFilterChatDescPosition.x();
+	const auto chatDescTop = st::windowFilterChatDescPosition.y();
 	for (const auto &[flag, button] : _removeFlag) {
 		PaintFilterChatsTypeIcon(
 			p,
@@ -121,6 +128,7 @@ void FilterChatsPreview::paintEvent(QPaintEvent *e) {
 			FilterChatsTypeName(flag));
 		top += st.height;
 	}
+	auto statuses = QStringList();
 	for (auto &[history, userpic, name, button] : _removePeer) {
 		const auto peer = history->peer;
 		const auto savedMessages = peer->isSelf();
@@ -168,6 +176,67 @@ void FilterChatsPreview::paintEvent(QPaintEvent *e) {
 				top + iconTop,
 				width(),
 				st.photoSize);
+			if (const auto user = history->peer->asUser()) {
+				if (user->isInaccessible()) {
+					statuses << tr::lng_chat_status_unaccessible(tr::now);
+				} else {
+					if (user->isSupport()) {
+						statuses << tr::lng_status_support(tr::now);
+					}
+					if (user->isBot()) {
+						statuses << tr::lng_status_bot(tr::now);
+					} else if (user->flags() & UserDataFlag::MutualContact) {
+						statuses << tr::lng_filters_preview_mutual(tr::now);
+					} else if (user->isContact()) {
+						statuses << tr::lng_filters_preview_contact(tr::now);
+					} else {
+						statuses << tr::lng_filters_preview_non_contact(
+							tr::now);
+					}
+				}
+			} else if (const auto chat = history->peer->asChat()) {
+				statuses << tr::lng_filters_preview_legacy_group(tr::now);
+				if (!chat->amIn()) {
+					statuses << tr::lng_filters_preview_not_member(tr::now);
+				} else if (chat->amCreator()) {
+					statuses << tr::lng_filters_preview_owner(tr::now);
+				} else if (chat->hasAdminRights()) {
+					statuses << tr::lng_admin_badge(tr::now);
+				}
+				if (chat->count > 0) {
+					statuses << tr::lng_chat_status_members(
+						tr::now,
+						lt_count_decimal,
+						chat->count);
+				}
+			} else if (const auto channel = history->peer->asChannel()) {
+				statuses << (channel->isCommunity()
+					? tr::lng_community_status(tr::now)
+					: channel->isMonoforum()
+					? tr::lng_filters_preview_monoforum(tr::now)
+					: channel->isForum()
+					? tr::lng_filters_preview_forum(tr::now)
+					: channel->isMegagroup()
+					? tr::lng_filters_preview_supergroup(tr::now)
+					: tr::lng_channel_status(tr::now));
+				if (!channel->amIn()) {
+					statuses << (channel->isBroadcast()
+						? tr::lng_filters_preview_not_subscribed(tr::now)
+						: tr::lng_filters_preview_not_member(tr::now));
+				} else if (channel->amCreator()) {
+					statuses << tr::lng_filters_preview_owner(tr::now);
+				} else if (channel->hasAdminRights()) {
+					statuses << tr::lng_admin_badge(tr::now);
+				}
+				if (channel->membersCountKnown()) {
+					statuses << (channel->isBroadcast()
+						? tr::lng_chat_status_subscribers
+						: tr::lng_chat_status_members)(
+							tr::now,
+							lt_count_decimal,
+							channel->membersCount());
+				}
+			}
 			p.setPen(st::contactsNameFg);
 			if (name.isEmpty()) {
 				name.setText(
@@ -175,12 +244,29 @@ void FilterChatsPreview::paintEvent(QPaintEvent *e) {
 					history->peer->name(),
 					Ui::NameTextOptions());
 			}
-			name.drawLeftElided(
-				p,
-				nameLeft,
-				top + nameTop,
-				button->x() - nameLeft,
-				width());
+			if (statuses.isEmpty()) {
+				name.drawLeftElided(
+					p,
+					nameLeft,
+					top + nameTop,
+					button->x() - nameLeft,
+					width());
+			} else {
+				name.drawLeftElided(
+					p,
+					chatNameLeft,
+					top + chatNameTop,
+					button->x() - chatNameLeft,
+					width());
+				p.setPen(st::windowSubTextFg);
+				p.setFont(st::windowFilterChatDescStyle.font);
+				p.drawTextLeft(
+					chatDescLeft,
+					top + chatDescTop,
+					width(),
+					statuses.join(u", "_q));
+				statuses.clear();
+			}
 		}
 		top += st.height;
 	}

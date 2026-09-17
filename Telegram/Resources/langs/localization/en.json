@@ -2,6 +2,16 @@
     "lng_intro_about2": "Welcome to the 64Gram Desktop app.\nIt's fast and secure.",
 
     "lng_mediaview_flip_horizontal": "Flip Horizontally",
+    "lng_filters_preview_mutual": "mutual contact",
+    "lng_filters_preview_contact": "contact",
+    "lng_filters_preview_non_contact": "non-contact",
+    "lng_filters_preview_legacy_group": "legacy group",
+    "lng_filters_preview_not_member": "not a member",
+    "lng_filters_preview_not_subscribed": "not subscribed",
+    "lng_filters_preview_forum": "forum",
+    "lng_filters_preview_monoforum": "monoforum",
+    "lng_filters_preview_supergroup": "supergroup",
+    "lng_filters_preview_owner": "owner",
 
     "lng_settings_enhanced": "Enhanced Settings",
     "lng_settings_network": "Network",
