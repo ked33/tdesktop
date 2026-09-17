@@ -155,7 +155,11 @@ jobs:
           set CMAKE_C_COMPILER_LAUNCHER=
           set CMAKE_CXX_COMPILER_LAUNCHER=
           cd /d %TBUILD%
-          %REPO_NAME%\Telegram\build\prepare\win.bat silent
+          rem Avrea BuildTools often has no ATL (atlbase.h). dump_syms needs
+          rem it; this CI only builds Release Telegram with NO_PDB. Yurigram
+          rem uses the same flags. Drop skip-dump-syms on windows-2022 if
+          rem you need crash symbols. skip-debug skips Debug library builds.
+          %REPO_NAME%\Telegram\build\prepare\win.bat skip-debug skip-dump-syms silent
 
       - name: Save third-party cache
         if: steps.prepare_libraries.outcome == 'success' && steps.cache_third_party.outputs.cache-hit != 'true'
