@@ -715,8 +715,10 @@ void Reply::updateName(
 		_stateText = ((fields.messageId || fields.storyId) && !unavailable)
 			? tr::lng_profile_loading(tr::now)
 			: fields.storyId
-			? tr::lng_deleted_story(tr::now)
-			: tr::lng_deleted_message(tr::now);
+			? (tr::lng_deleted_story(tr::now)
+				+ u" %1"_q.arg(fields.storyId))
+			: (tr::lng_deleted_message(tr::now)
+				+ u" %1"_q.arg(fields.messageId.bare));
 		const auto phraseWidth = st::msgDateFont->width(_stateText);
 		_maxWidth = unavailable
 			? phraseWidth
