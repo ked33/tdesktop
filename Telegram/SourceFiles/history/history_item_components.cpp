@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/qt/qt_key_modifiers.h"
 #include "base/algorithm.h"
 #include "base/options.h"
+#include "base/unixtime.h"
 #include "lang/lang_keys.h"
 #include "ui/effects/ripple_animation.h"
 #include "ui/effects/spoiler_mess.h"
@@ -18,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/image/image.h"
 #include "ui/toast/toast.h"
 #include "ui/text/format_values.h"
+#include "ui/text/text.h"
 #include "ui/text/text_options.h"
 #include "ui/text/text_utilities.h"
 #include "ui/chat/chat_style.h"
@@ -383,6 +385,13 @@ void HistoryMessageForwarded::create(
 				Ui::Text::Wrapped(phrase, EntityType::CustomUrl, QString()), // Link 1.
 				tr::marked);
 		}
+	}
+	if (originalDate != TimeId(0)) {
+		phrase.append(
+			' '
+			+ Ui::kQBullet
+			+ u" \u2068"_q
+			+ Ui::FormatDateTime(base::unixtime::parse(originalDate)));
 	}
 	text.setMarkedText(st::fwdTextStyle, phrase, kMarkupTextOptions, context);
 
