@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_drafts.h"
 #include "data/data_folder.h"
 #include "data/data_forum_topic.h"
+#include "data/data_groups.h"
 #include "data/data_peer_values.h"
 #include "data/data_saved_sublist.h"
 #include "data/data_session.h"
@@ -1437,9 +1438,14 @@ void RowPainter::Paint(
 			availableWidth,
 			st::dialogsTextFont->height);
 		auto &view = row->itemView();
-		if (!view.prepared(item, nullptr, nullptr)) {
+		const auto video = item->history()->owner().groups().findFirstVideo(
+			item);
+		const auto previewItem = video
+			? not_null<HistoryItem*>(video)
+			: item;
+		if (!view.prepared(previewItem, nullptr, nullptr)) {
 			view.prepare(
-				item,
+				previewItem,
 				nullptr,
 				nullptr,
 				row->repaint(),
