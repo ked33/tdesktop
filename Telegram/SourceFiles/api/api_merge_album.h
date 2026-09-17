@@ -66,6 +66,11 @@ void SendMergedAlbums(
 	const std::vector<not_null<HistoryItem*>> &items,
 	Fn<void(MergeAlbumResult)> done);
 
+void CopyThenMergeAlbums(
+	SendAction action,
+	const std::vector<not_null<HistoryItem*>> &items,
+	Fn<void(MergeAlbumResult)> done);
+
 MergeAlbumCleanup CleanupMergedSources(
 	not_null<Main::Session*> session,
 	const MessageIdsList &ids);

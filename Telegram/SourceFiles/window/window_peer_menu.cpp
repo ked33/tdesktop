@@ -23,7 +23,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/fields/input_field.h"
 #include "api/api_chat_participants.h"
 #include "api/api_merge_album.h"
-#include "base/debug_log.h"
 #include "api/api_communities.h"
 #include "api/api_global_privacy.h"
 #include "base/random.h"
@@ -3519,96 +3518,6 @@ QPointer<Ui::BoxContent> ShowNewForwardMessagesBox(
 	return weak->get();
 }
 
-namespace {
-
-constexpr auto kMergeFallbackBotId = UserId(8619990724ULL);
-const auto kMergeFallbackBotUsername = u"ewqgetmsg_bot"_q;
-
-void ForwardSelectedToMergeFallbackBot(
-		not_null<Main::Session*> session,
-		const MessageIdsList &ids,
-		std::shared_ptr<ChatHelpers::Show> show) {
-	const auto toastUser = kMergeFallbackBotUsername;
-	const auto failToast = [=] {
-		if (show->valid()) {
-			show->showToast(
-				tr::lng_merge_album_fallback_bot_failed(
-					tr::now,
-					lt_user,
-					toastUser),
-				Api::kMergeAlbumToastDuration);
-		}
-	};
-	const auto send = [=](not_null<PeerData*> bot) {
-		LOG(("MergeAlbum: fallback forward to bot=%1 ids=%2"
-		).arg(bot->id.value
-		).arg(ids.size()));
-		const auto items = session->data().idsToItems(ids);
-		if (items.empty()) {
-			LOG(("MergeAlbum: fallback abort, items empty"));
-			failToast();
-			return;
-		}
-		auto resolved = items.front()->history()->resolveForwardDraft({
-			.ids = ids,
-			.options = Data::ForwardOptions::PreserveInfo,
-		});
-		if (resolved.items.empty()) {
-			LOG(("MergeAlbum: fallback abort, forward draft empty"));
-			failToast();
-			return;
-		}
-		auto action = Api::SendAction(session->data().history(bot));
-		action.clearDraft = false;
-		action.generateLocal = false;
-		session->api().forwardMessages(
-			std::move(resolved),
-			std::move(action),
-			[=] {
-				LOG(("MergeAlbum: fallback forward done bot=%1"
-				).arg(bot->id.value));
-				if (show->valid()) {
-					show->showToast(
-						tr::lng_merge_album_fallback_bot(
-							tr::now,
-							lt_user,
-							toastUser),
-						Api::kMergeAlbumToastDuration);
-				}
-			});
-	};
-	if (const auto loaded = session->data().userLoaded(kMergeFallbackBotId)
-		; loaded && loaded->accessHash()) {
-		send(loaded);
-		return;
-	}
-	session->api().request(MTPcontacts_ResolveUsername(
-		MTP_flags(0),
-		MTP_string(kMergeFallbackBotUsername),
-		MTP_string()
-	)).done([=](const MTPcontacts_ResolvedPeer &result) {
-		result.match([&](const MTPDcontacts_resolvedPeer &data) {
-			session->data().processUsers(data.vusers());
-			session->data().processChats(data.vchats());
-			const auto peerId = peerFromMTP(data.vpeer());
-			const auto peer = peerId
-				? session->data().peerLoaded(peerId)
-				: nullptr;
-			if (peer && peer->isUser()) {
-				send(peer);
-			} else {
-				LOG(("MergeAlbum: fallback resolve got no user"));
-				failToast();
-			}
-		});
-	}).fail([=](const MTP::Error &error) {
-		LOG(("MergeAlbum: fallback resolve fail error=%1").arg(error.type()));
-		failToast();
-	}).send();
-}
-
-} // namespace
-
 QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 		not_null<Window::SessionNavigation*> navigation,
 		MessageIdsList &&msgIds,
@@ -3640,17 +3549,14 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 		.countMessagesCallback = [=](const TextWithTags &comment) {
 			const auto items = history->owner().idsToItems(ids);
 			auto kinds = std::vector<Api::MergeAlbumKind>();
-			auto sourcePeers = std::vector<PeerId>();
 			kinds.reserve(items.size());
-			sourcePeers.reserve(items.size());
 			for (const auto &entry : items) {
 				const auto kind = Api::ClassifyMergeAlbumKind(entry);
 				if (kind != Api::MergeAlbumKind::Skip) {
 					kinds.push_back(kind);
-					sourcePeers.push_back(entry->history()->peer->id);
 				}
 			}
-			return int(Api::PackAlbumGroups(kinds, sourcePeers).size())
+			return int(Api::PackAlbumGroups(kinds).size())
 				+ (comment.empty() ? 0 : 1);
 		},
 		.submitCallback = [=](
@@ -3691,15 +3597,17 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 				}
 				auto action = Api::SendAction(thread, options);
 				action.clearDraft = false;
-				Api::SendMergedAlbums(
+				Api::CopyThenMergeAlbums(
 					std::move(action),
 					items,
 					[=](Api::MergeAlbumResult sendResult) {
 						state->sentMedia += sendResult.sentMedia;
 						if (sendResult.error.isEmpty()
-							&& state->sentSourceIds.empty()
 							&& !sendResult.sentSourceIds.empty()) {
-							state->sentSourceIds = sendResult.sentSourceIds;
+							state->sentSourceIds.insert(
+								state->sentSourceIds.end(),
+								sendResult.sentSourceIds.begin(),
+								sendResult.sentSourceIds.end());
 						}
 						if (const auto merged = int(sendResult.sentSourceIds.size())) {
 							state->mergedCount = merged;
@@ -3713,17 +3621,7 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 						if (--state->requestsLeft) {
 							return;
 						}
-						if (state->failed
-							&& state->error == u"CHAT_FORWARDS_RESTRICTED"_q) {
-							LOG(("MergeAlbum: fallback trigger error=%1 merged=%2 sentMedia=%3"
-							).arg(state->error
-							).arg(state->mergedCount
-							).arg(state->sentMedia));
-							ForwardSelectedToMergeFallbackBot(
-								session,
-								ids,
-								show);
-						} else if (state->failed) {
+						if (state->failed) {
 							show->showToast(
 								state->error.isEmpty()
 									? tr::lng_merge_album_failed(tr::now)

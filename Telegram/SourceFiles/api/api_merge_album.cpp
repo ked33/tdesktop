@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/random.h"
 #include "data/business/data_shortcut_messages.h"
 #include "data/data_document.h"
+#include "data/data_forum_topic.h"
 #include "data/data_peer.h"
 #include "data/data_file_origin.h"
 #include "data/data_histories.h"
@@ -1081,6 +1082,207 @@ void SendMergedAlbums(
 				sentIds.end());
 			if (!overflowText.isEmpty()) {
 				SendTextChunks(state->action, overflowText);
+			}
+			self(self);
+		});
+	};
+	sendNext(sendNext);
+}
+
+namespace {
+
+void AppendCopiedMessageIds(
+		const MTPUpdates &updates,
+		PeerId dest,
+		MessageIdsList &out) {
+	const auto takeMessage = [&](const MTPMessage &message) {
+		if (PeerFromMessage(message) != dest) {
+			return;
+		}
+		const auto id = IdFromMessage(message);
+		if (id) {
+			out.push_back({ dest, id });
+		}
+	};
+	const auto takeUpdate = [&](const MTPUpdate &update) {
+		update.match([&](const MTPDupdateNewMessage &data) {
+			takeMessage(data.vmessage());
+		}, [&](const MTPDupdateNewChannelMessage &data) {
+			takeMessage(data.vmessage());
+		}, [](const auto &) {
+		});
+	};
+	updates.match([&](const MTPDupdates &data) {
+		for (const auto &update : data.vupdates().v) {
+			takeUpdate(update);
+		}
+	}, [&](const MTPDupdatesCombined &data) {
+		for (const auto &update : data.vupdates().v) {
+			takeUpdate(update);
+		}
+	}, [](const auto &) {
+	});
+}
+
+void ForwardOneAsCopy(
+		SendAction action,
+		not_null<HistoryItem*> item,
+		Fn<void(FullMsgId, QString)> done) {
+	const auto history = action.history;
+	const auto peer = history->peer;
+	const auto session = &history->session();
+	const auto fromPeer = item->history()->peer;
+	using Flag = MTPmessages_ForwardMessages::Flag;
+	auto sendFlags = Flag::f_drop_author;
+	if (ShouldSendSilent(peer, action.options)) {
+		sendFlags |= Flag::f_silent;
+	}
+	if (action.options.scheduled) {
+		sendFlags |= Flag::f_schedule_date;
+		if (action.options.scheduleRepeatPeriod) {
+			sendFlags |= Flag::f_schedule_repeat_period;
+		}
+	}
+	if (action.options.shortcutId) {
+		sendFlags |= Flag::f_quick_reply_shortcut;
+	}
+	if (action.options.effectId) {
+		sendFlags |= Flag::f_effect;
+	}
+	const auto kGeneralId = Data::ForumTopic::kGeneralId;
+	const auto topicRootId = action.replyTo.topicRootId;
+	const auto topMsgId = (topicRootId == kGeneralId)
+		? MsgId(0)
+		: topicRootId;
+	if (topMsgId) {
+		sendFlags |= Flag::f_top_msg_id;
+	}
+	const auto starsPaid = std::min(
+		peer->starsPerMessageChecked(),
+		action.options.starsApproved);
+	if (starsPaid) {
+		action.options.starsApproved -= starsPaid;
+		sendFlags |= Flag::f_allow_paid_stars;
+	}
+	const auto randomId = base::RandomValue<uint64>();
+	const auto dest = peer->id;
+	LOG(("MergeAlbum: copy dest=%1 src=%2/%3"
+	).arg(dest.value
+	).arg(item->history()->peer->id.value
+	).arg(item->id.bare));
+	history->owner().histories().sendPreparedMessage(
+		history,
+		FullReplyTo{ .topicRootId = topicRootId },
+		uint64(0),
+		[=](not_null<History*> history, FullReplyTo)
+		-> Data::Histories::PreparedMessage {
+			return MTPmessages_ForwardMessages(
+				MTP_flags(sendFlags),
+				fromPeer->input(),
+				MTP_vector<MTPint>(1, MTP_int(item->id)),
+				MTP_vector<MTPlong>(1, MTP_long(randomId)),
+				history->peer->input(),
+				MTP_int(topMsgId),
+				MTPInputReplyTo(),
+				MTP_int(action.options.scheduled),
+				MTP_int(action.options.scheduleRepeatPeriod),
+				MTP_inputPeerEmpty(),
+				Data::ShortcutIdToMTP(session, action.options.shortcutId),
+				MTP_long(action.options.effectId),
+				MTPint(),
+				MTP_long(starsPaid),
+				SuggestToMTP(action.options.suggest));
+		},
+		[=](const MTPUpdates &updates, const MTP::Response &) {
+			auto ids = MessageIdsList();
+			AppendCopiedMessageIds(updates, dest, ids);
+			LOG(("MergeAlbum: copy ok dest=%1 got=%2"
+			).arg(dest.value
+			).arg(ids.size()));
+			done(ids.empty() ? FullMsgId() : ids.front(), QString());
+		},
+		[=](const MTP::Error &error, const MTP::Response &) {
+			LOG(("MergeAlbum: copy fail dest=%1 error=%2"
+			).arg(dest.value
+			).arg(error.type()));
+			done(FullMsgId(), error.type());
+		});
+}
+
+} // namespace
+
+void CopyThenMergeAlbums(
+		SendAction action,
+		const std::vector<not_null<HistoryItem*>> &items,
+		Fn<void(MergeAlbumResult)> done) {
+	action.clearDraft = false;
+	action.generateLocal = false;
+	if (items.empty()) {
+		if (done) {
+			done(MergeAlbumResult());
+		}
+		return;
+	}
+	const auto sameChat = (action.history == items.front()->history())
+		&& (!items.front()->topic()
+			|| (action.replyTo.topicRootId == items.front()->topicRootId()));
+	if (sameChat) {
+		SendMergedAlbums(std::move(action), items, std::move(done));
+		return;
+	}
+	if (!action.options.scheduled && !action.options.shortcutId) {
+		action.history->owner().histories().readInbox(action.history);
+	}
+	LOG(("MergeAlbum: copy-then-merge dest=%1 selected=%2"
+	).arg(action.history->peer->id.value
+	).arg(items.size()));
+
+	struct State {
+		SendAction action;
+		std::vector<not_null<HistoryItem*>> items;
+		MessageIdsList copied;
+		QString error;
+		int index = 0;
+		Fn<void(MergeAlbumResult)> done;
+	};
+	const auto state = std::make_shared<State>(State{
+		.action = action,
+		.items = items,
+		.index = 0,
+		.done = std::move(done),
+	});
+	const auto sendNext = [=](const auto &self) -> void {
+		if (state->index >= int(state->items.size())) {
+			const auto destItems = state->action.history->owner().idsToItems(
+				state->copied);
+			if (destItems.empty()) {
+				auto result = MergeAlbumResult();
+				result.error = state->error.isEmpty()
+					? u"COPY_FAILED"_q
+					: state->error;
+				LOG(("MergeAlbum: copy empty dest=%1 error=%2"
+				).arg(state->action.history->peer->id.value
+				).arg(result.error));
+				if (state->done) {
+					state->done(std::move(result));
+				}
+				return;
+			}
+			LOG(("MergeAlbum: copy done dest=%1 copied=%2 merge"
+			).arg(state->action.history->peer->id.value
+			).arg(destItems.size()));
+			SendMergedAlbums(
+				state->action,
+				destItems,
+				std::move(state->done));
+			return;
+		}
+		const auto item = state->items[state->index++];
+		ForwardOneAsCopy(state->action, item, [=](FullMsgId id, QString error) {
+			if (!error.isEmpty()) {
+				state->error = error;
+			} else if (id) {
+				state->copied.push_back(id);
 			}
 			self(self);
 		});
