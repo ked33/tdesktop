@@ -3640,14 +3640,17 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 		.countMessagesCallback = [=](const TextWithTags &comment) {
 			const auto items = history->owner().idsToItems(ids);
 			auto kinds = std::vector<Api::MergeAlbumKind>();
+			auto sourcePeers = std::vector<PeerId>();
 			kinds.reserve(items.size());
+			sourcePeers.reserve(items.size());
 			for (const auto &entry : items) {
 				const auto kind = Api::ClassifyMergeAlbumKind(entry);
 				if (kind != Api::MergeAlbumKind::Skip) {
 					kinds.push_back(kind);
+					sourcePeers.push_back(entry->history()->peer->id);
 				}
 			}
-			return int(Api::PackAlbumGroups(kinds).size())
+			return int(Api::PackAlbumGroups(kinds, sourcePeers).size())
 				+ (comment.empty() ? 0 : 1);
 		},
 		.submitCallback = [=](

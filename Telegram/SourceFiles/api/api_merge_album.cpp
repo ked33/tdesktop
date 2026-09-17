@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_text_entities.h"
 #include "apiwrap.h"
 #include "base/debug_log.h"
+#include "base/flat_set.h"
 #include "base/random.h"
 #include "data/business/data_shortcut_messages.h"
 #include "data/data_document.h"
@@ -849,11 +850,23 @@ MergeAlbumKind ClassifyMergeAlbumKind(not_null<HistoryItem*> item) {
 std::vector<MergeAlbumGroup> PackAlbumGroups(
 		const std::vector<MergeAlbumKind> &kinds,
 		int maxItems) {
+	return PackAlbumGroups(kinds, {}, maxItems);
+}
+
+std::vector<MergeAlbumGroup> PackAlbumGroups(
+		const std::vector<MergeAlbumKind> &kinds,
+		const std::vector<PeerId> &sourcePeers,
+		int maxItems) {
 	Expects(maxItems > 0);
+	Expects(sourcePeers.empty() || sourcePeers.size() == kinds.size());
 
 	auto result = std::vector<MergeAlbumGroup>();
 	auto from = -1;
 	auto kind = MergeAlbumKind::Skip;
+	const auto sameSource = [&](int i) {
+		return sourcePeers.empty()
+			|| (sourcePeers[i] == sourcePeers[from]);
+	};
 	const auto flush = [&](int till) {
 		if (from >= 0 && till > from) {
 			result.push_back({
@@ -874,7 +887,9 @@ std::vector<MergeAlbumGroup> PackAlbumGroups(
 			from = i;
 			kind = current;
 			continue;
-		} else if (current != kind || (i - from) == maxItems) {
+		} else if (current != kind
+			|| !sameSource(i)
+			|| (i - from) == maxItems) {
 			flush(i);
 			from = i;
 			kind = current;
@@ -909,13 +924,16 @@ void SendMergedAlbums(
 	auto prepared = PrepareMergeSlots(items);
 	auto media = std::vector<MergeAlbumMedia>();
 	auto kinds = std::vector<MergeAlbumKind>();
+	auto sourcePeers = std::vector<PeerId>();
 	auto skipped = 0;
 	media.reserve(prepared.slots.size());
 	kinds.reserve(prepared.slots.size());
+	sourcePeers.reserve(prepared.slots.size());
 	for (const auto &slot : prepared.slots) {
 		if (slot.type == MergeSlot::Type::Media) {
 			media.push_back(slot.media);
 			kinds.push_back(slot.kind);
+			sourcePeers.push_back(slot.media.sourceId.peer);
 		} else if (slot.type == MergeSlot::Type::Skip
 			|| slot.mediaIndex < 0) {
 			++skipped;
@@ -933,7 +951,11 @@ void SendMergedAlbums(
 		return;
 	}
 	Expects(kinds.size() == media.size());
-	const auto groups = PackAlbumGroups(kinds, Ui::MaxAlbumItems());
+	Expects(sourcePeers.size() == media.size());
+	const auto groups = PackAlbumGroups(
+		kinds,
+		sourcePeers,
+		Ui::MaxAlbumItems());
 	if (groups.empty()) {
 		if (done) {
 			done(std::move(result));
@@ -967,11 +989,16 @@ void SendMergedAlbums(
 		.index = 0,
 		.done = std::move(done),
 	});
-	LOG(("MergeAlbum: start dest=%1 selected=%2 media=%3 groups=%4 skipped=%5"
+	auto uniqueSources = base::flat_set<PeerId>();
+	for (const auto &item : state->media) {
+		uniqueSources.emplace(item.sourceId.peer);
+	}
+	LOG(("MergeAlbum: start dest=%1 selected=%2 media=%3 groups=%4 sources=%5 skipped=%6"
 	).arg(action.history->peer->id.value
 	).arg(items.size()
 	).arg(state->media.size()
 	).arg(state->groups.size()
+	).arg(int(uniqueSources.size())
 	).arg(state->result.skipped));
 	state->action.history->session().api().sendAction(state->action);
 

@@ -52,6 +52,10 @@ struct MergeAlbumCleanup {
 [[nodiscard]] std::vector<MergeAlbumGroup> PackAlbumGroups(
 	const std::vector<MergeAlbumKind> &kinds,
 	int maxItems = 10);
+[[nodiscard]] std::vector<MergeAlbumGroup> PackAlbumGroups(
+	const std::vector<MergeAlbumKind> &kinds,
+	const std::vector<PeerId> &sourcePeers,
+	int maxItems = 10);
 
 [[nodiscard]] QString DedupeMergeText(const QString &text);
 [[nodiscard]] QString SummarizeMergeCaptions(
