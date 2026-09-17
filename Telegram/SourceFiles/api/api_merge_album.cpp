@@ -323,31 +323,97 @@ struct MergeRefreshItem {
 	return result;
 }
 
-[[nodiscard]] std::vector<MergeAlbumMedia> CollectMergeMedia(
-		const std::vector<not_null<HistoryItem*>> &items) {
-	auto result = std::vector<MergeAlbumMedia>();
-	result.reserve(items.size());
-	for (const auto &item : items) {
-		const auto kind = ClassifyMergeAlbumKind(item);
-		if (kind == MergeAlbumKind::Skip) {
-			continue;
-		}
-		const auto media = item->media();
-		auto entry = MergeAlbumMedia{
-			.origin = item->fullId(),
-			.caption = item->originalText().text.trimmed(),
-			.sourceId = item->fullId(),
-		};
-		if (const auto photo = media->photo()) {
-			entry.photo = photo;
-		} else {
-			entry.document = media->document();
-		}
-		if (entry.photo || entry.document) {
-			result.push_back(std::move(entry));
+[[nodiscard]] bool IsMergeAlbumTextItem(not_null<HistoryItem*> item) {
+	if (item->forbidsSaving()
+		|| item->isService()
+		|| !item->isRegular()
+		|| ClassifyMergeAlbumKind(item) != MergeAlbumKind::Skip) {
+		return false;
+	} else if (item->originalText().text.trimmed().isEmpty()) {
+		return false;
+	}
+	const auto media = item->media();
+	return !media || media->webpage();
+}
+
+[[nodiscard]] int FindNearestMediaIndex(
+		const std::vector<int> &mediaItemIndices,
+		int textItemIndex) {
+	auto bestMedia = -1;
+	auto bestDist = 0;
+	for (auto i = 0; i != int(mediaItemIndices.size()); ++i) {
+		const auto itemIndex = mediaItemIndices[i];
+		const auto dist = (itemIndex > textItemIndex)
+			? (itemIndex - textItemIndex)
+			: (textItemIndex - itemIndex);
+		if (bestMedia < 0 || dist <= bestDist) {
+			bestDist = dist;
+			bestMedia = i;
 		}
 	}
-	return result;
+	return bestMedia;
+}
+
+struct MergeSlot {
+	enum class Type : uchar {
+		Skip,
+		Media,
+		Text,
+	};
+
+	Type type = Type::Skip;
+	MergeAlbumKind kind = MergeAlbumKind::Skip;
+	MergeAlbumMedia media;
+	QString text;
+	FullMsgId sourceId;
+	int mediaIndex = -1;
+};
+
+[[nodiscard]] std::vector<MergeSlot> PrepareMergeSlots(
+		const std::vector<not_null<HistoryItem*>> &items) {
+	auto slots = std::vector<MergeSlot>();
+	slots.reserve(items.size());
+	auto mediaItemIndices = std::vector<int>();
+	for (auto i = 0; i != int(items.size()); ++i) {
+		const auto item = items[i];
+		const auto kind = ClassifyMergeAlbumKind(item);
+		auto slot = MergeSlot{ .sourceId = item->fullId() };
+		if (kind != MergeAlbumKind::Skip) {
+			const auto media = item->media();
+			slot.type = MergeSlot::Type::Media;
+			slot.kind = kind;
+			slot.media = {
+				.origin = item->fullId(),
+				.caption = item->originalText().text.trimmed(),
+				.sourceId = item->fullId(),
+			};
+			if (const auto photo = media->photo()) {
+				slot.media.photo = photo;
+			} else {
+				slot.media.document = media->document();
+			}
+			if (slot.media.photo || slot.media.document) {
+				slot.mediaIndex = int(mediaItemIndices.size());
+				mediaItemIndices.push_back(i);
+				slots.push_back(std::move(slot));
+				continue;
+			}
+			slot = MergeSlot{ .sourceId = item->fullId() };
+		}
+		if (IsMergeAlbumTextItem(item)) {
+			slot.type = MergeSlot::Type::Text;
+			slot.text = item->originalText().text.trimmed();
+		}
+		slots.push_back(std::move(slot));
+	}
+	for (auto i = 0; i != int(slots.size()); ++i) {
+		if (slots[i].type == MergeSlot::Type::Text) {
+			slots[i].mediaIndex = FindNearestMediaIndex(
+				mediaItemIndices,
+				i);
+		}
+	}
+	return slots;
 }
 
 void SendTextChunks(
@@ -714,24 +780,27 @@ void SendMergedAlbums(
 	action.clearDraft = false;
 	const auto session = &action.history->session();
 	const auto captionLimit = session->serverConfig().captionLengthMax;
-	auto media = CollectMergeMedia(items);
-	auto result = MergeAlbumResult{
-		.skipped = int(items.size()) - int(media.size()),
-	};
+	auto slots = PrepareMergeSlots(items);
+	auto media = std::vector<MergeAlbumMedia>();
+	auto kinds = std::vector<MergeAlbumKind>();
+	auto skipped = 0;
+	media.reserve(slots.size());
+	kinds.reserve(slots.size());
+	for (const auto &slot : slots) {
+		if (slot.type == MergeSlot::Type::Media) {
+			media.push_back(slot.media);
+			kinds.push_back(slot.kind);
+		} else if (slot.type == MergeSlot::Type::Skip
+			|| slot.mediaIndex < 0) {
+			++skipped;
+		}
+	}
+	auto result = MergeAlbumResult{ .skipped = skipped };
 	if (media.empty()) {
 		if (done) {
 			done(std::move(result));
 		}
 		return;
-	}
-
-	auto kinds = std::vector<MergeAlbumKind>();
-	kinds.reserve(media.size());
-	for (const auto &item : items) {
-		const auto kind = ClassifyMergeAlbumKind(item);
-		if (kind != MergeAlbumKind::Skip) {
-			kinds.push_back(kind);
-		}
 	}
 	Expects(kinds.size() == media.size());
 	const auto groups = PackAlbumGroups(kinds, Ui::MaxAlbumItems());
@@ -744,6 +813,7 @@ void SendMergedAlbums(
 
 	struct State {
 		SendAction action;
+		std::vector<MergeSlot> slots;
 		std::vector<MergeAlbumMedia> media;
 		std::vector<MergeAlbumGroup> groups;
 		MergeAlbumResult result;
@@ -752,6 +822,7 @@ void SendMergedAlbums(
 	};
 	const auto state = std::make_shared<State>(State{
 		.action = action,
+		.slots = std::move(slots),
 		.media = std::move(media),
 		.groups = groups,
 		.result = std::move(result),
@@ -772,24 +843,34 @@ void SendMergedAlbums(
 		const auto group = state->groups[state->index++];
 		auto batch = std::vector<MergeAlbumMedia>();
 		batch.reserve(group.till - group.from);
-		auto captions = std::vector<QString>();
 		for (auto i = group.from; i != group.till; ++i) {
 			batch.push_back(state->media[i]);
-			captions.push_back(state->media[i].caption);
+		}
+		auto captions = std::vector<QString>();
+		auto sentIds = MessageIdsList();
+		captions.reserve(state->slots.size());
+		sentIds.reserve(state->slots.size());
+		for (const auto &slot : state->slots) {
+			if (slot.mediaIndex < group.from
+				|| slot.mediaIndex >= group.till) {
+				continue;
+			} else if (slot.type == MergeSlot::Type::Media) {
+				if (!slot.media.caption.isEmpty()) {
+					captions.push_back(slot.media.caption);
+				}
+				sentIds.push_back(slot.sourceId);
+			} else if (slot.type == MergeSlot::Type::Text) {
+				if (!slot.text.isEmpty()) {
+					captions.push_back(slot.text);
+				}
+				sentIds.push_back(slot.sourceId);
+			}
 		}
 		const auto mergedText = SummarizeMergeCaptions(captions);
 		const auto caption = (mergedText.size() <= captionLimit)
 			? mergedText
 			: QString();
 		const auto overflowText = caption.isEmpty() ? mergedText : QString();
-		const auto sentIds = [&] {
-			auto ids = MessageIdsList();
-			ids.reserve(batch.size());
-			for (const auto &entry : batch) {
-				ids.push_back(entry.sourceId);
-			}
-			return ids;
-		}();
 		const auto count = int(batch.size());
 		SendMergeGroup(
 			state->action,
