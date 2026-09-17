@@ -1489,7 +1489,11 @@ Window::Controller *Application::separateWindowFor(
 
 not_null<Window::Controller*> Application::ensureSeparateWindowFor(
 		Window::SeparateId id,
-		MsgId showAtMsgId) {
+		MsgId showAtMsgId,
+		bool forceNewChatWindow) {
+	if (forceNewChatWindow && id.type == Window::SeparateType::Chat) {
+		id.instance = ++_nextChatWindowInstance;
+	}
 	const auto activate = [&](not_null<Window::Controller*> window) {
 		window->activate();
 		return window;

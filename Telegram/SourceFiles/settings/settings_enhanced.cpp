@@ -1085,6 +1085,23 @@ namespace Settings {
 				}));
 		});
 
+		AddButtonWithIcon(
+			container,
+			tr::lng_settings_multiple_chat_windows(),
+			st::settingsButtonNoIcon
+		)->toggleOn(
+				rpl::single(EnhancedSettings::MultipleChatWindows())
+		)->toggledValue(
+		) | rpl::filter([](bool enabled) {
+			return (enabled != EnhancedSettings::MultipleChatWindows());
+		}) | rpl::on_next([=](bool enabled) {
+			SetEnhancedValue("multiple_chat_windows", enabled);
+			EnhancedSettings::Write();
+		}, container->lifetime());
+		AddDividerText(
+			container,
+			tr::lng_settings_multiple_chat_windows_about());
+
 		auto hideBtn = AddButtonWithIcon(
 			container,
 			tr::lng_settings_hide_all_chats(),

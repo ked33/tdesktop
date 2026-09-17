@@ -59,6 +59,7 @@ struct SeparateId {
 	Storage::SharedMediaType sharedMediaType = {};
 	Main::Account *account = nullptr;
 	Data::Thread *thread = nullptr; // For types except Main and Archive.
+	uint64 instance = 0;
 	[[nodiscard]] bool valid() const {
 		return account != nullptr;
 	}

@@ -75,6 +75,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/emoji_interactions.h"
 #include "core/shortcuts.h"
 #include "core/application.h"
+#include "core/enhanced_settings.h"
 #include "core/core_screenshot_protection.h"
 #include "core/click_handler_types.h"
 #include "core/file_utilities.h"
@@ -3176,10 +3177,15 @@ void SessionController::showInNewWindow(
 	const auto fromActive = active.thread()
 		? (active.thread() == id.thread && id.type == SeparateType::Chat)
 		: false;
+	const auto forceNewChatWindow = (id.type == SeparateType::Chat)
+		&& EnhancedSettings::MultipleChatWindows();
 	const auto toSeparate = [=] {
-		Core::App().ensureSeparateWindowFor(id, msgId);
+		Core::App().ensureSeparateWindowFor(
+			id,
+			msgId,
+			forceNewChatWindow);
 	};
-	if (fromActive) {
+	if (fromActive && !forceNewChatWindow) {
 		window().preventOrInvoke([=] {
 			clearSectionStack();
 			toSeparate();

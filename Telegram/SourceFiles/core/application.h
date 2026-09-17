@@ -181,7 +181,8 @@ public:
 		Window::SeparateId id) const;
 	not_null<Window::Controller*> ensureSeparateWindowFor(
 		Window::SeparateId id,
-		MsgId showAtMsgId = 0);
+		MsgId showAtMsgId = 0,
+		bool forceNewChatWindow = false);
 	[[nodiscard]] Window::Controller *windowFor( // Doesn't auto-switch.
 		Window::SeparateId id) const;
 	[[nodiscard]] Window::Controller *windowForShowingHistory(
@@ -445,6 +446,7 @@ private:
 	base::flat_map<
 		Window::SeparateId,
 		std::unique_ptr<Window::Controller>> _windows;
+	uint64 _nextChatWindowInstance = 0;
 	base::flat_set<not_null<Window::Controller*>> _closingAsyncWindows;
 	std::vector<not_null<Window::Controller*>> _windowStack;
 	Window::Controller *_lastActiveWindow = nullptr;
