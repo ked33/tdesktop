@@ -1,17 +1,21 @@
-name: Build Windows x64
+name: Build Windows x64 (Avrea)
 
 on:
-  push:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-2022
+    runs-on: avrea-windows-2025-8-vcpu
     timeout-minutes: 720
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
-      SCCACHE_IDLE_TIMEOUT: "0"
+    # GitHub-hosted (windows-2022) sccache via ghac. Disabled on Avrea:
+    # meson wraps cl.exe with sccache while configuring liblcms2, then
+    # sccache hits results-receiver.actions.githubusercontent.com and
+    # gets HTTP 400 (invalid request body / ghac). Restore this env
+    # block when switching runs-on back to windows-2022.
+    # env:
+    #   SCCACHE_GHA_ENABLED: "true"
+    #   SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
+    #   SCCACHE_IDLE_TIMEOUT: "0"
 
     steps:
       - name: Prepare directories
@@ -89,10 +93,15 @@ jobs:
             win64-qt-release-
             win64-qt-${{ env.CACHE_KEY }}
 
-      - name: Set up sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696
-        with:
-          version: "v0.15.0"
+      # GitHub-hosted (windows-2022): puts sccache.exe on PATH and uses
+      # the ghac backend. On Avrea that PATH wrap makes meson treat
+      # "sccache.exe cl" as the compiler and fail as above. Restore this
+      # step (and the job env / CMAKE_*_COMPILER_LAUNCHER flags) when
+      # switching runs-on back to windows-2022.
+      # - name: Set up sccache
+      #   uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696
+      #   with:
+      #     version: "v0.15.0"
 
       - name: Configure MSVC environment
         shell: cmd
@@ -101,7 +110,13 @@ jobs:
           if not exist "%VSWHERE%" exit /b 1
           for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALLPATH=%%i"
           if not defined VSINSTALLPATH exit /b 1
-          call "%VSINSTALLPATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          rem Avrea / VS 2026 default toolset is 14.51 (v145). libvpx
+          rem --target=x86_64-win64-vs17 then fails with
+          rem "Toolchain is unable to link executables". Pin 14.44
+          rem (Yurigram + docs/building-win.md). On windows-2022 the
+          rem unpinned VsDevCmd line below is enough if that image is VS 2022.
+          call "%VSINSTALLPATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 -vcvars_ver=14.44
+          rem call "%VSINSTALLPATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
           echo Platform=x64>>"%GITHUB_ENV%"
           for /f "delims=" %%i in ('set') do @echo %%i>>"%GITHUB_ENV%"
 
@@ -127,8 +142,23 @@ jobs:
         id: prepare_libraries
         shell: cmd
         run: |
+          rem Avrea: keep ghac/sccache launcher off (see job comments).
+          rem Do not set CC=cl / CXX=cl: libvpx's bash configure
+          rem (--target=x86_64-win64-vs17) then fails with
+          rem "Toolchain is unable to link executables".
+          rem Drop these unsets when switching runs-on back to windows-2022
+          rem and restoring sccache-action / SCCACHE_GHA_ENABLED.
+          set SCCACHE_GHA_ENABLED=
+          rem set CC=cl
+          rem set CXX=cl
+          set CMAKE_C_COMPILER_LAUNCHER=
+          set CMAKE_CXX_COMPILER_LAUNCHER=
           cd /d %TBUILD%
-          %REPO_NAME%\Telegram\build\prepare\win.bat silent
+          rem Avrea BuildTools often has no ATL (atlbase.h). dump_syms needs
+          rem it; this CI only builds Release Telegram with NO_PDB. Yurigram
+          rem uses the same flags. Drop skip-dump-syms on windows-2022 if
+          rem you need crash symbols. skip-debug skips Debug library builds.
+          %REPO_NAME%\Telegram\build\prepare\win.bat skip-debug skip-dump-syms silent
 
       - name: Save third-party cache
         if: steps.prepare_libraries.outcome == 'success' && steps.cache_third_party.outputs.cache-hit != 'true'
@@ -176,9 +206,10 @@ jobs:
             -DCMAKE_CONFIGURATION_TYPES=Release ^
             -D DESKTOP_APP_NO_PDB=ON ^
             -D CMAKE_COMPILE_WARNING_AS_ERROR=OFF ^
-            -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= ^
-            -D CMAKE_C_COMPILER_LAUNCHER=sccache ^
-            -D CMAKE_CXX_COMPILER_LAUNCHER=sccache
+            -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=
+            rem GitHub-hosted (windows-2022): restore these two with sccache-action:
+            rem -D CMAKE_C_COMPILER_LAUNCHER=sccache
+            rem -D CMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build Telegram (Release)
         shell: cmd
@@ -186,19 +217,20 @@ jobs:
           cd /d %TBUILD%\%REPO_NAME%\out
           cmake --build . --config Release --target Telegram --parallel
 
-      - name: Show sccache statistics
-        if: always()
-        shell: pwsh
-        run: |
-          if ($env:SCCACHE_PATH) {
-            & $env:SCCACHE_PATH --show-stats
-          } else {
-            sccache --show-stats
-          }
-          if ($LASTEXITCODE -ne 0) {
-            Write-Warning "sccache statistics unavailable"
-            exit 0
-          }
+      # GitHub-hosted (windows-2022): restore with the sccache-action step.
+      # - name: Show sccache statistics
+      #   if: always()
+      #   shell: pwsh
+      #   run: |
+      #     if ($env:SCCACHE_PATH) {
+      #       & $env:SCCACHE_PATH --show-stats
+      #     } else {
+      #       sccache --show-stats
+      #     }
+      #     if ($LASTEXITCODE -ne 0) {
+      #       Write-Warning "sccache statistics unavailable"
+      #       exit 0
+      #     }
 
       - name: Package artifact
         shell: pwsh
