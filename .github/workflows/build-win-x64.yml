@@ -111,7 +111,13 @@ jobs:
           if not exist "%VSWHERE%" exit /b 1
           for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALLPATH=%%i"
           if not defined VSINSTALLPATH exit /b 1
-          call "%VSINSTALLPATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          rem Avrea / VS 2026 default toolset is 14.51 (v145). libvpx
+          rem --target=x86_64-win64-vs17 then fails with
+          rem "Toolchain is unable to link executables". Pin 14.44
+          rem (Yurigram + docs/building-win.md). On windows-2022 the
+          rem unpinned VsDevCmd line below is enough if that image is VS 2022.
+          call "%VSINSTALLPATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 -vcvars_ver=14.44
+          rem call "%VSINSTALLPATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
           echo Platform=x64>>"%GITHUB_ENV%"
           for /f "delims=" %%i in ('set') do @echo %%i>>"%GITHUB_ENV%"
 
@@ -137,13 +143,15 @@ jobs:
         id: prepare_libraries
         shell: cmd
         run: |
-          rem Avrea images may still expose sccache on PATH. meson auto-wraps
-          rem cl.exe with it; the ghac backend is broken on this runner.
-          rem Drop the next five set lines when switching runs-on back to
-          rem windows-2022 and restoring sccache-action / SCCACHE_GHA_ENABLED.
+          rem Avrea: keep ghac/sccache launcher off (see job comments).
+          rem Do not set CC=cl / CXX=cl: libvpx's bash configure
+          rem (--target=x86_64-win64-vs17) then fails with
+          rem "Toolchain is unable to link executables".
+          rem Drop these unsets when switching runs-on back to windows-2022
+          rem and restoring sccache-action / SCCACHE_GHA_ENABLED.
           set SCCACHE_GHA_ENABLED=
-          set CC=cl
-          set CXX=cl
+          rem set CC=cl
+          rem set CXX=cl
           set CMAKE_C_COMPILER_LAUNCHER=
           set CMAKE_CXX_COMPILER_LAUNCHER=
           cd /d %TBUILD%
