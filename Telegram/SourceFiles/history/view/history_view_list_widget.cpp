@@ -2334,6 +2334,9 @@ bool ListWidget::hasCopyMediaRestriction(not_null<HistoryItem*> item) const {
 }
 
 bool ListWidget::showCopyRestriction(HistoryItem *item) {
+	if (!hasCopyRestriction(item)) {
+		return false;
+	}
 	return showCopyRestrictionType(_delegate->listCopyRestrictionType(item));
 }
 
@@ -2350,6 +2353,9 @@ bool ListWidget::showCopyRestrictionType(CopyRestrictionType type) {
 }
 
 bool ListWidget::showCopyMediaRestriction(not_null<HistoryItem*> item) {
+	if (!hasCopyMediaRestriction(item)) {
+		return false;
+	}
 	const auto type = _delegate->listCopyMediaRestrictionType(item);
 	if (type == CopyRestrictionType::None) {
 		return false;
@@ -2375,9 +2381,7 @@ bool ListWidget::showCopyRestrictionForSelected() {
 	}
 	for (const auto &[itemId, selection] : selected) {
 		if (const auto item = session().data().message(itemId)) {
-			if (showCopyRestrictionType(CopyRestrictionTypeFor(
-					item->history()->peer,
-					item))) {
+			if (showCopyRestriction(item)) {
 				return true;
 			}
 		}
