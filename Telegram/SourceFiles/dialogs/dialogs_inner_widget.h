@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/object_ptr.h"
 #include "base/timer.h"
 #include "data/data_messages.h"
+#include "data/data_types.h"
 #include "dialogs/ui/dialogs_quick_action_context.h"
 #include "dialogs/dialogs_community_rows_view.h"
 #include "dialogs/dialogs_inner_widget_accessibility.h"
@@ -67,6 +68,8 @@ class Folder;
 class Forum;
 class CommunityInfo;
 class SavedMessages;
+class PhotoMedia;
+class DocumentMedia;
 struct ReactionId;
 } // namespace Data
 
@@ -374,6 +377,12 @@ private:
 	void clearIrrelevantState();
 	void selectByMouse(QPoint globalPosition);
 	void preloadRowsData();
+	void preloadAdjacentSearchHits(int clickedIndex);
+	void enqueueSearchAlbumPreload(not_null<HistoryItem*> item);
+	void startSearchAlbumPreload(not_null<HistoryItem*> item);
+	void finishSearchAlbumPreload(FullMsgId itemId);
+	void preloadSearchHitMedia(not_null<HistoryItem*> item);
+	void refreshSearchAlbumPreviews(not_null<HistoryItem*> item);
 	void scrollToItem(int top, int height);
 	void scrollToDefaultSelected();
 	void clearPendingSearchResultClick();
@@ -762,6 +771,11 @@ private:
 	int _chatTypeFilterWidth = 0;
 
 	std::vector<std::unique_ptr<FakeRow>> _searchResults;
+	base::flat_set<MessageGroupId> _searchAlbumPreloaded;
+	std::vector<FullMsgId> _searchAlbumPreloadQueue;
+	std::vector<std::shared_ptr<Data::PhotoMedia>> _searchPreloadPhotos;
+	std::vector<std::shared_ptr<Data::DocumentMedia>> _searchPreloadDocuments;
+	int _searchAlbumPreloadActive = 0;
 	MessageIdsList _nativeSearchResults;
 	Api::PornSearchResult _pornSearchResult;
 	object_ptr<Ui::FlatLabel> _pornSearchStatus = { nullptr };

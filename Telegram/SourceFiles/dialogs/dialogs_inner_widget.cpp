@@ -56,6 +56,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_user.h"
 #include "data/data_peer_values.h"
 #include "data/data_histories.h"
+#include "data/data_groups.h"
+#include "data/data_document.h"
+#include "data/data_document_media.h"
+#include "data/data_file_origin.h"
+#include "data/data_photo.h"
+#include "data/data_photo_media.h"
+#include "data/data_media_types.h"
 #include "data/data_chat_filters.h"
 #include "data/data_changes.h"
 #include "data/data_message_reactions.h"
@@ -112,6 +119,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Dialogs {
 namespace {
 
+constexpr auto kSearchAdjacentRadius = 1;
+constexpr auto kAlbumNeighborSpan = 9;
+constexpr auto kMaxAlbumPreloadActive = 2;
 constexpr auto kFreezeTimeout = 2 * crl::time(1000);
 constexpr auto kSearchElapsedInterval = crl::time(1000);
 constexpr auto kHashtagResultsLimit = 5;
@@ -695,6 +705,16 @@ InnerWidget::InnerWidget(
 
 	_chosenRow.events() | rpl::on_next([=](const ChosenRow &row) {
 		refreshSearchResultSelection({ row.key, row.message.fullId });
+		if (row.message.fullId) {
+			const auto count = int(_searchResults.size());
+			for (auto i = 0; i != count; ++i) {
+				if (_searchResults[i]->item()->fullId()
+					== row.message.fullId) {
+					preloadAdjacentSearchHits(i);
+					break;
+				}
+			}
+		}
 	}, lifetime());
 
 	_controller->window().widget()->globalForceClicks(
@@ -4512,6 +4532,139 @@ void InnerWidget::appendToFiltered(Key key) {
 	trackResultsHistory(key.owningHistory());
 }
 
+void InnerWidget::preloadAdjacentSearchHits(int clickedIndex) {
+	if (!base::in_range(clickedIndex, 0, _searchResults.size())) {
+		return;
+	}
+	for (auto delta = -kSearchAdjacentRadius
+		; delta <= kSearchAdjacentRadius
+		; ++delta) {
+		if (!delta) {
+			continue;
+		}
+		const auto index = clickedIndex + delta;
+		if (base::in_range(index, 0, _searchResults.size())) {
+			enqueueSearchAlbumPreload(_searchResults[index]->item());
+		}
+	}
+}
+
+void InnerWidget::enqueueSearchAlbumPreload(not_null<HistoryItem*> item) {
+	if (!item->groupId()) {
+		preloadSearchHitMedia(item);
+		return;
+	}
+	if (!_searchAlbumPreloaded.emplace(item->groupId()).second) {
+		preloadSearchHitMedia(item);
+		refreshSearchAlbumPreviews(item);
+		return;
+	}
+	if (_searchAlbumPreloadActive >= kMaxAlbumPreloadActive) {
+		_searchAlbumPreloadQueue.push_back(item->fullId());
+		return;
+	}
+	startSearchAlbumPreload(item);
+}
+
+void InnerWidget::startSearchAlbumPreload(not_null<HistoryItem*> item) {
+	const auto itemId = item->fullId();
+	const auto peer = item->history()->peer;
+	auto missing = std::vector<MsgId>();
+	missing.reserve(2 * kAlbumNeighborSpan);
+	for (auto delta = -kAlbumNeighborSpan
+		; delta <= kAlbumNeighborSpan
+		; ++delta) {
+		if (!delta) {
+			continue;
+		}
+		const auto id = item->id + MsgId(delta);
+		if ((id > MsgId(0)) && !session().data().message(peer, id)) {
+			missing.push_back(id);
+		}
+	}
+	if (missing.empty()) {
+		finishSearchAlbumPreload(itemId);
+		return;
+	}
+	++_searchAlbumPreloadActive;
+	const auto left = std::make_shared<int>(int(missing.size()));
+	for (const auto id : missing) {
+		session().api().requestMessageData(peer, id, crl::guard(this, [=] {
+			if (--*left == 0) {
+				--_searchAlbumPreloadActive;
+				finishSearchAlbumPreload(itemId);
+				while (_searchAlbumPreloadActive < kMaxAlbumPreloadActive
+					&& !_searchAlbumPreloadQueue.empty()) {
+					const auto nextId = _searchAlbumPreloadQueue.front();
+					_searchAlbumPreloadQueue.erase(
+						begin(_searchAlbumPreloadQueue));
+					if (const auto next = session().data().message(nextId)) {
+						startSearchAlbumPreload(next);
+					}
+				}
+			}
+		}));
+	}
+}
+
+void InnerWidget::finishSearchAlbumPreload(FullMsgId itemId) {
+	const auto item = session().data().message(itemId);
+	if (!item) {
+		return;
+	}
+	if (const auto group = session().data().groups().find(item)) {
+		for (const auto &entry : group->items) {
+			preloadSearchHitMedia(entry);
+		}
+	} else {
+		preloadSearchHitMedia(item);
+	}
+	refreshSearchAlbumPreviews(item);
+}
+
+void InnerWidget::preloadSearchHitMedia(not_null<HistoryItem*> item) {
+	const auto media = item->media();
+	if (!media) {
+		return;
+	}
+	const auto origin = item->fullId();
+	if (const auto photo = media->photo()) {
+		auto view = photo->createMediaView();
+		view->wanted(Data::PhotoSize::Large, origin);
+		_searchPreloadPhotos.push_back(std::move(view));
+	}
+	if (const auto cover = media->videoCover()) {
+		auto view = cover->createMediaView();
+		view->wanted(Data::PhotoSize::Large, origin);
+		_searchPreloadPhotos.push_back(std::move(view));
+	}
+	if (const auto document = media->document()) {
+		if (document->isVideoFile()) {
+			auto view = document->createMediaView();
+			view->thumbnailWanted(origin);
+			view->videoThumbnailWanted(origin);
+			_searchPreloadDocuments.push_back(std::move(view));
+		}
+	}
+}
+
+void InnerWidget::refreshSearchAlbumPreviews(not_null<HistoryItem*> item) {
+	const auto group = session().data().groups().find(item);
+	for (const auto &row : _searchResults) {
+		const auto searchItem = row->item();
+		const auto same = (searchItem == item)
+			|| (group && ranges::contains(group->items, searchItem));
+		if (same) {
+			row->itemView().itemInvalidated(searchItem);
+			if (const auto video = session().data().groups().findFirstVideo(
+					searchItem)) {
+				row->itemView().itemInvalidated(video);
+			}
+			repaintSearchResult(searchItem->fullId());
+		}
+	}
+}
+
 InnerWidget::~InnerWidget() {
 	unfreezeShownList(false);
 	session().data().stories().decrementPreloadingMainSources();
@@ -4523,6 +4676,11 @@ void InnerWidget::clearSearchResults(bool alsoPeerSearchResults) {
 		clearPeerSearchResults();
 	}
 	_searchResults.clear();
+	_searchAlbumPreloaded.clear();
+	_searchAlbumPreloadQueue.clear();
+	_searchPreloadPhotos.clear();
+	_searchPreloadDocuments.clear();
+	_searchAlbumPreloadActive = 0;
 	_nativeSearchResults.clear();
 	_nativeSearchCount = 0;
 	_nativeSearchLoadedCount = 0;
