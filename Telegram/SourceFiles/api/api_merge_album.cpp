@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_sending.h"
 #include "api/api_text_entities.h"
 #include "apiwrap.h"
+#include "base/debug_log.h"
 #include "base/random.h"
 #include "data/business/data_shortcut_messages.h"
 #include "data/data_document.h"
@@ -65,6 +66,21 @@ struct MergeRefreshItem {
 		return media.photo->fileReference();
 	}
 	return media.document ? media.document->fileReference() : QByteArray();
+}
+
+[[nodiscard]] QString DescribeMergeMedia(const MergeAlbumMedia &media) {
+	auto result = u"src=%1/%2"_q.arg(
+		media.sourceId.peer.value
+	).arg(media.sourceId.msg.bare);
+	const auto ref = MediaFileReference(media);
+	if (media.photo) {
+		result += u" photo=%1 ref=%2"_q.arg(media.photo->id).arg(ref.size());
+	} else if (media.document) {
+		result += u" doc=%1 video=%2 ref=%3"_q.arg(
+			media.document->id
+		).arg(media.document->isVideoFile() ? 1 : 0).arg(ref.size());
+	}
+	return result;
 }
 
 [[nodiscard]] MTPInputMedia PrepareMergeInputMedia(
@@ -525,6 +541,13 @@ void SendMergeGroup(
 	const auto session = &history->session();
 	const auto api = &session->api();
 	const auto multi = (items.size() > 1);
+	LOG(("MergeAlbum: send dest=%1 method=%2 count=%3"
+	).arg(peer->id.value
+	).arg(multi ? "sendMultiMedia" : "sendMedia"
+	).arg(items.size()));
+	for (const auto &item : items) {
+		LOG(("MergeAlbum:   %1").arg(DescribeMergeMedia(item)));
+	}
 	const auto groupId = multi ? base::RandomValue<uint64>() : uint64(0);
 
 	auto flags = NewMessageFlags(peer);
@@ -593,7 +616,13 @@ void SendMergeGroup(
 		});
 	}
 
-	const auto failRequest = [=](const MTP::Error &error) {
+	const auto failRequest = [=](const MTP::Error &error, bool refreshed) {
+		LOG(("MergeAlbum: fail dest=%1 method=%2 count=%3 error=%4 refreshed=%5"
+		).arg(peer->id.value
+		).arg(multi ? "sendMultiMedia" : "sendMedia"
+		).arg(items.size()
+		).arg(error.type()
+		).arg(refreshed ? 1 : 0));
 		for (const auto &item : requests) {
 			api->sendMessageFail(error, peer, item.randomId, item.localId);
 		}
@@ -619,6 +648,16 @@ void SendMergeGroup(
 	const auto performRequest = [=](const auto &repeatRequest, bool refreshed)
 			-> void {
 		const auto sendAs = action.options.sendAs;
+		const auto finishOk = [=] {
+			LOG(("MergeAlbum: ok dest=%1 method=%2 count=%3 refreshed=%4"
+			).arg(peer->id.value
+			).arg(multi ? "sendMultiMedia" : "sendMedia"
+			).arg(items.size()
+			).arg(refreshed ? 1 : 0));
+			if (done) {
+				done(QString());
+			}
+		};
 		const auto retryOrFail = [=](
 				const MTP::Error &error,
 				const MTP::Response &response) {
@@ -626,9 +665,13 @@ void SendMergeGroup(
 				|| (error.code() != 400)
 				|| !error.type().startsWith(u"FILE_REFERENCE_"_q)
 				|| refreshItems.empty()) {
-				failRequest(error);
+				failRequest(error, refreshed);
 				return;
 			}
+			LOG(("MergeAlbum: file_reference retry dest=%1 error=%2 items=%3"
+			).arg(peer->id.value
+			).arg(error.type()
+			).arg(refreshItems.size()));
 			const auto changed = std::make_shared<bool>(false);
 			const auto left = std::make_shared<int>(int(refreshItems.size()));
 			for (const auto &refresh : refreshItems) {
@@ -638,10 +681,13 @@ void SendMergeGroup(
 						: refresh.document->fileReference();
 					*changed = *changed || (now != refresh.usedFileReference);
 					if (!--*left) {
+						LOG(("MergeAlbum: file_reference result dest=%1 changed=%2"
+						).arg(peer->id.value
+						).arg(*changed ? 1 : 0));
 						if (*changed) {
 							repeatRequest(repeatRequest, true);
 						} else {
-							failRequest(error);
+							failRequest(error, true);
 						}
 					}
 				});
@@ -712,9 +758,7 @@ void SendMergeGroup(
 					MTP_long(batchStarsPaid),
 					SuggestToMTP(action.options.suggest)
 				), [=](const MTPUpdates &result, const MTP::Response &response) {
-					if (done) {
-						done(QString());
-					}
+					finishOk();
 				}, retryOrFail);
 			return;
 		}
@@ -766,9 +810,7 @@ void SendMergeGroup(
 				MTP_long(action.options.effectId),
 				MTP_long(batchStarsPaid)
 			), [=](const MTPUpdates &result, const MTP::Response &response) {
-				if (done) {
-					done(QString());
-				}
+				finishOk();
 			}, retryOrFail);
 	};
 	performRequest(performRequest, false);
@@ -881,6 +923,10 @@ void SendMergedAlbums(
 	}
 	auto result = MergeAlbumResult{ .skipped = skipped };
 	if (media.empty()) {
+		LOG(("MergeAlbum: no media dest=%1 selected=%2 skipped=%3"
+		).arg(action.history->peer->id.value
+		).arg(items.size()
+		).arg(result.skipped));
 		if (done) {
 			done(std::move(result));
 		}
@@ -921,6 +967,12 @@ void SendMergedAlbums(
 		.index = 0,
 		.done = std::move(done),
 	});
+	LOG(("MergeAlbum: start dest=%1 selected=%2 media=%3 groups=%4 skipped=%5"
+	).arg(action.history->peer->id.value
+	).arg(items.size()
+	).arg(state->media.size()
+	).arg(state->groups.size()
+	).arg(state->result.skipped));
 	state->action.history->session().api().sendAction(state->action);
 
 	const auto sendNext = [=](const auto &self) -> void {
@@ -979,6 +1031,11 @@ void SendMergedAlbums(
 			caption,
 			[=](QString error) {
 			if (!error.isEmpty()) {
+				LOG(("MergeAlbum: group fail dest=%1 index=%2/%3 error=%4"
+				).arg(state->action.history->peer->id.value
+				).arg(state->index
+				).arg(state->groups.size()
+				).arg(error));
 				state->result.error = error;
 				state->action.history->session().api().finishForwarding(
 					state->action);
