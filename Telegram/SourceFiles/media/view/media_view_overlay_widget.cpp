@@ -1903,10 +1903,10 @@ void OverlayWidget::updateControls() {
 		return dNow;
 	}();
 	_dateText = d.isValid() ? Ui::FormatDateTime(d) : QString();
-	if (_photo) {
-		_dateText += QString(" @ DC%1").arg(_photo->getDC());
-	} else if (_document) {
-		_dateText += QString(" @ DC%1").arg(_document->getDC());
+	if (const auto dc = _photo
+			? _photo->getDC()
+			: (_document ? _document->getDC() : 0)) {
+		_dateText += ' ' + Ui::kQBullet + u" \u2068DC%1"_q.arg(dc);
 	}
 	const auto destroyAt = _message ? _message->mediaDestroyAt() : TimeId();
 	if (destroyAt > 0) {
