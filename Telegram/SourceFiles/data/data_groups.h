@@ -30,6 +30,8 @@ public:
 		bool justRefreshViews = false);
 
 	[[nodiscard]] const Group *find(not_null<const HistoryItem*> item) const;
+	[[nodiscard]] HistoryItem *findFirstVideo(
+		not_null<HistoryItem*> item) const;
 
 	not_null<HistoryItem*> findItemToEdit(not_null<HistoryItem*> item) const;
 

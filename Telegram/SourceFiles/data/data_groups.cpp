@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "history/history_item.h"
 #include "dialogs/ui/dialogs_message_view.h"
+#include "data/data_document.h"
 #include "data/data_media_types.h"
 #include "data/data_session.h"
 #include "data/data_forum.h"
@@ -143,6 +144,27 @@ const Group *Groups::find(not_null<const HistoryItem*> item) const {
 		const auto &result = i->second;
 		if (result.items.size() > 1) {
 			return &result;
+		}
+	}
+	return nullptr;
+}
+
+HistoryItem *Groups::findFirstVideo(not_null<HistoryItem*> item) const {
+	const auto isVideo = [](not_null<HistoryItem*> entry) {
+		const auto media = entry->media();
+		const auto document = media ? media->document() : nullptr;
+		return document && document->isVideoFile();
+	};
+	if (isVideo(item)) {
+		return item;
+	}
+	const auto group = find(item);
+	if (!group) {
+		return nullptr;
+	}
+	for (const auto &entry : group->items) {
+		if (isVideo(entry)) {
+			return entry.get();
 		}
 	}
 	return nullptr;
