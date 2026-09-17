@@ -425,6 +425,7 @@ Widget::Widget(
 , _scroll(this)
 , _scrollToTop(_scroll, st::dialogsToUp)
 , _scrollToBottom(_scroll, st::historyToDown)
+, _scrollToCurrent(_scroll, st::dialogsToCurrent)
 , _stories((_layout != Layout::Child)
 	? std::make_unique<Stories::List>(
 		this,
@@ -480,6 +481,7 @@ Widget::Widget(
 	}, _innerList->lifetime());
 	_scrollToTop->raise();
 	_scrollToBottom->raise();
+	_scrollToCurrent->raise();
 	_lockUnlock->toggle(false, anim::type::instant);
 
 	_inner->updated(
@@ -1230,6 +1232,15 @@ void Widget::scrollToLoadedSearchBottom() {
 	updateScrollButtonsVisibility();
 }
 
+void Widget::scrollToCurrentSearchResult() {
+	if (_scrollToAnimation.animating()
+		|| _inner->state() != WidgetState::Filtered) {
+		return;
+	}
+	_inner->scrollToCurrentSearchResult();
+	updateScrollButtonsVisibility();
+}
+
 void Widget::setupScrollButtons() {
 	// The button floats over the bottom of the list, but it is created long
 	// before it, so the scroll has to order the two - and it is an overlay,
@@ -1237,6 +1248,7 @@ void Widget::setupScrollButtons() {
 	_scroll->setVisualTabOrder(true);
 	_scrollToTop->setVisualTabOrderOverlay(true);
 	_scrollToBottom->setVisualTabOrderOverlay(true);
+	_scrollToCurrent->setVisualTabOrderOverlay(true);
 
 	_scrollToTop->setClickedCallback([=] { scrollToDefaultChecked(); });
 	_scrollToTop->setAccessibleName(tr::lng_sr_scroll_to_top(tr::now));
@@ -1244,6 +1256,9 @@ void Widget::setupScrollButtons() {
 	_scrollToBottom->setClickedCallback([=] { scrollToLoadedSearchBottom(); });
 	_scrollToBottom->setAccessibleName(tr::lng_jump_to_bottom(tr::now));
 	trackScroll(_scrollToBottom);
+	_scrollToCurrent->setClickedCallback([=] { scrollToCurrentSearchResult(); });
+	_scrollToCurrent->setAccessibleName(tr::lng_sr_scroll_to_selected(tr::now));
+	trackScroll(_scrollToCurrent);
 	trackScroll(this);
 	updateScrollButtonsVisibility();
 }
@@ -1726,6 +1741,9 @@ void Widget::updateScrollButtonsVisibility() {
 	startScrollUpButtonAnimation(searchResults
 		? (bottom > 0 && top > 0)
 		: (top > (st::historyToDownShownAfter / 2) && top < bottom));
+	startScrollToCurrentButtonAnimation(searchResults
+		&& _inner->hasCurrentSearchResult()
+		&& !_inner->currentSearchResultInView());
 }
 
 void Widget::startScrollUpButtonAnimation(bool shown) {
@@ -1755,6 +1773,21 @@ void Widget::startScrollDownButtonAnimation(bool shown) {
 		[=] { updateScrollButtonsPosition(); },
 		_scrollToBottomIsShown ? 0. : 1.,
 		_scrollToBottomIsShown ? 1. : 0.,
+		smallColumn ? 0 : st::historyToDownDuration);
+}
+
+void Widget::startScrollToCurrentButtonAnimation(bool shown) {
+	const auto smallColumn = (width() < st::columnMinimalWidthLeft)
+		|| _childList;
+	shown &= !smallColumn;
+	if (_scrollToCurrentIsShown == shown) {
+		return;
+	}
+	_scrollToCurrentIsShown = shown;
+	_scrollToCurrentShown.start(
+		[=] { updateScrollButtonsPosition(); },
+		_scrollToCurrentIsShown ? 0. : 1.,
+		_scrollToCurrentIsShown ? 1. : 0.,
 		smallColumn ? 0 : st::historyToDownDuration);
 }
 
@@ -1789,6 +1822,18 @@ void Widget::updateScrollButtonsPosition() {
 		= !_scrollToBottomIsShown && !_scrollToBottomShown.animating();
 	if (bottomHidden != _scrollToBottom->isHidden()) {
 		_scrollToBottom->setVisible(!bottomHidden);
+	}
+	const auto current = anim::interpolate(
+		-_scrollToCurrent->height(),
+		st::historyToDownPosition.y(),
+		_scrollToCurrentShown.value(_scrollToCurrentIsShown ? 1. : 0.));
+	_scrollToCurrent->moveToRight(
+		st::historyToDownPosition.x(),
+		current);
+	const auto currentHidden
+		= !_scrollToCurrentIsShown && !_scrollToCurrentShown.animating();
+	if (currentHidden != _scrollToCurrent->isHidden()) {
+		_scrollToCurrent->setVisible(!currentHidden);
 	}
 }
 
@@ -2709,8 +2754,12 @@ void Widget::switchToChatsFilter(FilterId id) {
 
 QPixmap Widget::grabForChatsFilterSlide() {
 	const auto hidden = _scrollToTop->isHidden();
+	const auto currentHidden = _scrollToCurrent->isHidden();
 	if (!hidden) {
 		_scrollToTop->hide();
+	}
+	if (!currentHidden) {
+		_scrollToCurrent->hide();
 	}
 	auto result = Ui::GrabOpaque(
 		_scroll.data(),
@@ -2718,6 +2767,9 @@ QPixmap Widget::grabForChatsFilterSlide() {
 		st::dialogsBg->c);
 	if (!hidden) {
 		_scrollToTop->show();
+	}
+	if (!currentHidden) {
+		_scrollToCurrent->show();
 	}
 	return result;
 }
@@ -2755,11 +2807,15 @@ void Widget::startChatsFilterSlide(
 QPixmap Widget::grabForFolderSlideAnimation() {
 	const auto hidden = _scrollToTop->isHidden();
 	const auto bottomHidden = _scrollToBottom->isHidden();
+	const auto currentHidden = _scrollToCurrent->isHidden();
 	if (!hidden) {
 		_scrollToTop->hide();
 	}
 	if (!bottomHidden) {
 		_scrollToBottom->hide();
+	}
+	if (!currentHidden) {
+		_scrollToCurrent->hide();
 	}
 
 	const auto rect = QRect(0, 0, width(), rect::bottom(_scroll));
@@ -2770,6 +2826,9 @@ QPixmap Widget::grabForFolderSlideAnimation() {
 	}
 	if (!bottomHidden) {
 		_scrollToBottom->show();
+	}
+	if (!currentHidden) {
+		_scrollToCurrent->show();
 	}
 	return result;
 }
@@ -4248,6 +4307,7 @@ void Widget::listScrollUpdated() {
 	// Fix button rendering glitch, Qt bug with WA_OpaquePaintEvent widgets.
 	_scrollToTop->update();
 	_scrollToBottom->update();
+	_scrollToCurrent->update();
 }
 
 void Widget::updateCancelSearch() {
