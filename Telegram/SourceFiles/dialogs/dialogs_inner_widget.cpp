@@ -5167,6 +5167,7 @@ void InnerWidget::setSearchResultSelection(int index) {
 	_searchResultSelection = id;
 	_searchResultSelectionIndex = index;
 	repaintPornSearchHeader();
+	_updated.fire({});
 }
 
 QString InnerWidget::pornSearchSummary() const {
@@ -6205,6 +6206,39 @@ void InnerWidget::scrollToFilteredSelected() {
 			+ (_searchedSelected ? 0 : st::searchedBarHeight);
 		scrollToItem(from, height);
 	}
+}
+
+bool InnerWidget::hasCurrentSearchResult() const {
+	return base::in_range(
+		_searchResultSelectionIndex,
+		0,
+		int(_searchResults.size()));
+}
+
+int InnerWidget::currentSearchResultTop() const {
+	Expects(hasCurrentSearchResult());
+
+	return searchedOffset() + _searchResultSelectionIndex * _st->height;
+}
+
+bool InnerWidget::currentSearchResultInView() const {
+	if (!hasCurrentSearchResult()) {
+		return false;
+	}
+	const auto top = currentSearchResultTop();
+	const auto bottom = top + _st->height;
+	const auto viewTop = _visibleTop
+		+ ((searchHeaderPinned() && top >= searchedOffset())
+			? st::searchedBarHeight
+			: 0);
+	return (top >= viewTop) && (bottom <= _visibleBottom);
+}
+
+void InnerWidget::scrollToCurrentSearchResult() {
+	if (!hasCurrentSearchResult()) {
+		return;
+	}
+	scrollToItem(currentSearchResultTop(), _st->height);
 }
 
 void InnerWidget::scrollToEntry(const RowDescriptor &entry) {

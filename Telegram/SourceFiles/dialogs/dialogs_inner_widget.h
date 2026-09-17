@@ -192,6 +192,9 @@ public:
 	bool processKeyDispatch(QKeyEvent *e);
 
 	void scrollToEntry(const RowDescriptor &entry);
+	void scrollToCurrentSearchResult();
+	[[nodiscard]] bool hasCurrentSearchResult() const;
+	[[nodiscard]] bool currentSearchResultInView() const;
 
 	[[nodiscard]] Data::Folder *shownFolder() const;
 	[[nodiscard]] Data::Forum *shownForum() const;
@@ -384,6 +387,7 @@ private:
 	void preloadSearchHitMedia(not_null<HistoryItem*> item);
 	void refreshSearchAlbumPreviews(not_null<HistoryItem*> item);
 	void scrollToItem(int top, int height);
+	[[nodiscard]] int currentSearchResultTop() const;
 	void scrollToDefaultSelected();
 	void clearPendingSearchResultClick();
 	bool delaySearchResultClick(

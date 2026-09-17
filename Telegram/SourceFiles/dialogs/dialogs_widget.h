@@ -310,10 +310,12 @@ private:
 	void scrollToDefault(bool verytop = false);
 	void scrollToDefaultChecked(bool verytop = false);
 	void scrollToLoadedSearchBottom();
+	void scrollToCurrentSearchResult();
 	void setupScrollButtons();
 	void updateScrollButtonsVisibility();
 	void startScrollUpButtonAnimation(bool shown);
 	void startScrollDownButtonAnimation(bool shown);
+	void startScrollToCurrentButtonAnimation(bool shown);
 	void updateScrollButtonsPosition();
 	void updateLockUnlockPosition();
 	void updateSuggestions(anim::type animated);
@@ -399,10 +401,13 @@ private:
 
 	Ui::Animations::Simple _scrollToTopShown;
 	Ui::Animations::Simple _scrollToBottomShown;
+	Ui::Animations::Simple _scrollToCurrentShown;
 	object_ptr<Ui::JumpDownButton> _scrollToTop;
 	object_ptr<Ui::JumpDownButton> _scrollToBottom;
+	object_ptr<Ui::JumpDownButton> _scrollToCurrent;
 	bool _scrollToTopIsShown = false;
 	bool _scrollToBottomIsShown = false;
+	bool _scrollToCurrentIsShown = false;
 	bool _forumSearchRequested = false;
 	HashOrCashtag _searchHashOrCashtag = {};
 	bool _searchWithPostsPreview = false;

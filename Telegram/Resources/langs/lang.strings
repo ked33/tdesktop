@@ -8761,6 +8761,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_sr_cancel_search" = "Cancel search";
 "lng_sr_clear_search" = "Clear search";
 "lng_sr_scroll_to_top" = "Scroll to top";
+"lng_sr_scroll_to_selected" = "Scroll to selected message";
 "lng_sr_verified_badge" = "Verified";
 "lng_sr_bot_verified_badge" = "Verified Bot";
 "lng_sr_profile_menu" = "Profile menu";

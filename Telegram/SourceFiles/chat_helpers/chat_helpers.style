@@ -1237,6 +1237,11 @@ dialogsToUp: TwoIconButton(historyToDown) {
 	iconAboveOver: dialogsToUpAboveOver;
 }
 
+dialogsToCurrent: TwoIconButton(historyToDown) {
+	iconAbove: icon {{ "menu/rich/location-24x24", historyToDownFg, point(14px, 14px) }};
+	iconAboveOver: icon {{ "menu/rich/location-24x24", historyToDownFgOver, point(14px, 14px) }};
+}
+
 historyUnreadMentions: TwoIconButton(historyToDown) {
 	iconAbove: icon {{ "history_unread_mention", historyToDownFg }};
 	iconAboveOver: icon {{ "history_unread_mention", historyToDownFgOver }};
