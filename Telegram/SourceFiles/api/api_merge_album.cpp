@@ -1133,7 +1133,7 @@ void ForwardOneAsCopy(
 	const auto session = &history->session();
 	const auto fromPeer = item->history()->peer;
 	using Flag = MTPmessages_ForwardMessages::Flag;
-	auto sendFlags = Flag::f_drop_author;
+	auto sendFlags = Flag() | Flag::f_drop_author;
 	if (ShouldSendSilent(peer, action.options)) {
 		sendFlags |= Flag::f_silent;
 	}
