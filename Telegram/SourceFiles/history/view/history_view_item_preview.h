@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+class HistoryItem;
+
 namespace HistoryView {
 
 struct ItemPreviewImage {
@@ -50,6 +52,7 @@ struct ToPreviewOptions {
 	bool ignoreTopic = true;
 	bool spoilerLoginCode = false;
 	bool translated = false;
+	HistoryItem *imagesFrom = nullptr;
 };
 
 } // namespace HistoryView

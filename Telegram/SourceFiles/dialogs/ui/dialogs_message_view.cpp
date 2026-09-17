@@ -184,6 +184,15 @@ void MessageView::prepare(
 	options.ignoreTopic = true;
 	options.spoilerLoginCode = true;
 	auto preview = item->toPreview(options);
+	if (options.imagesFrom && options.imagesFrom != item.get()) {
+		auto imageOptions = options;
+		imageOptions.imagesFrom = nullptr;
+		auto imagePreview = options.imagesFrom->toPreview(imageOptions);
+		if (!imagePreview.images.empty()) {
+			preview.images = std::move(imagePreview.images);
+			preview.loadingContext = std::move(imagePreview.loadingContext);
+		}
+	}
 	_leftIcon = (preview.icon == ItemPreview::Icon::ForwardedMessage)
 		? &st::dialogsMiniForward
 		: (preview.icon == ItemPreview::Icon::ReplyToStory)
