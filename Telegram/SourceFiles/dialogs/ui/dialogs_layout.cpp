@@ -1440,12 +1440,12 @@ void RowPainter::Paint(
 		auto &view = row->itemView();
 		const auto video = item->history()->owner().groups().findFirstVideo(
 			item);
-		const auto previewItem = video
-			? not_null<HistoryItem*>(video)
-			: item;
-		if (!view.prepared(previewItem, nullptr, nullptr)) {
+		if (video && video != item.get()) {
+			previewOptions.imagesFrom = video;
+		}
+		if (!view.prepared(item, nullptr, nullptr)) {
 			view.prepare(
-				previewItem,
+				item,
 				nullptr,
 				nullptr,
 				row->repaint(),

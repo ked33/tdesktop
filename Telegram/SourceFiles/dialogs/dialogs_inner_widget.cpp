@@ -119,7 +119,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Dialogs {
 namespace {
 
-constexpr auto kSearchAdjacentRadius = 1;
+constexpr auto kSearchNewerCount = 3;
 constexpr auto kAlbumNeighborSpan = 9;
 constexpr auto kMaxAlbumPreloadActive = 2;
 constexpr auto kFreezeTimeout = 2 * crl::time(1000);
@@ -4536,13 +4536,8 @@ void InnerWidget::preloadAdjacentSearchHits(int clickedIndex) {
 	if (!base::in_range(clickedIndex, 0, _searchResults.size())) {
 		return;
 	}
-	for (auto delta = -kSearchAdjacentRadius
-		; delta <= kSearchAdjacentRadius
-		; ++delta) {
-		if (!delta) {
-			continue;
-		}
-		const auto index = clickedIndex + delta;
+	for (auto i = 1; i <= kSearchNewerCount; ++i) {
+		const auto index = clickedIndex - i;
 		if (base::in_range(index, 0, _searchResults.size())) {
 			enqueueSearchAlbumPreload(_searchResults[index]->item());
 		}
