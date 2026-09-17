@@ -1133,7 +1133,8 @@ void ForwardOneAsCopy(
 	const auto session = &history->session();
 	const auto fromPeer = item->history()->peer;
 	using Flag = MTPmessages_ForwardMessages::Flag;
-	auto sendFlags = Flag() | Flag::f_drop_author;
+	auto sendFlags = MTPmessages_ForwardMessages::Flags(0);
+	sendFlags |= Flag::f_drop_author;
 	if (ShouldSendSilent(peer, action.options)) {
 		sendFlags |= Flag::f_silent;
 	}
@@ -1198,7 +1199,7 @@ void ForwardOneAsCopy(
 			AppendCopiedMessageIds(updates, dest, ids);
 			LOG(("MergeAlbum: copy ok dest=%1 got=%2"
 			).arg(dest.value
-			).arg(ids.size()));
+			).arg(int(ids.size())));
 			done(ids.empty() ? FullMsgId() : ids.front(), QString());
 		},
 		[=](const MTP::Error &error, const MTP::Response &) {
@@ -1235,7 +1236,7 @@ void CopyThenMergeAlbums(
 	}
 	LOG(("MergeAlbum: copy-then-merge dest=%1 selected=%2"
 	).arg(action.history->peer->id.value
-	).arg(items.size()));
+	).arg(int(items.size())));
 
 	struct State {
 		SendAction action;
@@ -1270,7 +1271,7 @@ void CopyThenMergeAlbums(
 			}
 			LOG(("MergeAlbum: copy done dest=%1 copied=%2 merge"
 			).arg(state->action.history->peer->id.value
-			).arg(destItems.size()));
+			).arg(int(destItems.size())));
 			SendMergedAlbums(
 				state->action,
 				destItems,
