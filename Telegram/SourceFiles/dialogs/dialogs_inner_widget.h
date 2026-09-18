@@ -392,6 +392,8 @@ private:
 	void pinSearchLargeDocument(std::shared_ptr<Data::DocumentMedia> view);
 	void releaseSearchMediaPin();
 	void sweepSearchLargePins();
+	void syncSearchMediaPins();
+	void clearSearchMediaPins();
 	void scrollToItem(int top, int height);
 	[[nodiscard]] int currentSearchResultTop() const;
 	void scrollToDefaultSelected();

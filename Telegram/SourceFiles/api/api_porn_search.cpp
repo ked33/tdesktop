@@ -28,7 +28,7 @@ constexpr auto kDialogsPerPage = 100;
 constexpr auto kChannelsPerRequest = 100;
 constexpr auto kMessagesPerPage = 50;
 constexpr auto kCachedQueries = 5;
-constexpr auto kCachedQueryTtl = 60 * 60 * crl::time(1000);
+constexpr auto kCachedQueryTtl = 30 * 60 * crl::time(1000);
 
 } // namespace
 
