@@ -72,6 +72,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/stickers/data_custom_emoji.h"
 #include "data/stickers/data_stickers.h"
 #include "data/data_send_action.h"
+#include "base/flat_set.h"
 #include "base/unixtime.h"
 #include "base/options.h"
 #include "lang/lang_keys.h"
@@ -134,6 +135,21 @@ constexpr auto kStartDragToFilterThresholdX = kStartReorderThreshold;
 constexpr auto kStartDragToFilterThresholdY = 75;
 constexpr auto kQueryPreviewLimit = 32;
 constexpr auto kPreviewPostsLimit = 3;
+
+void ForgetPinnedSearchPhoto(std::shared_ptr<Data::PhotoMedia> view) {
+	if (!view) {
+		return;
+	}
+	const auto photo = view->owner();
+	const auto overlay = Core::App().mediaView();
+	if (overlay && !overlay->isHidden() && overlay->photo() == photo.get()) {
+		return;
+	}
+	if (view.use_count() > 1) {
+		return;
+	}
+	view->forgetLarge();
+}
 
 base::options::toggle CtrlClickChatNewWindow({
 	.id = kOptionCtrlClickChatNewWindow,
@@ -4628,18 +4644,38 @@ void InnerWidget::preloadSearchHitMedia(not_null<HistoryItem*> item) {
 		return;
 	}
 	const auto origin = item->fullId();
+	const auto hasPhotoPin = [&](not_null<PhotoData*> photo) {
+		for (const auto &pin : _searchMediaPins) {
+			if (pin.photo && pin.photo->owner() == photo) {
+				return true;
+			}
+		}
+		return false;
+	};
+	const auto hasDocumentPin = [&](not_null<DocumentData*> document) {
+		for (const auto &pin : _searchMediaPins) {
+			if (pin.document && pin.document->owner() == document) {
+				return true;
+			}
+		}
+		return false;
+	};
 	if (const auto photo = media->photo()) {
-		auto view = photo->createMediaView();
-		view->wanted(Data::PhotoSize::Large, origin);
-		pinSearchLargePhoto(std::move(view));
+		if (!hasPhotoPin(photo)) {
+			auto view = photo->createMediaView();
+			view->wanted(Data::PhotoSize::Large, origin);
+			pinSearchLargePhoto(std::move(view));
+		}
 	}
 	if (const auto cover = media->videoCover()) {
-		auto view = cover->createMediaView();
-		view->wanted(Data::PhotoSize::Large, origin);
-		pinSearchLargePhoto(std::move(view));
+		if (!hasPhotoPin(cover)) {
+			auto view = cover->createMediaView();
+			view->wanted(Data::PhotoSize::Large, origin);
+			pinSearchLargePhoto(std::move(view));
+		}
 	}
 	if (const auto document = media->document()) {
-		if (document->isVideoFile()) {
+		if (document->isVideoFile() && !hasDocumentPin(document)) {
 			auto view = document->createMediaView();
 			view->thumbnailWanted(origin);
 			view->videoThumbnailWanted(origin);
@@ -4707,13 +4743,67 @@ void InnerWidget::releaseSearchMediaPin() {
 	}
 	auto pin = std::move(_searchMediaPins.front());
 	_searchMediaPins.pop_front();
-	if (pin.photo) {
-		const auto photo = pin.photo->owner();
-		const auto view = Core::App().mediaView();
-		if (view && !view->isHidden() && view->photo() == photo.get()) {
-			return;
+	ForgetPinnedSearchPhoto(std::move(pin.photo));
+}
+
+void InnerWidget::clearSearchMediaPins() {
+	while (!_searchMediaPins.empty()) {
+		releaseSearchMediaPin();
+	}
+	_searchLargePinTimer.cancel();
+}
+
+void InnerWidget::syncSearchMediaPins() {
+	if (_state != WidgetState::Filtered || _searchResults.empty()) {
+		return;
+	}
+	const auto skip = searchedOffset();
+	const auto row = std::max(_st->height, 1);
+	auto from = (_visibleTop - skip) / row;
+	auto till = (_visibleBottom - skip + row - 1) / row;
+	from = std::clamp(from, 0, int(_searchResults.size()));
+	till = std::clamp(till, 0, int(_searchResults.size()));
+	auto keepPhotos = base::flat_set<not_null<PhotoData*>>();
+	auto keepDocuments = base::flat_set<not_null<DocumentData*>>();
+	const auto rememberItem = [&](not_null<HistoryItem*> item) {
+		if (const auto media = item->media()) {
+			if (const auto photo = media->photo()) {
+				keepPhotos.emplace(photo);
+			}
+			if (const auto cover = media->videoCover()) {
+				keepPhotos.emplace(cover);
+			}
+			if (const auto document = media->document()) {
+				if (document->isVideoFile()) {
+					keepDocuments.emplace(document);
+				}
+			}
 		}
-		pin.photo->forgetLarge();
+	};
+	for (auto i = from; i < till; ++i) {
+		const auto item = _searchResults[i]->item();
+		preloadSearchHitMedia(item);
+		rememberItem(item);
+		if (const auto group = session().data().groups().find(item)) {
+			for (const auto &entry : group->items) {
+				rememberItem(entry);
+			}
+		}
+	}
+	for (auto i = begin(_searchMediaPins); i != end(_searchMediaPins);) {
+		const auto keep = (i->photo && keepPhotos.contains(i->photo->owner()))
+			|| (i->document
+				&& keepDocuments.contains(i->document->owner()));
+		if (keep) {
+			++i;
+			continue;
+		}
+		auto pin = std::move(*i);
+		i = _searchMediaPins.erase(i);
+		ForgetPinnedSearchPhoto(std::move(pin.photo));
+	}
+	if (_searchMediaPins.empty()) {
+		_searchLargePinTimer.cancel();
 	}
 }
 
@@ -4758,10 +4848,7 @@ void InnerWidget::clearSearchResults(bool alsoPeerSearchResults) {
 	_searchResults.clear();
 	_searchAlbumPreloaded.clear();
 	_searchAlbumPreloadQueue.clear();
-	while (!_searchMediaPins.empty()) {
-		releaseSearchMediaPin();
-	}
-	_searchLargePinTimer.cancel();
+	clearSearchMediaPins();
 	_searchAlbumPreloadActive = 0;
 	_nativeSearchResults.clear();
 	_nativeSearchCount = 0;
@@ -5003,6 +5090,7 @@ void InnerWidget::visibleTopBottomUpdated(
 	_visibleBottom = visibleBottom;
 	refreshPornSearchHeader();
 	preloadRowsData();
+	syncSearchMediaPins();
 	const auto loadTill = _visibleTop
 		+ PreloadHeightsCount * (_visibleBottom - _visibleTop);
 	if (_state == WidgetState::Filtered && loadTill >= peerSearchOffset()) {
