@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_porn_search.h"
 
 #include "apiwrap.h"
+#include "base/timer.h"
 #include "core/enhanced_settings.h"
 #include "data/data_channel.h"
 #include "data/data_changes.h"
@@ -27,7 +28,7 @@ constexpr auto kDialogsPerPage = 100;
 constexpr auto kChannelsPerRequest = 100;
 constexpr auto kMessagesPerPage = 50;
 constexpr auto kCachedQueries = 10;
-constexpr auto kCachedMessages = 20000;
+constexpr auto kCachedQueryTtl = 60 * 60 * crl::time(1000);
 
 } // namespace
 
@@ -35,7 +36,7 @@ PornSearch::PornSearch(not_null<ApiWrap*> api)
 : _session(&api->session())
 , _api(&api->instance())
 , _timer([=] { pump(); })
-, _cache(kCachedQueries, kCachedMessages) {
+, _cache(kCachedQueries, kCachedQueries) {
 	const auto settingsChanged = [=] {
 		LOG(("Search Info: supplemental concurrency %1, request interval %2 ms.")
 			.arg(EnhancedSettings::SearchPornConcurrency())
@@ -102,7 +103,9 @@ PornSearch::QueryId PornSearch::start(
 		PornSearchRequest request,
 		Callback done) {
 	const auto id = ++_nextQuery;
-	auto cached = _cache.take(request);
+	const auto now = crl::now();
+	_cache.expire(now, kCachedQueryTtl);
+	auto cached = _cache.take(request, now, kCachedQueryTtl);
 	const auto before = cached
 		? cached->before
 		: std::numeric_limits<TimeId>::max();
@@ -149,17 +152,31 @@ void PornSearch::cacheQuery(Query &query) {
 	if (!query.sources.ready() && !query.cached) {
 		return;
 	}
-	auto cached = query.sources.ready()
-		? CachedQuery{ std::move(query.sources.entries()), query.before }
-		: std::move(*query.cached);
-	auto count = std::size_t(0);
-	for (const auto &[peer, source] : cached.sources) {
-		count += source.messages.size();
+	auto cached = CachedQuery();
+	if (query.sources.ready()) {
+		cached.before = query.before;
+		for (auto &[peer, source] : query.sources.entries()) {
+			source.messages.clear();
+			cached.sources.emplace(peer, CachedSource{
+				.channel = source.channel,
+				.offsetId = source.offsetId,
+				.oldestDate = source.oldestDate,
+				.started = source.started,
+				.exhausted = source.exhausted,
+				.failed = source.failed,
+				.changed = source.changed,
+			});
+		}
+	} else {
+		cached = std::move(*query.cached);
 	}
-	if (_cache.put(query.request, std::move(cached), count)) {
-		LOG(("Search Info: supplemental cache retained %1 queries, %2 message IDs.")
-			.arg(_cache.size())
-			.arg(_cache.cost()));
+	if (_cache.put(
+			query.request,
+			std::move(cached),
+			1,
+			crl::now())) {
+		LOG(("Search Info: supplemental cache retained %1 queries.")
+			.arg(_cache.size()));
 	}
 }
 
@@ -409,12 +426,9 @@ void PornSearch::reconcile() {
 		if (query.sources.prepare(catalogStatus(query.request).complete, [&] {
 			auto sources = collectSources(query.request);
 			if (query.cached) {
-				const auto reused = PornSearchPolicy::RestoreSources(
+				const auto reused = PornSearchPolicy::RestoreCursors(
 					sources,
-					std::move(query.cached->sources),
-					[&](FullMsgId id) {
-						return _session->data().message(id) != nullptr;
-					});
+					std::move(query.cached->sources));
 				query.cached.reset();
 				LOG(("Search Info: supplemental query %1 reused %2/%3 "
 					"cached sources; changed or unloaded sources will be searched.")
@@ -484,6 +498,7 @@ std::map<PeerId, PornSearch::Source> PornSearch::collectSources(
 }
 
 void PornSearch::pump() {
+	_cache.expire(crl::now(), kCachedQueryTtl);
 	_requestGate.setInterval(EnhancedSettings::SearchPornRequestInterval());
 	if (_metadataDirty) {
 		refreshMetadata();

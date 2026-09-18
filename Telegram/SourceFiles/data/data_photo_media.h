@@ -46,6 +46,7 @@ public:
 	void automaticLoad(FileOrigin origin, not_null<PeerData*> peer);
 
 	void collectLocalData(not_null<PhotoMedia*> local);
+	void forgetLarge();
 
 	bool saveToFile(const QString &path);
 	bool setToClipboard();

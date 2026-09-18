@@ -112,6 +112,9 @@ public:
 	};
 
 	[[nodiscard]] bool isActive() const;
+	[[nodiscard]] PhotoData *photo() const {
+		return _photo;
+	}
 	[[nodiscard]] bool isHidden() const;
 	[[nodiscard]] bool isMinimized() const;
 	[[nodiscard]] bool isFullScreen() const;
