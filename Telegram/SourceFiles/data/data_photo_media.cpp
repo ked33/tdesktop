@@ -117,6 +117,15 @@ void PhotoMedia::set(
 	_owner->session().notifyDownloaderTaskFinished();
 }
 
+void PhotoMedia::forgetLarge() {
+	_images[PhotoSizeIndex(PhotoSize::Large)] = {};
+	for (auto i = 0; i != kPhotoSizeCount; ++i) {
+		if (_images[i].goodFor >= PhotoSize::Large) {
+			_images[i].goodFor = PhotoSize(i);
+		}
+	}
+}
+
 QByteArray PhotoMedia::videoContent(PhotoSize size) const {
 	const auto small = (size == PhotoSize::Small) && _owner->hasVideoSmall();
 	return small ? _videoBytesSmall : _videoBytesLarge;

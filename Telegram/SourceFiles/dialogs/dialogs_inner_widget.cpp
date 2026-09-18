@@ -90,6 +90,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 #include "window/window_session_controller_link_info.h"
 #include "window/window_peer_menu.h"
+#include "media/view/media_view_overlay_widget.h"
 #include "ui/chat/chats_filter_tag.h"
 #include "ui/effects/ripple_animation.h"
 #include "ui/effects/loading_element.h"
@@ -122,6 +123,9 @@ namespace {
 constexpr auto kSearchNewerCount = 3;
 constexpr auto kAlbumNeighborSpan = 9;
 constexpr auto kMaxAlbumPreloadActive = 2;
+constexpr auto kSearchLargePinLimit = 12;
+constexpr auto kSearchLargePinTtl = 5 * 60 * crl::time(1000);
+constexpr auto kSearchLargePinSweep = 30 * crl::time(1000);
 constexpr auto kFreezeTimeout = 2 * crl::time(1000);
 constexpr auto kSearchElapsedInterval = crl::time(1000);
 constexpr auto kHashtagResultsLimit = 5;
@@ -426,6 +430,7 @@ InnerWidget::InnerWidget(
 , _narrowWidth(st::defaultDialogRow.padding.left()
 	+ st::defaultDialogRow.photoSize
 	+ st::defaultDialogRow.padding.left())
+, _searchLargePinTimer([=] { sweepSearchLargePins(); })
 , _pornSearchTimer([=] { repaintPornSearchHeader(); })
 , _searchResultClickTimer([=] { choosePendingSearchResultClick(); })
 , _childListShown(std::move(childListShown))
@@ -4626,20 +4631,100 @@ void InnerWidget::preloadSearchHitMedia(not_null<HistoryItem*> item) {
 	if (const auto photo = media->photo()) {
 		auto view = photo->createMediaView();
 		view->wanted(Data::PhotoSize::Large, origin);
-		_searchPreloadPhotos.push_back(std::move(view));
+		pinSearchLargePhoto(std::move(view));
 	}
 	if (const auto cover = media->videoCover()) {
 		auto view = cover->createMediaView();
 		view->wanted(Data::PhotoSize::Large, origin);
-		_searchPreloadPhotos.push_back(std::move(view));
+		pinSearchLargePhoto(std::move(view));
 	}
 	if (const auto document = media->document()) {
 		if (document->isVideoFile()) {
 			auto view = document->createMediaView();
 			view->thumbnailWanted(origin);
 			view->videoThumbnailWanted(origin);
-			_searchPreloadDocuments.push_back(std::move(view));
+			pinSearchLargeDocument(std::move(view));
 		}
+	}
+}
+
+void InnerWidget::pinSearchLargePhoto(std::shared_ptr<Data::PhotoMedia> view) {
+	if (!view) {
+		return;
+	}
+	const auto owner = view->owner();
+	for (auto i = begin(_searchMediaPins); i != end(_searchMediaPins); ++i) {
+		if (i->photo && i->photo->owner() == owner) {
+			auto pin = std::move(*i);
+			pin.when = crl::now();
+			_searchMediaPins.erase(i);
+			_searchMediaPins.push_back(std::move(pin));
+			return;
+		}
+	}
+	_searchMediaPins.push_back({
+		.photo = std::move(view),
+		.when = crl::now(),
+	});
+	while (_searchMediaPins.size() > kSearchLargePinLimit) {
+		releaseSearchMediaPin();
+	}
+	if (!_searchLargePinTimer.isActive()) {
+		_searchLargePinTimer.callEach(kSearchLargePinSweep);
+	}
+}
+
+void InnerWidget::pinSearchLargeDocument(
+		std::shared_ptr<Data::DocumentMedia> view) {
+	if (!view) {
+		return;
+	}
+	const auto owner = view->owner();
+	for (auto i = begin(_searchMediaPins); i != end(_searchMediaPins); ++i) {
+		if (i->document && i->document->owner() == owner) {
+			auto pin = std::move(*i);
+			pin.when = crl::now();
+			_searchMediaPins.erase(i);
+			_searchMediaPins.push_back(std::move(pin));
+			return;
+		}
+	}
+	_searchMediaPins.push_back({
+		.document = std::move(view),
+		.when = crl::now(),
+	});
+	while (_searchMediaPins.size() > kSearchLargePinLimit) {
+		releaseSearchMediaPin();
+	}
+	if (!_searchLargePinTimer.isActive()) {
+		_searchLargePinTimer.callEach(kSearchLargePinSweep);
+	}
+}
+
+void InnerWidget::releaseSearchMediaPin() {
+	if (_searchMediaPins.empty()) {
+		return;
+	}
+	auto pin = std::move(_searchMediaPins.front());
+	_searchMediaPins.pop_front();
+	if (pin.photo) {
+		const auto photo = pin.photo->owner();
+		const auto view = Core::App().mediaView();
+		if (view && !view->isHidden() && view->photo() == photo.get()) {
+			return;
+		}
+		pin.photo->forgetLarge();
+	}
+}
+
+void InnerWidget::sweepSearchLargePins() {
+	const auto now = crl::now();
+	while (!_searchMediaPins.empty()
+		&& (now - _searchMediaPins.front().when >= kSearchLargePinTtl)) {
+		releaseSearchMediaPin();
+	}
+	if (_searchMediaPins.empty()) {
+		_searchLargePinTimer.cancel();
 	}
 }
 
@@ -4673,8 +4758,10 @@ void InnerWidget::clearSearchResults(bool alsoPeerSearchResults) {
 	_searchResults.clear();
 	_searchAlbumPreloaded.clear();
 	_searchAlbumPreloadQueue.clear();
-	_searchPreloadPhotos.clear();
-	_searchPreloadDocuments.clear();
+	while (!_searchMediaPins.empty()) {
+		releaseSearchMediaPin();
+	}
+	_searchLargePinTimer.cancel();
 	_searchAlbumPreloadActive = 0;
 	_nativeSearchResults.clear();
 	_nativeSearchCount = 0;

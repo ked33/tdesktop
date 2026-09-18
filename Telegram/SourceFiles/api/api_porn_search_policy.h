@@ -25,10 +25,21 @@ namespace Api::PornSearchPolicy {
 template <typename Key, typename Value>
 class QueryCache final {
 public:
+	using Time = std::int64_t;
+
 	QueryCache(std::size_t limit, std::size_t budget);
 
 	[[nodiscard]] std::optional<Value> take(const Key &key);
-	[[nodiscard]] bool put(Key key, Value value, std::size_t cost);
+	[[nodiscard]] std::optional<Value> take(
+		const Key &key,
+		Time now,
+		Time ttl);
+	[[nodiscard]] bool put(
+		Key key,
+		Value value,
+		std::size_t cost,
+		Time stamp = 0);
+	void expire(Time now, Time ttl);
 	template <typename Callback>
 	void forEach(Callback callback);
 	void clear();
@@ -40,6 +51,7 @@ private:
 		Key key;
 		Value value;
 		std::size_t cost = 0;
+		Time stamp = 0;
 	};
 
 	std::list<Entry> _entries;
@@ -57,10 +69,23 @@ QueryCache<Key, Value>::QueryCache(std::size_t limit, std::size_t budget)
 
 template <typename Key, typename Value>
 std::optional<Value> QueryCache<Key, Value>::take(const Key &key) {
+	return take(key, 0, 0);
+}
+
+template <typename Key, typename Value>
+std::optional<Value> QueryCache<Key, Value>::take(
+		const Key &key,
+		Time now,
+		Time ttl) {
 	const auto i = std::find_if(_entries.begin(), _entries.end(), [&](auto &entry) {
 		return entry.key == key;
 	});
 	if (i == _entries.end()) {
+		return std::nullopt;
+	}
+	if (ttl > 0 && i->stamp > 0 && now - i->stamp >= ttl) {
+		_cost -= i->cost;
+		_entries.erase(i);
 		return std::nullopt;
 	}
 	auto result = std::move(i->value);
@@ -70,7 +95,11 @@ std::optional<Value> QueryCache<Key, Value>::take(const Key &key) {
 }
 
 template <typename Key, typename Value>
-bool QueryCache<Key, Value>::put(Key key, Value value, std::size_t cost) {
+bool QueryCache<Key, Value>::put(
+		Key key,
+		Value value,
+		std::size_t cost,
+		Time stamp) {
 	const auto i = std::find_if(_entries.begin(), _entries.end(), [&](auto &entry) {
 		return entry.key == key;
 	});
@@ -86,9 +115,29 @@ bool QueryCache<Key, Value>::put(Key key, Value value, std::size_t cost) {
 		_cost -= _entries.back().cost;
 		_entries.pop_back();
 	}
-	_entries.push_front({ std::move(key), std::move(value), cost });
+	_entries.push_front({
+		std::move(key),
+		std::move(value),
+		cost,
+		stamp,
+	});
 	_cost += cost;
 	return true;
+}
+
+template <typename Key, typename Value>
+void QueryCache<Key, Value>::expire(Time now, Time ttl) {
+	if (ttl <= 0) {
+		return;
+	}
+	for (auto i = _entries.begin(); i != _entries.end();) {
+		if (i->stamp > 0 && now - i->stamp >= ttl) {
+			_cost -= i->cost;
+			i = _entries.erase(i);
+		} else {
+			++i;
+		}
+	}
 }
 
 template <typename Key, typename Value>
@@ -144,6 +193,29 @@ template <typename Key, typename Source, typename Resolve>
 			source.failed = false;
 			++reused;
 		}
+	}
+	return reused;
+}
+
+template <typename Key, typename Live, typename Cached>
+[[nodiscard]] std::size_t RestoreCursors(
+		std::map<Key, Live> &sources,
+		std::map<Key, Cached> cached) {
+	auto reused = std::size_t(0);
+	for (auto &[peer, source] : sources) {
+		const auto i = cached.find(peer);
+		if (i == cached.end()
+			|| source.channel != i->second.channel
+			|| i->second.changed) {
+			continue;
+		}
+		source.offsetId = i->second.offsetId;
+		source.oldestDate = i->second.oldestDate;
+		source.started = i->second.started;
+		source.exhausted = i->second.exhausted;
+		source.failed = false;
+		source.retry |= i->second.failed;
+		++reused;
 	}
 	return reused;
 }

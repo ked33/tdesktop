@@ -91,8 +91,18 @@ private:
 		bool changed = false;
 	};
 
+	struct CachedSource {
+		PeerId channel;
+		MsgId offsetId = 0;
+		TimeId oldestDate = std::numeric_limits<TimeId>::max();
+		bool started = false;
+		bool exhausted = false;
+		bool failed = false;
+		bool changed = false;
+	};
+
 	struct CachedQuery {
-		std::map<PeerId, Source> sources;
+		std::map<PeerId, CachedSource> sources;
 		TimeId before = std::numeric_limits<TimeId>::max();
 	};
 

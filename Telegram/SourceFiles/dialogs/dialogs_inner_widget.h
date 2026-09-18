@@ -24,6 +24,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/rp_widget.h"
 #include "ui/userpic_view.h"
 
+#include <deque>
+
 namespace style {
 struct DialogRow;
 struct DialogRightButton;
@@ -386,6 +388,10 @@ private:
 	void finishSearchAlbumPreload(FullMsgId itemId);
 	void preloadSearchHitMedia(not_null<HistoryItem*> item);
 	void refreshSearchAlbumPreviews(not_null<HistoryItem*> item);
+	void pinSearchLargePhoto(std::shared_ptr<Data::PhotoMedia> view);
+	void pinSearchLargeDocument(std::shared_ptr<Data::DocumentMedia> view);
+	void releaseSearchMediaPin();
+	void sweepSearchLargePins();
 	void scrollToItem(int top, int height);
 	[[nodiscard]] int currentSearchResultTop() const;
 	void scrollToDefaultSelected();
@@ -777,8 +783,13 @@ private:
 	std::vector<std::unique_ptr<FakeRow>> _searchResults;
 	base::flat_set<MessageGroupId> _searchAlbumPreloaded;
 	std::vector<FullMsgId> _searchAlbumPreloadQueue;
-	std::vector<std::shared_ptr<Data::PhotoMedia>> _searchPreloadPhotos;
-	std::vector<std::shared_ptr<Data::DocumentMedia>> _searchPreloadDocuments;
+	struct SearchMediaPin {
+		std::shared_ptr<Data::PhotoMedia> photo;
+		std::shared_ptr<Data::DocumentMedia> document;
+		crl::time when = 0;
+	};
+	std::deque<SearchMediaPin> _searchMediaPins;
+	base::Timer _searchLargePinTimer;
 	int _searchAlbumPreloadActive = 0;
 	MessageIdsList _nativeSearchResults;
 	Api::PornSearchResult _pornSearchResult;

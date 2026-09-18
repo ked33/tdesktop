@@ -42,6 +42,7 @@ struct Message {
 struct SearchSource {
 	int channel = 0;
 	int offsetId = 0;
+	int oldestDate = 0;
 	std::set<int> messages;
 	bool started = false;
 	bool failed = false;
@@ -159,6 +160,75 @@ void CheckQueryCache() {
 	Check(
 		moved && **moved == 42,
 		"restoring transfers ownership of cached state");
+
+	constexpr auto kHour = Policy::QueryCache<CachedRequest, CachedSearch>::Time(
+		60 * 60 * 1000);
+	auto timed = Cache(3, 5);
+	Check(
+		timed.put(first, saved, 3, 1000),
+		"a stamped query can be retained");
+	timed.expire(1000 + kHour, kHour);
+	Check(
+		!timed.take(first),
+		"a query older than one hour is dropped");
+	Check(
+		timed.put(first, saved, 3, 1000),
+		"an expired query can be stored again");
+	Check(
+		!timed.take(first, 1000 + kHour, kHour),
+		"take also rejects a query older than one hour");
+	Check(
+		timed.put(first, saved, 3, 1000),
+		"a fresh stamp can be stored after take expiry");
+	timed.expire(1000 + kHour - 1, kHour);
+	auto still = timed.take(first);
+	Check(
+		still.has_value(),
+		"a query younger than one hour remains reusable");
+}
+
+void CheckRestoreCursors() {
+	auto live = std::map<int, SearchSource>();
+	live.emplace(1, SearchSource{ .channel = 1 });
+	live.emplace(2, SearchSource{ .channel = 2 });
+	live.emplace(3, SearchSource{ .channel = 3 });
+	auto cached = std::map<int, SearchSource>();
+	cached.emplace(1, SearchSource{
+		.channel = 1,
+		.offsetId = 40,
+		.oldestDate = 9,
+		.messages = { 10, 20, 30 },
+		.started = true,
+		.exhausted = true,
+	});
+	cached.emplace(2, SearchSource{
+		.channel = 2,
+		.offsetId = 5,
+		.failed = true,
+		.changed = true,
+	});
+	cached.emplace(3, SearchSource{
+		.channel = 99,
+		.offsetId = 7,
+		.started = true,
+	});
+	const auto reused = Policy::RestoreCursors(live, cached);
+	Check(reused == 1, "only unchanged matching chats restore a cursor");
+	Check(
+		live.at(1).offsetId == 40
+			&& live.at(1).oldestDate == 9
+			&& live.at(1).started
+			&& live.at(1).exhausted,
+		"restored chats keep page cursors without copying result IDs");
+	Check(
+		live.at(1).messages.empty(),
+		"cursor restore does not revive cached message identities");
+	Check(
+		!live.at(2).started && live.at(2).offsetId == 0,
+		"changed chats do not reuse a stored cursor");
+	Check(
+		!live.at(3).started && live.at(3).offsetId == 0,
+		"a migrated-history owner cannot reuse the old cursor");
 }
 
 void CheckCachedSources() {
@@ -631,6 +701,7 @@ void CheckExactCounts() {
 
 int main() {
 	CheckQueryCache();
+	CheckRestoreCursors();
 	CheckCachedSources();
 	CheckSourceSnapshot();
 	CheckMergedPages();
