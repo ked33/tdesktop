@@ -53,7 +53,9 @@ jobs:
           DOC_PATH="$GITHUB_WORKSPACE/$TBUILD_REL/$REPO_NAME/docs/building-win.md"
           {
             find "$PREPARE_ROOT" -type f -print0 | sort -z | xargs -0 sha256sum
-            sha256sum "$DOC_PATH"
+            if [ -f "$DOC_PATH" ]; then
+              sha256sum "$DOC_PATH"
+            fi
           } > CACHE_KEY.txt
           echo "CACHE_KEY=$(sha256sum CACHE_KEY.txt | awk '{ print $1 }')" >> $GITHUB_ENV
 
@@ -221,16 +223,19 @@ jobs:
       # - name: Show sccache statistics
       #   if: always()
       #   shell: pwsh
+      #   continue-on-error: true
       #   run: |
-      #     if ($env:SCCACHE_PATH) {
-      #       & $env:SCCACHE_PATH --show-stats
-      #     } else {
-      #       sccache --show-stats
+      #     $sccache = $env:SCCACHE_PATH
+      #     if (-not $sccache) {
+      #       $cmd = Get-Command sccache -ErrorAction SilentlyContinue
+      #       if ($cmd) { $sccache = $cmd.Source }
       #     }
-      #     if ($LASTEXITCODE -ne 0) {
-      #       Write-Warning "sccache statistics unavailable"
+      #     if (-not $sccache) {
+      #       Write-Host "sccache not available; skipping statistics"
       #       exit 0
       #     }
+      #     & $sccache --show-stats
+      #     exit 0
 
       - name: Package artifact
         shell: pwsh
