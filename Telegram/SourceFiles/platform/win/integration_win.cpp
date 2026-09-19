@@ -79,6 +79,14 @@ void WindowsIntegration::init() {
 				}
 			});
 	}
+
+	Core::App().appDeactivatedValue(
+	) | rpl::skip(1) | rpl::filter([](bool deactivated) {
+		return deactivated;
+	}) | rpl::on_next([] {
+		TrimWindowsHeaps();
+		MemoryTrimmedAt = crl::now();
+	}, _lifetime);
 }
 
 WindowsIntegration::~WindowsIntegration() = default;
