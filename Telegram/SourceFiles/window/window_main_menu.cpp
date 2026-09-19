@@ -384,32 +384,34 @@ MainMenu::MainMenu(
 
 	parentResized();
 
-	_telegram->setMarkedText(tr::link(
-		u"64Gram Desktop"_q,
-		u"https://github.com/TDesktop-x64/tdesktop"_q));
-	_telegram->setLinksTrusted();
-	// The canary version is too long for the "Version {version}" form.
-	_version->setMarkedText(
-		tr::link(
-			Core::BuildIsCanary
-				? currentVersionShortText()
-				: tr::lng_settings_current_version(
-					tr::now,
-					lt_version,
-					currentVersionShortText()),
-			1) // Link 1.
+	_telegram->setMarkedText(
+		tr::link(u"64Gram Desktop"_q, 1)
 		.append(QChar(' '))
 		.append(QChar(8211))
 		.append(QChar(' '))
-		.append(tr::link(tr::lng_menu_about(tr::now), 2))); // Link 2.
-	_version->setLink(
+		.append(tr::link(tr::lng_menu_about(tr::now), 2)));
+	_telegram->setLink(
 		1,
-		std::make_shared<UrlClickHandler>(Core::App().changelogLink()));
-	_version->setLink(
+		std::make_shared<UrlClickHandler>(
+			u"https://github.com/TDesktop-x64/tdesktop"_q));
+	_telegram->setLink(
 		2,
 		std::make_shared<LambdaClickHandler>([=] {
 			controller->show(Box(AboutBox));
 		}));
+	// The canary version is too long for the "Version {version}" form.
+	_version->setMarkedText(
+		tr::link(
+			Core::BuildIsCanary
+				? currentVersionText()
+				: tr::lng_settings_current_version(
+					tr::now,
+					lt_version,
+					currentVersionText()),
+			1));
+	_version->setLink(
+		1,
+		std::make_shared<UrlClickHandler>(Core::App().changelogLink()));
 
 	rpl::combine(
 		_toggleAccounts->rightSkipValue(),
