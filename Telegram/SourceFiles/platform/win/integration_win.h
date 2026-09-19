@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_integration.h"
 
 #include <QAbstractNativeEventFilter>
+#include <rpl/lifetime.h>
 
 namespace Platform {
 
@@ -51,6 +52,7 @@ private:
 	winrt::com_ptr<ICustomDestinationList> _jumpList;
 	std::unique_ptr<TaskbarButtons> _taskbarButtons;
 	base::qt_connection _memoryTrim;
+	rpl::lifetime _lifetime;
 
 };
 
