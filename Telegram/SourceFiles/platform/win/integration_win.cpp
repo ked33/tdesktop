@@ -21,14 +21,41 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "tray.h"
 #include "window/window_controller.h"
 
-
+#include <QtCore/QAbstractEventDispatcher>
 #include <QtCore/QAbstractNativeEventFilter>
 #include <private/qguiapplication_p.h>
 
 #include <propvarutil.h>
 #include <propkey.h>
 
+#include <malloc.h>
+#include <vector>
+
 namespace Platform {
+namespace {
+
+constexpr auto kMemoryTrimEach = crl::time(10000);
+
+crl::time MemoryTrimmedAt = 0;
+
+void TrimWindowsHeaps() {
+	_heapmin();
+
+	auto count = GetProcessHeaps(0, nullptr);
+	if (!count) {
+		return;
+	}
+	auto heaps = std::vector<HANDLE>(count);
+	const auto filled = GetProcessHeaps(count, heaps.data());
+	if (!filled || filled > count) {
+		return;
+	}
+	for (auto i = DWORD(); i != filled; ++i) {
+		HeapCompact(heaps[i], 0);
+	}
+}
+
+} // namespace
 
 void WindowsIntegration::init() {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
@@ -40,6 +67,18 @@ void WindowsIntegration::init() {
 #endif // Qt >= 6.5.0
 	QCoreApplication::instance()->installNativeEventFilter(this);
 	_taskbarCreatedMsgId = RegisterWindowMessage(L"TaskbarButtonCreated");
+
+	if (const auto dispatcher = QCoreApplication::eventDispatcher()) {
+		_memoryTrim = QObject::connect(
+			dispatcher,
+			&QAbstractEventDispatcher::aboutToBlock,
+			[] {
+				if (crl::now() - MemoryTrimmedAt >= kMemoryTrimEach) {
+					TrimWindowsHeaps();
+					MemoryTrimmedAt = crl::now();
+				}
+			});
+	}
 }
 
 WindowsIntegration::~WindowsIntegration() = default;
