@@ -301,7 +301,7 @@ struct MergeRefreshItem {
 		}
 		kept.push_back(cleaned);
 	}
-	return kept.join(u"\n\n"_q);
+	return kept.join(u'\n');
 }
 
 [[nodiscard]] std::vector<QString> SplitTextChunks(
@@ -912,7 +912,7 @@ QString SummarizeMergeCaptions(const std::vector<QString> &captions) {
 			parts.push_back(text);
 		}
 	}
-	return DedupeMergeText(parts.join(u"\n\n"_q));
+	return DedupeMergeText(parts.join(u'\n'));
 }
 
 void SendMergedAlbums(
