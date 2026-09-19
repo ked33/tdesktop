@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/update_channel.h"
 #include "core/update_checker.h"
 #include "core/version.h"
+#include "tdesktop_git_commit.h"
 #include "lang/lang_keys.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/painter.h"
@@ -170,10 +171,13 @@ namespace {
 #ifdef _DEBUG
 	result += " DEBUG";
 #endif
-	if (withCommit
-		&& Core::BuildIsCanary
-		&& Core::CanaryCommitHash[0] != '\0') {
-		result += u" \u00B7 "_q + QLatin1String(Core::CanaryCommitHash);
+	if (withCommit) {
+		const auto commit = (kGitCommitHash[0] != '\0')
+			? QLatin1String(kGitCommitHash)
+			: QLatin1String(Core::CanaryCommitHash);
+		if (commit[0] != '\0') {
+			result += QString("｜%1").arg(commit);
+		}
 	}
 	return result;
 }

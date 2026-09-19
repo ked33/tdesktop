@@ -177,6 +177,7 @@ jobs:
           configure.bat -G "Ninja Multi-Config" ^
             -D TDESKTOP_API_ID=%TDESKTOP_API_ID% ^
             -D TDESKTOP_API_HASH=%TDESKTOP_API_HASH% ^
+            -D TDESKTOP_GIT_COMMIT=%GITHUB_SHA:~0,7% ^
             -DCMAKE_CONFIGURATION_TYPES=Release ^
             -D DESKTOP_APP_NO_PDB=ON ^
             -D CMAKE_COMPILE_WARNING_AS_ERROR=OFF ^

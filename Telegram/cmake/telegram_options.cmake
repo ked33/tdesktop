@@ -119,3 +119,47 @@ endif()
 if (NOT TDESKTOP_CANARY_PUBLIC_CHANNEL STREQUAL "")
     target_compile_definitions(Telegram PRIVATE TDESKTOP_CANARY_PUBLIC_CHANNEL=${TDESKTOP_CANARY_PUBLIC_CHANNEL})
 endif()
+
+set(TDESKTOP_GIT_COMMIT "" CACHE STRING "Short git commit hash shown in the version string.")
+if (TDESKTOP_GIT_COMMIT STREQUAL "")
+    find_package(Git QUIET)
+    if (NOT GIT_FOUND)
+        set(GIT_EXECUTABLE git)
+    endif()
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} rev-parse --short=7 HEAD
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE TDESKTOP_GIT_COMMIT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE tdesktop_git_commit_result
+    )
+    if (NOT tdesktop_git_commit_result EQUAL 0)
+        set(TDESKTOP_GIT_COMMIT "")
+    endif()
+endif()
+if (TDESKTOP_GIT_COMMIT STREQUAL "" AND NOT TDESKTOP_CANARY_COMMIT STREQUAL "")
+    set(TDESKTOP_GIT_COMMIT ${TDESKTOP_CANARY_COMMIT})
+endif()
+if (NOT TDESKTOP_GIT_COMMIT STREQUAL "")
+    string(SUBSTRING "${TDESKTOP_GIT_COMMIT}" 0 7 TDESKTOP_GIT_COMMIT)
+endif()
+if (TDESKTOP_GIT_COMMIT AND NOT TDESKTOP_GIT_COMMIT MATCHES "^[0-9a-fA-F]+$")
+    message(WARNING "Ignoring invalid TDESKTOP_GIT_COMMIT '${TDESKTOP_GIT_COMMIT}'.")
+    set(TDESKTOP_GIT_COMMIT "")
+endif()
+message(STATUS "Git commit: ${TDESKTOP_GIT_COMMIT}")
+
+set(tdesktop_git_commit_dir ${CMAKE_CURRENT_BINARY_DIR}/gen)
+set(tdesktop_git_commit_header ${tdesktop_git_commit_dir}/tdesktop_git_commit.h)
+file(MAKE_DIRECTORY ${tdesktop_git_commit_dir})
+set(tdesktop_git_commit_content "#pragma once\n\ninline constexpr auto kGitCommitHash = \"${TDESKTOP_GIT_COMMIT}\";\n")
+set(tdesktop_git_commit_existing "")
+if (EXISTS "${tdesktop_git_commit_header}")
+    file(READ "${tdesktop_git_commit_header}" tdesktop_git_commit_existing)
+endif()
+if (NOT tdesktop_git_commit_content STREQUAL tdesktop_git_commit_existing)
+    file(WRITE "${tdesktop_git_commit_header}" "${tdesktop_git_commit_content}")
+endif()
+target_sources(Telegram PRIVATE ${tdesktop_git_commit_header})
+target_include_directories(Telegram PRIVATE ${tdesktop_git_commit_dir})
