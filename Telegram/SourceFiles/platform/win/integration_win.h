@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/platform/win/base_windows_shlobj_h.h"
 #include "base/platform/win/base_windows_winrt.h"
+#include "base/qt_connection.h"
 #include "platform/platform_integration.h"
 
 #include <QAbstractNativeEventFilter>
@@ -49,6 +50,7 @@ private:
 	winrt::com_ptr<ITaskbarList3> _taskbarList;
 	winrt::com_ptr<ICustomDestinationList> _jumpList;
 	std::unique_ptr<TaskbarButtons> _taskbarButtons;
+	base::qt_connection _memoryTrim;
 
 };
 
