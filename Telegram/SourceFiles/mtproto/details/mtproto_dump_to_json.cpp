@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "mtproto/details/mtproto_dump_to_text.h"
 #include "scheme-dump_to_json.h"
+#include "logs.h"
 
 #include <cstring>
 #include <zlib.h>
@@ -275,12 +276,18 @@ bool DumpBoxed(
 	if (from >= end) {
 		return false;
 	}
-	const auto cons = mtpTypeId(*from++);
+	const auto cons = tl::Reader<mtpPrime>::Get(from, end);
 	if (cons == mtpc_gzip_packed) {
 		return DumpGzip(to, from, end, level);
 	}
 	const auto ctor = JsonTlConstructorById(cons);
 	if (!ctor) {
+		LOG(("JSON dump: unknown constructor 0x%1, remaining primes: %2"
+			).arg(cons, 8, 16, QChar('0')
+			).arg(int(end - from)));
+		to.add("{\"_\":\"unknown\",\"id\":");
+		AddJsonNumber(to, quint64(cons));
+		to.add("}");
 		return false;
 	}
 	return DumpConstructor(to, from, end, ctor, level);
@@ -465,6 +472,13 @@ bool DumpValue(
 	return false;
 }
 
+[[nodiscard]] QString FinishDump(const JsonWriter &writer) {
+	if (writer.buffer.size <= 0) {
+		return {};
+	}
+	return QString::fromUtf8(writer.buffer.p, writer.buffer.size);
+}
+
 } // namespace
 
 QString DumpToJson(const mtpPrime *from, const mtpPrime *end) {
@@ -477,20 +491,29 @@ QString DumpToJson(const mtpPrime *from, const mtpPrime *end) {
 		if (IsMessagesContainer(ctor->name)) {
 			++cursor;
 			JsonWriter unwrapped;
-			if (DumpFirstMessage(unwrapped, cursor, end, ctor, 0)
-				&& unwrapped.ok) {
-				return QString::fromUtf8(
-					unwrapped.buffer.p,
-					unwrapped.buffer.size);
+			if (DumpFirstMessage(unwrapped, cursor, end, ctor, 0)) {
+				return FinishDump(unwrapped);
+			}
+			if (const auto partial = FinishDump(unwrapped)
+				; !partial.isEmpty()) {
+				LOG(("JSON dump: unwrap failed, keeping partial JSON."));
+				return partial;
 			}
 		}
+	} else {
+		LOG(("JSON dump: top constructor 0x%1 not in schema, primes: %2"
+			).arg(cons, 8, 16, QChar('0')
+			).arg(int(end - from)));
 	}
 	JsonWriter full;
 	auto fullFrom = from;
-	if (DumpBoxed(full, fullFrom, end, 0) && full.ok) {
-		return QString::fromUtf8(full.buffer.p, full.buffer.size);
+	const auto ok = DumpBoxed(full, fullFrom, end, 0);
+	const auto json = FinishDump(full);
+	if (!ok) {
+		LOG(("JSON dump: full dump failed, produced %1 bytes."
+			).arg(json.size()));
 	}
-	return {};
+	return json;
 }
 
 } // namespace MTP::details

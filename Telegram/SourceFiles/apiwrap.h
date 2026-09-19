@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer.h"
 #include "mtproto/core_types.h"
 #include "mtproto/sender.h"
+#include "scheme.h"
 #include "data/stickers/data_stickers_set.h"
 #include "data/data_messages.h"
 
@@ -193,7 +194,7 @@ public:
 
 	void exportMessageTl(
 		not_null<HistoryItem*> item,
-		Fn<void(const mtpBuffer&)> done,
+		Fn<void(const mtpBuffer&, const MTPmessages_Messages&)> done,
 		Fn<void()> fail);
 	void exportMessageAsBase64(not_null<HistoryItem*> item, Fn<void(const QString&)> done, Fn<void()> fail);
 
