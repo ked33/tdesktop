@@ -3305,17 +3305,49 @@ void ViewAsEnhancedJSON(
 	}
 	item->history()->session().api().exportMessageTl(
 		item,
-		crl::guard(show, [=](const mtpBuffer &buffer) {
-			const auto *from = buffer.constData();
-			const auto *end = from + buffer.size();
-			const auto json = MTP::details::DumpToJson(from, end);
+		crl::guard(show, [=](
+				const mtpBuffer &buffer,
+				const MTPmessages_Messages &result) {
+			auto packed = mtpBuffer();
+			const auto packFirst = [&](const QVector<MTPMessage> &list) {
+				if (!list.isEmpty()) {
+					list.front().write(packed);
+				}
+			};
+			result.match([&](const MTPDmessages_messages &data) {
+				packFirst(data.vmessages().v);
+			}, [&](const MTPDmessages_messagesSlice &data) {
+				packFirst(data.vmessages().v);
+			}, [&](const MTPDmessages_channelMessages &data) {
+				packFirst(data.vmessages().v);
+			}, [&](const MTPDmessages_messagesNotModified &) {
+			});
+			const auto dump = [](const mtpBuffer &data) {
+				if (data.isEmpty()) {
+					return QString();
+				}
+				const auto *from = data.constData();
+				return MTP::details::DumpToJson(from, from + data.size());
+			};
+			auto json = dump(packed);
 			if (json.isEmpty()) {
+				json = dump(buffer);
+			}
+			if (json.isEmpty()) {
+				LOG(("JSON dump failed, reply primes: %1, packed primes: %2"
+					).arg(buffer.size()
+					).arg(packed.size()));
+				if (!buffer.isEmpty()) {
+					LOG(("JSON dump first cons 0x%1"
+						).arg(uint32(buffer.front()), 8, 16, QChar('0')));
+				}
 				show->showToast(u"error"_q);
 				return;
 			}
 			show->show(Box(EnhancedJsonBox, json));
 		}),
 		crl::guard(show, [=] {
+			LOG(("JSON dump: getMessages failed."));
 			show->showToast(u"error"_q);
 		}));
 }

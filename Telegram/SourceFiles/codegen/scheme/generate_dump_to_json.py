@@ -237,9 +237,6 @@ struct JsonTlConstructor {
 	source = '''// WARNING! All changes made in this file will be lost!
 #include "''' + os.path.basename(output_path) + '''.h"
 
-#include <algorithm>
-#include <iterator>
-
 namespace MTP::details {
 namespace {
 
@@ -258,16 +255,12 @@ const JsonTlField *JsonTlFields() {
 }
 
 const JsonTlConstructor *JsonTlConstructorById(mtpTypeId id) {
-	const auto begin = std::begin(kConstructors);
-	const auto end = std::end(kConstructors);
-	const auto i = std::lower_bound(
-		begin,
-		end,
-		id,
-		[](const JsonTlConstructor &value, mtpTypeId id) {
-			return value.id < id;
-		});
-	return (i != end && i->id == id) ? i : nullptr;
+	for (const auto &ctor : kConstructors) {
+		if (ctor.id == id) {
+			return &ctor;
+		}
+	}
+	return nullptr;
 }
 
 } // namespace MTP::details

@@ -784,15 +784,15 @@ void ApiWrap::finalizeMessageDataRequest(
 
 void ApiWrap::exportMessageTl(
 		not_null<HistoryItem*> item,
-		Fn<void(const mtpBuffer&)> done,
+		Fn<void(const mtpBuffer&, const MTPmessages_Messages&)> done,
 		Fn<void()> fail) {
 	auto ids = QVector<MTPInputMessage>{
 		MTP_inputMessageID(MTP_int(item->id)),
 	};
 	const auto requestDone = [=](
-			const MTPmessages_Messages&,
+			const MTPmessages_Messages &result,
 			const MTP::Response &response) {
-		done(response.reply);
+		done(response.reply, result);
 	};
 	const auto requestFail = [=](const MTP::Error&, mtpRequestId) {
 		fail();
@@ -813,7 +813,9 @@ void ApiWrap::exportMessageAsBase64(
 		not_null<HistoryItem*> item,
 		Fn<void(const QString&)> done,
 		Fn<void()> fail) {
-	exportMessageTl(item, [=](const mtpBuffer &buffer) {
+	exportMessageTl(item, [=](
+			const mtpBuffer &buffer,
+			const MTPmessages_Messages &) {
 		const auto bytes = QByteArray(
 			reinterpret_cast<const char*>(buffer.data()),
 			buffer.size() * int(sizeof(mtpPrime)));
