@@ -80,6 +80,7 @@
     "lng_settings_show_seconds": "时间显示秒数",
     "lng_settings_message_read_reactions_info": "已读 / 反应信息",
     "lng_settings_show_view_as_json": "JSON（按住Ctrl）",
+    "lng_settings_show_view_as_enhanced_json": "增强JSON（Ctrl）",
     "lng_settings_hide_counter": "隐藏在线用户计数",
     "lng_settings_hide_stories": "隐藏动态",
     "lng_settings_preview_brightness": "降低聊天预览图亮度",

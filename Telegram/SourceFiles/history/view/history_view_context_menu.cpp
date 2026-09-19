@@ -122,6 +122,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "iv/iv_instance.h" 
 #include "facades.h"
 #include "apiwrap.h"
+#include "mtproto/details/mtproto_dump_to_json.h"
+#include "ui/layers/generic_box.h"
+#include "ui/widgets/labels.h"
 #include "styles/style_chat.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_layers.h"
@@ -1761,6 +1764,27 @@ void AddViewJSONAction(
 	}, &st::menuIcon64gJson);
 }
 
+void AddViewEnhancedJSONAction(
+		not_null<Ui::PopupMenu*> menu,
+		const ContextMenuRequest& request,
+		not_null<ListWidget*> list) {
+	if (!GetEnhancedBool("show_enhanced_json") || !request.showSpecialMpv) {
+		return;
+	}
+	const auto item = request.item;
+	if (item == nullptr) {
+		return;
+	}
+	if (!request.selectedItems.empty()) {
+		return;
+	}
+	const auto controller = list->controller();
+	const auto itemId = item->fullId();
+	menu->addAction(tr::lng_context_view_as_json(tr::now), [=] {
+		HistoryView::ViewAsEnhancedJSON(controller, itemId);
+	}, &st::menuIcon64gJson);
+}
+
 bool AddReplyToMessageAction(
 			not_null<Ui::PopupMenu*> menu,
 			const ContextMenuRequest &request,
@@ -2453,6 +2477,7 @@ void AddMessageActions(
 	}
 	AddRescheduleAction(menu, request, list);
 	AddViewJSONAction(menu, request, list);
+	AddViewEnhancedJSONAction(menu, request, list);
 }
 
 void AddCopyLinkAction(
@@ -3234,6 +3259,61 @@ void ViewAsJSON(
 	item->history()->session().api().exportMessageAsBase64(item,
 		crl::guard(show, [=](const QString& base64) {
 			Core::App().iv().showTLViewer(MTP::details::kCurrentLayer, base64);
+		}),
+		crl::guard(show, [=] {
+			show->showToast(u"error"_q);
+		}));
+}
+
+namespace {
+
+void EnhancedJsonBox(
+		not_null<Ui::GenericBox*> box,
+		const QString &json) {
+	box->setTitle(tr::lng_context_view_as_json());
+	box->setWidth(st::boxWideWidth);
+	box->setMaxHeight(st::boxMaxListHeight);
+	const auto label = box->addRow(object_ptr<Ui::FlatLabel>(
+		box,
+		json,
+		st::boxLabel));
+	label->setSelectable(true);
+	label->setBreakEverywhere(true);
+	box->addButton(tr::lng_context_copy_text(), [=] {
+		QGuiApplication::clipboard()->setText(json);
+		box->showToast(tr::lng_text_copied(tr::now));
+	});
+	box->addButton(tr::lng_close(), [=] {
+		box->closeBox();
+	});
+}
+
+} // namespace
+
+void ViewAsEnhancedJSON(
+		not_null<Window::SessionController*> controller,
+		FullMsgId itemId) {
+	ViewAsEnhancedJSON(controller->uiShow(), itemId);
+}
+
+void ViewAsEnhancedJSON(
+		std::shared_ptr<Main::SessionShow> show,
+		FullMsgId itemId) {
+	const auto item = show->session().data().message(itemId);
+	if (!item) {
+		return;
+	}
+	item->history()->session().api().exportMessageTl(
+		item,
+		crl::guard(show, [=](const mtpBuffer &buffer) {
+			const auto *from = buffer.constData();
+			const auto *end = from + buffer.size();
+			const auto json = MTP::details::DumpToJson(from, end);
+			if (json.isEmpty()) {
+				show->showToast(u"error"_q);
+				return;
+			}
+			show->show(Box(EnhancedJsonBox, json));
 		}),
 		crl::guard(show, [=] {
 			show->showToast(u"error"_q);

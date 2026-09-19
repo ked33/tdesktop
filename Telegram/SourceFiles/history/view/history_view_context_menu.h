@@ -89,6 +89,12 @@ void ViewAsJSON(
 void ViewAsJSON(
 	std::shared_ptr<Main::SessionShow> show,
 	FullMsgId itemId);
+void ViewAsEnhancedJSON(
+	not_null<Window::SessionController*> controller,
+	FullMsgId itemId);
+void ViewAsEnhancedJSON(
+	std::shared_ptr<Main::SessionShow> show,
+	FullMsgId itemId);
 void CopyStoryLink(
 	std::shared_ptr<Main::SessionShow> show,
 	FullStoryId storyId);

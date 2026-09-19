@@ -3992,6 +3992,16 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 					HistoryView::ViewAsJSON(controller, itemId);
 				}, &st::menuIcon64gJson);
 			}
+			if (GetEnhancedBool("show_enhanced_json")
+				&& showSpecialMpv
+				&& item
+				&& item->id > 0
+				&& isUponSelected != 2
+				&& isUponSelected != -2) {
+				_menu->addAction(tr::lng_context_view_as_json(tr::now), [=] {
+					HistoryView::ViewAsEnhancedJSON(controller, itemId);
+				}, &st::menuIcon64gJson);
+			}
 			if (item && isUponSelected != -2) {
 				HistoryView::AddEphemeralAboutAction(_menu, item);
 			}
@@ -4519,6 +4529,16 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			&& isUponSelected != -2) {
 			_menu->addAction(tr::lng_context_view_as_json(tr::now), [=] {
 				HistoryView::ViewAsJSON(controller, itemId);
+			}, &st::menuIcon64gJson);
+		}
+		if (GetEnhancedBool("show_enhanced_json")
+			&& showSpecialMpv
+			&& item
+			&& item->id > 0
+			&& isUponSelected != 2
+			&& isUponSelected != -2) {
+			_menu->addAction(tr::lng_context_view_as_json(tr::now), [=] {
+				HistoryView::ViewAsEnhancedJSON(controller, itemId);
 			}, &st::menuIcon64gJson);
 		}
 		if (item && isUponSelected != -2) {

@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "api/api_common.h"
 #include "base/timer.h"
+#include "mtproto/core_types.h"
 #include "mtproto/sender.h"
 #include "data/stickers/data_stickers_set.h"
 #include "data/data_messages.h"
@@ -190,6 +191,10 @@ public:
 		std::optional<TimeId> videoTimestamp = {});
 	QString exportDirectStoryLink(not_null<Data::Story*> item);
 
+	void exportMessageTl(
+		not_null<HistoryItem*> item,
+		Fn<void(const mtpBuffer&)> done,
+		Fn<void()> fail);
 	void exportMessageAsBase64(not_null<HistoryItem*> item, Fn<void(const QString&)> done, Fn<void()> fail);
 
 	void requestContacts();
