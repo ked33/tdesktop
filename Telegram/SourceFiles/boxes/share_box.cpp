@@ -2053,7 +2053,8 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 		MessageIdsList msgIds,
 		std::optional<TimeId> videoTimestamp,
 		bool no_quote,
-		FnMut<void()>&& successCallback) {
+		FnMut<void()>&& successCallback,
+		bool destinationToast) {
 	struct State final {
 		State(FnMut<void()>&& callback)
 		: submitCallback(std::move(callback)) {
@@ -2125,6 +2126,17 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 		const auto donePhraseArgs = CreateForwardedMessagePhraseArgs(
 			result,
 			existingIds);
+		const auto destinationToastText = destinationToast
+			? ChatHelpers::JoinToastParts(
+				no_quote
+					? tr::lng_copy_to_done(
+						tr::now,
+						lt_total,
+						QString::number(int(existingIds.size())))
+					: tr::lng_forward_to_done(tr::now),
+				ChatHelpers::DestinationLines(result),
+				QString())
+			: QString();
 		const auto showRecentForwardsToSelf = result.size() == 1
 			&& result.front()->peer()->isSelf()
 			&& history->session().premium();
@@ -2239,10 +2251,23 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 						if (show->valid()) {
 							show->hideLayer();
 							if (!state->failed) {
-								ShowForwardedMessageToast(
-									show,
-									&history->session(),
-									donePhraseArgs);
+								if (destinationToast) {
+									base::call_delayed(
+										st::boxDuration,
+										&history->session(),
+										[=] {
+											if (show->valid()) {
+												show->showToast(
+													destinationToastText,
+													ChatHelpers::kSelectedActionToastDuration);
+											}
+										});
+								} else {
+									ShowForwardedMessageToast(
+										show,
+										&history->session(),
+										donePhraseArgs);
+								}
 							}
 						}
 					}

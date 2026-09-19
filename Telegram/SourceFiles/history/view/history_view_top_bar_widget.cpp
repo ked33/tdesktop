@@ -307,9 +307,13 @@ TopBarWidget::TopBarWidget(
 	_menuToggle->setAccessibleName(tr::lng_chat_menu(tr::now));
 	_back->setAccessibleName(tr::lng_go_back(tr::now));
 	_cancelChoose->setAccessibleName(tr::lng_cancel(tr::now));
+	_forward->setToolTip(tr::lng_selected_forward_to_tooltip(tr::now));
+	_forwardNoQuote->setToolTip(tr::lng_selected_copy_to_tooltip(tr::now));
+	_savedMessages->setToolTip(tr::lng_selected_saved_tooltip(tr::now));
 	_quickCopy->setToolTip(tr::lng_selected_quick_copy_to(tr::now));
 	_mergeForward->setToolTip(tr::lng_selected_merge_forward(tr::now));
 	_mergeAlbum->setToolTip(tr::lng_selected_merge_here(tr::now));
+	_delete->setToolTip(tr::lng_selected_delete_tooltip(tr::now));
 }
 
 TopBarWidget::~TopBarWidget() = default;
@@ -344,9 +348,13 @@ void TopBarWidget::connectingAnimationCallback() {
 }
 
 void TopBarWidget::refreshLang() {
+	_forward->setToolTip(tr::lng_selected_forward_to_tooltip(tr::now));
+	_forwardNoQuote->setToolTip(tr::lng_selected_copy_to_tooltip(tr::now));
+	_savedMessages->setToolTip(tr::lng_selected_saved_tooltip(tr::now));
 	_quickCopy->setToolTip(tr::lng_selected_quick_copy_to(tr::now));
 	_mergeForward->setToolTip(tr::lng_selected_merge_forward(tr::now));
 	_mergeAlbum->setToolTip(tr::lng_selected_merge_here(tr::now));
+	_delete->setToolTip(tr::lng_selected_delete_tooltip(tr::now));
 	InvokeQueued(this, [this] { updateControlsGeometry(); });
 }
 

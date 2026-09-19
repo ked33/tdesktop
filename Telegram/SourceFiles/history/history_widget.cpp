@@ -159,6 +159,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/bot_keyboard.h"
 #include "chat_helpers/message_field.h"
 #include "chat_helpers/rich_paste_toast.h"
+#include "chat_helpers/share_message_phrase_factory.h"
 #include "menu/menu_send.h"
 #include "menu/menu_timecode_action.h"
 #include "mtproto/mtproto_config.h"
@@ -11171,10 +11172,15 @@ void HistoryWidget::forwardSelectedToSavedMessages() {
 	const auto history = item->history()->peer->owner().history(self);
 	auto resolved = history->resolveForwardDraft(Data::ForwardDraft{ .ids = items });
 
+	const auto count = int(items.size());
 	api->forwardMessages(std::move(resolved), action, [=] {
-		Ui::Toast::Show(tr::lng_share_done(tr::now));
-
 		if (const auto strong = weak.get()) {
+			strong->controller()->uiShow()->showToast(
+				tr::lng_saved_done(
+					tr::now,
+					lt_total,
+					QString::number(count)),
+				ChatHelpers::kSelectedActionToastDuration);
 			strong->clearSelected();
 		}
 	});
@@ -11194,7 +11200,9 @@ void HistoryWidget::quickCopySelected() {
 	}
 	const auto targetsText = GetEnhancedString("quick_copy_targets").trimmed();
 	if (targetsText.isEmpty()) {
-		Ui::Toast::Show(tr::lng_quick_copy_targets_none(tr::now));
+		controller()->uiShow()->showToast(
+			tr::lng_quick_copy_targets_none(tr::now),
+			ChatHelpers::kSelectedActionToastDuration);
 		return;
 	}
 
@@ -11204,7 +11212,9 @@ void HistoryWidget::quickCopySelected() {
 		targetsText,
 		skipped);
 	if (targets.empty()) {
-		Ui::Toast::Show(tr::lng_quick_copy_targets_none(tr::now));
+		controller()->uiShow()->showToast(
+			tr::lng_quick_copy_targets_none(tr::now),
+			ChatHelpers::kSelectedActionToastDuration);
 		return;
 	}
 
@@ -11230,7 +11240,9 @@ void HistoryWidget::quickCopySelected() {
 		sendTargets.push_back(thread);
 	}
 	if (sendTargets.empty()) {
-		Ui::Toast::Show(tr::lng_quick_copy_targets_none(tr::now));
+		controller()->uiShow()->showToast(
+			tr::lng_quick_copy_targets_none(tr::now),
+			ChatHelpers::kSelectedActionToastDuration);
 		return;
 	}
 
@@ -11254,6 +11266,9 @@ void HistoryWidget::quickCopySelected() {
 	}
 
 	const auto weak = base::make_weak(this);
+	const auto copied = int(ids.size());
+	const auto destinations = ChatHelpers::DestinationLines(sendTargets);
+	const auto sourceChat = ChatHelpers::BracketChatName(first);
 	for (const auto &thread : sendTargets) {
 		auto action = Api::SendAction(thread);
 		action.clearDraft = false;
@@ -11274,18 +11289,24 @@ void HistoryWidget::quickCopySelected() {
 						true);
 					strong->session().data().sendHistoryChangeNotifications();
 				}
-				const auto text = [&] {
-					if (deleted) {
-						return tr::lng_quick_copy_done_deleted(
-							tr::now,
-							lt_total,
-							QString::number(deleted));
-					} else if (skipped) {
-						return tr::lng_quick_copy_targets_skipped(tr::now);
-					}
-					return tr::lng_share_done(tr::now);
-				}();
-				Ui::Toast::Show(text);
+				const auto header = tr::lng_copy_to_done(
+					tr::now,
+					lt_total,
+					QString::number(copied));
+				const auto footer = deleted
+					? tr::lng_chat_then_deleted(
+						tr::now,
+						lt_chat,
+						sourceChat,
+						lt_total,
+						QString::number(deleted))
+					: QString();
+				strong->controller()->uiShow()->showToast(
+					ChatHelpers::JoinToastParts(
+						header,
+						destinations,
+						footer),
+					ChatHelpers::kSelectedActionToastDuration);
 				strong->clearSelected();
 			}
 		});
@@ -11331,6 +11352,7 @@ void HistoryWidget::mergeAlbumSelected() {
 	const auto weak = base::make_weak(this);
 	const auto session = &this->session();
 	const auto show = controller()->uiShow();
+	const auto sourceChat = ChatHelpers::BracketChatName(items.front());
 	Api::SendMergedAlbums(
 		std::move(action),
 		items,
@@ -11349,35 +11371,23 @@ void HistoryWidget::mergeAlbumSelected() {
 			const auto cleanup = Api::CleanupMergedSources(
 				session,
 				result.sentSourceIds);
-			const auto total = result.sentSourceIds.empty()
-				? result.sentMedia
-				: int(result.sentSourceIds.size());
-			if (cleanup.kept) {
-				show->showToast(
-					tr::lng_merge_album_done_kept(
-						tr::now,
-						lt_total,
-						QString::number(total),
-						lt_kept,
-						QString::number(cleanup.kept)),
-					Api::kMergeAlbumToastDuration);
-			} else if (cleanup.deleted) {
-				show->showToast(
-					tr::lng_merge_album_done_deleted(
-						tr::now,
-						lt_total,
-						QString::number(total),
-						lt_deleted,
-						QString::number(cleanup.deleted)),
-					Api::kMergeAlbumToastDuration);
-			} else {
-				show->showToast(
-					tr::lng_merge_album_done(
-						tr::now,
-						lt_total,
-						QString::number(total)),
-					Api::kMergeAlbumToastDuration);
-			}
+			const auto header = tr::lng_merge_here_done(
+				tr::now,
+				lt_chat,
+				sourceChat,
+				lt_total,
+				QString::number(result.sentMedia));
+			const auto footer = cleanup.deleted
+				? tr::lng_deleted_then_chat(
+					tr::now,
+					lt_chat,
+					sourceChat,
+					lt_total,
+					QString::number(cleanup.deleted))
+				: QString();
+			show->showToast(
+				ChatHelpers::JoinToastParts(header, QString(), footer),
+				Api::kMergeAlbumToastDuration);
 			if (const auto strong = weak.get()) {
 				strong->clearSelected();
 			}
@@ -11389,12 +11399,30 @@ void HistoryWidget::confirmDeleteSelected() {
 
 	auto ids = _list->getSelectedItems();
 	auto ephemeral = _list->getSelectedEphemeral();
+	const auto showDeleted = [=](const QString &chat, int count) {
+		if (chat.isEmpty() || count <= 0) {
+			return;
+		}
+		controller()->uiShow()->showToast(
+			tr::lng_deleted_then_chat(
+				tr::now,
+				lt_chat,
+				chat,
+				lt_total,
+				QString::number(count)),
+			ChatHelpers::kSelectedActionToastDuration);
+	};
 	if (ids.empty()) {
 		if (!ephemeral.empty()) {
+			const auto chat = ChatHelpers::BracketChatName(ephemeral.front());
+			const auto count = int(ephemeral.size());
 			ConfirmDeleteSelectedEphemeral(
 				controller()->uiShow(),
 				std::move(ephemeral),
-				crl::guard(this, [=] { clearSelected(); }));
+				crl::guard(this, [=] {
+					showDeleted(chat, count);
+					clearSelected();
+				}));
 		}
 		return;
 	}
@@ -11402,18 +11430,24 @@ void HistoryWidget::confirmDeleteSelected() {
 		ids.push_back(item->fullId());
 	}
 	const auto items = session().data().idsToItems(ids);
+	const auto count = int(ids.size());
+	const auto chat = items.empty()
+		? QString()
+		: ChatHelpers::BracketChatName(items.front());
+	const auto confirmed = crl::guard(this, [=] {
+		showDeleted(chat, count);
+		clearSelected();
+	});
 	if (ephemeral.empty() && CanCreateModerateMessagesBox(items)) {
 		const auto opt = DefaultModerateMessagesBoxOptions();
 		controller()->show(Box(
 			CreateModerateMessagesBox,
 			ModerateMessagesBoxEntry{ .items = items },
-			crl::guard(this, [=] { clearSelected(); }),
+			confirmed,
 			opt));
 	} else {
 		auto box = Box<DeleteMessagesBox>(&session(), std::move(ids));
-		box->setDeleteConfirmedCallback(crl::guard(this, [=] {
-			clearSelected();
-		}));
+		box->setDeleteConfirmedCallback(confirmed);
 		controller()->show(std::move(box));
 	}
 }

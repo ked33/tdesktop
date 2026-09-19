@@ -18,7 +18,7 @@ class Session;
 
 namespace Api {
 
-inline constexpr auto kMergeAlbumToastDuration = crl::time(3000);
+inline constexpr auto kMergeAlbumToastDuration = crl::time(4000);
 
 enum class MergeAlbumKind : uchar {
 	Skip,
