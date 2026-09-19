@@ -106,10 +106,13 @@ const QPixmap &Image::cached(
 	const auto outer = args.outer;
 	const auto size = outer.isEmpty() ? QSize(w, h) : outer * ratio;
 	const auto k = single ? SinglePixKey(args) : PixKey(w, h, args);
-	const auto i = _cache.find(k);
-	return (i != _cache.cend() && i->second.size() == size)
-		? i->second
-		: _cache.emplace_or_assign(k, prepare(w, h, args)).first->second;
+	if (const auto i = _cache.find(k)
+		; i != _cache.cend() && i->second.size() == size) {
+		return i->second;
+	}
+	auto pixmap = prepare(w, h, args);
+	_cache.clear();
+	return _cache.emplace(k, std::move(pixmap)).first->second;
 }
 
 QPixmap Image::prepare(int w, int h, const Images::PrepareArgs &args) const {

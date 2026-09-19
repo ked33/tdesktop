@@ -1898,9 +1898,7 @@ void RichMessageHtmlExport::checkJobs() {
 		} else if (job.copying) {
 			pending = true;
 		} else if (job.photo) {
-			if (job.photoMedia
-				&& !job.photoMedia->imageBytes(
-					::Data::PhotoSize::Large).isEmpty()) {
+			if (job.photoMedia && job.photoMedia->loaded()) {
 				const auto target = _folder + QChar('/') + job.relative;
 				job.done = job.photoMedia->saveToFile(target);
 				job.failed = !job.done;
