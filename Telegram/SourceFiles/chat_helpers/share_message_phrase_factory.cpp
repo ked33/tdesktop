@@ -8,8 +8,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/share_message_phrase_factory.h"
 
 #include "chat_helpers/compose/compose_show.h"
+#include "data/data_forum_topic.h"
 #include "data/data_peer.h"
+#include "data/data_thread.h"
 #include "data/data_user.h"
+#include "history/history.h"
+#include "history/history_item.h"
 #include "lang/lang_keys.h"
 #include "main/main_session.h"
 #include "ui/text/text_utilities.h"
@@ -78,6 +82,64 @@ Ui::Toast::ClickHandlerFilter ForwardedToSavedMessagesFilter(
 		}
 		return false;
 	};
+}
+
+namespace {
+
+[[nodiscard]] QString DisplayChatName(not_null<PeerData*> peer) {
+	return peer->isSelf()
+		? tr::lng_saved_messages(tr::now)
+		: peer->name();
+}
+
+} // namespace
+
+QString BracketChatName(const QString &name) {
+	return u"【"_q + name + u"】"_q;
+}
+
+QString BracketChatName(not_null<PeerData*> peer) {
+	return BracketChatName(DisplayChatName(peer));
+}
+
+QString BracketChatName(not_null<HistoryItem*> item) {
+	if (const auto topic = item->topic()) {
+		return BracketChatName(topic->title());
+	}
+	return BracketChatName(item->history()->peer);
+}
+
+QString BracketChatName(not_null<Data::Thread*> thread) {
+	if (const auto topic = thread->asTopic()) {
+		return BracketChatName(topic->title());
+	}
+	return BracketChatName(thread->peer());
+}
+
+QString DestinationLines(
+		const std::vector<not_null<Data::Thread*>> &threads) {
+	auto lines = QStringList();
+	lines.reserve(int(threads.size()));
+	for (const auto &thread : threads) {
+		lines.push_back(BracketChatName(thread));
+	}
+	return lines.join(u'\n');
+}
+
+QString JoinToastParts(
+		const QString &header,
+		const QString &destinations,
+		const QString &footer) {
+	auto text = header;
+	if (!destinations.isEmpty()) {
+		text += u'\n';
+		text += destinations;
+	}
+	if (!footer.isEmpty()) {
+		text += u"\n\n"_q;
+		text += footer;
+	}
+	return text;
 }
 
 } // namespace ChatHelpers

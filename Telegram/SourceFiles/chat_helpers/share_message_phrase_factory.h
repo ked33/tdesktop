@@ -9,13 +9,22 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ui/toast/toast.h"
 
+#include <vector>
+
+class HistoryItem;
 class PeerData;
+
+namespace Data {
+class Thread;
+} // namespace Data
 
 namespace Main {
 class Session;
 } // namespace Main
 
 namespace ChatHelpers {
+
+inline constexpr auto kSelectedActionToastDuration = crl::time(4000);
 
 struct ForwardedMessagePhraseArgs final {
 	size_t toCount = 0;
@@ -33,5 +42,16 @@ struct ForwardedMessagePhraseArgs final {
 
 [[nodiscard]] Ui::Toast::ClickHandlerFilter ForwardedToSavedMessagesFilter(
 	not_null<Main::Session*> session);
+
+[[nodiscard]] QString BracketChatName(const QString &name);
+[[nodiscard]] QString BracketChatName(not_null<PeerData*> peer);
+[[nodiscard]] QString BracketChatName(not_null<HistoryItem*> item);
+[[nodiscard]] QString BracketChatName(not_null<Data::Thread*> thread);
+[[nodiscard]] QString DestinationLines(
+	const std::vector<not_null<Data::Thread*>> &threads);
+[[nodiscard]] QString JoinToastParts(
+	const QString &header,
+	const QString &destinations,
+	const QString &footer);
 
 } // namespace ChatHelpers

@@ -3506,7 +3506,8 @@ QPointer<Ui::BoxContent> ShowNewForwardMessagesBox(
 			               msgIds,
 			               TimeId(0),
 			               no_quote,
-						   std::move(successCallback)),
+						   std::move(successCallback),
+						   true),
 						.filterCallback = std::move(filterCallback),
 						.title = no_quote ? tr::lng_title_forward_as_copy() : tr::lng_title_multiple_forward(),
 						.forwardOptions = {
@@ -3541,6 +3542,9 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 		int mergedCount = 0;
 		bool failed = false;
 		QString error;
+		QString destinations;
+		QString sourceChat;
+		int mediaCount = 0;
 	};
 	const auto state = std::make_shared<State>();
 	state->submitCallback = std::move(successCallback);
@@ -3587,6 +3591,16 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 				return;
 			}
 			state->requestsLeft = int(result.size());
+			state->destinations = ChatHelpers::DestinationLines(result);
+			state->sourceChat = items.empty()
+				? QString()
+				: ChatHelpers::BracketChatName(items.front());
+			for (const auto &entry : items) {
+				if (Api::ClassifyMergeAlbumKind(entry)
+					!= Api::MergeAlbumKind::Skip) {
+					++state->mediaCount;
+				}
+			}
 			const auto show = navigation->parentController()->uiShow();
 			for (const auto &thread : result) {
 				if (!comment.text.isEmpty()) {
@@ -3633,35 +3647,28 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 						const auto cleanup = Api::CleanupMergedSources(
 							session,
 							state->sentSourceIds);
-						const auto total = state->sentSourceIds.empty()
-							? state->mergedCount
-							: int(state->sentSourceIds.size());
-						if (cleanup.kept) {
-							show->showToast(
-								tr::lng_merge_album_done_kept(
-									tr::now,
-									lt_total,
-									QString::number(total),
-									lt_kept,
-									QString::number(cleanup.kept)),
-								Api::kMergeAlbumToastDuration);
-						} else if (cleanup.deleted) {
-							show->showToast(
-								tr::lng_merge_album_done_deleted(
-									tr::now,
-									lt_total,
-									QString::number(total),
-									lt_deleted,
-									QString::number(cleanup.deleted)),
-								Api::kMergeAlbumToastDuration);
-						} else {
-							show->showToast(
-								tr::lng_merge_album_done(
-									tr::now,
-									lt_total,
-									QString::number(total)),
-								Api::kMergeAlbumToastDuration);
-						}
+						const auto merged = state->mediaCount
+							? state->mediaCount
+							: state->sentMedia;
+						const auto header = tr::lng_merge_forward_done(
+							tr::now,
+							lt_total,
+							QString::number(merged));
+						const auto footer = (cleanup.deleted > 0
+							&& !state->sourceChat.isEmpty())
+							? tr::lng_chat_then_deleted(
+								tr::now,
+								lt_chat,
+								state->sourceChat,
+								lt_total,
+								QString::number(cleanup.deleted))
+							: QString();
+						show->showToast(
+							ChatHelpers::JoinToastParts(
+								header,
+								state->destinations,
+								footer),
+							Api::kMergeAlbumToastDuration);
 					}
 				};
 				Api::SendMergedAlbums(

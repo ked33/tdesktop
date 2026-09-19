@@ -124,7 +124,8 @@ public:
 		MessageIdsList msgIds,
 		std::optional<TimeId> videoTimestamp = {},
 		bool no_quote = false,
-		FnMut<void()>&& successCallback = nullptr);
+		FnMut<void()>&& successCallback = nullptr,
+		bool destinationToast = false);
 
 	struct Descriptor {
 		not_null<Main::Session*> session;
