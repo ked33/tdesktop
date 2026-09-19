@@ -143,6 +143,22 @@ void Indent(JsonWriter &to, int level) {
 	const mtpPrime *end,
 	const JsonTlConstructor *ctor,
 	int level);
+[[nodiscard]] bool ReadVectorCount(
+		const mtpPrime *&from,
+		const mtpPrime *end,
+		int32 &count) {
+	if (!tl::Reader<mtpPrime>::Has(1, from, end)) {
+		return false;
+	}
+	if (mtpTypeId(*from) == mtpc_vector) {
+		tl::Reader<mtpPrime>::Get(from, end);
+		if (!tl::Reader<mtpPrime>::Has(1, from, end)) {
+			return false;
+		}
+	}
+	count = int32(tl::Reader<mtpPrime>::Get(from, end));
+	return (count >= 0);
+}
 
 [[nodiscard]] bool DumpGzip(
 		JsonWriter &to,
@@ -234,19 +250,22 @@ bool DumpConstructor(
 	const auto fields = JsonTlFields();
 	for (auto i = 0; i != ctor->fieldCount; ++i) {
 		const auto &field = fields[ctor->firstField + i];
-		if (!flags.present(field.flagName, field.flagBit)) {
-			continue;
-		}
+		const auto present = flags.present(field.flagName, field.flagBit);
 		if (field.kind == JsonTlKind::Flags) {
 			MTPint value;
 			if (!value.read(from, end, mtpc_int)) {
 				return false;
 			}
 			flags.set(field.name, uint32(value.v));
+			emitKey(field.name);
+			AddJsonNumber(to, quint64(uint32(value.v)));
 			continue;
 		} else if (field.kind == JsonTlKind::True) {
 			emitKey(field.name);
-			to.add("true");
+			to.add(present ? "true" : "false");
+			continue;
+		}
+		if (!present) {
 			continue;
 		}
 		emitKey(field.name);
@@ -378,11 +397,8 @@ bool DumpValue(
 			JsonTlConstructorById(bareId),
 			level);
 	case JsonTlKind::Vector: {
-		if (from >= end) {
-			return false;
-		}
-		const auto count = int32(*from++);
-		if (count < 0) {
+		auto count = int32(0);
+		if (!ReadVectorCount(from, end, count)) {
 			return false;
 		}
 		to.add("[");
@@ -447,11 +463,8 @@ bool DumpValue(
 		}
 		if (!std::strcmp(field.name, "messages")
 			&& field.kind == JsonTlKind::Vector) {
-			if (from >= end) {
-				return false;
-			}
-			const auto count = int32(*from++);
-			if (count <= 0) {
+			auto count = int32(0);
+			if (!ReadVectorCount(from, end, count) || count <= 0) {
 				return false;
 			}
 			return DumpBoxed(to, from, end, level);
@@ -494,11 +507,7 @@ QString DumpToJson(const mtpPrime *from, const mtpPrime *end) {
 			if (DumpFirstMessage(unwrapped, cursor, end, ctor, 0)) {
 				return FinishDump(unwrapped);
 			}
-			if (const auto partial = FinishDump(unwrapped)
-				; !partial.isEmpty()) {
-				LOG(("JSON dump: unwrap failed, keeping partial JSON."));
-				return partial;
-			}
+			LOG(("JSON dump: unwrap failed, dumping full object."));
 		}
 	} else {
 		LOG(("JSON dump: top constructor 0x%1 not in schema, primes: %2"
@@ -512,6 +521,7 @@ QString DumpToJson(const mtpPrime *from, const mtpPrime *end) {
 	if (!ok) {
 		LOG(("JSON dump: full dump failed, produced %1 bytes."
 			).arg(json.size()));
+		return {};
 	}
 	return json;
 }
