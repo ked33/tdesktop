@@ -579,6 +579,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("message_emoji_size"), kMessageEmojiSizeDefault);
 		settings.insert(qsl("message_sticker_size"), kMessageStickerSizeDefault);
 		settings.insert(qsl("show_json"), false);
+		settings.insert(qsl("show_enhanced_json"), false);
 		settings.insert(qsl("hide_counter"), false);
 		settings.insert(qsl("translate_to_tc"), false);
 		settings.insert(qsl("translation_provider"), qsl("google"));
@@ -703,6 +704,9 @@ namespace EnhancedSettings {
 		settings.insert(qsl("message_emoji_size"), MessageEmojiSize());
 		settings.insert(qsl("message_sticker_size"), MessageStickerSize());
 		settings.insert(qsl("show_json"), GetEnhancedBool("show_json"));
+		settings.insert(
+			qsl("show_enhanced_json"),
+			GetEnhancedBool("show_enhanced_json"));
 		settings.insert(qsl("hide_counter"), GetEnhancedBool("hide_counter"));
 		settings.insert(qsl("translate_to_tc"), GetEnhancedBool("translate_to_tc"));
 		settings.insert(

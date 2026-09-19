@@ -831,6 +831,21 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
+		auto enhancedJsonBtn = AddButtonWithIcon(
+			inner,
+			tr::lng_settings_show_view_as_enhanced_json(),
+			st::settingsButtonNoIcon
+		);
+		enhancedJsonBtn->toggleOn(
+			rpl::single(GetEnhancedBool("show_enhanced_json"))
+		)->toggledChanges(
+		) | rpl::filter([=](bool toggled) {
+			return (toggled != GetEnhancedBool("show_enhanced_json"));
+		}) | rpl::on_next([=](bool toggled) {
+			SetEnhancedValue("show_enhanced_json", toggled);
+			EnhancedSettings::Write();
+		}, container->lifetime());
+
 		auto hideBtn = AddButtonWithIcon(
 			inner,
 			tr::lng_settings_hide_messages(),

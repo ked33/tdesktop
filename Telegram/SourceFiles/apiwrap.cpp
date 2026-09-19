@@ -782,30 +782,44 @@ void ApiWrap::finalizeMessageDataRequest(
 	}
 }
 
-void ApiWrap::exportMessageAsBase64(not_null<HistoryItem*> item, Fn<void(const QString&)> done, Fn<void()> fail) {
-	auto ids = QVector<MTPInputMessage>{ MTP_inputMessageID(MTP_int(item->id)) };
-	auto requestDone = [=](
-		const MTPmessages_Messages& result,
-		const MTP::Response& response) {
-			auto buffer = response.reply;
-			QByteArray byteArray(reinterpret_cast<const char*>(buffer.data()), buffer.size() * sizeof(mtpPrime));
-			QString base64String = byteArray.toBase64(QByteArray::Base64UrlEncoding);
-			done(base64String);
-		};
-	if (item->history()->peer->isChannel()) {
+void ApiWrap::exportMessageTl(
+		not_null<HistoryItem*> item,
+		Fn<void(const mtpBuffer&)> done,
+		Fn<void()> fail) {
+	auto ids = QVector<MTPInputMessage>{
+		MTP_inputMessageID(MTP_int(item->id)),
+	};
+	const auto requestDone = [=](
+			const MTPmessages_Messages&,
+			const MTP::Response &response) {
+		done(response.reply);
+	};
+	const auto requestFail = [=](const MTP::Error&, mtpRequestId) {
+		fail();
+	};
+	if (const auto channel = item->history()->peer->asChannel()) {
 		request(MTPchannels_GetMessages(
-			item->history()->peer->asChannel()->inputChannel(),
+			channel->inputChannel(),
 			MTP_vector<MTPInputMessage>(ids)
-		)).done(requestDone).fail([=](const MTP::Error& error, mtpRequestId requestId) {
-			fail();
-		}).send();
+		)).done(requestDone).fail(requestFail).send();
 	} else {
 		request(MTPmessages_GetMessages(
 			MTP_vector<MTPInputMessage>(ids)
-		)).done(requestDone).fail([=](const MTP::Error& error, mtpRequestId requestId) {
-			fail();
-		}).send();
+		)).done(requestDone).fail(requestFail).send();
 	}
+}
+
+void ApiWrap::exportMessageAsBase64(
+		not_null<HistoryItem*> item,
+		Fn<void(const QString&)> done,
+		Fn<void()> fail) {
+	exportMessageTl(item, [=](const mtpBuffer &buffer) {
+		const auto bytes = QByteArray(
+			reinterpret_cast<const char*>(buffer.data()),
+			buffer.size() * int(sizeof(mtpPrime)));
+		done(QString::fromLatin1(
+			bytes.toBase64(QByteArray::Base64UrlEncoding)));
+	}, fail);
 }
 
 QString ApiWrap::exportDirectMessageLink(

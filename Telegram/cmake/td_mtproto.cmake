@@ -23,6 +23,8 @@ PRIVATE
     mtproto/details/mtproto_dcenter.h
     mtproto/details/mtproto_domain_resolver.cpp
     mtproto/details/mtproto_domain_resolver.h
+    mtproto/details/mtproto_dump_to_json.cpp
+    mtproto/details/mtproto_dump_to_json.h
     mtproto/details/mtproto_dump_to_text.cpp
     mtproto/details/mtproto_dump_to_text.h
     mtproto/details/mtproto_received_ids_manager.cpp
