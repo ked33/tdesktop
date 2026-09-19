@@ -3283,7 +3283,7 @@ void EnhancedJsonBox(
 		QGuiApplication::clipboard()->setText(json);
 		box->showToast(tr::lng_text_copied(tr::now));
 	});
-	box->addButton(tr::lng_close(), [=] {
+	box->addLeftButton(tr::lng_close(), [=] {
 		box->closeBox();
 	});
 }
