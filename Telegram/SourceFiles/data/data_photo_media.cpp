@@ -99,7 +99,7 @@ void PhotoMedia::set(
 		PhotoSize size,
 		PhotoSize goodFor,
 		QImage image,
-		QByteArray bytes) {
+		QByteArray) {
 	const auto index = PhotoSizeIndex(size);
 	const auto limit = PhotoData::SideLimit();
 	if (image.width() > limit || image.height() > limit) {
@@ -111,7 +111,6 @@ void PhotoMedia::set(
 	}
 	_images[index] = PhotoImage{
 		.data = std::make_unique<Image>(std::move(image)),
-		.bytes = std::move(bytes),
 		.goodFor = goodFor,
 	};
 	_owner->session().notifyDownloaderTaskFinished();
