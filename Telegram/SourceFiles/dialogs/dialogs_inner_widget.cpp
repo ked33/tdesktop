@@ -28,6 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item.h"
 #include "core/application.h"
 #include "core/click_handler_types.h"
+#include "core/enhanced_settings.h"
 #include "core/local_url_handlers.h"
 #include "core/shortcuts.h"
 #include "core/ui_integration.h"
@@ -245,6 +246,10 @@ base::options::toggle CtrlClickChatNewWindow({
 		.usernameOrId = target,
 	});
 	return true;
+}
+
+[[nodiscard]] bool SkipSearchDialog(PeerData *peer) {
+	return peer && EnhancedSettings::SearchDialogFilterContains(peer->id);
 }
 
 [[nodiscard]] uint64 RowsCacheKey(Entry *entry) {
@@ -488,6 +493,11 @@ InnerWidget::InnerWidget(
 	) | rpl::on_next([=] {
 		refresh();
 		refreshEmpty();
+	}, lifetime());
+
+	EnhancedSettings::SearchDialogFilterChanges(
+	) | rpl::on_next([=] {
+		applySearchDialogFilter();
 	}, lifetime());
 
 	session().data().itemRemoved(
@@ -4494,6 +4504,23 @@ void InnerWidget::onHashtagFilterUpdate(QStringView newFilter) {
 	clearMouseSelection(true);
 }
 
+void InnerWidget::applySearchDialogFilter() {
+	if (_state != WidgetState::Filtered) {
+		return;
+	}
+	_peerSearchResults.erase(
+		ranges::remove_if(
+			_peerSearchResults,
+			[](const auto &result) {
+				return SkipSearchDialog(result->peer);
+			}),
+		end(_peerSearchResults));
+	if (_peerSearchSelected >= int(_peerSearchResults.size())) {
+		_peerSearchSelected = -1;
+	}
+	refresh();
+}
+
 void InnerWidget::refreshFilterResults() {
 	const auto mentionsSearch = (_filter == u"@"_q);
 	const auto words = mentionsSearch
@@ -5676,7 +5703,9 @@ void InnerWidget::peerSearchReceived(Api::PeerSearchResult result) {
 	auto added = base::flat_set<not_null<PeerData*>>();
 	for (const auto &sponsored : result.sponsored) {
 		const auto peer = sponsored.peer;
-		if (inlist(peer) || _sponsoredRemoved.contains(peer)) {
+		if (inlist(peer)
+			|| _sponsoredRemoved.contains(peer)
+			|| SkipSearchDialog(peer)) {
 			continue;
 		}
 		_peerSearchResults.push_back(
@@ -5688,7 +5717,9 @@ void InnerWidget::peerSearchReceived(Api::PeerSearchResult result) {
 		added.emplace(peer);
 	}
 	for (const auto &peer : result.peers) {
-		if (added.contains(peer) || inlist(peer)) {
+		if (added.contains(peer)
+			|| inlist(peer)
+			|| SkipSearchDialog(peer)) {
 			continue;
 		}
 		_peerSearchResults.push_back(

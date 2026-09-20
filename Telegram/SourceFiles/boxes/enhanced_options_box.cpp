@@ -1100,6 +1100,51 @@ void SearchPornIntervalBox::save() {
 	closeBox();
 }
 
+SearchDialogFilterBox::SearchDialogFilterBox(QWidget *parent)
+	: _ids(
+		this,
+		st::defaultInputField,
+		tr::lng_settings_search_dialog_filter_placeholder()) {
+}
+
+QString SearchDialogFilterBox::IdsLabel(const QString &value) {
+	const auto trimmed = value.trimmed();
+	return trimmed.isEmpty()
+		? tr::lng_settings_search_dialog_filter_disabled(tr::now)
+		: trimmed;
+}
+
+void SearchDialogFilterBox::prepare() {
+	setTitle(tr::lng_settings_search_dialog_filter());
+
+	addButton(tr::lng_settings_save(), [=] { save(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+
+	_ids->setText(EnhancedSettings::SearchDialogFilterIds());
+	_ids->setMaxLength(4096);
+
+	setDimensions(st::boxWidth, _ids->height());
+}
+
+void SearchDialogFilterBox::setInnerFocus() {
+	_ids->setFocusFast();
+}
+
+void SearchDialogFilterBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+
+	const auto width = st::boxWidth
+		- st::boxPadding.left()
+		- st::boxPadding.right();
+	_ids->resize(width, _ids->height());
+	_ids->moveToLeft(st::boxPadding.left(), 0);
+}
+
+void SearchDialogFilterBox::save() {
+	EnhancedSettings::SetSearchDialogFilterIds(_ids->getLastText().trimmed());
+	closeBox();
+}
+
 QuickCopyTargetsBox::QuickCopyTargetsBox(QWidget *parent)
 	: _targets(
 		this,

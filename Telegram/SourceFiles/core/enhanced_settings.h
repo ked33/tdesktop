@@ -6,6 +6,7 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 */
 #pragma once
 
+#include "data/data_peer_id.h"
 #include "rpl/producer.h"
 
 #include <QtCore/QTimer>
@@ -30,6 +31,12 @@ namespace EnhancedSettings {
 	[[nodiscard]] bool SearchIncludePorn();
 	[[nodiscard]] rpl::producer<bool> SearchIncludePornChanges();
 	void SetSearchIncludePorn(bool enabled);
+	[[nodiscard]] bool SearchDialogFilterEnabled();
+	[[nodiscard]] QString SearchDialogFilterIds();
+	[[nodiscard]] rpl::producer<> SearchDialogFilterChanges();
+	[[nodiscard]] bool SearchDialogFilterContains(PeerId peer);
+	void SetSearchDialogFilterEnabled(bool enabled);
+	void SetSearchDialogFilterIds(const QString &value);
 	[[nodiscard]] bool MultipleChatWindows();
 	[[nodiscard]] int SearchPornConcurrency();
 	[[nodiscard]] rpl::producer<int> SearchPornConcurrencyChanges();

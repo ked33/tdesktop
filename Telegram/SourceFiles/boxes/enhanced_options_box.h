@@ -221,6 +221,26 @@ private:
 
 };
 
+class SearchDialogFilterBox : public Ui::BoxContent {
+public:
+	SearchDialogFilterBox(QWidget *parent);
+
+	static QString IdsLabel(const QString &value);
+
+protected:
+	void prepare() override;
+
+	void setInnerFocus() override;
+
+	void resizeEvent(QResizeEvent *e) override;
+
+private:
+	void save();
+
+	object_ptr<Ui::InputField> _ids = { nullptr };
+
+};
+
 class QuickCopyTargetsBox : public Ui::BoxContent {
 public:
 	QuickCopyTargetsBox(QWidget *parent);

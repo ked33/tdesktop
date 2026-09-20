@@ -625,6 +625,36 @@ namespace Settings {
 			EnhancedSettings::SetSearchIncludePorn(toggled);
 		}, container->lifetime());
 
+		AddButtonWithIcon(
+				inner,
+				tr::lng_settings_search_dialog_filter(),
+				st::settingsButtonNoIcon
+		)->toggleOn(
+				rpl::single(EnhancedSettings::SearchDialogFilterEnabled())
+		)->toggledChanges(
+		) | rpl::on_next([](bool toggled) {
+			EnhancedSettings::SetSearchDialogFilterEnabled(toggled);
+		}, container->lifetime());
+
+		auto searchDialogFilterIdsValue = rpl::single(
+			SearchDialogFilterBox::IdsLabel(
+				EnhancedSettings::SearchDialogFilterIds())
+		) | rpl::then(
+			EnhancedSettings::SearchDialogFilterChanges()
+			| rpl::map([] {
+				return SearchDialogFilterBox::IdsLabel(
+					EnhancedSettings::SearchDialogFilterIds());
+			})
+		);
+		AddButtonWithLabel(
+			inner,
+			rpl::single(QString()),
+			std::move(searchDialogFilterIdsValue),
+			st::settingsButtonNoIcon
+		)->addClickHandler([] {
+			Ui::show(Box<SearchDialogFilterBox>());
+		});
+
 		AddButtonWithLabel(
 			inner,
 			tr::lng_settings_search_porn_concurrency(),

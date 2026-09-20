@@ -10,6 +10,7 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #include "mainwidget.h"
 #include "window/window_controller.h"
 #include "core/application.h"
+#include "base/flat_set.h"
 #include "base/parse_helper.h"
 #include "facades.h"
 #include "ui/widgets/fields/input_field.h"
@@ -33,6 +34,64 @@ namespace EnhancedSettings {
 		rpl::event_stream<bool> &SearchIncludePornEvents() {
 			static auto events = rpl::event_stream<bool>();
 			return events;
+		}
+
+		rpl::event_stream<> &SearchDialogFilterEvents() {
+			static auto events = rpl::event_stream<>();
+			return events;
+		}
+
+		struct SearchDialogFilterCache {
+			bool enabled = false;
+			QString text;
+			base::flat_set<PeerId> ids;
+			bool valid = false;
+		};
+
+		SearchDialogFilterCache &DialogFilterCache() {
+			static auto cache = SearchDialogFilterCache();
+			return cache;
+		}
+
+		void InvalidateSearchDialogFilterCache() {
+			DialogFilterCache().valid = false;
+		}
+
+		[[nodiscard]] base::flat_set<PeerId> ParseSearchDialogFilterIds(
+				const QString &text) {
+			auto result = base::flat_set<PeerId>();
+			for (const auto &part : text.split(QChar(','), Qt::SkipEmptyParts)) {
+				const auto trimmed = part.trimmed();
+				auto ok = false;
+				const auto chatId = trimmed.toLongLong(&ok);
+				if (!ok || !chatId) {
+					continue;
+				}
+				if (const auto peerId = peerFromBotApiChatId(chatId)) {
+					result.emplace(peerId);
+				}
+			}
+			return result;
+		}
+
+		void EnsureSearchDialogFilterCache() {
+			auto &cache = DialogFilterCache();
+			const auto enabled = gEnhancedOptions.value(
+				u"search_dialog_filter"_q,
+				false).toBool();
+			const auto text = gEnhancedOptions.value(
+				u"search_dialog_filter_ids"_q).toString();
+			if (cache.valid
+				&& cache.enabled == enabled
+				&& cache.text == text) {
+				return;
+			}
+			cache.enabled = enabled;
+			cache.text = text;
+			cache.ids = (enabled && !text.trimmed().isEmpty())
+				? ParseSearchDialogFilterIds(text)
+				: base::flat_set<PeerId>();
+			cache.valid = true;
 		}
 
 		rpl::event_stream<int> &SearchPornConcurrencyEvents() {
@@ -102,6 +161,8 @@ namespace EnhancedSettings {
 			ensureInt(qsl("message_sticker_size"), kMessageStickerSizeDefault);
 			ensureBool(qsl("search_main_and_archive"), true);
 			ensureBool(u"search_include_porn"_q, true);
+			ensureBool(u"search_dialog_filter"_q, false);
+			ensureString(u"search_dialog_filter_ids"_q, QString());
 			ensureInt(u"search_porn_concurrency"_q, kSearchPornConcurrencyDefault);
 			ensureInt(
 				u"search_porn_request_interval_ms"_q,
@@ -266,6 +327,50 @@ namespace EnhancedSettings {
 		SetEnhancedValue(u"search_include_porn"_q, enabled);
 		Write();
 		SearchIncludePornEvents().fire_copy(enabled);
+	}
+
+	bool SearchDialogFilterEnabled() {
+		return gEnhancedOptions.value(
+			u"search_dialog_filter"_q,
+			false).toBool();
+	}
+
+	QString SearchDialogFilterIds() {
+		return gEnhancedOptions.value(
+			u"search_dialog_filter_ids"_q).toString();
+	}
+
+	rpl::producer<> SearchDialogFilterChanges() {
+		return SearchDialogFilterEvents().events();
+	}
+
+	bool SearchDialogFilterContains(PeerId peer) {
+		if (!peer) {
+			return false;
+		}
+		EnsureSearchDialogFilterCache();
+		return DialogFilterCache().ids.contains(peer);
+	}
+
+	void SetSearchDialogFilterEnabled(bool enabled) {
+		if (SearchDialogFilterEnabled() == enabled) {
+			return;
+		}
+		SetEnhancedValue(u"search_dialog_filter"_q, enabled);
+		Write();
+		InvalidateSearchDialogFilterCache();
+		SearchDialogFilterEvents().fire({});
+	}
+
+	void SetSearchDialogFilterIds(const QString &value) {
+		const auto trimmed = value.trimmed();
+		if (SearchDialogFilterIds() == trimmed) {
+			return;
+		}
+		SetEnhancedValue(u"search_dialog_filter_ids"_q, trimmed);
+		Write();
+		InvalidateSearchDialogFilterCache();
+		SearchDialogFilterEvents().fire({});
 	}
 
 	int SearchPornConcurrency() {
@@ -543,6 +648,8 @@ namespace EnhancedSettings {
 		settings.insert(qsl("disable_global_search"), false);
 		settings.insert(qsl("search_main_and_archive"), true);
 		settings.insert(u"search_include_porn"_q, true);
+		settings.insert(u"search_dialog_filter"_q, false);
+		settings.insert(u"search_dialog_filter_ids"_q, QString());
 		settings.insert(u"search_porn_concurrency"_q, kSearchPornConcurrencyDefault);
 		settings.insert(
 			u"search_porn_request_interval_ms"_q,
@@ -661,6 +768,10 @@ namespace EnhancedSettings {
 		settings.insert(qsl("disable_global_search"), GetEnhancedBool("disable_global_search"));
 		settings.insert(qsl("search_main_and_archive"), GetEnhancedBool("search_main_and_archive"));
 		settings.insert(u"search_include_porn"_q, SearchIncludePorn());
+		settings.insert(u"search_dialog_filter"_q, SearchDialogFilterEnabled());
+		settings.insert(
+			u"search_dialog_filter_ids"_q,
+			SearchDialogFilterIds());
 		settings.insert(u"search_porn_concurrency"_q, SearchPornConcurrency());
 		settings.insert(
 			u"search_porn_request_interval_ms"_q,
