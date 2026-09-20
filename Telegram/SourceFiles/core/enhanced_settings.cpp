@@ -59,8 +59,15 @@ namespace EnhancedSettings {
 
 		[[nodiscard]] base::flat_set<PeerId> ParseSearchDialogFilterIds(
 				const QString &text) {
+			auto normalized = text;
+			normalized.replace(QChar(0xFF0C), QChar(','));
+			normalized.replace(QChar(';'), QChar(','));
+			normalized.replace(QChar('\n'), QChar(','));
+			normalized.replace(QChar('\r'), QChar(','));
 			auto result = base::flat_set<PeerId>();
-			for (const auto &part : text.split(QChar(','), Qt::SkipEmptyParts)) {
+			for (const auto &part : normalized.split(
+					QChar(','),
+					Qt::SkipEmptyParts)) {
 				const auto trimmed = part.trimmed();
 				auto ok = false;
 				const auto chatId = trimmed.toLongLong(&ok);

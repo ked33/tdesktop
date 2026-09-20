@@ -47,6 +47,13 @@ PornSearch::PornSearch(not_null<ApiWrap*> api)
 	) | rpl::on_next(settingsChanged, _lifetime);
 	EnhancedSettings::SearchPornRequestIntervalChanges(
 	) | rpl::on_next(settingsChanged, _lifetime);
+	EnhancedSettings::SearchDialogFilterChanges(
+	) | rpl::on_next([=] {
+		for (auto &entry : _queries) {
+			entry.second.dirty = true;
+		}
+		schedule();
+	}, _lifetime);
 	using Flag = Data::PeerUpdate::Flag;
 	rpl::merge(
 		_session->changes().realtimePeerUpdates(Flag::UnavailableReason),
@@ -607,6 +614,11 @@ bool PornSearch::sendReadySearch(bool firstPage) {
 			query = begin(_queries);
 		}
 		for (const auto &[peer, source] : query->second.sources.entries()) {
+			if (EnhancedSettings::SearchDialogFilterContains(peer)
+				|| EnhancedSettings::SearchDialogFilterContains(
+					source.channel)) {
+				continue;
+			}
 			if (!source.task && !source.exhausted && !source.failed
 				&& ((!source.started && firstPage)
 					|| (!firstPage && (source.retry
@@ -1036,6 +1048,10 @@ PornSearchResult PornSearch::resultFor(const Query &query) const {
 	}
 	auto progress = std::map<PeerId, bool>();
 	for (const auto &[peer, source] : query.sources.entries()) {
+		if (EnhancedSettings::SearchDialogFilterContains(peer)
+			|| EnhancedSettings::SearchDialogFilterContains(source.channel)) {
+			continue;
+		}
 		progress.try_emplace(source.channel, true).first->second
 			&= source.started;
 		result.failed += int(source.failed);

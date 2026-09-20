@@ -464,6 +464,12 @@ Widget::Widget(
 	) | rpl::on_next([=] {
 		updatePornSearch();
 	}, lifetime());
+	EnhancedSettings::SearchDialogFilterChanges(
+	) | rpl::on_next([=] {
+		if (_inner->state() == WidgetState::Filtered) {
+			searchRequested(SearchRequestDelay::Instant);
+		}
+	}, lifetime());
 	_inner->retryPornSearchRequests(
 	) | rpl::on_next([=] {
 		retryPornSearch();

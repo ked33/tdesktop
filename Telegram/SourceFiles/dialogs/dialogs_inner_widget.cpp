@@ -249,7 +249,37 @@ base::options::toggle CtrlClickChatNewWindow({
 }
 
 [[nodiscard]] bool SkipSearchDialog(PeerData *peer) {
-	return peer && EnhancedSettings::SearchDialogFilterContains(peer->id);
+	if (!peer) {
+		return false;
+	}
+	if (EnhancedSettings::SearchDialogFilterContains(peer->id)) {
+		return true;
+	}
+	if (const auto to = peer->migrateTo()) {
+		return EnhancedSettings::SearchDialogFilterContains(to->id);
+	}
+	if (const auto from = peer->migrateFrom()) {
+		return EnhancedSettings::SearchDialogFilterContains(from->id);
+	}
+	return false;
+}
+
+[[nodiscard]] bool SkipGlobalSearchItem(
+		const SearchState &state,
+		not_null<HistoryItem*> item) {
+	using Tab = ChatSearchTab;
+	switch (state.tab) {
+	case Tab::MyMessages:
+	case Tab::PornMessages:
+	case Tab::PublicPosts:
+	case Tab::Archive:
+	case Tab::ThisCommunity:
+		return SkipSearchDialog(item->history()->peer);
+	case Tab::ThisTopic:
+	case Tab::ThisPeer:
+		return false;
+	}
+	return false;
 }
 
 [[nodiscard]] uint64 RowsCacheKey(Entry *entry) {
@@ -4518,6 +4548,28 @@ void InnerWidget::applySearchDialogFilter() {
 	if (_peerSearchSelected >= int(_peerSearchResults.size())) {
 		_peerSearchSelected = -1;
 	}
+	const auto skipRow = [&](const auto &row) {
+		return SkipGlobalSearchItem(_searchState, row->item());
+	};
+	_previewResults.erase(
+		ranges::remove_if(_previewResults, skipRow),
+		end(_previewResults));
+	if (_previewSelected >= int(_previewResults.size())) {
+		_previewSelected = -1;
+	}
+	if (_pornSearchEnabled) {
+		rebuildPornSearchResults();
+		return;
+	}
+	_searchResults.erase(
+		ranges::remove_if(_searchResults, skipRow),
+		end(_searchResults));
+	if (_searchedSelected >= int(_searchResults.size())) {
+		_searchedSelected = -1;
+	}
+	refreshSearchResultSelection(_searchResultSelection
+		? RowDescriptor(Key(), _searchResultSelection)
+		: _controller->activeChatEntryCurrent());
 	refresh();
 }
 
@@ -5209,11 +5261,14 @@ void InnerWidget::searchReceived(
 		}
 		_nativeSearchFailed = false;
 		_nativeSearchCount = fullCount;
-		if (inject) {
+		if (inject && !SkipGlobalSearchItem(_searchState, inject)) {
 			_nativeSearchResults.push_back(inject->fullId());
 			++_nativeSearchCount;
 		}
 		for (const auto item : messages) {
+			if (SkipGlobalSearchItem(_searchState, item)) {
+				continue;
+			}
 			_nativeSearchResults.push_back(item->fullId());
 		}
 		if (!_searchWithPostsPreview) {
@@ -5246,7 +5301,8 @@ void InnerWidget::searchReceived(
 	if (inject
 		&& (globalSearch
 			|| !_searchState.inChat
-			|| inject->history() == _searchState.inChat.history())) {
+			|| inject->history() == _searchState.inChat.history())
+		&& !SkipGlobalSearchItem(_searchState, inject)) {
 		Assert(_searchResults.empty());
 		Assert(!toPreview);
 		const auto id = inject->fullId();
@@ -5260,6 +5316,9 @@ void InnerWidget::searchReceived(
 	}
 	auto &results = toPreview ? _previewResults : _searchResults;
 	for (const auto &item : messages) {
+		if (SkipGlobalSearchItem(_searchState, item)) {
+			continue;
+		}
 		const auto history = item->history();
 		if (toPreview || !uniquePeers || !hasHistoryInResults(history)) {
 			const auto id = item->fullId();
@@ -5628,6 +5687,9 @@ void InnerWidget::rebuildPornSearchResults(bool messagesChanged) {
 		_searchResults.clear();
 		const auto uniquePeers = uniqueSearchResults();
 		for (const auto item : items) {
+			if (SkipSearchDialog(item->history()->peer)) {
+				continue;
+			}
 			if (uniquePeers && hasHistoryInResults(item->history())) {
 				continue;
 			}
