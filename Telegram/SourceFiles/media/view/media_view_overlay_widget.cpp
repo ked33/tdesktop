@@ -5756,12 +5756,11 @@ void OverlayWidget::flushPendingFrameStep() {
 		/ ((fps > 0.) ? fps : kFrameStepFallbackFps);
 	const auto shift = crl::time(std::round(_frameStepPending * stepMs));
 	_frameStepPending = 0;
-	_streamingStartPaused = true;
-	seekRelativeTime(shift);
+	seekRelativeTime(shift, true);
 	_frameStepThrottle.callOnce(kFrameStepThrottleMs);
 }
 
-void OverlayWidget::seekRelativeTime(crl::time time) {
+void OverlayWidget::seekRelativeTime(crl::time time, bool pauseAfter) {
 	Expects(_streamed != nullptr);
 
 	const auto &state = _streamed->instance.info().video.state;
@@ -5772,6 +5771,10 @@ void OverlayWidget::seekRelativeTime(crl::time time) {
 		|| duration == kDurationUnavailable) {
 		return;
 	}
+	const auto &player = _streamed->instance.player();
+	_streamingStartPaused = pauseAfter
+		|| player.paused()
+		|| player.finished();
 	const auto newTime = std::clamp(
 		position + time,
 		crl::time(0),
@@ -7708,8 +7711,7 @@ void OverlayWidget::handleKeyPress(not_null<QKeyEvent*> e) {
 			activateControls();
 			seekRelativeTime(kSeekTimeMsLong);
 			return;
-		} else if ((key == Qt::Key_Period || key == Qt::Key_Comma)
-			&& _streamed->instance.player().paused()) {
+		} else if (key == Qt::Key_Period || key == Qt::Key_Comma) {
 			activateControls();
 			_frameStepPending += (key == Qt::Key_Period) ? 1 : -1;
 			if (!_frameStepThrottle.isActive()) {

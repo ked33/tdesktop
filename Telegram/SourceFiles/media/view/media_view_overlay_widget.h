@@ -466,7 +466,7 @@ private:
 	void refreshSystemMediaControls();
 	void finishSystemMediaControls();
 	[[nodiscard]] QImage systemMediaControlsThumbnail() const;
-	void seekRelativeTime(crl::time time);
+	void seekRelativeTime(crl::time time, bool pauseAfter = false);
 	void restartAtProgress(float64 progress);
 	void restartAtSeekPosition(crl::time position);
 	void flushPendingFrameStep();
