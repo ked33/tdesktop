@@ -753,12 +753,6 @@ OverlayWidget::OverlayWidget()
 		startSpeedBoost();
 	});
 
-	_videoClickPauseTimer.setCallback([=] {
-		if (_streamed) {
-			playbackPauseResume();
-		}
-	});
-
 	_frameStepThrottle.setCallback([=] {
 		flushPendingFrameStep();
 	});
@@ -1633,7 +1627,6 @@ void OverlayWidget::clearStreaming(bool savePosition) {
 			_streamed->instance.player().prepareLegacyState());
 	}
 	_fullScreenVideo = false;
-	_videoClickPauseTimer.cancel();
 	_streamed = nullptr;
 }
 
@@ -8429,8 +8422,7 @@ void OverlayWidget::handleMousePress(
 	ClickHandler::pressed();
 
 	if (button == Qt::LeftButton) {
-		_videoClickPauseTimer.cancel();
-		_videoPressTime = crl::now();
+		_videoPlaybackToggledOnLastRelease = false;
 		_down = Over::None;
 		if (!ClickHandler::getPressed()) {
 			if ((_over == Over::Left && moveToNext(-1))
@@ -8508,7 +8500,6 @@ bool OverlayWidget::handleDoubleClick(
 		return false;
 	}
 	_speedBoostHoldTimer.cancel();
-	_videoClickPauseTimer.cancel();
 	_speedBoostFromMouse = false;
 	_down = Over::None;
 	if (_speedBoostActive) {
@@ -8518,6 +8509,9 @@ bool OverlayWidget::handleDoubleClick(
 		toggleFullScreen(_windowed);
 	} else {
 		playbackToggleFullScreen(true);
+		if (base::take(_videoPlaybackToggledOnLastRelease)) {
+			playbackPauseResume();
+		}
 	}
 	return true;
 }
@@ -9002,15 +8996,8 @@ void OverlayWidget::handleMouseRelease(
 							hide();
 						}
 					} else {
-						const auto interval = crl::time(
-							QApplication::doubleClickInterval());
-						const auto elapsed = crl::now() - _videoPressTime;
-						if (elapsed >= interval) {
-							playbackPauseResume();
-						} else {
-							_videoClickPauseTimer.callOnce(
-								interval - elapsed);
-						}
+						playbackPauseResume();
+						_videoPlaybackToggledOnLastRelease = true;
 					}
 				}
 			}
@@ -9344,7 +9331,6 @@ void OverlayWidget::clearBeforeHide() {
 	_speedBoostFromMouse = false;
 	_speedBoostAnimation.stop();
 	_speedBoostHoldTimer.cancel();
-	_videoClickPauseTimer.cancel();
 	_speedBoostTicker.stop();
 	_controlsHideTimer.cancel();
 	_controlsState = ControlsShown;
