@@ -148,6 +148,11 @@ struct ForwardRange {
 [[nodiscard]] std::vector<ForwardRange> CollectForwardRanges(
 	const std::vector<not_null<HistoryItem*>> &items,
 	bool preserveOrder = false);
+[[nodiscard]] int ForwardMessagesChunkLimit(
+	not_null<Main::Session*> session);
+[[nodiscard]] std::vector<ForwardRange> ChunkForwardRanges(
+	std::vector<ForwardRange> ranges,
+	int maxCount);
 [[nodiscard]] QVector<MTPint> ForwardRangeIds(
 	not_null<Main::Session*> session,
 	const ForwardRange &range);

@@ -26,6 +26,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_messages.h"
 #include "data/data_poll.h"
 #include "data/data_premium_limits.h"
+#include "data/data_groups.h"
 #include "data/data_session.h"
 #include "data/data_stories.h"
 #include "data/data_user.h"
@@ -684,6 +685,66 @@ std::vector<ForwardRange> CollectForwardRanges(
 			result.push_back({ .fromEphemeral = fromEphemeral });
 		}
 		result.back().items.push_back(item);
+	}
+	return result;
+}
+
+int ForwardMessagesChunkLimit(not_null<Main::Session*> session) {
+	return std::max(session->serverConfig().forwardedCountMax, 1);
+}
+
+std::vector<ForwardRange> ChunkForwardRanges(
+		std::vector<ForwardRange> ranges,
+		int maxCount) {
+	if (maxCount < 1) {
+		maxCount = MaxSelectedItems;
+	}
+	auto result = std::vector<ForwardRange>();
+	for (auto &range : ranges) {
+		if (range.items.empty()) {
+			continue;
+		} else if (int(range.items.size()) <= maxCount) {
+			result.push_back(std::move(range));
+			continue;
+		}
+		auto pending = base::flat_set<FullMsgId>();
+		for (const auto &item : range.items) {
+			pending.emplace(item->fullId());
+		}
+		auto taken = base::flat_set<FullMsgId>();
+		auto current = ForwardRange{ .fromEphemeral = range.fromEphemeral };
+		const auto flush = [&] {
+			if (!current.items.empty()) {
+				result.push_back(std::move(current));
+				current = { .fromEphemeral = range.fromEphemeral };
+			}
+		};
+		for (const auto &item : range.items) {
+			if (!taken.emplace(item->fullId()).second) {
+				continue;
+			}
+			auto piece = std::vector<not_null<HistoryItem*>>();
+			if (const auto group = item->history()->owner().groups().find(item)) {
+				for (const auto &part : group->items) {
+					if (!pending.contains(part->fullId())) {
+						continue;
+					}
+					taken.emplace(part->fullId());
+					piece.push_back(part);
+				}
+			} else {
+				piece.push_back(item);
+			}
+			if (!current.items.empty()
+				&& int(current.items.size() + piece.size()) > maxCount) {
+				flush();
+			}
+			current.items.insert(
+				end(current.items),
+				begin(piece),
+				end(piece));
+		}
+		flush();
 	}
 	return result;
 }

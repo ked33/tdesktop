@@ -1919,7 +1919,7 @@ bool ListWidget::isGoodForSelection(
 	if (!applyTo.contains(item->fullId())) {
 		++totalCount;
 	}
-	return (totalCount <= MaxSelectedItems);
+	return (totalCount <= MessageSelectionLimit());
 }
 
 bool ListWidget::addToSelection(
@@ -2135,7 +2135,7 @@ std::vector<not_null<HistoryItem*>> ListWidget::collectBetween(
 	}
 	auto result = std::vector<not_null<HistoryItem*>>();
 	auto seen = base::flat_set<FullMsgId>();
-	result.reserve(MaxSelectedItems);
+	result.reserve(MessageSelectionLimit());
 	const auto append = [&](not_null<HistoryItem*> item) {
 		if (!_delegate->listIsItemGoodForSelection(item)) {
 			return false;
@@ -2143,7 +2143,7 @@ std::vector<not_null<HistoryItem*>> ListWidget::collectBetween(
 		if (seen.emplace(item->fullId()).second) {
 			result.push_back(item);
 		}
-		return int(result.size()) <= MaxSelectedItems;
+		return int(result.size()) <= MessageSelectionLimit();
 	};
 	for (auto i = fromIt; i != toIt + 1; ++i) {
 		const auto item = (*i)->data();
@@ -2201,7 +2201,8 @@ std::vector<not_null<HistoryItem*>> ListWidget::selectionUpTo(
 	const auto selected = effectiveSelectedMessages();
 	auto total = selectedItemsCount(&_selected);
 	for (const auto &candidate : result) {
-		if (!selected.contains(candidate->fullId()) && ++total > MaxSelectedItems) {
+		if (!selected.contains(candidate->fullId())
+			&& ++total > MessageSelectionLimit()) {
 			return {};
 		}
 	}
@@ -3735,7 +3736,7 @@ void ListWidget::applyDragSelection(SelectedMap &applyTo) const {
 	if (_dragSelectAction == DragSelectAction::Selecting) {
 		for (const auto &itemId : _dragSelected) {
 			if (!applyTo.contains(itemId)) {
-				if (total >= MaxSelectedItems) {
+				if (total >= MessageSelectionLimit()) {
 					break;
 				}
 				if (const auto item = session().data().message(itemId);

@@ -172,7 +172,7 @@ ListWidget::ListWidget(
 	_provider->type(),
 	[=] { scrollDateCheck(); },
 	[=] { scrollDateHide(); }))
-, _selectedLimit(MaxSelectedItems)
+, _selectedLimit(MessageSelectionLimit())
 , _storiesAddToAlbumId(controller->storiesAddToAlbumId())
 , _hiddenMark(std::make_unique<StickerPremiumMark>(
 		&_controller->session(),

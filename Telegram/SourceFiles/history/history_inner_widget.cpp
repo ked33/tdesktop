@@ -5838,7 +5838,7 @@ int HistoryInner::selectedItemsCount(const SelectedItems *items) const {
 }
 
 int HistoryInner::maxSelectedItemsFor(const SelectedItems *items) const {
-	return MaxSelectedItems - selectedItemsCount(items);
+	return std::max(0, MessageSelectionLimit() - selectedItemsCount(items));
 }
 
 void HistoryInner::syncGlobalSelectedMessage(
@@ -6594,7 +6594,7 @@ void HistoryInner::mouseActionUpdate(bool finishing) {
 				if (dragFirstAffected) {
 					dragSelecting = !_selected.contains(dragFirstAffected->data());
 				}
-				// Drag selection can cover more than MaxSelectedItems
+				// Drag selection can cover more than MessageSelectionLimit()
 				// messages. Count from the anchor along the drag direction
 				// (a media group counts as all its members, matching
 				// applyDragSelection) and clamp the far endpoint at the cap
@@ -6996,7 +6996,7 @@ void HistoryInner::changeSelection(
 	const auto add = (action == SelectAction::Select);
 	if (add
 		&& goodForSelection(toItems, item, total)
-		&& total <= MaxSelectedItems) {
+		&& total <= MessageSelectionLimit()) {
 		addToSelection(toItems, item);
 	} else {
 		removeFromSelection(toItems, item);
@@ -7023,7 +7023,7 @@ void HistoryInner::changeSelectionAsGroup(
 				return false;
 			}
 		}
-		return (total <= MaxSelectedItems);
+		return (total <= MessageSelectionLimit());
 	}();
 	if (action == SelectAction::Select && canSelect) {
 		for (const auto &other : group->items) {
@@ -7339,7 +7339,9 @@ void HistoryInner::addSelectionRange(
 				auto item = block->messages[fromitem]->data();
 				changeSelectionAsGroup(toItems, item, SelectAction::Select);
 			}
-			if (selectedItemsCount(toItems.get()) >= MaxSelectedItems) break;
+			if (selectedItemsCount(toItems.get()) >= MessageSelectionLimit()) {
+				break;
+			}
 			fromitem = 0;
 		}
 	}

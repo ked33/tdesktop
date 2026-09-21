@@ -38,7 +38,7 @@ bool ChangeItemSelection(
 		ListItemSelectionData selectionData,
 		int limit) {
 	if (!limit) {
-		limit = MaxSelectedItems;
+		limit = MessageSelectionLimit();
 	}
 	const auto changeExisting = [&](auto it) {
 		if (it == selected.cend()) {

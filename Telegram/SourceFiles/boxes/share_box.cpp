@@ -2077,9 +2077,11 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 		}
 		state->failed = false;
 
-		const auto ranges = CollectForwardRanges(
-			history->owner().idsToItems(msgIds),
-			GetEnhancedBool("keep_selected_messages_across_chats"));
+		const auto ranges = ChunkForwardRanges(
+			CollectForwardRanges(
+				history->owner().idsToItems(msgIds),
+				GetEnhancedBool("keep_selected_messages_across_chats")),
+			ForwardMessagesChunkLimit(&history->session()));
 		auto items = std::vector<not_null<HistoryItem*>>();
 		for (const auto &range : ranges) {
 			items.insert(items.end(), range.items.begin(), range.items.end());
@@ -2121,9 +2123,7 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 			| (videoTimestamp.has_value() ? Flag::f_video_timestamp : Flag(0));
 
 		state->failed = false;
-		auto submitted = false;
 		auto &api = history->session().api();
-		auto &histories = history->owner().histories();
 		const auto donePhraseArgs = CreateForwardedMessagePhraseArgs(
 			result,
 			existingIds);
@@ -2141,6 +2141,19 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 		const auto showRecentForwardsToSelf = result.size() == 1
 			&& result.front()->peer()->isSelf()
 			&& history->session().premium();
+		struct ForwardJob {
+			not_null<History*> threadHistory;
+			MsgId topicRootId = 0;
+			not_null<PeerData*> fromPeer;
+			not_null<PeerData*> peer;
+			QVector<MTPint> mtpMsgIds;
+			int msgCount = 0;
+			int starsPaid = 0;
+			Flag sendFlags = Flag();
+			PeerData *sublistPeer = nullptr;
+			std::vector<not_null<HistoryItem*>> sourceItems;
+		};
+		auto jobs = std::vector<ForwardJob>();
 		for (const auto &thread : result) {
 			const auto peer = thread->peer();
 			const auto threadHistory = thread->owningHistory();
@@ -2172,7 +2185,9 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 				: thread->maybeSublistPeer();
 			for (const auto &range : ranges) {
 				const auto fromPeer = range.items.front()->history()->peer;
-				const auto mtpMsgIds = ForwardRangeIds(&history->session(), range);
+				const auto mtpMsgIds = ForwardRangeIds(
+					&history->session(),
+					range);
 				if (mtpMsgIds.isEmpty()) {
 					continue;
 				}
@@ -2183,112 +2198,142 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 				if (starsPaid) {
 					options.starsApproved -= starsPaid;
 				}
-				const auto sendFlags = commonSendFlags
-					| (ShouldSendSilent(peer, options)
-						? Flag::f_silent
-						: Flag(0))
-					| (options.shortcutId
-						? Flag::f_quick_reply_shortcut
-						: Flag(0))
-					| (starsPaid ? Flag::f_allow_paid_stars : Flag())
-					| (sublistPeer ? Flag::f_reply_to : Flag())
-					| (options.suggest ? Flag::f_suggested_post : Flag())
-					| (options.effectId ? Flag::f_effect : Flag())
-					| (range.fromEphemeral ? Flag::f_from_ephemeral : Flag(0));
-				auto buildMessage = [=](
-						not_null<History*> history,
-						FullReplyTo replyTo)
-					-> Data::Histories::PreparedMessage {
-					const auto kGeneralId
-						= Data::ForumTopic::kGeneralId;
-					const auto realTopMsgId
-						= (replyTo.topicRootId == kGeneralId)
-						? MsgId(0)
-						: replyTo.topicRootId;
-					auto flags = sendFlags;
-					if (realTopMsgId) {
-						flags |= Flag::f_top_msg_id;
-					} else {
-						flags &= ~Flag::f_top_msg_id;
-					}
-					auto randoms = QVector<MTPlong>(msgCount);
-					for (auto &value : randoms) {
-						value = base::RandomValue<MTPlong>();
-					}
-					return MTPmessages_ForwardMessages(
-						MTP_flags(flags),
-						fromPeer->input(),
-						MTP_vector<MTPint>(mtpMsgIds),
-						MTP_vector<MTPlong>(randoms),
-						history->peer->input(),
-						MTP_int(realTopMsgId),
-						(sublistPeer
-							? MTP_inputReplyToMonoForum(
-								sublistPeer->input())
-							: MTPInputReplyTo()),
-						MTP_int(options.scheduled),
-						MTP_int(options.scheduleRepeatPeriod),
-						MTP_inputPeerEmpty(),
-						Data::ShortcutIdToMTP(
+				jobs.push_back({
+					.threadHistory = threadHistory,
+					.topicRootId = topicRootId,
+					.fromPeer = fromPeer,
+					.peer = peer,
+					.mtpMsgIds = mtpMsgIds,
+					.msgCount = msgCount,
+					.starsPaid = starsPaid,
+					.sendFlags = commonSendFlags
+						| (ShouldSendSilent(peer, options)
+							? Flag::f_silent
+							: Flag(0))
+						| (options.shortcutId
+							? Flag::f_quick_reply_shortcut
+							: Flag(0))
+						| (starsPaid ? Flag::f_allow_paid_stars : Flag())
+						| (sublistPeer ? Flag::f_reply_to : Flag())
+						| (options.suggest ? Flag::f_suggested_post : Flag())
+						| (options.effectId ? Flag::f_effect : Flag())
+						| (range.fromEphemeral
+							? Flag::f_from_ephemeral
+							: Flag(0)),
+					.sublistPeer = sublistPeer,
+					.sourceItems = range.items,
+				});
+			}
+		}
+		if (jobs.empty()) {
+			return;
+		}
+		const auto pending = std::make_shared<std::vector<ForwardJob>>(
+			std::move(jobs));
+		const auto sendNext = std::make_shared<Fn<void()>>();
+		const auto finishUi = [=] {
+			if (state->requests.empty() && show->valid()) {
+				show->hideLayer();
+				if (!state->failed) {
+					if (destinationToast) {
+						base::call_delayed(
+							st::boxDuration,
 							&history->session(),
-							options.shortcutId),
-						MTP_long(options.effectId),
-						MTP_int(videoTimestamp.value_or(0)),
-						MTP_long(starsPaid),
-						Api::SuggestToMTP(options.suggest));
-				};
-				const auto sourceItems = range.items;
-				const auto destPeerId = peer->id;
-				const auto requestDone = [=](
-						const MTPUpdates &updates,
-						mtpRequestId requestKey) {
+							[=] {
+								if (show->valid()) {
+									show->showToast(
+										destinationToastText,
+										ChatHelpers::kSelectedActionToastDuration);
+								}
+							});
+					} else {
+						ShowForwardedMessageToast(
+							show,
+							&history->session(),
+							donePhraseArgs);
+					}
+				}
+			}
+		};
+		*sendNext = [=] {
+			if (pending->empty()) {
+				finishUi();
+				return;
+			}
+			const auto job = std::move(pending->front());
+			pending->erase(begin(*pending));
+			const auto requestKey = ++state->nextRequestKey;
+			state->requests.insert(requestKey);
+			auto buildMessage = [=](
+					not_null<History*> history,
+					FullReplyTo replyTo)
+				-> Data::Histories::PreparedMessage {
+				const auto kGeneralId
+					= Data::ForumTopic::kGeneralId;
+				const auto realTopMsgId
+					= (replyTo.topicRootId == kGeneralId)
+					? MsgId(0)
+					: replyTo.topicRootId;
+				auto flags = job.sendFlags;
+				if (realTopMsgId) {
+					flags |= Flag::f_top_msg_id;
+				} else {
+					flags &= ~Flag::f_top_msg_id;
+				}
+				auto randoms = QVector<MTPlong>(job.msgCount);
+				for (auto &value : randoms) {
+					value = base::RandomValue<MTPlong>();
+				}
+				return MTPmessages_ForwardMessages(
+					MTP_flags(flags),
+					job.fromPeer->input(),
+					MTP_vector<MTPint>(job.mtpMsgIds),
+					MTP_vector<MTPlong>(randoms),
+					history->peer->input(),
+					MTP_int(realTopMsgId),
+					(job.sublistPeer
+						? MTP_inputReplyToMonoForum(
+							job.sublistPeer->input())
+						: MTPInputReplyTo()),
+					MTP_int(options.scheduled),
+					MTP_int(options.scheduleRepeatPeriod),
+					MTP_inputPeerEmpty(),
+					Data::ShortcutIdToMTP(
+						&history->session(),
+						options.shortcutId),
+					MTP_long(options.effectId),
+					MTP_int(videoTimestamp.value_or(0)),
+					MTP_long(job.starsPaid),
+					Api::SuggestToMTP(options.suggest));
+			};
+			history->owner().histories().sendPreparedMessage(
+				job.threadHistory,
+				FullReplyTo{ .topicRootId = job.topicRootId },
+				uint64(0),
+				std::move(buildMessage),
+				[=](const MTPUpdates &updates, const MTP::Response &) {
 					if (no_quote) {
 						auto destIds = MessageIdsList();
 						Api::CollectNewMessageIds(
 							updates,
-							destPeerId,
+							job.peer->id,
 							destIds);
 						Api::AppendSourceLinksToCopiedMessages(
 							&history->session(),
-							sourceItems,
+							job.sourceItems,
 							destIds);
 					}
 					if (showRecentForwardsToSelf) {
 						ApiWrap::ProcessRecentSelfForwards(
-							&threadHistory->session(),
+							&job.threadHistory->session(),
 							updates,
-							peer->id,
-							fromPeer->id);
+							job.peer->id,
+							job.fromPeer->id);
 					}
 					state->requests.remove(requestKey);
-					if (state->requests.empty()) {
-						if (show->valid()) {
-							show->hideLayer();
-							if (!state->failed) {
-								if (destinationToast) {
-									base::call_delayed(
-										st::boxDuration,
-										&history->session(),
-										[=] {
-											if (show->valid()) {
-												show->showToast(
-													destinationToastText,
-													ChatHelpers::kSelectedActionToastDuration);
-											}
-										});
-								} else {
-									ShowForwardedMessageToast(
-										show,
-										&history->session(),
-										donePhraseArgs);
-								}
-							}
-						}
-					}
-				};
-				const auto requestFail = [=](
-						const MTP::Error &error,
-						mtpRequestId requestKey) {
+					(*sendNext)();
+				},
+				[=](const MTP::Error &error, const MTP::Response &) {
 					state->failed = true;
 					const auto type = error.type();
 					if (type.startsWith(
@@ -2302,45 +2347,13 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 							tr::lng_restricted_send_voice_messages(
 								tr::now,
 								lt_user,
-								peer->name()));
+								job.peer->name()));
 					}
 					state->requests.remove(requestKey);
-					if (state->requests.empty()) {
-						if (show->valid()) {
-							show->hideLayer();
-						}
-					}
-				};
-				const auto requestKey = ++state->nextRequestKey;
-				state->requests.insert(requestKey);
-				submitted = true;
-				histories.sendPreparedMessage(
-					threadHistory,
-					FullReplyTo{ .topicRootId = topicRootId },
-					uint64(0),
-					std::move(buildMessage),
-					[=](const MTPUpdates &updates,
-							const MTP::Response &) {
-						requestDone(updates, requestKey);
-					},
-					[=](const MTP::Error &error,
-							const MTP::Response &) {
-						requestFail(error, requestKey);
-					});
-			}
-		}
-		if (!submitted) {
-			return;
-		}
-		if (state->requests.empty() && show->valid()) {
-			show->hideLayer();
-			if (!state->failed) {
-				ShowForwardedMessageToast(
-					show,
-					&history->session(),
-					donePhraseArgs);
-			}
-		}
+					(*sendNext)();
+				});
+		};
+		(*sendNext)();
 		if (state->submitCallback) {
 			state->submitCallback();
 		}

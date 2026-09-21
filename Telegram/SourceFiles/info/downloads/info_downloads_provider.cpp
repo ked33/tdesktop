@@ -518,7 +518,7 @@ void Provider::applyDragSelection(
 	const auto search = !_queryWords.isEmpty();
 	const auto selectLimit = _storiesAddToAlbumId
 		? _controller->session().appConfig().storiesAlbumLimit()
-		: MaxSelectedItems;
+		: MessageSelectionLimit();
 	auto chosen = base::flat_set<not_null<const HistoryItem*>>();
 	chosen.reserve(till - from);
 	for (auto i = from; i != till; ++i) {

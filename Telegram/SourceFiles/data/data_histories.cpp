@@ -798,25 +798,55 @@ void Histories::deleteMessages(
 		not_null<History*> history,
 		const QVector<MTPint> &ids,
 		bool revoke) {
-	sendRequest(history, RequestType::Delete, [=](Fn<void()> finish) {
-		const auto done = [=](const MTPmessages_AffectedMessages &result) {
-			session().api().applyAffectedMessages(history->peer, result);
-			finish();
-			history->requestChatListMessage();
-		};
-		if (const auto channel = history->peer->asChannel()) {
-			return session().api().request(MTPchannels_DeleteMessages(
-				channel->inputChannel(),
-				MTP_vector<MTPint>(ids)
-			)).done(done).fail(finish).send();
-		} else {
-			using Flag = MTPmessages_DeleteMessages::Flag;
-			return session().api().request(MTPmessages_DeleteMessages(
-				MTP_flags(revoke ? Flag::f_revoke : Flag(0)),
-				MTP_vector<MTPint>(ids)
-			)).done(done).fail(finish).send();
+	if (ids.isEmpty()) {
+		return;
+	}
+	const auto sendChunk = [=](QVector<MTPint> chunk, Fn<void()> next) {
+		sendRequest(history, RequestType::Delete, [=](Fn<void()> finish) {
+			const auto done = [=](const MTPmessages_AffectedMessages &result) {
+				session().api().applyAffectedMessages(history->peer, result);
+				finish();
+				history->requestChatListMessage();
+				if (next) {
+					next();
+				}
+			};
+			const auto fail = [=] {
+				finish();
+				if (next) {
+					next();
+				}
+			};
+			if (const auto channel = history->peer->asChannel()) {
+				return session().api().request(MTPchannels_DeleteMessages(
+					channel->inputChannel(),
+					MTP_vector<MTPint>(chunk)
+				)).done(done).fail(fail).send();
+			} else {
+				using Flag = MTPmessages_DeleteMessages::Flag;
+				return session().api().request(MTPmessages_DeleteMessages(
+					MTP_flags(revoke ? Flag::f_revoke : Flag(0)),
+					MTP_vector<MTPint>(chunk)
+				)).done(done).fail(fail).send();
+			}
+		});
+	};
+	if (ids.size() <= MaxSelectedItems) {
+		sendChunk(ids, nullptr);
+		return;
+	}
+	auto remaining = std::make_shared<QVector<MTPint>>(ids);
+	const auto sendNext = std::make_shared<Fn<void()>>();
+	*sendNext = [=] {
+		if (remaining->isEmpty()) {
+			return;
 		}
-	});
+		const auto take = std::min(MaxSelectedItems, int(remaining->size()));
+		auto chunk = remaining->mid(0, take);
+		remaining->erase(remaining->begin(), remaining->begin() + take);
+		sendChunk(std::move(chunk), *sendNext);
+	};
+	(*sendNext)();
 }
 
 void Histories::deleteAllMessages(

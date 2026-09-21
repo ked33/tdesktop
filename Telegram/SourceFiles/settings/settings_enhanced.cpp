@@ -355,6 +355,20 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
+		AddButtonWithIcon(
+				inner,
+				tr::lng_settings_lift_message_selection_limit(),
+				st::settingsButtonNoIcon
+		)->toggleOn(
+				rpl::single(GetEnhancedBool("lift_message_selection_limit"))
+		)->toggledChanges(
+		) | rpl::filter([=](bool toggled) {
+			return (toggled != GetEnhancedBool("lift_message_selection_limit"));
+		}) | rpl::on_next([=](bool toggled) {
+			SetEnhancedValue("lift_message_selection_limit", toggled);
+			EnhancedSettings::Write();
+		}, container->lifetime());
+
 		const auto currentQuickCopyTargetsLabel = [] {
 			return QuickCopyTargetsBox::TargetsLabel(
 				GetEnhancedString("quick_copy_targets"));
