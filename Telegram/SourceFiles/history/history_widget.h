@@ -904,8 +904,12 @@ private:
 		rpl::lifetime lifetime;
 		Data::MessagesSlice slice;
 		FullMsgId aroundId;
+		std::optional<int> count;
+		std::optional<int> fromNewest;
+		MsgId anchorId = 0;
 	};
 	MessagesProgressState _messagesProgress;
+	MsgId _historyLoadOffsetId = 0;
 	mutable Data::ForumTopic *_creatingBotTopic = nullptr;
 	rpl::lifetime _historySponsoredPreloading;
 

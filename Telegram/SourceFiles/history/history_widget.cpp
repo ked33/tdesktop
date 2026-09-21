@@ -300,6 +300,80 @@ constexpr auto kMessagesProgressAround = 50;
 	return std::pair{ std::clamp(current, 1, total), total };
 }
 
+[[nodiscard]] std::optional<int> OffsetIdOffsetOf(
+		const MTPmessages_Messages &messages) {
+	return messages.match([](const MTPDmessages_messagesSlice &data)
+		-> std::optional<int> {
+		if (const auto value = data.voffset_id_offset()) {
+			return value->v;
+		}
+		return std::nullopt;
+	}, [](const MTPDmessages_channelMessages &data) -> std::optional<int> {
+		if (const auto value = data.voffset_id_offset()) {
+			return value->v;
+		}
+		return std::nullopt;
+	}, [](const auto &) -> std::optional<int> {
+		return std::nullopt;
+	});
+}
+
+[[nodiscard]] std::optional<int> CountableIndexInBlocks(
+		not_null<History*> history,
+		MsgId id) {
+	auto index = 0;
+	for (const auto &block : history->blocks) {
+		for (const auto &view : block->messages) {
+			const auto item = view->data();
+			if (item->history() != history
+				|| !item->isRegular()
+				|| item->isHistoryClearPlaceholder()) {
+				continue;
+			} else if (item->id == id) {
+				return index;
+			}
+			++index;
+		}
+	}
+	return std::nullopt;
+}
+
+[[nodiscard]] std::optional<std::pair<int, int>> CountMessagesProgressFromHint(
+		not_null<History*> history,
+		FullMsgId around,
+		std::optional<int> count,
+		std::optional<int> fromNewest,
+		MsgId anchorId,
+		bool atEnd) {
+	if (!count || *count <= 0) {
+		return std::nullopt;
+	}
+	const auto placeholders = HistoryClearPlaceholdersIn(history);
+	const auto total = *count - placeholders;
+	if (total <= 0) {
+		return std::nullopt;
+	} else if (atEnd) {
+		return std::pair{ total, total };
+	} else if (!around
+		|| around.peer != history->peer->id
+		|| !fromNewest
+		|| !anchorId) {
+		return std::nullopt;
+	}
+	const auto anchorCurrent = *count - *fromNewest;
+	auto current = anchorCurrent;
+	if (around.msg != anchorId) {
+		const auto visibleIndex = CountableIndexInBlocks(history, around.msg);
+		const auto anchorIndex = CountableIndexInBlocks(history, anchorId);
+		if (!visibleIndex || !anchorIndex) {
+			return std::nullopt;
+		}
+		current += (*visibleIndex - *anchorIndex);
+	}
+	current -= placeholders;
+	return std::pair{ std::clamp(current, 1, total), total };
+}
+
 constexpr auto kPreloadHeightsCount = 3; // when 3 screens to scroll left make a preload request
 constexpr auto kScrollToVoiceAfterScrolledMs = 1000;
 constexpr auto kSkipRepaintWhileScrollMs = 100;
@@ -544,8 +618,7 @@ HistoryWidget::HistoryWidget(
 		return (_history == history);
 	}) | rpl::on_next([=] {
 		_messagesProgress.lifetime.destroy();
-		_messagesProgress.slice = {};
-		_messagesProgress.aroundId = {};
+		_messagesProgress = {};
 		_topBar->setMessagesProgress(0, 0);
 	}, lifetime());
 
@@ -3705,8 +3778,8 @@ void HistoryWidget::setHistory(History *history) {
 		return;
 	}
 	_messagesProgress.lifetime.destroy();
-	_messagesProgress.slice = {};
-	_messagesProgress.aroundId = {};
+	_messagesProgress = {};
+	_historyLoadOffsetId = 0;
 	_topBar->setMessagesProgress(0, 0);
 	_pullToNext->setHistory(history);
 
@@ -4922,6 +4995,19 @@ void HistoryWidget::messagesReceived(
 	} break;
 	}
 
+	if ((_firstLoadRequest == requestId
+			|| _delayedShowAtRequest == requestId)
+		&& count > 0
+		&& !toMigrated) {
+		_messagesProgress.count = count;
+		if (const auto fromNewest = OffsetIdOffsetOf(messages)) {
+			_messagesProgress.fromNewest = fromNewest;
+			if (_historyLoadOffsetId > 0) {
+				_messagesProgress.anchorId = _historyLoadOffsetId;
+			}
+		}
+	}
+
 	if (_preloadRequest == requestId) {
 		addMessagesToFront(peer, *histList);
 		_preloadRequest = 0;
@@ -4996,6 +5082,7 @@ void HistoryWidget::messagesReceived(
 void HistoryWidget::historyLoaded() {
 	_historyInited = false;
 	doneShow();
+	updateMessagesProgress();
 }
 
 bool HistoryWidget::clearMaybeSendStart() {
@@ -5052,6 +5139,7 @@ void HistoryWidget::firstLoadMessages() {
 	auto offset = 0;
 	auto loadCount = kMessagesPerPage;
 	_firstLoadFromTheStart = false;
+	_historyLoadOffsetId = 0;
 	if (_showAtMsgId == ShowAtUnreadMsgId) {
 		if (const auto around = _migrated ? _migrated->loadAroundId() : 0) {
 			_history->getReadyFor(_showAtMsgId);
@@ -5083,6 +5171,8 @@ void HistoryWidget::firstLoadMessages() {
 			_history->getReadyFor(_showAtMsgId);
 		}
 	}
+
+	_historyLoadOffsetId = offsetId;
 
 	const auto offsetDate = 0;
 	const auto maxId = 0;
@@ -5322,6 +5412,7 @@ void HistoryWidget::delayedShowAt(
 			offsetId = -_delayedShowAtMsgId;
 		}
 	}
+	_historyLoadOffsetId = offsetId;
 	const auto offsetDate = 0;
 	const auto maxId = 0;
 	const auto minId = 0;
@@ -5420,8 +5511,22 @@ void HistoryWidget::updateMessagesProgress() {
 	} else if (view && !view->data()->isHistoryClearPlaceholder()) {
 		around = view->data()->fullId();
 	}
+	if ((!around || !IsServerMsgId(around.msg))
+		&& _messagesProgress.anchorId > 0) {
+		around = FullMsgId(_history->peer->id, _messagesProgress.anchorId);
+	}
 	if (!around || !IsServerMsgId(around.msg)) {
 		_topBar->setMessagesProgress(0, 0);
+		return;
+	}
+	if (const auto counted = CountMessagesProgressFromHint(
+			_history,
+			around,
+			_messagesProgress.count,
+			_messagesProgress.fromNewest,
+			_messagesProgress.anchorId,
+			atEnd)) {
+		_topBar->setMessagesProgress(counted->first, counted->second);
 		return;
 	}
 	if (const auto counted = CountMessagesProgress(
