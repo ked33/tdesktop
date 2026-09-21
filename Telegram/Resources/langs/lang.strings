@@ -1950,6 +1950,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_profile_bot_emoji_status_access" = "Emoji Status";
 "lng_info_add_as_contact" = "Add to contacts";
 "lng_profile_shared_media" = "Shared media";
+"lng_history_messages_progress" = "{n}/{amount} {percent}%";
 "lng_profile_suggest_photo" = "Suggest Profile Photo";
 "lng_profile_suggest_photo_from_clipboard" = "Suggest From Clipboard";
 "lng_profile_set_photo_for" = "Set Profile Photo";

@@ -97,6 +97,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_user.h"
 #include "data/data_chat_filters.h"
 #include "data/data_file_origin.h"
+#include "data/data_history_messages.h"
 #include "data/data_histories.h"
 #include "data/data_group_call.h"
 #include "data/data_message_reactions.h"
@@ -227,6 +228,31 @@ namespace {
 
 constexpr auto kMessagesPerPageFirst = 30;
 constexpr auto kMessagesPerPage = 50;
+constexpr auto kMessagesProgressAround = 50;
+
+[[nodiscard]] std::optional<std::pair<int, int>> CountMessagesProgress(
+		const Data::MessagesSlice &slice,
+		FullMsgId id,
+		bool atEnd) {
+	if (!slice.fullCount || *slice.fullCount <= 0) {
+		return std::nullopt;
+	}
+	const auto total = *slice.fullCount;
+	if (atEnd) {
+		return std::pair{ total, total };
+	} else if (!id || !slice.skippedBefore) {
+		return std::nullopt;
+	}
+	const auto i = ranges::find(slice.ids, id);
+	if (i == end(slice.ids)) {
+		return std::nullopt;
+	}
+	const auto current = *slice.skippedBefore
+		+ int(i - begin(slice.ids))
+		+ 1;
+	return std::pair{ std::clamp(current, 1, total), total };
+}
+
 constexpr auto kPreloadHeightsCount = 3; // when 3 screens to scroll left make a preload request
 constexpr auto kScrollToVoiceAfterScrolledMs = 1000;
 constexpr auto kSkipRepaintWhileScrollMs = 100;
@@ -3622,6 +3648,10 @@ void HistoryWidget::setHistory(History *history) {
 	if (_history == history) {
 		return;
 	}
+	_messagesProgress.lifetime.destroy();
+	_messagesProgress.slice = {};
+	_messagesProgress.aroundId = {};
+	_topBar->setMessagesProgress(0, 0);
 	_pullToNext->setHistory(history);
 
 	const auto was = _attachBotsMenu && _history && _history->peer->isUser();
@@ -5310,7 +5340,78 @@ void HistoryWidget::visibleAreaUpdated() {
 		_list->visibleAreaUpdated(scrollTop, scrollBottom);
 		controller()->floatPlayerAreaUpdated();
 		session().data().itemVisibilitiesUpdated();
+		updateMessagesProgress();
 	}
+}
+
+void HistoryWidget::updateMessagesProgress() {
+	if (!_history || !_list || _scroll->isHidden()) {
+		_topBar->setMessagesProgress(0, 0);
+		return;
+	}
+	const auto atEnd = !_history->scrollTopItem
+		&& (!_migrated || !_migrated->scrollTopItem)
+		&& _history->loadedAtBottom();
+	const auto view = _list->findViewForPinnedTracking(
+		_scroll->scrollTop()).first;
+	auto around = FullMsgId();
+	if (atEnd) {
+		if (const auto last = _history->lastMessage()) {
+			if (last->isRegular()) {
+				around = last->fullId();
+			}
+		}
+	} else if (view) {
+		around = view->data()->fullId();
+	}
+	if (!around || !IsServerMsgId(around.msg)) {
+		_topBar->setMessagesProgress(0, 0);
+		return;
+	}
+	if (const auto counted = CountMessagesProgress(
+			_messagesProgress.slice,
+			around,
+			atEnd)) {
+		_topBar->setMessagesProgress(counted->first, counted->second);
+		if (atEnd || ranges::contains(_messagesProgress.slice.ids, around)) {
+			return;
+		}
+	} else {
+		_topBar->setMessagesProgress(0, 0);
+	}
+	if (_messagesProgress.aroundId == around) {
+		return;
+	}
+	restartMessagesProgressViewer(around);
+}
+
+void HistoryWidget::restartMessagesProgressViewer(FullMsgId aroundId) {
+	_messagesProgress.lifetime.destroy();
+	_messagesProgress.slice = {};
+	_messagesProgress.aroundId = aroundId;
+	if (!_history || !aroundId) {
+		return;
+	}
+	const auto item = session().data().message(aroundId);
+	Data::HistoryMessagesViewer(
+		_history,
+		Data::MessagePosition{
+			.fullId = aroundId,
+			.date = item ? item->date() : TimeId(0),
+		},
+		kMessagesProgressAround,
+		kMessagesProgressAround
+	) | rpl::on_next([=](const Data::MessagesSlice &slice) {
+		_messagesProgress.slice = slice;
+		if (const auto counted = CountMessagesProgress(
+				slice,
+				_messagesProgress.aroundId,
+				!_history->scrollTopItem
+					&& (!_migrated || !_migrated->scrollTopItem)
+					&& _history->loadedAtBottom())) {
+			_topBar->setMessagesProgress(counted->first, counted->second);
+		}
+	}, _messagesProgress.lifetime);
 }
 
 void HistoryWidget::preloadHistoryIfNeeded() {

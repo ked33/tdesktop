@@ -5343,11 +5343,28 @@ MessagesBarData ChatWidget::listMessagesBar(
 	return {};
 }
 
+void ChatWidget::listVisibleAreaUpdated() {
+	WindowListDelegate::listVisibleAreaUpdated();
+	updateMessagesProgress();
+}
+
+void ChatWidget::updateMessagesProgress() {
+	if (!_inner) {
+		_topBar->setMessagesProgress(0, 0);
+		return;
+	} else if (const auto counted = _inner->messagesProgress()) {
+		_topBar->setMessagesProgress(counted->first, counted->second);
+		return;
+	}
+	_topBar->setMessagesProgress(0, 0);
+}
+
 void ChatWidget::listContentRefreshed() {
 	injectSponsoredMessages();
 	checkMaybeSendBotStart();
 	refreshAboutView();
 	_bottom->updateControlsVisibility();
+	updateMessagesProgress();
 }
 
 void ChatWidget::listUpdateDateLink(

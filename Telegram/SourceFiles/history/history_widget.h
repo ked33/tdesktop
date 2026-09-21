@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_view_top_toast.h"
 #include "history/history.h"
 #include "chat_helpers/field_characters_count_manager.h"
+#include "data/data_messages.h"
 #include "data/data_report.h"
 #include "window/section_widget.h"
 #include "window/window_session_controller.h"
@@ -761,6 +762,8 @@ private:
 	// updates the boundings of the visible area in HistoryInner
 	[[nodiscard]] bool hasSavedScroll() const;
 	void visibleAreaUpdated();
+	void updateMessagesProgress();
+	void restartMessagesProgressViewer(FullMsgId aroundId);
 	int countInitialScrollTop();
 	int countAutomaticScrollTop();
 	void preloadHistoryByScroll();
@@ -897,6 +900,12 @@ private:
 	QPointer<HistoryInner> _list;
 	History *_migrated = nullptr;
 	History *_history = nullptr;
+	struct MessagesProgressState {
+		rpl::lifetime lifetime;
+		Data::MessagesSlice slice;
+		FullMsgId aroundId;
+	};
+	MessagesProgressState _messagesProgress;
 	mutable Data::ForumTopic *_creatingBotTopic = nullptr;
 	rpl::lifetime _historySponsoredPreloading;
 

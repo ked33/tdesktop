@@ -32,6 +32,7 @@ class PopupMenu;
 class UnreadBadge;
 class InputField;
 class CrossButton;
+class FlatLabel;
 class InfiniteRadialAnimation;
 template <typename Widget>
 class FadeWrapScaled;
@@ -147,6 +148,7 @@ public:
 		return _chooseFromUserRequests.events();
 	}
 	[[nodiscard]] rpl::producer<> searchRequest() const;
+	void setMessagesProgress(int current, int total);
 
 	void setGeometryWithNarrowRatio(
 		QRect geometry,
@@ -173,6 +175,7 @@ private:
 	void updateInfoButtonVisibility();
 	void refreshLang();
 	void updateSearchVisibility();
+	void refreshMessagesProgress();
 	void updateSearchJumpToDateVisibility();
 	[[nodiscard]] bool searchJumpToDateFits() const;
 	void updateChooseFromUserGeometry();
@@ -278,6 +281,9 @@ private:
 	object_ptr<Ui::IconButton> _groupCall;
 	object_ptr<Ui::IconButton> _noForwardsLock;
 	object_ptr<Ui::IconButton> _search;
+	object_ptr<Ui::FlatLabel> _messagesProgress;
+	int _messagesProgressCurrent = 0;
+	int _messagesProgressTotal = 0;
 	object_ptr<Ui::IconButton> _recentActions;
 	object_ptr<Ui::IconButton> _admins;
 	object_ptr<Ui::IconButton> _infoToggle;

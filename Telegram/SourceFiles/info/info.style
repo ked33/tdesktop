@@ -926,6 +926,12 @@ topBarSearch: IconButton {
 	rippleAreaSize: 40px;
 	ripple: defaultRippleAnimationBgOver;
 }
+topBarMessagesProgress: FlatLabel(defaultSubTextLabel) {
+	textFg: historyStatusFg;
+	style: dialogsTextStyle;
+	maxHeight: 18px;
+}
+topBarMessagesProgressSkip: 4px;
 topBarCloseChoose: IconButton(topBarSearch) {
 	width: 56px;
 	icon: icon {{ "info/info_close", boxTitleCloseFg }};

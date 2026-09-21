@@ -248,6 +248,7 @@ public:
 	History *listTranslateHistory() override;
 	void listAddTranslatedItems(
 		not_null<TranslateTracker*> tracker) override;
+	void listVisibleAreaUpdated() override;
 	Ui::ChatPaintContext listPreparePaintContext(
 		Ui::ChatPaintContextArgs &&args) override;
 	base::unique_qptr<Ui::PopupMenu> listFillSenderUserpicMenu(
@@ -461,6 +462,7 @@ private:
 	void recountChatWidth();
 	void replyToMessage(FullReplyTo id);
 	void refreshTopBarActiveChat();
+	void updateMessagesProgress();
 	void handlePeerMigration();
 	void refreshUnreadCountBadge(std::optional<int> count);
 

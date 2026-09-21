@@ -30,6 +30,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/fade_wrap.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/fields/input_field.h"
+#include "ui/widgets/labels.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/menu/menu_add_action_callback_factory.h"
@@ -139,6 +140,7 @@ TopBarWidget::TopBarWidget(
 , _groupCall(this, st::topBarGroupCall)
 , _noForwardsLock(this, st::topBarNoForwardsLock)
 , _search(this, st::topBarSearch)
+, _messagesProgress(this, st::topBarMessagesProgress)
 , _recentActions(this, st::topBarRecentActions)
 , _admins(this, st::topBarAdmins)
 , _infoToggle(this, st::topBarInfo)
@@ -303,6 +305,9 @@ TopBarWidget::TopBarWidget(
 	_noForwardsLock->setAccessibleName(
 		tr::lng_manage_peer_no_forwards_title(tr::now));
 	_search->setAccessibleName(tr::lng_shortcuts_search(tr::now));
+	_messagesProgress->setAttribute(Qt::WA_TransparentForMouseEvents);
+	_messagesProgress->setSelectable(false);
+	_messagesProgress->hide();
 	_infoToggle->setAccessibleName(tr::lng_settings_section_info(tr::now));
 	_menuToggle->setAccessibleName(tr::lng_chat_menu(tr::now));
 	_back->setAccessibleName(tr::lng_go_back(tr::now));
@@ -355,6 +360,7 @@ void TopBarWidget::refreshLang() {
 	_mergeForward->setToolTip(tr::lng_selected_merge_forward(tr::now));
 	_mergeAlbum->setToolTip(tr::lng_selected_merge_here(tr::now));
 	_delete->setToolTip(tr::lng_selected_delete_tooltip(tr::now));
+	refreshMessagesProgress();
 	InvokeQueued(this, [this] { updateControlsGeometry(); });
 }
 
@@ -390,6 +396,45 @@ void TopBarWidget::clearChooseMessagesForReport() {
 
 rpl::producer<> TopBarWidget::searchRequest() const {
 	return _search->clicks() | rpl::to_empty;
+}
+
+void TopBarWidget::setMessagesProgress(int current, int total) {
+	if (_messagesProgressCurrent == current
+		&& _messagesProgressTotal == total) {
+		return;
+	}
+	_messagesProgressCurrent = current;
+	_messagesProgressTotal = total;
+	refreshMessagesProgress();
+	updateControlsGeometry();
+}
+
+void TopBarWidget::refreshMessagesProgress() {
+	const auto shown = (_messagesProgressCurrent > 0)
+		&& (_messagesProgressTotal > 0)
+		&& !_search->isHidden()
+		&& !_searchMode
+		&& !showSelectedState()
+		&& !_chooseForReportReason;
+	if (!shown) {
+		_messagesProgress->hide();
+		return;
+	}
+	const auto percent = std::clamp(
+		(float64(_messagesProgressCurrent) * 100.)
+			/ float64(_messagesProgressTotal),
+		0.,
+		100.);
+	_messagesProgress->setText(tr::lng_history_messages_progress(
+		tr::now,
+		lt_n,
+		QString::number(_messagesProgressCurrent),
+		lt_amount,
+		QString::number(_messagesProgressTotal),
+		lt_percent,
+		QString::number(percent, 'f', 1)));
+	_messagesProgress->resizeToWidth(_messagesProgress->textMaxWidth());
+	_messagesProgress->show();
 }
 
 void TopBarWidget::setChooseForReportReason(
@@ -1438,6 +1483,15 @@ void TopBarWidget::updateControlsGeometry() {
 	if (!_search->isHidden()) {
 		_rightTaken += _search->width() + st::topBarCallSkip;
 	}
+	if (!_messagesProgress->isHidden()) {
+		_messagesProgress->moveToRight(
+			_rightTaken,
+			otherButtonsTop
+				+ (height() - _messagesProgress->height()) / 2);
+		_rightTaken += _messagesProgress->width()
+			+ st::topBarMessagesProgressSkip;
+		_messagesProgress->raise();
+	}
 	_noForwardsLock->moveToRight(_rightTaken, otherButtonsTop);
 	if (!_noForwardsLock->isHidden()) {
 		_rightTaken += _noForwardsLock->width() + st::topBarCallSkip;
@@ -1634,6 +1688,7 @@ void TopBarWidget::updateControlsVisibility() {
 	if (_membersShowArea) {
 		_membersShowArea->setVisible(!_chooseForReportReason);
 	}
+	refreshMessagesProgress();
 	updateControlsGeometry();
 }
 

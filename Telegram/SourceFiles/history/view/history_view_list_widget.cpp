@@ -2296,6 +2296,31 @@ std::optional<int> ListWidget::skippedAtBottom() const {
 	return _inverted ? _slice.skippedBefore : _slice.skippedAfter;
 }
 
+std::optional<std::pair<int, int>> ListWidget::messagesProgress() const {
+	if (!_slice.fullCount || *_slice.fullCount <= 0) {
+		return std::nullopt;
+	}
+	const auto total = *_slice.fullCount;
+	if (atNewestEdge() && loadedAtBottom()) {
+		return std::pair{ total, total };
+	} else if (!_slice.skippedBefore) {
+		return std::nullopt;
+	}
+	const auto view = findViewForPinnedTracking(_visibleTop).first;
+	if (!view) {
+		return std::nullopt;
+	}
+	const auto id = view->data()->fullId();
+	const auto i = ranges::find(_slice.ids, id);
+	if (i == end(_slice.ids)) {
+		return std::nullopt;
+	}
+	const auto current = *_slice.skippedBefore
+		+ int(i - begin(_slice.ids))
+		+ 1;
+	return std::pair{ std::clamp(current, 1, total), total };
+}
+
 bool ListWidget::loadedAtTopKnown() const {
 	return !!skippedAtTop();
 }

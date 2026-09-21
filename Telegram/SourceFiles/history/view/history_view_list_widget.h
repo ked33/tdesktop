@@ -395,6 +395,7 @@ public:
 
 	[[nodiscard]] std::optional<int> skippedAtTop() const;
 	[[nodiscard]] std::optional<int> skippedAtBottom() const;
+	[[nodiscard]] std::optional<std::pair<int, int>> messagesProgress() const;
 	[[nodiscard]] bool atNewestEdge() const;
 	[[nodiscard]] bool loadedAtTopKnown() const;
 	[[nodiscard]] bool loadedAtTop() const;
