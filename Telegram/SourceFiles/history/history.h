@@ -255,6 +255,14 @@ public:
 	[[nodiscard]] bool loadedAtTop() const; // nothing was added after loading history back
 	void markLoadedAtTop();
 	[[nodiscard]] int progressPlaceholderCount() const;
+
+	struct MessagesProgressHint {
+		int count = 0;
+		MsgId id = 0;
+		std::optional<int> fromNewest;
+	};
+	void setMessagesProgressHint(MessagesProgressHint hint);
+	[[nodiscard]] MessagesProgressHint messagesProgressHint() const;
 	[[nodiscard]] bool hasGuestChatBotMessages() const;
 	void setHasGuestChatBotMessages();
 	[[nodiscard]] bool isReadyFor(MsgId msgId); // has messages for showing history at msgId
@@ -694,6 +702,7 @@ private:
 	std::unordered_set<std::unique_ptr<HistoryItem>> _items;
 
 	std::unique_ptr<Data::HistoryMessages> _messages;
+	MessagesProgressHint _messagesProgressHint;
 	std::unique_ptr<HistoryStreamedDrafts> _streamedDrafts;
 
 	// This almost always is equal to _lastMessage. The only difference is

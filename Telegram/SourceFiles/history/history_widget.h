@@ -764,6 +764,9 @@ private:
 	void visibleAreaUpdated();
 	void updateMessagesProgress();
 	void restartMessagesProgressViewer(FullMsgId aroundId);
+	void restoreMessagesProgressHint();
+	void saveMessagesProgressHint();
+	void requestMessagesProgressMeta(FullMsgId around);
 	int countInitialScrollTop();
 	int countAutomaticScrollTop();
 	void preloadHistoryByScroll();
@@ -910,6 +913,8 @@ private:
 	};
 	MessagesProgressState _messagesProgress;
 	MsgId _historyLoadOffsetId = 0;
+	mtpRequestId _messagesProgressMetaRequest = 0;
+	MsgId _messagesProgressMetaAroundId = 0;
 	mutable Data::ForumTopic *_creatingBotTopic = nullptr;
 	rpl::lifetime _historySponsoredPreloading;
 

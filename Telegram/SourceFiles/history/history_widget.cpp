@@ -357,10 +357,9 @@ constexpr auto kMessagesProgressAround = 50;
 	if (around.msg != anchorId) {
 		const auto visibleIndex = CountableIndexInBlocks(history, around.msg);
 		const auto anchorIndex = CountableIndexInBlocks(history, anchorId);
-		if (!visibleIndex || !anchorIndex) {
-			return std::nullopt;
+		if (visibleIndex && anchorIndex) {
+			current += (*visibleIndex - *anchorIndex);
 		}
-		current += (*visibleIndex - *anchorIndex);
 	}
 	current -= placeholders;
 	return std::pair{ std::clamp(current, 1, total), total };
@@ -700,6 +699,10 @@ HistoryWidget::HistoryWidget(
 	) | rpl::filter([=](not_null<const History*> history) {
 		return (_history == history);
 	}) | rpl::on_next([=] {
+		if (_messagesProgressMetaRequest) {
+			_api.request(base::take(_messagesProgressMetaRequest)).cancel();
+		}
+		_messagesProgressMetaAroundId = 0;
 		_messagesProgress.lifetime.destroy();
 		_messagesProgress = {};
 		_topBar->setMessagesProgress(0, 0);
@@ -3860,6 +3863,10 @@ void HistoryWidget::setHistory(History *history) {
 	if (_history == history) {
 		return;
 	}
+	if (_messagesProgressMetaRequest) {
+		_api.request(base::take(_messagesProgressMetaRequest)).cancel();
+	}
+	_messagesProgressMetaAroundId = 0;
 	_messagesProgress.lifetime.destroy();
 	_messagesProgress = {};
 	_historyLoadOffsetId = 0;
@@ -3901,6 +3908,7 @@ void HistoryWidget::setHistory(History *history) {
 	if (history) {
 		_history = history;
 		_migrated = _history ? _history->migrateFrom() : nullptr;
+		restoreMessagesProgressHint();
 		registerDraftSource();
 		if (_history) {
 			setupPreview();
@@ -5078,20 +5086,22 @@ void HistoryWidget::messagesReceived(
 	} break;
 	}
 
-	if ((_firstLoadRequest == requestId
-			|| _delayedShowAtRequest == requestId)
-		&& count > 0
-		&& !toMigrated) {
+	if (count > 0 && !toMigrated) {
 		_messagesProgress.count = count;
-		if (messages.type() == mtpc_messages_messages) {
+		const auto aroundLoad = (_firstLoadRequest == requestId)
+			|| (_delayedShowAtRequest == requestId);
+		if (aroundLoad && messages.type() == mtpc_messages_messages) {
 			_history->markLoadedAtTop();
 		}
-		if (const auto fromNewest = OffsetIdOffsetOf(messages)) {
-			_messagesProgress.fromNewest = fromNewest;
-			if (_historyLoadOffsetId > 0) {
-				_messagesProgress.anchorId = _historyLoadOffsetId;
+		if (aroundLoad) {
+			if (const auto fromNewest = OffsetIdOffsetOf(messages)) {
+				_messagesProgress.fromNewest = fromNewest;
+				if (_historyLoadOffsetId > 0) {
+					_messagesProgress.anchorId = _historyLoadOffsetId;
+				}
 			}
 		}
+		saveMessagesProgressHint();
 	}
 
 	if (_preloadRequest == requestId) {
@@ -5623,6 +5633,28 @@ void HistoryWidget::updateMessagesProgress() {
 			_messagesProgress.anchorId,
 			atEnd)) {
 		_topBar->setMessagesProgress(counted->first, counted->second);
+		if (_messagesProgress.count
+			&& _messagesProgress.fromNewest
+			&& _messagesProgress.anchorId
+			&& around.msg != _messagesProgress.anchorId) {
+			const auto visibleIndex = CountableIndexInBlocks(
+				_history,
+				around.msg);
+			const auto anchorIndex = CountableIndexInBlocks(
+				_history,
+				_messagesProgress.anchorId);
+			if (visibleIndex && anchorIndex) {
+				const auto serverCurrent = *_messagesProgress.count
+					- *_messagesProgress.fromNewest
+					+ (*visibleIndex - *anchorIndex);
+				_messagesProgress.anchorId = around.msg;
+				_messagesProgress.fromNewest = *_messagesProgress.count
+					- serverCurrent;
+				saveMessagesProgressHint();
+			} else {
+				requestMessagesProgressMeta(around);
+			}
+		}
 		return;
 	}
 	if (const auto counted = CountMessagesProgressToBottom(
@@ -5657,11 +5689,84 @@ void HistoryWidget::updateMessagesProgress() {
 				.arg(Logs::b(_history->loadedAtTop()))
 				.arg(Logs::b(_history->loadedAtBottom()))
 				.arg(_messagesProgress.slice.skippedBefore.value_or(-1)));
+		requestMessagesProgressMeta(around);
 	}
 	if (_messagesProgress.aroundId == around) {
 		return;
 	}
 	restartMessagesProgressViewer(around);
+}
+
+void HistoryWidget::restoreMessagesProgressHint() {
+	if (!_history) {
+		return;
+	}
+	const auto hint = _history->messagesProgressHint();
+	if (hint.count > 0) {
+		_messagesProgress.count = hint.count;
+		_messagesProgress.fromNewest = hint.fromNewest;
+		_messagesProgress.anchorId = hint.id;
+	}
+}
+
+void HistoryWidget::saveMessagesProgressHint() {
+	if (!_history || !_messagesProgress.count) {
+		return;
+	}
+	_history->setMessagesProgressHint({
+		.count = *_messagesProgress.count,
+		.id = _messagesProgress.anchorId,
+		.fromNewest = _messagesProgress.fromNewest,
+	});
+}
+
+void HistoryWidget::requestMessagesProgressMeta(FullMsgId around) {
+	if (!_history
+		|| !around
+		|| around.peer != _history->peer->id
+		|| !IsServerMsgId(around.msg)
+		|| _messagesProgressMetaRequest
+		|| _messagesProgressMetaAroundId == around.msg) {
+		return;
+	}
+	_messagesProgressMetaAroundId = around.msg;
+	const auto history = _history;
+	const auto mtpOffsetId = int(std::clamp(
+		around.msg.bare,
+		int64(0),
+		int64(0x3FFFFFFF)));
+	_messagesProgressMetaRequest = _api.request(MTPmessages_GetHistory(
+		history->peer->input(),
+		MTP_int(mtpOffsetId),
+		MTP_int(0),
+		MTP_int(0),
+		MTP_int(1),
+		MTP_int(0),
+		MTP_int(0),
+		MTP_long(0)
+	)).done(crl::guard(this, [=](const MTPmessages_Messages &result) {
+		_messagesProgressMetaRequest = 0;
+		auto count = 0;
+		result.match([&](const MTPDmessages_messages &data) {
+			count = int(data.vmessages().v.size());
+		}, [&](const MTPDmessages_messagesSlice &data) {
+			count = data.vcount().v;
+		}, [&](const MTPDmessages_channelMessages &data) {
+			count = data.vcount().v;
+		}, [](const MTPDmessages_messagesNotModified &) {
+		});
+		if (count > 0) {
+			_messagesProgress.count = count;
+			if (const auto fromNewest = OffsetIdOffsetOf(result)) {
+				_messagesProgress.fromNewest = fromNewest;
+				_messagesProgress.anchorId = around.msg;
+			}
+			saveMessagesProgressHint();
+		}
+		updateMessagesProgress();
+	})).fail(crl::guard(this, [=](const MTP::Error &) {
+		_messagesProgressMetaRequest = 0;
+	})).send();
 }
 
 void HistoryWidget::restartMessagesProgressViewer(FullMsgId aroundId) {

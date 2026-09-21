@@ -3027,6 +3027,14 @@ int History::progressPlaceholderCount() const {
 	return result;
 }
 
+void History::setMessagesProgressHint(MessagesProgressHint hint) {
+	_messagesProgressHint = hint;
+}
+
+History::MessagesProgressHint History::messagesProgressHint() const {
+	return _messagesProgressHint;
+}
+
 void History::markLoadedAtTop() {
 	if (_loadedAtTop) {
 		return;
@@ -4457,6 +4465,7 @@ void History::clear(ClearType type, bool markEmpty) {
 		}
 		clearNotifications();
 		owner().notifyHistoryCleared(this);
+		_messagesProgressHint = {};
 		if (unreadCountKnown()) {
 			setUnreadCount(0);
 		}
