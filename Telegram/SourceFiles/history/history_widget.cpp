@@ -230,26 +230,73 @@ constexpr auto kMessagesPerPageFirst = 30;
 constexpr auto kMessagesPerPage = 50;
 constexpr auto kMessagesProgressAround = 50;
 
+[[nodiscard]] int HistoryClearPlaceholdersIn(
+		not_null<Main::Session*> session,
+		const Data::MessagesSlice &slice) {
+	auto result = 0;
+	for (const auto &id : slice.ids) {
+		if (const auto item = session->data().message(id)) {
+			if (item->isHistoryClearPlaceholder()) {
+				++result;
+			}
+		}
+	}
+	return result;
+}
+
+[[nodiscard]] int HistoryClearPlaceholdersIn(
+		not_null<History*> history) {
+	auto result = 0;
+	for (const auto &block : history->blocks) {
+		for (const auto &view : block->messages) {
+			if (view->data()->isHistoryClearPlaceholder()) {
+				++result;
+			}
+		}
+	}
+	return result;
+}
+
 [[nodiscard]] std::optional<std::pair<int, int>> CountMessagesProgress(
+		not_null<Main::Session*> session,
+		not_null<History*> history,
 		const Data::MessagesSlice &slice,
 		FullMsgId id,
 		bool atEnd) {
 	if (!slice.fullCount || *slice.fullCount <= 0) {
 		return std::nullopt;
 	}
-	const auto total = *slice.fullCount;
-	if (atEnd) {
+	const auto placeholders = std::max(
+		HistoryClearPlaceholdersIn(session, slice),
+		HistoryClearPlaceholdersIn(history));
+	const auto total = *slice.fullCount - placeholders;
+	if (total <= 0) {
+		return std::nullopt;
+	} else if (atEnd) {
 		return std::pair{ total, total };
 	} else if (!id || !slice.skippedBefore) {
 		return std::nullopt;
 	}
-	const auto i = ranges::find(slice.ids, id);
-	if (i == end(slice.ids)) {
+	auto countableBefore = 0;
+	auto found = false;
+	for (const auto &fullId : slice.ids) {
+		const auto item = session->data().message(fullId);
+		if (item && item->isHistoryClearPlaceholder()) {
+			if (fullId == id) {
+				return std::nullopt;
+			}
+			continue;
+		}
+		if (fullId == id) {
+			found = true;
+			break;
+		}
+		++countableBefore;
+	}
+	if (!found) {
 		return std::nullopt;
 	}
-	const auto current = *slice.skippedBefore
-		+ int(i - begin(slice.ids))
-		+ 1;
+	const auto current = *slice.skippedBefore + countableBefore + 1;
 	return std::pair{ std::clamp(current, 1, total), total };
 }
 
@@ -491,6 +538,15 @@ HistoryWidget::HistoryWidget(
 
 	session().downloaderTaskFinished() | rpl::on_next([=] {
 		update();
+	}, lifetime());
+	session().data().historyCleared(
+	) | rpl::filter([=](not_null<const History*> history) {
+		return (_history == history);
+	}) | rpl::on_next([=] {
+		_messagesProgress.lifetime.destroy();
+		_messagesProgress.slice = {};
+		_messagesProgress.aroundId = {};
+		_topBar->setMessagesProgress(0, 0);
 	}, lifetime());
 
 	_scroll->setHandleTouch(false);
@@ -5357,11 +5413,11 @@ void HistoryWidget::updateMessagesProgress() {
 	auto around = FullMsgId();
 	if (atEnd) {
 		if (const auto last = _history->lastMessage()) {
-			if (last->isRegular()) {
+			if (last->isRegular() && !last->isHistoryClearPlaceholder()) {
 				around = last->fullId();
 			}
 		}
-	} else if (view) {
+	} else if (view && !view->data()->isHistoryClearPlaceholder()) {
 		around = view->data()->fullId();
 	}
 	if (!around || !IsServerMsgId(around.msg)) {
@@ -5369,6 +5425,8 @@ void HistoryWidget::updateMessagesProgress() {
 		return;
 	}
 	if (const auto counted = CountMessagesProgress(
+			&session(),
+			_history,
 			_messagesProgress.slice,
 			around,
 			atEnd)) {
@@ -5404,6 +5462,8 @@ void HistoryWidget::restartMessagesProgressViewer(FullMsgId aroundId) {
 	) | rpl::on_next([=](const Data::MessagesSlice &slice) {
 		_messagesProgress.slice = slice;
 		if (const auto counted = CountMessagesProgress(
+				&session(),
+				_history,
 				slice,
 				_messagesProgress.aroundId,
 				!_history->scrollTopItem

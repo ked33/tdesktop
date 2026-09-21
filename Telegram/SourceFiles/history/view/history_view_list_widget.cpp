@@ -2300,24 +2300,56 @@ std::optional<std::pair<int, int>> ListWidget::messagesProgress() const {
 	if (!_slice.fullCount || *_slice.fullCount <= 0) {
 		return std::nullopt;
 	}
-	const auto total = *_slice.fullCount;
-	if (atNewestEdge() && loadedAtBottom()) {
-		return std::pair{ total, total };
-	} else if (!_slice.skippedBefore) {
+	auto placeholders = 0;
+	auto seen = base::flat_set<FullMsgId>();
+	const auto addPlaceholder = [&](FullMsgId id) {
+		if (!seen.emplace(id).second) {
+			return;
+		} else if (const auto item = session().data().message(id)) {
+			if (item->isHistoryClearPlaceholder()) {
+				++placeholders;
+			}
+		}
+	};
+	for (const auto &id : _slice.ids) {
+		addPlaceholder(id);
+	}
+	for (const auto &view : _items) {
+		addPlaceholder(view->data()->fullId());
+	}
+	const auto total = *_slice.fullCount - placeholders;
+	if (total <= 0) {
 		return std::nullopt;
 	}
 	const auto view = findViewForPinnedTracking(_visibleTop).first;
-	if (!view) {
+	if (atNewestEdge() && loadedAtBottom()) {
+		if (view && view->data()->isHistoryClearPlaceholder()) {
+			return std::nullopt;
+		}
+		return std::pair{ total, total };
+	} else if (!_slice.skippedBefore || !view) {
+		return std::nullopt;
+	} else if (view->data()->isHistoryClearPlaceholder()) {
 		return std::nullopt;
 	}
 	const auto id = view->data()->fullId();
-	const auto i = ranges::find(_slice.ids, id);
-	if (i == end(_slice.ids)) {
+	auto countableBefore = 0;
+	auto found = false;
+	for (const auto &fullId : _slice.ids) {
+		const auto item = session().data().message(fullId);
+		if (item && item->isHistoryClearPlaceholder()) {
+			continue;
+		}
+		if (fullId == id) {
+			found = true;
+			break;
+		}
+		++countableBefore;
+	}
+	if (!found) {
 		return std::nullopt;
 	}
-	const auto current = *_slice.skippedBefore
-		+ int(i - begin(_slice.ids))
-		+ 1;
+	const auto current = *_slice.skippedBefore + countableBefore + 1;
 	return std::pair{ std::clamp(current, 1, total), total };
 }
 

@@ -2895,6 +2895,10 @@ void HistoryItem::applyEditionToHistoryCleared() {
 		).c_messageService());
 }
 
+bool HistoryItem::isHistoryClearPlaceholder() const {
+	return Get<HistoryServiceClearHistory>() && isEmpty();
+}
+
 void HistoryItem::updateReplyMarkup(
 		HistoryMessageMarkupData &&markup,
 		bool ignoreSuggestButtons) {

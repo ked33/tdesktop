@@ -416,6 +416,7 @@ public:
 	void overrideMedia(std::unique_ptr<Data::Media> media);
 
 	void applyEditionToHistoryCleared();
+	[[nodiscard]] bool isHistoryClearPlaceholder() const;
 	void updateReplyMarkup(
 		HistoryMessageMarkupData &&markup,
 		bool ignoreSuggestButtons = false);
