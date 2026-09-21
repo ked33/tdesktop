@@ -11663,12 +11663,13 @@ void HistoryWidget::confirmDeleteSelected() {
 			return;
 		}
 		controller()->uiShow()->showToast(
-			tr::lng_deleted_then_chat(
-				tr::now,
-				lt_chat,
+			ChatHelpers::JoinToastParts(
+				tr::lng_deleted_then_chat(
+					tr::now,
+					lt_total,
+					QString::number(count)),
 				chat,
-				lt_total,
-				QString::number(count)),
+				QString()),
 			ChatHelpers::kSelectedActionToastDuration);
 	};
 	if (ids.empty()) {

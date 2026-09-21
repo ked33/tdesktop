@@ -9178,9 +9178,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_copy_to_done" = "消息已无引用转发到 ({total})";
 "lng_saved_done" = "已收藏（{total}）";
 "lng_merge_forward_done" = "已合并为相册 ({total})";
-"lng_merge_here_done" = "已合并为相册且删除 ({total})";
+"lng_merge_here_done" = "已合并为相册，原消息已删除 ({total})";
 "lng_chat_then_deleted" = "{chat}已删除 ({total})";
-"lng_deleted_then_chat" = "已删除{chat}({total})";
+"lng_deleted_then_chat" = "消息已删除 ({total})";
 "lng_merge_album_failed" = "合并相册失败";
 "lng_merge_album_fallback_bot" = "无法作为相册原发，已带来源转发到 @{user}";
 "lng_merge_album_fallback_bot_failed" = "无法作为相册原发，转发到 @{user} 失败";
