@@ -2108,6 +2108,7 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 		}
 
 		using Flag = MTPmessages_ForwardMessages::Flag;
+		using Flags = MTPmessages_ForwardMessages::Flags;
 		const auto commonSendFlags = (no_quote ? Flag(0) : Flag::f_with_my_score)
 			| (options.scheduled ? Flag::f_schedule_date : Flag(0))
 			| ((options.scheduled && options.scheduleRepeatPeriod)
@@ -2149,7 +2150,7 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 			QVector<MTPint> mtpMsgIds;
 			int msgCount = 0;
 			int starsPaid = 0;
-			Flag sendFlags = Flag();
+			Flags sendFlags;
 			PeerData *sublistPeer = nullptr;
 			std::vector<not_null<HistoryItem*>> sourceItems;
 		};
