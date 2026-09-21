@@ -3017,6 +3017,16 @@ bool History::loadedAtTop() const {
 	return _loadedAtTop;
 }
 
+int History::progressPlaceholderCount() const {
+	auto result = 0;
+	for (const auto &item : _items) {
+		if (item->isRegular() && item->isEmpty()) {
+			++result;
+		}
+	}
+	return result;
+}
+
 void History::markLoadedAtTop() {
 	if (_loadedAtTop) {
 		return;

@@ -254,6 +254,7 @@ public:
 	void setNotLoadedAtBottom();
 	[[nodiscard]] bool loadedAtTop() const; // nothing was added after loading history back
 	void markLoadedAtTop();
+	[[nodiscard]] int progressPlaceholderCount() const;
 	[[nodiscard]] bool hasGuestChatBotMessages() const;
 	void setHasGuestChatBotMessages();
 	[[nodiscard]] bool isReadyFor(MsgId msgId); // has messages for showing history at msgId

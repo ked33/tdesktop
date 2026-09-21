@@ -246,15 +246,7 @@ constexpr auto kMessagesProgressAround = 50;
 
 [[nodiscard]] int HistoryClearPlaceholdersIn(
 		not_null<History*> history) {
-	auto result = 0;
-	for (const auto &block : history->blocks) {
-		for (const auto &view : block->messages) {
-			if (view->data()->isHistoryClearPlaceholder()) {
-				++result;
-			}
-		}
-	}
-	return result;
+	return history->progressPlaceholderCount();
 }
 
 [[nodiscard]] std::optional<std::pair<int, int>> CountMessagesProgress(
@@ -417,6 +409,43 @@ constexpr auto kMessagesProgressAround = 50;
 		return std::nullopt;
 	}
 	return std::pair{ std::clamp(total - after, 1, total), total };
+}
+
+[[nodiscard]] std::optional<std::pair<int, int>> CountMessagesProgressLocal(
+		not_null<History*> history,
+		FullMsgId around,
+		bool atEnd) {
+	if (!history->loadedAtTop() || !history->loadedAtBottom()) {
+		return std::nullopt;
+	}
+	auto total = 0;
+	auto current = 0;
+	auto found = false;
+	for (const auto &block : history->blocks) {
+		for (const auto &view : block->messages) {
+			const auto item = view->data();
+			if (item->history() != history
+				|| !item->isRegular()
+				|| item->isEmpty()) {
+				continue;
+			}
+			++total;
+			if (!found) {
+				++current;
+				if (item->fullId() == around) {
+					found = true;
+				}
+			}
+		}
+	}
+	if (total <= 0) {
+		return std::nullopt;
+	} else if (atEnd) {
+		return std::pair{ total, total };
+	} else if (!found) {
+		return std::nullopt;
+	}
+	return std::pair{ current, total };
 }
 
 void LogMessagesProgress(const QString &text) {
@@ -5577,6 +5606,13 @@ void HistoryWidget::updateMessagesProgress() {
 		LogMessagesProgress(u"hide: no around, peer=%1 atEnd=%2"_q
 			.arg(_history->peer->name())
 			.arg(Logs::b(atEnd)));
+		return;
+	}
+	if (const auto counted = CountMessagesProgressLocal(
+			_history,
+			around,
+			atEnd)) {
+		_topBar->setMessagesProgress(counted->first, counted->second);
 		return;
 	}
 	if (const auto counted = CountMessagesProgressFromHint(
