@@ -94,9 +94,12 @@ jobs:
             win64-qt-${{ env.CACHE_KEY }}
 
       - name: Set up sccache
+        id: sccache
+        continue-on-error: true
         uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696
         with:
           version: "v0.15.0"
+          disable_annotations: "true"
 
       - name: Configure MSVC environment
         shell: cmd
@@ -174,6 +177,8 @@ jobs:
           if "%TDESKTOP_API_ID%"=="" exit /b 1
           if "%TDESKTOP_API_HASH%"=="" exit /b 1
           cd /d %TBUILD%\%REPO_NAME%\Telegram
+          set "SCCACHE_LAUNCHER_FLAGS="
+          if defined SCCACHE_PATH if exist "%SCCACHE_PATH%" set "SCCACHE_LAUNCHER_FLAGS=-D CMAKE_C_COMPILER_LAUNCHER=sccache -D CMAKE_CXX_COMPILER_LAUNCHER=sccache"
           configure.bat -G "Ninja Multi-Config" ^
             -D TDESKTOP_API_ID=%TDESKTOP_API_ID% ^
             -D TDESKTOP_API_HASH=%TDESKTOP_API_HASH% ^
@@ -181,9 +186,7 @@ jobs:
             -DCMAKE_CONFIGURATION_TYPES=Release ^
             -D DESKTOP_APP_NO_PDB=ON ^
             -D CMAKE_COMPILE_WARNING_AS_ERROR=OFF ^
-            -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= ^
-            -D CMAKE_C_COMPILER_LAUNCHER=sccache ^
-            -D CMAKE_CXX_COMPILER_LAUNCHER=sccache
+            -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= %SCCACHE_LAUNCHER_FLAGS%
 
       - name: Build Telegram (Release)
         shell: cmd
