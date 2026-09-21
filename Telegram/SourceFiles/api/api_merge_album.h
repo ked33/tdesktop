@@ -60,11 +60,26 @@ struct MergeAlbumCleanup {
 [[nodiscard]] QString DedupeMergeText(const QString &text);
 [[nodiscard]] QString SummarizeMergeCaptions(
 	const std::vector<QString> &captions);
+[[nodiscard]] QString SourceMessageLink(not_null<HistoryItem*> item);
+[[nodiscard]] TextWithEntities SourceLinkFooter(
+	const std::vector<not_null<HistoryItem*>> &items);
+[[nodiscard]] TextWithEntities AppendSourceLinkFooter(
+	TextWithEntities content,
+	const std::vector<not_null<HistoryItem*>> &items);
+void CollectNewMessageIds(
+	const MTPUpdates &updates,
+	PeerId dest,
+	MessageIdsList &out);
+void AppendSourceLinksToCopiedMessages(
+	not_null<Main::Session*> session,
+	const std::vector<not_null<HistoryItem*>> &sources,
+	const MessageIdsList &destIds);
 
 void SendMergedAlbums(
 	SendAction action,
 	const std::vector<not_null<HistoryItem*>> &items,
-	Fn<void(MergeAlbumResult)> done);
+	Fn<void(MergeAlbumResult)> done,
+	bool appendSourceLinks = false);
 
 void CopyThenMergeAlbums(
 	SendAction action,

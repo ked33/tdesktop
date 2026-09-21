@@ -3686,7 +3686,8 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 							return;
 						}
 						finish(std::move(sendResult));
-					});
+					},
+					true);
 			}
 			if (show->valid()) {
 				show->hideLayer();

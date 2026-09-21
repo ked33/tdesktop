@@ -7,13 +7,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_merge_album.h"
 
+#include "api/api_editing.h"
 #include "api/api_sending.h"
 #include "api/api_text_entities.h"
 #include "apiwrap.h"
 #include "base/debug_log.h"
 #include "base/flat_set.h"
 #include "base/random.h"
+#include "base/unixtime.h"
 #include "data/business/data_shortcut_messages.h"
+#include "data/data_channel.h"
+#include "data/data_chat.h"
 #include "data/data_document.h"
 #include "data/data_forum_topic.h"
 #include "data/data_peer.h"
@@ -22,6 +26,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_photo.h"
 #include "data/data_session.h"
 #include "data/data_types.h"
+#include "data/data_user.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/history_item_helpers.h"
@@ -29,6 +34,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/mtproto_config.h"
 #include "ui/chat/attach/attach_prepare.h"
 #include "ui/text/text_entity.h"
+#include "ui/text/text_utilities.h"
 
 #include <QtCore/QRegularExpression>
 #include <QtCore/QSet>
@@ -531,10 +537,27 @@ void SendTextChunks(
 	}
 }
 
+void SendTextWithEntities(
+		SendAction action,
+		TextWithEntities text) {
+	if (text.empty()) {
+		return;
+	}
+	action.clearDraft = false;
+	auto message = MessageToSend(action);
+	message.textWithTags = {
+		text.text,
+		TextUtilities::ConvertEntitiesToTextTags(text.entities),
+	};
+	message.webPage.removed = true;
+	message.action.clearDraft = false;
+	action.history->session().api().sendMessage(std::move(message));
+}
+
 void SendMergeGroup(
 		SendAction action,
 		std::vector<MergeAlbumMedia> items,
-		const QString &caption,
+		TextWithEntities caption,
 		Fn<void(QString)> done) {
 	Expects(!items.empty());
 
@@ -572,8 +595,8 @@ void SendMergeGroup(
 	auto requests = std::vector<MergeSendRequest>();
 	requests.reserve(items.size());
 	for (auto i = 0; i != int(items.size()); ++i) {
-		auto itemCaption = (i == 0 && !caption.isEmpty())
-			? TextWithEntities{ caption }
+		auto itemCaption = (i == 0)
+			? caption
 			: TextWithEntities();
 		const auto newId = FullMsgId(
 			peer->id,
@@ -909,16 +932,84 @@ QString SummarizeMergeCaptions(const std::vector<QString> &captions) {
 	for (const auto &caption : captions) {
 		const auto text = caption.trimmed();
 		if (!text.isEmpty()) {
-			parts.push_back(text);
+			parts.push_back(u"- "_q + text);
 		}
 	}
 	return DedupeMergeText(parts.join(u'\n'));
 }
 
+QString SourceMessageLink(not_null<HistoryItem*> item) {
+	const auto peer = item->history()->peer;
+	const auto &session = item->history()->session();
+	const auto post = QString::number(item->id.bare);
+	if (const auto channel = peer->asChannel()) {
+		const auto base = channel->hasUsername()
+			? channel->username()
+			: (u"c/"_q + QString::number(peerToChannel(channel->id).bare));
+		return session.createInternalLinkFull(base + '/' + post);
+	} else if (!peer->username().isEmpty()) {
+		return session.createInternalLinkFull(peer->username() + '/' + post);
+	} else if (const auto user = peer->asUser()) {
+		return u"tg://openmessage?user_id=%1&message_id=%2"_q
+			.arg(peerToUser(user->id).bare)
+			.arg(item->id.bare);
+	} else if (const auto chat = peer->asChat()) {
+		return u"tg://openmessage?chat_id=%1&message_id=%2"_q
+			.arg(peerToChat(chat->id).bare)
+			.arg(item->id.bare);
+	}
+	return QString();
+}
+
+TextWithEntities SourceLinkFooter(
+		const std::vector<not_null<HistoryItem*>> &items) {
+	auto links = std::vector<QString>();
+	auto seen = base::flat_set<QString>();
+	for (const auto &item : items) {
+		const auto link = SourceMessageLink(item);
+		if (link.isEmpty() || seen.contains(link)) {
+			continue;
+		}
+		seen.emplace(link);
+		links.push_back(link);
+	}
+	auto result = TextWithEntities();
+	if (links.empty()) {
+		return result;
+	}
+	result.append(QChar(' '));
+	for (auto i = 0; i != int(links.size()); ++i) {
+		if (i) {
+			result.append(u", "_q);
+		}
+		result.append(Ui::Text::Link(
+			u"原消息%1"_q.arg(i + 1),
+			links[i]));
+	}
+	return result;
+}
+
+TextWithEntities AppendSourceLinkFooter(
+		TextWithEntities content,
+		const std::vector<not_null<HistoryItem*>> &items) {
+	auto footer = SourceLinkFooter(items);
+	if (footer.empty()) {
+		return content;
+	}
+	if (!content.text.trimmed().isEmpty()
+		&& !content.text.endsWith(u"\n\n"_q)) {
+		content.append(content.text.endsWith(QChar('\n'))
+			? u"\n"_q
+			: u"\n\n"_q);
+	}
+	return content.append(std::move(footer));
+}
+
 void SendMergedAlbums(
 		SendAction action,
 		const std::vector<not_null<HistoryItem*>> &items,
-		Fn<void(MergeAlbumResult)> done) {
+		Fn<void(MergeAlbumResult)> done,
+		bool appendSourceLinks) {
 	action.clearDraft = false;
 	const auto session = &action.history->session();
 	const auto captionLimit = session->serverConfig().captionLengthMax;
@@ -971,6 +1062,7 @@ void SendMergedAlbums(
 		MergeAlbumResult result;
 		int index = 0;
 		Fn<void(MergeAlbumResult)> done;
+		bool appendSourceLinks = false;
 	};
 	const auto state = std::make_shared<State>(State{
 		.action = action,
@@ -982,6 +1074,7 @@ void SendMergedAlbums(
 		.result = std::move(result),
 		.index = 0,
 		.done = std::move(done),
+		.appendSourceLinks = appendSourceLinks,
 	});
 	auto uniqueSources = base::flat_set<PeerId>();
 	for (const auto &item : state->media) {
@@ -1040,16 +1133,39 @@ void SendMergedAlbums(
 				sentIds.push_back(slot.sourceId);
 			}
 		}
-		const auto mergedText = SummarizeMergeCaptions(captions);
-		const auto caption = (mergedText.size() <= captionLimit)
-			? mergedText
-			: QString();
-		const auto overflowText = caption.isEmpty() ? mergedText : QString();
+		auto mergedText = SummarizeMergeCaptions(captions);
+		auto caption = TextWithEntities{ mergedText };
+		auto overflowText = QString();
+		auto overflowFooter = TextWithEntities();
+		if (state->appendSourceLinks) {
+			auto sourceItems = std::vector<not_null<HistoryItem*>>();
+			sourceItems.reserve(sentIds.size());
+			for (const auto &id : sentIds) {
+				if (const auto item = session->data().message(id)) {
+					sourceItems.push_back(item);
+				}
+			}
+			const auto withFooter = AppendSourceLinkFooter(
+				caption,
+				sourceItems);
+			if (withFooter.text.size() <= captionLimit) {
+				caption = withFooter;
+			} else if (mergedText.size() <= captionLimit) {
+				overflowFooter = SourceLinkFooter(sourceItems);
+			} else {
+				caption = {};
+				overflowText = mergedText;
+				overflowFooter = SourceLinkFooter(sourceItems);
+			}
+		} else if (mergedText.size() > captionLimit) {
+			caption = {};
+			overflowText = mergedText;
+		}
 		const auto count = int(batch.size());
 		SendMergeGroup(
 			state->action,
 			std::move(batch),
-			caption,
+			std::move(caption),
 			[=](QString error) {
 			if (!error.isEmpty()) {
 				LOG(("MergeAlbum: group fail dest=%1 index=%2/%3 error=%4"
@@ -1076,15 +1192,16 @@ void SendMergedAlbums(
 			if (!overflowText.isEmpty()) {
 				SendTextChunks(state->action, overflowText);
 			}
+			if (!overflowFooter.empty()) {
+				SendTextWithEntities(state->action, overflowFooter);
+			}
 			self(self);
 		});
 	};
 	sendNext(sendNext);
 }
 
-namespace {
-
-void AppendCopiedMessageIds(
+void CollectNewMessageIds(
 		const MTPUpdates &updates,
 		PeerId dest,
 		MessageIdsList &out) {
@@ -1116,6 +1233,80 @@ void AppendCopiedMessageIds(
 	}, [](const auto &) {
 	});
 }
+
+void AppendSourceLinksToCopiedMessages(
+		not_null<Main::Session*> session,
+		const std::vector<not_null<HistoryItem*>> &sources,
+		const MessageIdsList &destIds) {
+	const auto n = std::min(int(sources.size()), int(destIds.size()));
+	if (n <= 0) {
+		return;
+	}
+	for (auto i = 0; i < n;) {
+		const auto dest = session->data().message(destIds[i]);
+		if (!dest) {
+			++i;
+			continue;
+		}
+		auto groupSources = std::vector<not_null<HistoryItem*>>();
+		groupSources.push_back(sources[i]);
+		auto till = i + 1;
+		const auto groupId = dest->groupId();
+		if (groupId) {
+			while (till < n) {
+				const auto next = session->data().message(destIds[till]);
+				if (!next || next->groupId() != groupId) {
+					break;
+				}
+				groupSources.push_back(sources[till]);
+				++till;
+			}
+		}
+		const auto footer = SourceLinkFooter(groupSources);
+		if (footer.empty()) {
+			i = till;
+			continue;
+		}
+		const auto combined = AppendSourceLinkFooter(
+			dest->originalText(),
+			groupSources);
+		const auto media = dest->media();
+		const auto captionLimit = session->serverConfig().captionLengthMax;
+		const auto now = base::unixtime::now();
+		const auto canEdit = dest->allowsEdit(now);
+		const auto captionable = media && media->allowsEditCaption();
+		const auto textEditable = !media || media->webpage();
+		const auto history = dest->history();
+		auto options = SendOptions();
+		options.invertCaption = dest->invertMedia();
+		if (canEdit
+			&& captionable
+			&& combined.text.size() <= captionLimit) {
+			EditCaption(dest, combined, options, [] {}, [=](
+					const QString &) {
+				SendTextWithEntities(SendAction(history), footer);
+			});
+		} else if (canEdit
+			&& textEditable
+			&& combined.text.size() <= kMergeMessageTextLimit) {
+			EditTextMessage(
+				dest,
+				combined,
+				Data::WebPageDraft{ .removed = true },
+				options,
+				[](mtpRequestId) {},
+				[=](const QString &, mtpRequestId) {
+					SendTextWithEntities(SendAction(history), footer);
+				},
+				false);
+		} else {
+			SendTextWithEntities(SendAction(history), footer);
+		}
+		i = till;
+	}
+}
+
+namespace {
 
 void ForwardOneAsCopy(
 		SendAction action,
@@ -1189,7 +1380,7 @@ void ForwardOneAsCopy(
 		},
 		[=](const MTPUpdates &updates, const MTP::Response &) {
 			auto ids = MessageIdsList();
-			AppendCopiedMessageIds(updates, dest, ids);
+			CollectNewMessageIds(updates, dest, ids);
 			LOG(("MergeAlbum: copy ok dest=%1 got=%2"
 			).arg(dest.value
 			).arg(int(ids.size())));
@@ -1221,7 +1412,11 @@ void CopyThenMergeAlbums(
 		&& (!items.front()->topic()
 			|| (action.replyTo.topicRootId == items.front()->topicRootId()));
 	if (sameChat) {
-		SendMergedAlbums(std::move(action), items, std::move(done));
+		SendMergedAlbums(
+			std::move(action),
+			items,
+			std::move(done),
+			true);
 		return;
 	}
 	if (!action.options.scheduled && !action.options.shortcutId) {
@@ -1268,7 +1463,8 @@ void CopyThenMergeAlbums(
 			SendMergedAlbums(
 				state->action,
 				destItems,
-				std::move(state->done));
+				std::move(state->done),
+				true);
 			return;
 		}
 		const auto item = state->items[state->index++];

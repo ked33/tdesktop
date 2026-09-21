@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/share_box.h"
 
+#include "api/api_merge_album.h"
 #include "api/api_premium.h"
 #include "base/call_delayed.h"
 #include "base/random.h"
@@ -2236,9 +2237,22 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 						MTP_long(starsPaid),
 						Api::SuggestToMTP(options.suggest));
 				};
+				const auto sourceItems = range.items;
+				const auto destPeerId = peer->id;
 				const auto requestDone = [=](
 						const MTPUpdates &updates,
 						mtpRequestId requestKey) {
+					if (no_quote) {
+						auto destIds = MessageIdsList();
+						Api::CollectNewMessageIds(
+							updates,
+							destPeerId,
+							destIds);
+						Api::AppendSourceLinksToCopiedMessages(
+							&history->session(),
+							sourceItems,
+							destIds);
+					}
 					if (showRecentForwardsToSelf) {
 						ApiWrap::ProcessRecentSelfForwards(
 							&threadHistory->session(),

@@ -7116,22 +7116,15 @@ void ConfirmMergeAlbumHereSelectedItems(not_null<ListWidget*> widget) {
 			const auto cleanup = Api::CleanupMergedSources(
 				session,
 				result.sentSourceIds);
+			const auto total = cleanup.deleted
+				? cleanup.deleted
+				: result.sentMedia;
 			const auto header = tr::lng_merge_here_done(
 				tr::now,
-				lt_chat,
-				sourceChat,
 				lt_total,
-				QString::number(result.sentMedia));
-			const auto footer = cleanup.deleted
-				? tr::lng_deleted_then_chat(
-					tr::now,
-					lt_chat,
-					sourceChat,
-					lt_total,
-					QString::number(cleanup.deleted))
-				: QString();
+				QString::number(total));
 			show->showToast(
-				ChatHelpers::JoinToastParts(header, QString(), footer),
+				ChatHelpers::JoinToastParts(header, sourceChat, QString()),
 				Api::kMergeAlbumToastDuration);
 			if (const auto strong = weak.get()) {
 				strong->cancelSelection();
