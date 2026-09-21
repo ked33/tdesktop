@@ -2297,6 +2297,33 @@ std::optional<int> ListWidget::skippedAtBottom() const {
 }
 
 std::optional<std::pair<int, int>> ListWidget::messagesProgress() const {
+	if (loadedAtTop() && loadedAtBottom()) {
+		auto total = 0;
+		auto current = 0;
+		auto found = false;
+		const auto around = findViewForPinnedTracking(_visibleTop).first;
+		if (around && around->data()->isHistoryClearPlaceholder()) {
+			return std::nullopt;
+		}
+		for (const auto &view : _items) {
+			const auto item = view->data();
+			if (!item->isRegular() || item->isHistoryClearPlaceholder()) {
+				continue;
+			}
+			++total;
+			if (!found) {
+				++current;
+				if (around && view == around) {
+					found = true;
+				}
+			}
+		}
+		if (atNewestEdge() && total > 0) {
+			return std::pair{ total, total };
+		} else if (found && total > 0) {
+			return std::pair{ current, total };
+		}
+	}
 	if (!_slice.fullCount || *_slice.fullCount <= 0) {
 		return std::nullopt;
 	}

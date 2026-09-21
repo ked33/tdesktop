@@ -374,6 +374,60 @@ constexpr auto kMessagesProgressAround = 50;
 	return std::pair{ std::clamp(current, 1, total), total };
 }
 
+[[nodiscard]] std::optional<std::pair<int, int>> CountMessagesProgressToBottom(
+		not_null<History*> history,
+		FullMsgId around,
+		std::optional<int> count,
+		bool atEnd) {
+	if (!count || *count <= 0 || !history->loadedAtBottom()) {
+		return std::nullopt;
+	}
+	const auto placeholders = HistoryClearPlaceholdersIn(history);
+	const auto total = *count - placeholders;
+	if (total <= 0) {
+		return std::nullopt;
+	} else if (atEnd) {
+		return std::pair{ total, total };
+	} else if (!around || around.peer != history->peer->id) {
+		return std::nullopt;
+	}
+	auto after = 0;
+	auto found = false;
+	for (auto i = history->blocks.end(); i != history->blocks.begin();) {
+		--i;
+		const auto &messages = (*i)->messages;
+		for (auto j = messages.end(); j != messages.begin();) {
+			--j;
+			const auto item = (*j)->data();
+			if (item->history() != history
+				|| !item->isRegular()
+				|| item->isHistoryClearPlaceholder()) {
+				continue;
+			} else if (item->id == around.msg) {
+				found = true;
+				break;
+			}
+			++after;
+		}
+		if (found) {
+			break;
+		}
+	}
+	if (!found) {
+		return std::nullopt;
+	}
+	return std::pair{ std::clamp(total - after, 1, total), total };
+}
+
+void LogMessagesProgress(const QString &text) {
+	static auto last = QString();
+	if (last == text) {
+		return;
+	}
+	last = text;
+	LOG(("MessagesProgress: %1").arg(text));
+}
+
 constexpr auto kPreloadHeightsCount = 3; // when 3 screens to scroll left make a preload request
 constexpr auto kScrollToVoiceAfterScrolledMs = 1000;
 constexpr auto kSkipRepaintWhileScrollMs = 100;
@@ -5000,6 +5054,9 @@ void HistoryWidget::messagesReceived(
 		&& count > 0
 		&& !toMigrated) {
 		_messagesProgress.count = count;
+		if (messages.type() == mtpc_messages_messages) {
+			_history->markLoadedAtTop();
+		}
 		if (const auto fromNewest = OffsetIdOffsetOf(messages)) {
 			_messagesProgress.fromNewest = fromNewest;
 			if (_historyLoadOffsetId > 0) {
@@ -5517,6 +5574,9 @@ void HistoryWidget::updateMessagesProgress() {
 	}
 	if (!around || !IsServerMsgId(around.msg)) {
 		_topBar->setMessagesProgress(0, 0);
+		LogMessagesProgress(u"hide: no around, peer=%1 atEnd=%2"_q
+			.arg(_history->peer->name())
+			.arg(Logs::b(atEnd)));
 		return;
 	}
 	if (const auto counted = CountMessagesProgressFromHint(
@@ -5525,6 +5585,14 @@ void HistoryWidget::updateMessagesProgress() {
 			_messagesProgress.count,
 			_messagesProgress.fromNewest,
 			_messagesProgress.anchorId,
+			atEnd)) {
+		_topBar->setMessagesProgress(counted->first, counted->second);
+		return;
+	}
+	if (const auto counted = CountMessagesProgressToBottom(
+			_history,
+			around,
+			_messagesProgress.count,
 			atEnd)) {
 		_topBar->setMessagesProgress(counted->first, counted->second);
 		return;
@@ -5541,6 +5609,18 @@ void HistoryWidget::updateMessagesProgress() {
 		}
 	} else {
 		_topBar->setMessagesProgress(0, 0);
+		LogMessagesProgress(
+			u"hide: peer=%1 around=%2 atEnd=%3 count=%4 fromNewest=%5 "
+			"anchor=%6 top=%7 bottom=%8 skippedBefore=%9"_q
+				.arg(_history->peer->name())
+				.arg(around.msg.bare)
+				.arg(Logs::b(atEnd))
+				.arg(_messagesProgress.count.value_or(-1))
+				.arg(_messagesProgress.fromNewest.value_or(-1))
+				.arg(_messagesProgress.anchorId.bare)
+				.arg(Logs::b(_history->loadedAtTop()))
+				.arg(Logs::b(_history->loadedAtBottom()))
+				.arg(_messagesProgress.slice.skippedBefore.value_or(-1)));
 	}
 	if (_messagesProgress.aroundId == around) {
 		return;
