@@ -3932,6 +3932,7 @@ void ApiWrap::forwardMessages(
 	const auto silentPost = ShouldSendSilent(peer, action.options);
 
 	using SendFlag = MTPmessages_ForwardMessages::Flag;
+	using SendFlags = MTPmessages_ForwardMessages::Flags;
 	auto flags = MessageFlags();
 	auto sendFlags = SendFlag() | SendFlag();
 	FillMessagePostFlags(action, peer, flags);
@@ -3991,7 +3992,7 @@ void ApiWrap::forwardMessages(
 		QVector<MTPint> ids;
 		QVector<MTPlong> randomIds;
 		std::shared_ptr<base::flat_map<uint64, FullMsgId>> localIds;
-		SendFlag flags = SendFlag();
+		SendFlags flags;
 		int starsPaid = 0;
 	};
 	auto jobs = std::vector<ForwardJob>();

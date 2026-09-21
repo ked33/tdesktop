@@ -841,7 +841,9 @@ void Histories::deleteMessages(
 		if (remaining->isEmpty()) {
 			return;
 		}
-		const auto take = std::min(MaxSelectedItems, int(remaining->size()));
+		const auto take = std::min(
+			int(MaxSelectedItems),
+			int(remaining->size()));
 		auto chunk = remaining->mid(0, take);
 		remaining->erase(remaining->begin(), remaining->begin() + take);
 		sendChunk(std::move(chunk), *sendNext);
