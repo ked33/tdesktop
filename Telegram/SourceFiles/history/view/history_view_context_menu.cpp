@@ -49,6 +49,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/menu/menu_add_action_callback_factory.h"
 #include "ui/widgets/menu/menu_action.h"
 #include "ui/widgets/menu/menu_common.h"
+#include "ui/widgets/menu/menu_item_base.h"
 #include "ui/widgets/menu/menu_multiline_action.h"
 #include "ui/widgets/menu/menu_separator.h"
 #include "ui/image/image.h"
@@ -133,11 +134,40 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QCursor>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
+#include <QShortcut>
 #include <QtGui/QtEvents>
 
 #include "data/data_saved_sublist.h"
 
 namespace HistoryView {
+
+QString ContextMenuActionLabel(const QString &text) {
+	const auto index = text.indexOf(QChar('\t'));
+	return (index < 0) ? text : text.left(index);
+}
+
+void ApplyContextMenuShortcut(
+		not_null<Ui::PopupMenu*> menu,
+		not_null<QAction*> action,
+		Qt::Key key) {
+	action->setText(action->text() + u"\t"_q + QChar(int(key)));
+	const auto shortcut = new QShortcut(QKeySequence(key), menu);
+	shortcut->setContext(Qt::WidgetWithChildrenShortcut);
+	shortcut->setAutoRepeat(false);
+	QObject::connect(
+		shortcut,
+		&QShortcut::activated,
+		menu,
+		[=] {
+			if (!menu->isActiveWindow() || !action->isEnabled()) {
+				return;
+			}
+			if (const auto item = menu->menu()->itemForAction(action)) {
+				item->setClicked(Ui::Menu::TriggeredSource::Keyboard);
+			}
+		});
+}
+
 namespace {
 
 constexpr auto kRescheduleLimit = 20;
@@ -312,8 +342,9 @@ private:
 }
 
 [[nodiscard]] bool IsPostLinkActionText(const QString &text) {
-	return (text == tr::lng_context_copy_message_link(tr::now))
-		|| (text == tr::lng_context_copy_post_link(tr::now));
+	const auto label = ContextMenuActionLabel(text);
+	return (label == tr::lng_context_copy_message_link(tr::now))
+		|| (label == tr::lng_context_copy_post_link(tr::now));
 }
 
 [[nodiscard]] int RateTranscribeInsertIndex(not_null<Ui::PopupMenu*> menu) {
@@ -1187,17 +1218,19 @@ void AddPostLinkAction(
 		? request.view->context()
 		: Context::History;
 	const auto controller = request.navigation->parentController();
-	menu->insertAction(0, base::make_unique_q<Ui::Menu::Action>(
-		menu->menu(),
-		menu->st().menu,
-		Ui::Menu::CreateAction(
+	ApplyContextMenuShortcut(menu, menu->insertAction(
+		0,
+		base::make_unique_q<Ui::Menu::Action>(
 			menu->menu(),
-			(item->history()->peer->isMegagroup()
-				? tr::lng_context_copy_message_link
-				: tr::lng_context_copy_post_link)(tr::now),
-			[=] { CopyPostLink(controller, itemId, context); }),
-		&st::menuIconLink,
-		&st::menuIconLink));
+			menu->st().menu,
+			Ui::Menu::CreateAction(
+				menu->menu(),
+				(item->history()->peer->isMegagroup()
+					? tr::lng_context_copy_message_link
+					: tr::lng_context_copy_post_link)(tr::now),
+				[=] { CopyPostLink(controller, itemId, context); }),
+			&st::menuIconLink,
+			&st::menuIconLink)), Qt::Key_C);
 }
 
 MessageIdsList ExtractIdsList(const SelectedItems &items) {
@@ -1854,11 +1887,14 @@ bool AddTodoListAction(
 		const auto controller = list->controller();
 		auto added = false;
 		if (GetEnhancedBool("show_message_context_edit")) {
-			menu->addAction(tr::lng_context_edit_msg(tr::now), [=] {
-				if (const auto item = controller->session().data().message(itemId)) {
-					Window::PeerMenuEditTodoList(controller, item);
-				}
-			}, &st::menuIconEdit);
+			ApplyContextMenuShortcut(menu, menu->addAction(
+				tr::lng_context_edit_msg(tr::now),
+				[=] {
+					if (const auto item = controller->session().data().message(itemId)) {
+						Window::PeerMenuEditTodoList(controller, item);
+					}
+				},
+				&st::menuIconEdit), Qt::Key_E);
 			added = true;
 		}
 		if (GetEnhancedBool("show_message_context_add_task")) {
@@ -1968,19 +2004,22 @@ bool AddEditMessageAction(
 	}
 	const auto owner = &item->history()->owner();
 	const auto itemId = item->fullId();
-	menu->addAction(tr::lng_context_edit_msg(tr::now), [=] {
-		const auto item = owner->message(itemId);
-		if (!item) {
-			return;
-		}
-		if (item->richPage()
-			|| Iv::Editor::HasEditWindowFor(&owner->session(), itemId)) {
-			Ui::PreventDelayedActivation();
-		}
-		list->editMessageRequestNotify(
-			item->fullId(),
-			request.editSelection);
-	}, &st::menuIconEdit);
+	ApplyContextMenuShortcut(menu, menu->addAction(
+		tr::lng_context_edit_msg(tr::now),
+		[=] {
+			const auto item = owner->message(itemId);
+			if (!item) {
+				return;
+			}
+			if (item->richPage()
+				|| Iv::Editor::HasEditWindowFor(&owner->session(), itemId)) {
+				Ui::PreventDelayedActivation();
+			}
+			list->editMessageRequestNotify(
+				item->fullId(),
+				request.editSelection);
+		},
+		&st::menuIconEdit), Qt::Key_E);
 	return true;
 }
 
@@ -2491,10 +2530,13 @@ void AddCopyLinkAction(
 		return;
 	}
 	const auto text = link->copyToClipboardText();
-	menu->addAction(
+	const auto copyAction = menu->addAction(
 		action,
 		[=] { QGuiApplication::clipboard()->setText(text); },
 		&st::menuIconCopy);
+	if (action == tr::lng_context_copy_link(tr::now)) {
+		ApplyContextMenuShortcut(menu, copyAction, Qt::Key_C);
+	}
 }
 
 void EditTagBox(
@@ -2892,16 +2934,19 @@ void FillContextMenuItems(
 		&& view
 		&& !Ui::SkipTranslate(list->getSelectedText().rich)) {
 		const auto owner = &view->history()->owner();
-		result->addAction(tr::lng_context_translate_selected(tr::now), [=] {
-			if (const auto item = owner->message(itemId)) {
-				list->controller()->show(Box(
-					Ui::TranslateBox,
-					item->history()->peer,
-					MsgId(),
-					list->getSelectedText().rich,
-					list->hasCopyRestrictionForSelected()));
-			}
-		}, &st::menuIconTranslate);
+		ApplyContextMenuShortcut(result, result->addAction(
+			tr::lng_context_translate_selected(tr::now),
+			[=] {
+				if (const auto item = owner->message(itemId)) {
+					list->controller()->show(Box(
+						Ui::TranslateBox,
+						item->history()->peer,
+						MsgId(),
+						list->getSelectedText().rich,
+						list->hasCopyRestrictionForSelected()));
+				}
+			},
+			&st::menuIconTranslate), Qt::Key_T);
 	}
 
 	AddTopMessageActions(result, request, list);
@@ -2988,18 +3033,21 @@ void FillContextMenuItems(
 			if ((!item->translation() || !item->history()->translatedTo())
 				&& !translate.text.isEmpty()
 				&& !Ui::SkipTranslate(translate)) {
-				result->addAction(tr::lng_context_translate(tr::now), [=] {
-					if (const auto item = owner->message(itemId)) {
-						list->controller()->show(Box(
-							Ui::TranslateBox,
-							item->history()->peer,
-							mediaHasTextForCopy
-								? MsgId()
-								: item->fullId().msg,
-							translate,
-							list->hasCopyRestriction(view->data())));
-					}
-				}, &st::menuIconTranslate);
+				ApplyContextMenuShortcut(result, result->addAction(
+					tr::lng_context_translate(tr::now),
+					[=] {
+						if (const auto item = owner->message(itemId)) {
+							list->controller()->show(Box(
+								Ui::TranslateBox,
+								item->history()->peer,
+								mediaHasTextForCopy
+									? MsgId()
+									: item->fullId().msg,
+								translate,
+								list->hasCopyRestriction(view->data())));
+						}
+					},
+					&st::menuIconTranslate), Qt::Key_T);
 			}
 		}
 	}
@@ -3121,7 +3169,7 @@ void AddMessageDetailsAction(
 			int(menu->actions().size()));
 		auto offset = 0;
 		const auto addAction = [&](const QString &text, auto handler) {
-			menu->insertAction(
+			const auto action = menu->insertAction(
 				insertIndex + offset,
 				base::make_unique_q<Ui::Menu::Action>(
 					menu->menu(),
@@ -3141,9 +3189,10 @@ void AddMessageDetailsAction(
 					&st::menuIconLink,
 					&st::menuIconLink));
 			++offset;
+			return action;
 		};
 		if (showStreaming && canOpenInMpv) {
-			addAction(
+			ApplyContextMenuShortcut(menu, addAction(
 				tr::lng_context_stream_in_mpv(tr::now),
 				[=](HistoryItem *resolvedItem, DocumentData *resolvedDocument) {
 					const auto result = ::Media::Streaming::Mpv::OpenVideoMessageInMpv(
@@ -3156,7 +3205,7 @@ void AddMessageDetailsAction(
 						controller->showToast(
 							tr::lng_context_stream_in_mpv_failed(tr::now));
 					}
-				});
+				}), Qt::Key_V);
 		}
 		if (showSpecialNow && canOpenInMpv) {
 			addAction(
@@ -3616,14 +3665,17 @@ void AddPollActions(
 			text.append('\n').append(radio).append(answer.text);
 		}
 		if (!Ui::SkipTranslate(text)) {
-			menu->addAction(tr::lng_context_translate(tr::now), [=] {
-				controller->show(Box(
-					Ui::TranslateBox,
-					item->history()->peer,
-					MsgId(),
-					std::move(text),
-					item->forbidsForward()));
-			}, &st::menuIconTranslate);
+			ApplyContextMenuShortcut(menu, menu->addAction(
+				tr::lng_context_translate(tr::now),
+				[=] {
+					controller->show(Box(
+						Ui::TranslateBox,
+						item->history()->peer,
+						MsgId(),
+						std::move(text),
+						item->forbidsForward()));
+				},
+				&st::menuIconTranslate), Qt::Key_T);
 		}
 	}
 	if ((context != Context::History)

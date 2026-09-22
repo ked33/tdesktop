@@ -3267,19 +3267,22 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			if (editItem && GetEnhancedBool("show_message_context_edit")) {
 				const auto editItemId = editItem->fullId();
 				const auto editSelection = editSelectionByContext(editItem);
-				_menu->addAction(tr::lng_context_edit_msg(tr::now), [=] {
-					if (const auto item = session->data().message(editItemId)) {
-						const auto selection = editSelection;
-						if (!selection.empty()) {
-							clearSelected(true);
+				HistoryView::ApplyContextMenuShortcut(_menu, _menu->addAction(
+					tr::lng_context_edit_msg(tr::now),
+					[=] {
+						if (const auto item = session->data().message(editItemId)) {
+							const auto selection = editSelection;
+							if (!selection.empty()) {
+								clearSelected(true);
+							}
+							if (item->richPage()
+								|| Iv::Editor::HasEditWindowFor(session, editItemId)) {
+								Ui::PreventDelayedActivation();
+							}
+							_widget->editMessage(item, selection);
 						}
-						if (item->richPage()
-							|| Iv::Editor::HasEditWindowFor(session, editItemId)) {
-							Ui::PreventDelayedActivation();
-						}
-						_widget->editMessage(item, selection);
-					}
-				}, &st::menuIconEdit);
+					},
+					&st::menuIconEdit), Qt::Key_E);
 			}
 			if (GetEnhancedBool("show_message_context_factcheck")
 				&& session->factchecks().canEdit(item)) {
@@ -3637,14 +3640,14 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		}
 		const auto itemId = item->fullId();
 		if (GetEnhancedBool("show_message_context_edit")) {
-			_menu->addAction(
+			HistoryView::ApplyContextMenuShortcut(_menu, _menu->addAction(
 				tr::lng_context_edit_msg(tr::now),
 				crl::guard(this, [=] {
 					if (const auto item = session->data().message(itemId)) {
 						Window::PeerMenuEditTodoList(_controller, item);
 					}
 				}),
-				&st::menuIconEdit);
+				&st::menuIconEdit), Qt::Key_E);
 		}
 		if (GetEnhancedBool("show_message_context_add_task")) {
 			_menu->addAction(
@@ -3697,14 +3700,17 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				}
 				if (item && !Ui::SkipTranslate(selectedText.rich)) {
 					const auto peer = item->history()->peer;
-					_menu->addAction(tr::lng_context_translate_selected({}), [=] {
-						_controller->show(Box(
-							Ui::TranslateBox,
-							peer,
-							MsgId(),
-							getSelectedText().rich,
-							hasCopyRestrictionForSelected()));
-					}, &st::menuIconTranslate);
+					HistoryView::ApplyContextMenuShortcut(_menu, _menu->addAction(
+						tr::lng_context_translate_selected({}),
+						[=] {
+							_controller->show(Box(
+								Ui::TranslateBox,
+								peer,
+								MsgId(),
+								getSelectedText().rich,
+								hasCopyRestrictionForSelected()));
+						},
+						&st::menuIconTranslate), Qt::Key_T);
 				}
 			}
 			addItemActions(item, item);
@@ -3720,22 +3726,24 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				&& item->hasDirectLink() && !IsAnchoredEphemeral(item)
 				&& isUponSelected != 2
 				&& isUponSelected != -2) {
-				_menu->insertAction(0, base::make_unique_q<Ui::Menu::Action>(
-					_menu->menu(),
-					_menu->st().menu,
-					Ui::Menu::CreateAction(
+				HistoryView::ApplyContextMenuShortcut(_menu, _menu->insertAction(
+					0,
+					base::make_unique_q<Ui::Menu::Action>(
 						_menu->menu(),
-						item->history()->peer->isMegagroup()
-							? tr::lng_context_copy_message_link(tr::now)
-							: tr::lng_context_copy_post_link(tr::now),
-						[=] {
-							HistoryView::CopyPostLink(
-								controller,
-								itemId,
-								HistoryView::Context::History);
-						}),
-					&st::menuIconLink,
-					&st::menuIconLink));
+						_menu->st().menu,
+						Ui::Menu::CreateAction(
+							_menu->menu(),
+							item->history()->peer->isMegagroup()
+								? tr::lng_context_copy_message_link(tr::now)
+								: tr::lng_context_copy_post_link(tr::now),
+							[=] {
+								HistoryView::CopyPostLink(
+									controller,
+									itemId,
+									HistoryView::Context::History);
+							}),
+						&st::menuIconLink,
+						&st::menuIconLink)), Qt::Key_C);
 			}
 			HistoryView::AddVideoPlaybackActions(
 				_menu,
@@ -4072,14 +4080,17 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			}
 			if (item && !Ui::SkipTranslate(selectedText.rich)) {
 				const auto peer = item->history()->peer;
-				_menu->addAction(tr::lng_context_translate_selected({}), [=] {
-					_controller->show(Box(
-						Ui::TranslateBox,
-						peer,
-						MsgId(),
-						selectedText.rich,
-						hasCopyRestrictionForSelected()));
-				}, &st::menuIconTranslate);
+				HistoryView::ApplyContextMenuShortcut(_menu, _menu->addAction(
+					tr::lng_context_translate_selected({}),
+					[=] {
+						_controller->show(Box(
+							Ui::TranslateBox,
+							peer,
+							MsgId(),
+							selectedText.rich,
+							hasCopyRestrictionForSelected()));
+					},
+					&st::menuIconTranslate), Qt::Key_T);
 			}
 			const auto editItem = [&]() -> HistoryItem* {
 				const auto view = (item && item->groupId())
@@ -4197,43 +4208,59 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 							: item->originalText();
 						if (!translate.text.isEmpty()
 							&& !Ui::SkipTranslate(translate)) {
-							_menu->addAction(tr::lng_context_translate(tr::now), [=] {
-								_controller->show(Box(
-									Ui::TranslateBox,
-									peer,
-									mediaHasTextForCopy ? MsgId() : itemId,
-									translate,
-									hasRestriction));
-							}, &st::menuIconTranslate);
+							HistoryView::ApplyContextMenuShortcut(
+								_menu,
+								_menu->addAction(
+									tr::lng_context_translate(tr::now),
+									[=] {
+										_controller->show(Box(
+											Ui::TranslateBox,
+											peer,
+											mediaHasTextForCopy
+												? MsgId()
+												: itemId,
+											translate,
+											hasRestriction));
+									},
+									&st::menuIconTranslate),
+								Qt::Key_T);
 						}
 					}
 				}
 			}
 		}
 			if (!actionText.isEmpty()) {
-				_menu->addAction(
+				const auto copyAction = _menu->addAction(
 					actionText,
 					[text = link->copyToClipboardText()] {
 						QGuiApplication::clipboard()->setText(text);
 					},
 					&st::menuIconCopy);
+				if (actionText == tr::lng_context_copy_link(tr::now)) {
+					HistoryView::ApplyContextMenuShortcut(
+						_menu,
+						copyAction,
+						Qt::Key_C);
+				}
 			} else if (item && item->hasDirectLink() && !IsAnchoredEphemeral(item) && isUponSelected != 2 && isUponSelected != -2) {
-				_menu->insertAction(0, base::make_unique_q<Ui::Menu::Action>(
-					_menu->menu(),
-					_menu->st().menu,
-					Ui::Menu::CreateAction(
+				HistoryView::ApplyContextMenuShortcut(_menu, _menu->insertAction(
+					0,
+					base::make_unique_q<Ui::Menu::Action>(
 						_menu->menu(),
-						item->history()->peer->isMegagroup()
-							? tr::lng_context_copy_message_link(tr::now)
-							: tr::lng_context_copy_post_link(tr::now),
-						[=] {
-							HistoryView::CopyPostLink(
-								controller,
-								itemId,
-								HistoryView::Context::History);
-						}),
-					&st::menuIconLink,
-					&st::menuIconLink));
+						_menu->st().menu,
+						Ui::Menu::CreateAction(
+							_menu->menu(),
+							item->history()->peer->isMegagroup()
+								? tr::lng_context_copy_message_link(tr::now)
+								: tr::lng_context_copy_post_link(tr::now),
+							[=] {
+								HistoryView::CopyPostLink(
+									controller,
+									itemId,
+									HistoryView::Context::History);
+							}),
+						&st::menuIconLink,
+						&st::menuIconLink)), Qt::Key_C);
 			}
 			HistoryView::AddVideoPlaybackActions(
 				_menu,
@@ -4570,8 +4597,9 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			return text == tr::lng_context_details(tr::now);
 		};
 		const auto isPostLinkActionText = [](const QString &text) {
-			return (text == tr::lng_context_copy_message_link(tr::now))
-				|| (text == tr::lng_context_copy_post_link(tr::now));
+			const auto label = HistoryView::ContextMenuActionLabel(text);
+			return (label == tr::lng_context_copy_message_link(tr::now))
+				|| (label == tr::lng_context_copy_post_link(tr::now));
 		};
 		const auto &actions = _menu->actions();
 		auto insertIndex = 0;

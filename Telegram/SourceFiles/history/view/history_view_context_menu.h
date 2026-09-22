@@ -20,6 +20,8 @@ class Session;
 class SessionShow;
 } // namespace Main
 
+class QAction;
+
 namespace Ui {
 class PopupMenu;
 class Show;
@@ -143,6 +145,11 @@ void AddVideoPlaybackActions(
 	not_null<Window::SessionController*> controller,
 	bool afterCopyLink = false,
 	bool showSpecialMpv = false);
+[[nodiscard]] QString ContextMenuActionLabel(const QString &text);
+void ApplyContextMenuShortcut(
+	not_null<Ui::PopupMenu*> menu,
+	not_null<QAction*> action,
+	Qt::Key key);
 void MaybeAddWhenEditedForwardedAction(
 	not_null<Ui::PopupMenu*> menu,
 	not_null<HistoryItem*> item,
