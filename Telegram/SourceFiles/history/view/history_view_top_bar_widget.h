@@ -159,6 +159,8 @@ public:
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
+	void enterEvent(QEnterEvent *e) override;
+	void leaveEvent(QEvent *e) override;
 	void resizeEvent(QResizeEvent *e) override;
 	bool eventFilter(QObject *obj, QEvent *e) override;
 
@@ -176,6 +178,7 @@ private:
 	void refreshLang();
 	void updateSearchVisibility();
 	void refreshMessagesProgress();
+	void setMessagesProgressHovered(bool hovered);
 	void updateSearchJumpToDateVisibility();
 	[[nodiscard]] bool searchJumpToDateFits() const;
 	void updateChooseFromUserGeometry();
@@ -284,6 +287,7 @@ private:
 	object_ptr<Ui::FlatLabel> _messagesProgress;
 	int _messagesProgressCurrent = 0;
 	int _messagesProgressTotal = 0;
+	bool _messagesProgressHovered = false;
 	object_ptr<Ui::IconButton> _recentActions;
 	object_ptr<Ui::IconButton> _admins;
 	object_ptr<Ui::IconButton> _infoToggle;

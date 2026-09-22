@@ -43,6 +43,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/unread_badge.h"
 #include "ui/controls/button_context_menu.h"
 #include "ui/ui_utility.h"
+
+#include <QtGui/QCursor>
+#include <QtGui/QEnterEvent>
 #include "rpl/producer.h"
 #include "window/window_adaptive.h"
 #include "window/window_session_controller.h"
@@ -444,18 +447,41 @@ void TopBarWidget::refreshMessagesProgress() {
 		_messagesProgress->hide();
 		return;
 	}
-	_messagesProgress->setText(tr::lng_history_messages_progress(
-		tr::now,
-		lt_n,
-		QString::number(_messagesProgressCurrent),
-		lt_amount,
-		QString::number(_messagesProgressTotal),
-		lt_percent,
-		FormatMessagesProgressPercent(
-			_messagesProgressCurrent,
-			_messagesProgressTotal)));
+	const auto percent = FormatMessagesProgressPercent(
+		_messagesProgressCurrent,
+		_messagesProgressTotal);
+	const auto text = _messagesProgressHovered
+		? tr::lng_history_messages_progress(
+			tr::now,
+			lt_n,
+			QString::number(_messagesProgressCurrent),
+			lt_amount,
+			QString::number(_messagesProgressTotal),
+			lt_percent,
+			percent)
+		: (percent + u"%"_q);
+	_messagesProgress->setText(text);
 	_messagesProgress->resizeToWidth(_messagesProgress->textMaxWidth());
 	_messagesProgress->show();
+}
+
+void TopBarWidget::setMessagesProgressHovered(bool hovered) {
+	if (_messagesProgressHovered == hovered) {
+		return;
+	}
+	_messagesProgressHovered = hovered;
+	refreshMessagesProgress();
+	updateControlsGeometry();
+}
+
+void TopBarWidget::enterEvent(QEnterEvent *e) {
+	RpWidget::enterEvent(e);
+	setMessagesProgressHovered(true);
+}
+
+void TopBarWidget::leaveEvent(QEvent *e) {
+	RpWidget::leaveEvent(e);
+	setMessagesProgressHovered(rect().contains(mapFromGlobal(QCursor::pos())));
 }
 
 void TopBarWidget::setChooseForReportReason(
