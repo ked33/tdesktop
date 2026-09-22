@@ -2896,7 +2896,8 @@ void HistoryItem::applyEditionToHistoryCleared() {
 }
 
 bool HistoryItem::isHistoryClearPlaceholder() const {
-	return isRegular() && isEmpty();
+	return isRegular()
+		&& (isEmpty() || Get<HistoryServiceClearHistory>());
 }
 
 void HistoryItem::updateReplyMarkup(

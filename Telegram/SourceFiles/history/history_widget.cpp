@@ -249,6 +249,21 @@ constexpr auto kMessagesProgressAround = 50;
 	return history->progressPlaceholderCount();
 }
 
+[[nodiscard]] int DisplayedRegularCount(not_null<History*> history) {
+	auto result = 0;
+	for (const auto &block : history->blocks) {
+		for (const auto &view : block->messages) {
+			const auto item = view->data();
+			if (item->history() == history
+				&& item->isRegular()
+				&& !item->isHistoryClearPlaceholder()) {
+				++result;
+			}
+		}
+	}
+	return result;
+}
+
 [[nodiscard]] std::optional<std::pair<int, int>> CountMessagesProgress(
 		not_null<Main::Session*> session,
 		not_null<History*> history,
@@ -414,7 +429,9 @@ constexpr auto kMessagesProgressAround = 50;
 		not_null<History*> history,
 		FullMsgId around,
 		bool atEnd) {
-	if (!history->loadedAtTop() || !history->loadedAtBottom()) {
+	if (DisplayedRegularCount(history) <= 0) {
+		return std::nullopt;
+	} else if (!history->loadedAtTop() || !history->loadedAtBottom()) {
 		return std::nullopt;
 	}
 	auto total = 0;
@@ -425,7 +442,7 @@ constexpr auto kMessagesProgressAround = 50;
 			const auto item = view->data();
 			if (item->history() != history
 				|| !item->isRegular()
-				|| item->isEmpty()) {
+				|| item->isHistoryClearPlaceholder()) {
 				continue;
 			}
 			++total;
@@ -5592,6 +5609,13 @@ void HistoryWidget::updateMessagesProgress() {
 		_topBar->setMessagesProgress(0, 0);
 		return;
 	}
+	const auto displayed = DisplayedRegularCount(_history);
+	if (displayed <= 0 && _history->loadedAtBottom()) {
+		_topBar->setMessagesProgress(0, 0);
+		LogMessagesProgress(u"hide: empty displayed, peer=%1"_q.arg(
+			_history->peer->name()));
+		return;
+	}
 	const auto atEnd = !_history->scrollTopItem
 		&& (!_migrated || !_migrated->scrollTopItem)
 		&& _history->loadedAtBottom();
@@ -5726,7 +5750,9 @@ void HistoryWidget::requestMessagesProgressMeta(FullMsgId around) {
 		|| around.peer != _history->peer->id
 		|| !IsServerMsgId(around.msg)
 		|| _messagesProgressMetaRequest
-		|| _messagesProgressMetaAroundId == around.msg) {
+		|| _messagesProgressMetaAroundId == around.msg
+		|| (DisplayedRegularCount(_history) <= 0
+			&& _history->loadedAtBottom())) {
 		return;
 	}
 	_messagesProgressMetaAroundId = around.msg;

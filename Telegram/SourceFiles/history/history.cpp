@@ -3020,7 +3020,7 @@ bool History::loadedAtTop() const {
 int History::progressPlaceholderCount() const {
 	auto result = 0;
 	for (const auto &item : _items) {
-		if (item->isRegular() && item->isEmpty()) {
+		if (item->isHistoryClearPlaceholder()) {
 			++result;
 		}
 	}
