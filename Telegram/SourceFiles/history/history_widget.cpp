@@ -464,14 +464,14 @@ constexpr auto kMessagesProgressAround = 50;
 	return std::pair{ current, total };
 }
 
-void LogMessagesProgress(const QString &text) {
-	static auto last = QString();
-	if (last == text) {
-		return;
-	}
-	last = text;
-	LOG(("MessagesProgress: %1").arg(text));
-}
+// void LogMessagesProgress(const QString &text) {
+// 	static auto last = QString();
+// 	if (last == text) {
+// 		return;
+// 	}
+// 	last = text;
+// 	LOG(("MessagesProgress: %1").arg(text));
+// }
 
 constexpr auto kPreloadHeightsCount = 3; // when 3 screens to scroll left make a preload request
 constexpr auto kScrollToVoiceAfterScrolledMs = 1000;
@@ -5612,8 +5612,8 @@ void HistoryWidget::updateMessagesProgress() {
 	const auto displayed = DisplayedRegularCount(_history);
 	if (displayed <= 0 && _history->loadedAtBottom()) {
 		_topBar->setMessagesProgress(0, 0);
-		LogMessagesProgress(u"hide: empty displayed, peer=%1"_q.arg(
-			_history->peer->name()));
+		// LogMessagesProgress(u"hide: empty displayed, peer=%1"_q.arg(
+		// 	_history->peer->name()));
 		return;
 	}
 	const auto atEnd = !_history->scrollTopItem
@@ -5637,9 +5637,9 @@ void HistoryWidget::updateMessagesProgress() {
 	}
 	if (!around || !IsServerMsgId(around.msg)) {
 		_topBar->setMessagesProgress(0, 0);
-		LogMessagesProgress(u"hide: no around, peer=%1 atEnd=%2"_q
-			.arg(_history->peer->name())
-			.arg(Logs::b(atEnd)));
+		// LogMessagesProgress(u"hide: no around, peer=%1 atEnd=%2"_q
+		// 	.arg(_history->peer->name())
+		// 	.arg(Logs::b(atEnd)));
 		return;
 	}
 	if (const auto counted = CountMessagesProgressLocal(
@@ -5701,18 +5701,18 @@ void HistoryWidget::updateMessagesProgress() {
 		}
 	} else {
 		_topBar->setMessagesProgress(0, 0);
-		LogMessagesProgress(
-			u"hide: peer=%1 around=%2 atEnd=%3 count=%4 fromNewest=%5 "
-			"anchor=%6 top=%7 bottom=%8 skippedBefore=%9"_q
-				.arg(_history->peer->name())
-				.arg(around.msg.bare)
-				.arg(Logs::b(atEnd))
-				.arg(_messagesProgress.count.value_or(-1))
-				.arg(_messagesProgress.fromNewest.value_or(-1))
-				.arg(_messagesProgress.anchorId.bare)
-				.arg(Logs::b(_history->loadedAtTop()))
-				.arg(Logs::b(_history->loadedAtBottom()))
-				.arg(_messagesProgress.slice.skippedBefore.value_or(-1)));
+		// LogMessagesProgress(
+		// 	u"hide: peer=%1 around=%2 atEnd=%3 count=%4 fromNewest=%5 "
+		// 	"anchor=%6 top=%7 bottom=%8 skippedBefore=%9"_q
+		// 		.arg(_history->peer->name())
+		// 		.arg(around.msg.bare)
+		// 		.arg(Logs::b(atEnd))
+		// 		.arg(_messagesProgress.count.value_or(-1))
+		// 		.arg(_messagesProgress.fromNewest.value_or(-1))
+		// 		.arg(_messagesProgress.anchorId.bare)
+		// 		.arg(Logs::b(_history->loadedAtTop()))
+		// 		.arg(Logs::b(_history->loadedAtBottom()))
+		// 		.arg(_messagesProgress.slice.skippedBefore.value_or(-1)));
 		requestMessagesProgressMeta(around);
 	}
 	if (_messagesProgress.aroundId == around) {

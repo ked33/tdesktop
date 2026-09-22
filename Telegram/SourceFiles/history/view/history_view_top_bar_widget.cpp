@@ -23,8 +23,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "mtproto/mtproto_config.h"
 #include "lang/lang_keys.h"
-#include "base/debug_log.h"
-#include "logs.h"
 #include "core/shortcuts.h"
 #include "core/application.h"
 #include "core/core_settings.h"
@@ -419,12 +417,12 @@ void TopBarWidget::refreshMessagesProgress() {
 		&& !showSelectedState()
 		&& !_chooseForReportReason;
 	if (!shown) {
-		if (_messagesProgressCurrent > 0 && _messagesProgressTotal > 0) {
-			LOG(("MessagesProgress: hide widget search=%1 mode=%2 selected=%3")
-				.arg(Logs::b(_search->isHidden()))
-				.arg(Logs::b(_searchMode))
-				.arg(Logs::b(showSelectedState())));
-		}
+		// if (_messagesProgressCurrent > 0 && _messagesProgressTotal > 0) {
+		// 	LOG(("MessagesProgress: hide widget search=%1 mode=%2 selected=%3")
+		// 		.arg(Logs::b(_search->isHidden()))
+		// 		.arg(Logs::b(_searchMode))
+		// 		.arg(Logs::b(showSelectedState())));
+		// }
 		_messagesProgress->hide();
 		return;
 	}
