@@ -717,7 +717,7 @@ void History::destroyMessage(not_null<HistoryItem*> item) {
 		).arg(item->id.bare
 		).arg(item->isHistoryEntry() ? 1 : 0
 		).arg(item->isSending() ? 1 : 0
-		).arg(qulonglong(item->groupId().raw()))));
+		).arg(qulonglong(item->groupId().raw())));
 	}
 	Assert(i != end(_items));
 	_items.erase(i);
