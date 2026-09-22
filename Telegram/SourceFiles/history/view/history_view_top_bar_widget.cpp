@@ -45,7 +45,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/ui_utility.h"
 
 #include <QtGui/QCursor>
-#include <QtGui/QEnterEvent>
 #include "rpl/producer.h"
 #include "window/window_adaptive.h"
 #include "window/window_session_controller.h"
@@ -474,13 +473,13 @@ void TopBarWidget::setMessagesProgressHovered(bool hovered) {
 	updateControlsGeometry();
 }
 
-void TopBarWidget::enterEvent(QEnterEvent *e) {
-	RpWidget::enterEvent(e);
+void TopBarWidget::enterEventHook(QEnterEvent *e) {
+	RpWidget::enterEventHook(e);
 	setMessagesProgressHovered(true);
 }
 
-void TopBarWidget::leaveEvent(QEvent *e) {
-	RpWidget::leaveEvent(e);
+void TopBarWidget::leaveEventHook(QEvent *e) {
+	RpWidget::leaveEventHook(e);
 	setMessagesProgressHovered(rect().contains(mapFromGlobal(QCursor::pos())));
 }
 

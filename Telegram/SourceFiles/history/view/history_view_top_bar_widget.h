@@ -159,8 +159,8 @@ public:
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
-	void enterEvent(QEnterEvent *e) override;
-	void leaveEvent(QEvent *e) override;
+	void enterEventHook(QEnterEvent *e) override;
+	void leaveEventHook(QEvent *e) override;
 	void resizeEvent(QResizeEvent *e) override;
 	bool eventFilter(QObject *obj, QEvent *e) override;
 
