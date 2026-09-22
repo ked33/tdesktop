@@ -185,6 +185,11 @@ QString ContextMenuActionLabel(const QString &text) {
 	return (index < 0) ? text : text.left(index);
 }
 
+bool ContextMenuCopyShortcut(const QString &text) {
+	return (text == tr::lng_context_copy_link(tr::now))
+		|| (text == tr::lng_context_copy_hashtag(tr::now));
+}
+
 void ApplyContextMenuShortcut(
 		not_null<Ui::PopupMenu*> menu,
 		not_null<QAction*> action,
@@ -2567,7 +2572,7 @@ void AddCopyLinkAction(
 		action,
 		[=] { QGuiApplication::clipboard()->setText(text); },
 		&st::menuIconCopy);
-	if (action == tr::lng_context_copy_link(tr::now)) {
+	if (ContextMenuCopyShortcut(action)) {
 		ApplyContextMenuShortcut(menu, copyAction, Qt::Key_C);
 	}
 }

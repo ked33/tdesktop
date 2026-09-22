@@ -153,6 +153,7 @@ void AddVideoPlaybackActions(
 	bool afterCopyLink = false,
 	bool showSpecialMpv = false);
 [[nodiscard]] QString ContextMenuActionLabel(const QString &text);
+[[nodiscard]] bool ContextMenuCopyShortcut(const QString &text);
 void ApplyContextMenuShortcut(
 	not_null<Ui::PopupMenu*> menu,
 	not_null<QAction*> action,

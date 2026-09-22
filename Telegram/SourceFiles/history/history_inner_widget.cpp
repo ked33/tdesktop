@@ -4249,7 +4249,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 						QGuiApplication::clipboard()->setText(text);
 					},
 					&st::menuIconCopy);
-				if (actionText == tr::lng_context_copy_link(tr::now)) {
+				if (HistoryView::ContextMenuCopyShortcut(actionText)) {
 					HistoryView::ApplyContextMenuShortcut(
 						_menu,
 						copyAction,
