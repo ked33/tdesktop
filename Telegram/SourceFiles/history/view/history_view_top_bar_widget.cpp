@@ -90,6 +90,24 @@ constexpr auto kEmojiInteractionSeenDuration = 3 * crl::time(1000);
 		&& peer->canManageGroupCall();
 }
 
+[[nodiscard]] QString FormatMessagesProgressPercent(int current, int total) {
+	if (current == total) {
+		return u"100"_q;
+	}
+	const auto scaled = int64(current) * 10000;
+	const auto quotient = scaled / total;
+	const auto remainder = scaled % total;
+	auto basis = quotient + ((remainder * 2 >= total) ? 1 : 0);
+	if (basis > 9999) {
+		basis = 9999;
+	} else if (basis < 0) {
+		basis = 0;
+	}
+	return u"%1.%2"_q
+		.arg(qint64(basis / 100))
+		.arg(int(basis % 100), 2, 10, QChar('0'));
+}
+
 QString TopBarNameText(
 		not_null<PeerData*> peer,
 		const Dialogs::EntryState &state) {
@@ -426,11 +444,6 @@ void TopBarWidget::refreshMessagesProgress() {
 		_messagesProgress->hide();
 		return;
 	}
-	const auto percent = std::clamp(
-		(float64(_messagesProgressCurrent) * 100.)
-			/ float64(_messagesProgressTotal),
-		0.,
-		100.);
 	_messagesProgress->setText(tr::lng_history_messages_progress(
 		tr::now,
 		lt_n,
@@ -438,7 +451,9 @@ void TopBarWidget::refreshMessagesProgress() {
 		lt_amount,
 		QString::number(_messagesProgressTotal),
 		lt_percent,
-		QString::number(percent, 'f', 1)));
+		FormatMessagesProgressPercent(
+			_messagesProgressCurrent,
+			_messagesProgressTotal)));
 	_messagesProgress->resizeToWidth(_messagesProgress->textMaxWidth());
 	_messagesProgress->show();
 }
