@@ -134,7 +134,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QCursor>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
-#include <QShortcut>
 #include <QtGui/QtEvents>
 
 #include "data/data_saved_sublist.h"
@@ -151,21 +150,6 @@ void ApplyContextMenuShortcut(
 		not_null<QAction*> action,
 		Qt::Key key) {
 	action->setText(action->text() + u"\t"_q + QChar(int(key)));
-	const auto shortcut = new QShortcut(QKeySequence(key), menu);
-	shortcut->setContext(Qt::WidgetWithChildrenShortcut);
-	shortcut->setAutoRepeat(false);
-	QObject::connect(
-		shortcut,
-		&QShortcut::activated,
-		menu,
-		[=] {
-			if (!menu->isActiveWindow() || !action->isEnabled()) {
-				return;
-			}
-			if (const auto item = menu->menu()->itemForAction(action)) {
-				item->setClicked(Ui::Menu::TriggeredSource::Keyboard);
-			}
-		});
 }
 
 namespace {
