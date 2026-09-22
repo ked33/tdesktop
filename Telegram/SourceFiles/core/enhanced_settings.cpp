@@ -111,6 +111,11 @@ namespace EnhancedSettings {
 			return events;
 		}
 
+		rpl::event_stream<int> &TrayIdleMemoryMinutesEvents() {
+			static auto events = rpl::event_stream<int>();
+			return events;
+		}
+
 		void FillMissingDefaults() {
 			const auto ensureBool = [](const QString &key, bool value) {
 				if (!gEnhancedOptions.contains(key)) {
@@ -176,6 +181,9 @@ namespace EnhancedSettings {
 			ensureInt(
 				u"search_porn_request_interval_ms"_q,
 				kSearchPornRequestIntervalDefault);
+			ensureInt(
+				u"tray_idle_memory_minutes"_q,
+				kTrayIdleMemoryMinutesDefault);
 			ensureString(qsl("mpv_path"), QString());
 			ensureString(
 				qsl("net_download_speed_boost_profiles"),
@@ -433,6 +441,34 @@ namespace EnhancedSettings {
 		}
 	}
 
+	int TrayIdleMemoryMinutes() {
+		auto valid = false;
+		const auto value = gEnhancedOptions.value(
+			u"tray_idle_memory_minutes"_q,
+			kTrayIdleMemoryMinutesDefault).toInt(&valid);
+		return (valid
+			&& value >= kTrayIdleMemoryMinutesMinimum
+			&& value <= kTrayIdleMemoryMinutesMaximum)
+			? value
+			: kTrayIdleMemoryMinutesDefault;
+	}
+
+	rpl::producer<int> TrayIdleMemoryMinutesChanges() {
+		return TrayIdleMemoryMinutesEvents().events();
+	}
+
+	void SetTrayIdleMemoryMinutes(int value) {
+		value = std::clamp(
+			value,
+			kTrayIdleMemoryMinutesMinimum,
+			kTrayIdleMemoryMinutesMaximum);
+		if (TrayIdleMemoryMinutes() != value) {
+			SetEnhancedValue(u"tray_idle_memory_minutes"_q, value);
+			Write();
+			TrayIdleMemoryMinutesEvents().fire_copy(value);
+		}
+	}
+
 	int MessageEmojiSize() {
 		const auto size = GetEnhancedInt(qsl("message_emoji_size"));
 		return (size >= kMessageEmojiSizeMinimum
@@ -663,6 +699,9 @@ namespace EnhancedSettings {
 		settings.insert(
 			u"search_porn_request_interval_ms"_q,
 			kSearchPornRequestIntervalDefault);
+		settings.insert(
+			u"tray_idle_memory_minutes"_q,
+			kTrayIdleMemoryMinutesDefault);
 		settings.insert(qsl("show_group_sender_avatar"), false);
 		settings.insert(qsl("show_seconds"), false);
 		settings.insert(qsl("show_message_context_read_info"), true);
@@ -787,6 +826,9 @@ namespace EnhancedSettings {
 		settings.insert(
 			u"search_porn_request_interval_ms"_q,
 			SearchPornRequestInterval());
+		settings.insert(
+			u"tray_idle_memory_minutes"_q,
+			TrayIdleMemoryMinutes());
 		settings.insert(qsl("show_group_sender_avatar"), GetEnhancedBool("show_group_sender_avatar"));
 		settings.insert(qsl("show_seconds"), GetEnhancedBool("show_seconds"));
 		settings.insert(qsl("show_message_context_read_info"), GetEnhancedBool("show_message_context_read_info"));

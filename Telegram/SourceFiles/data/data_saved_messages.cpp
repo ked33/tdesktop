@@ -604,6 +604,13 @@ auto SavedMessages::recentSublists() const
 	return _lastSublists;
 }
 
+void SavedMessages::enumerateSublists(
+		Fn<void(not_null<SavedSublist*>)> action) const {
+	for (const auto &[peer, sublist] : _sublists) {
+		action(sublist.get());
+	}
+}
+
 void SavedMessages::markUnreadCountsUnknown(MsgId readTillId) {
 	for (const auto &[peer, sublist] : _sublists) {
 		if (sublist->unreadCountCurrent() > 0) {

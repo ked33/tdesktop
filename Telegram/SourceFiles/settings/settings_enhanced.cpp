@@ -1333,6 +1333,30 @@ namespace Settings {
 			tr::lng_settings_media_wheel_control_desc());
 
 		AddSkip(container);
+		AddDivider(container);
+		AddSkip(container);
+		AddSubsectionTitle(container, tr::lng_settings_performance());
+
+		const auto trayIdleLabel = [](int minutes) {
+			return minutes
+				? QString::number(minutes) + u" 分钟"_q
+				: tr::lng_settings_tray_idle_memory_off(tr::now);
+		};
+		AddButtonWithLabel(
+			container,
+			tr::lng_settings_tray_idle_memory(),
+			rpl::single(trayIdleLabel(
+				EnhancedSettings::TrayIdleMemoryMinutes()))
+				| rpl::then(
+					EnhancedSettings::TrayIdleMemoryMinutesChanges()
+					| rpl::map(trayIdleLabel)),
+			st::settingsButtonNoIcon
+		)->addClickHandler([] {
+			Ui::show(Box<TrayIdleMemoryBox>());
+		});
+		AddDividerText(container, tr::lng_settings_tray_idle_memory_about());
+
+		AddSkip(container);
 	}
 
 	rpl::producer<QString> Enhanced::title() {

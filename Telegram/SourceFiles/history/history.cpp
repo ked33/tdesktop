@@ -4538,6 +4538,103 @@ void History::clearUpTill(MsgId availableMinId) {
 	requestChatListMessage();
 }
 
+bool History::takeIdleUnloaded() {
+	if (!base::take(_idleUnloaded)) {
+		return false;
+	}
+	return blocks.empty() && !_loadedAtTop && !_loadedAtBottom;
+}
+
+void History::releaseIdleSlice() {
+	auto keep = base::flat_set<not_null<HistoryItem*>>();
+	const auto keepItem = [&](HistoryItem *item) {
+		if (item) {
+			keep.emplace(item);
+		}
+	};
+	keepItem(chatListMessage());
+	keepItem(lastMessage());
+	keepItem(lastServerMessage());
+	keepItem(_joinedMessage);
+	keepItem(_newPeerNameChange);
+	keepItem(_newPeerPhotoChange);
+	for (const auto &item : _clientSideMessages) {
+		keepItem(item);
+	}
+	if (const auto forum = peer->forum()) {
+		forum->enumerateTopics([&](not_null<Data::ForumTopic*> topic) {
+			keepItem(topic->chatListMessage());
+			keepItem(topic->lastMessage());
+			keepItem(topic->lastServerMessage());
+		});
+	}
+	const auto keepSublists = [&](Data::SavedMessages *saved) {
+		if (!saved) {
+			return;
+		}
+		saved->enumerateSublists([&](not_null<Data::SavedSublist*> sublist) {
+			if (sublist->owningHistory() != this) {
+				return;
+			}
+			keepItem(sublist->chatListMessage());
+			keepItem(sublist->lastMessage());
+		});
+	};
+	keepSublists(peer->monoforum());
+	keepSublists(&owner().savedMessages());
+
+	auto groups = base::flat_set<MessageGroupId>();
+	for (const auto &item : keep) {
+		if (const auto group = item->groupId()) {
+			groups.emplace(group);
+		}
+	}
+
+	const auto hadViews = !blocks.empty();
+	auto ids = std::vector<FullMsgId>();
+	ids.reserve(_items.size());
+	for (const auto &held : _items) {
+		const auto item = held.get();
+		if (keep.contains(item)
+			|| item->isSending()
+			|| item->hasFailed()
+			|| item->isLocal()
+			|| item->isScheduled()
+			|| item->isBusinessShortcut()
+			|| item->isAdminLogEntry()
+			|| item->isSponsored()
+			|| !item->isHistoryEntry()
+			|| !item->isRegular()) {
+			continue;
+		}
+		const auto group = item->groupId();
+		if (group && groups.contains(group)) {
+			continue;
+		}
+		ids.push_back(item->fullId());
+	}
+	if (!hadViews && ids.empty()) {
+		return;
+	}
+
+	clear(ClearType::Unload);
+
+	auto remove = std::vector<not_null<HistoryItem*>>();
+	remove.reserve(ids.size());
+	for (const auto &id : ids) {
+		if (const auto item = owner().message(id)) {
+			remove.push_back(item);
+		}
+	}
+	if (!remove.empty()) {
+		owner().notifyItemsAboutToBeDestroyed(remove);
+	}
+	for (const auto &item : remove) {
+		item->destroy();
+	}
+	_idleUnloaded = true;
+}
+
 void History::applyGroupAdminChanges(const base::flat_set<UserId> &changes) {
 	for (const auto &block : blocks) {
 		for (const auto &message : block->messages) {

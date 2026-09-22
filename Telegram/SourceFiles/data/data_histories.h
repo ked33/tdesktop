@@ -56,6 +56,7 @@ public:
 	void applyPeerDialogs(const MTPmessages_PeerDialogs &dialogs);
 
 	void unloadAll();
+	void releaseIdleSlices();
 	void clearAll();
 	void editHistoriesMessages(PeerData* peer, bool isHide);
 

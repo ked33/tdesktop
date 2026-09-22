@@ -221,6 +221,22 @@ private:
 
 };
 
+class TrayIdleMemoryBox final : public Ui::BoxContent {
+public:
+	explicit TrayIdleMemoryBox(QWidget *parent);
+
+protected:
+	void prepare() override;
+	void setInnerFocus() override;
+	void resizeEvent(QResizeEvent *e) override;
+
+private:
+	void save();
+
+	object_ptr<Ui::InputField> _minutes;
+
+};
+
 class SearchDialogFilterBox : public Ui::BoxContent {
 public:
 	SearchDialogFilterBox(QWidget *parent);

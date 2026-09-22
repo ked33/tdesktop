@@ -29,6 +29,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <cstdlib>
 #include <dlfcn.h>
+#include <mach/mach.h>
+#include <malloc/malloc.h>
 #include <execinfo.h>
 #include <sys/mount.h>
 #include <sys/sysctl.h>
@@ -516,6 +518,26 @@ void SetWindowScreenshotProtection(not_null<QWidget*> window, bool enabled) {
 	nsWindow.sharingType = enabled
 		? NSWindowSharingNone
 		: NSWindowSharingReadOnly;
+}
+
+void TrimProcessHeaps() {
+	malloc_zone_pressure_relief(nullptr, 0);
+}
+
+ProcessMemory CurrentProcessMemory() {
+	auto result = ProcessMemory();
+	mach_task_basic_info info;
+	mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+	const auto status = task_info(
+		mach_task_self(),
+		MACH_TASK_BASIC_INFO,
+		reinterpret_cast<task_info_t>(&info),
+		&count);
+	if (status == KERN_SUCCESS) {
+		result.workingSet = info.resident_size;
+		result.privateBytes = info.virtual_size;
+	}
+	return result;
 }
 
 void LaunchMaps(const Data::LocationPoint &point, Fn<void()> fail) {

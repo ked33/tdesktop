@@ -2696,6 +2696,13 @@ void Session::unloadHeavyViewParts(
 	}
 }
 
+void Session::releaseIdleMemory() {
+	for (const auto &view : base::take(_heavyViewParts)) {
+		view->unloadHeavyPart();
+	}
+	_histories->releaseIdleSlices();
+}
+
 void Session::unloadHeavyViewParts(
 		not_null<HistoryView::ElementDelegate*> delegate,
 		int from,

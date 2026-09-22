@@ -386,6 +386,13 @@ private:
 	void startSystemDarkModeViewer();
 	void startMediaView();
 	void startTray();
+	void refreshTrayIdleMemory();
+	void trayIdleMemoryTimedOut();
+	void releaseTrayIdleMemory();
+	void restoreTrayIdleChats();
+	void attachTrayIdleMediaView();
+	[[nodiscard]] bool trayIdleWindowsHidden() const;
+	[[nodiscard]] bool trayIdleMemoryBusy() const;
 
 	void createTray();
 	void updateWindowTitles();
@@ -479,6 +486,10 @@ private:
 
 	crl::time _shouldLockAt = 0;
 	base::Timer _autoLockTimer;
+	base::Timer _trayIdleMemoryTimer;
+	bool _trayIdleMemoryFired = false;
+	bool _trayIdleMemoryDeferBusy = false;
+	int _trayIdleMemoryArmedMinutes = 0;
 
 	QList<QUrl> _urlsToOpen;
 

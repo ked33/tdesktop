@@ -69,6 +69,13 @@ void NewVersionLaunched(int oldVersion);
 [[nodiscard]] QString ExecutablePathForShortcuts();
 void LaunchMaps(const Data::LocationPoint &point, Fn<void()> fail);
 
+struct ProcessMemory {
+	uint64 workingSet = 0;
+	uint64 privateBytes = 0;
+};
+void TrimProcessHeaps();
+[[nodiscard]] ProcessMemory CurrentProcessMemory();
+
 #if QT_VERSION < QT_VERSION_CHECK(6, 5, 0)
 [[nodiscard]] std::optional<bool> IsDarkMode();
 #endif // Qt < 6.5.0

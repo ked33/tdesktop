@@ -493,6 +493,7 @@ public:
 		not_null<HistoryView::ElementDelegate*> delegate,
 		int from,
 		int till);
+	void releaseIdleMemory();
 
 	void registerShownSpoiler(not_null<ViewElement*> view);
 	void hideShownSpoilers();

@@ -126,6 +126,8 @@ public:
 	};
 	void clear(ClearType type, bool markEmpty = false);
 	void clearUpTill(MsgId availableMinId);
+	void releaseIdleSlice();
+	[[nodiscard]] bool takeIdleUnloaded();
 
 	void applyGroupAdminChanges(const base::flat_set<UserId> &changes);
 
@@ -687,6 +689,7 @@ private:
 	HistoryItem *_newPeerPhotoChange = nullptr;
 	bool _loadedAtTop = false;
 	bool _loadedAtBottom = true;
+	bool _idleUnloaded = false;
 
 	std::optional<Data::Folder*> _folder;
 	Data::CommunityInfo *_communityInfo = nullptr;

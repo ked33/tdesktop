@@ -74,6 +74,7 @@ public:
 	void recentSublistsInvalidate(not_null<SavedSublist*> sublist);
 	[[nodiscard]] auto recentSublists() const
 		-> const std::vector<not_null<SavedSublist*>> &;
+	void enumerateSublists(Fn<void(not_null<SavedSublist*>)> action) const;
 
 	void markUnreadCountsUnknown(MsgId readTillId);
 	void updateUnreadCounts(

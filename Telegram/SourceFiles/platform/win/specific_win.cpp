@@ -34,6 +34,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QDesktopServices>
 #include <QtGui/QWindow>
 
+#include <malloc.h>
+
+#include <vector>
+
 #include <Shobjidl.h>
 #include <ShObjIdl_core.h>
 #include <shellapi.h>
@@ -740,6 +744,38 @@ void LaunchMaps(const Data::LocationPoint &point, Fn<void()> fail) {
 		url.arg(point.latAsString(), point.lonAsString()))) {
 		fail();
 	}
+}
+
+void TrimProcessHeaps() {
+	_heapmin();
+
+	auto count = GetProcessHeaps(0, nullptr);
+	if (!count) {
+		return;
+	}
+	auto heaps = std::vector<HANDLE>(count);
+	const auto filled = GetProcessHeaps(count, heaps.data());
+	if (!filled || filled > count) {
+		return;
+	}
+	for (auto i = DWORD(); i != filled; ++i) {
+		HeapCompact(heaps[i], 0);
+	}
+}
+
+ProcessMemory CurrentProcessMemory() {
+	auto result = ProcessMemory();
+	auto data = PROCESS_MEMORY_COUNTERS_EX{};
+	data.cb = sizeof(data);
+	if (Dlls::GetProcessMemoryInfo
+		&& Dlls::GetProcessMemoryInfo(
+			GetCurrentProcess(),
+			reinterpret_cast<PPROCESS_MEMORY_COUNTERS>(&data),
+			sizeof(data))) {
+		result.workingSet = data.WorkingSetSize;
+		result.privateBytes = data.PrivateUsage;
+	}
+	return result;
 }
 
 } // namespace Platform

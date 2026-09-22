@@ -168,6 +168,12 @@ void Histories::unloadAll() {
 	}
 }
 
+void Histories::releaseIdleSlices() {
+	for (const auto &[peerId, history] : _map) {
+		history->releaseIdleSlice();
+	}
+}
+
 void Histories::clearAll() {
 	_map.clear();
 }

@@ -25,6 +25,9 @@ namespace EnhancedSettings {
 	inline constexpr auto kSearchPornRequestIntervalMinimum = 0;
 	inline constexpr auto kSearchPornRequestIntervalDefault = 500;
 	inline constexpr auto kSearchPornRequestIntervalMaximum = 5000;
+	inline constexpr auto kTrayIdleMemoryMinutesMinimum = 0;
+	inline constexpr auto kTrayIdleMemoryMinutesDefault = 60;
+	inline constexpr auto kTrayIdleMemoryMinutesMaximum = 1440;
 
 	[[nodiscard]] int MessageEmojiSize();
 	[[nodiscard]] int MessageStickerSize();
@@ -44,6 +47,9 @@ namespace EnhancedSettings {
 	[[nodiscard]] int SearchPornRequestInterval();
 	[[nodiscard]] rpl::producer<int> SearchPornRequestIntervalChanges();
 	void SetSearchPornRequestInterval(int value);
+	[[nodiscard]] int TrayIdleMemoryMinutes();
+	[[nodiscard]] rpl::producer<int> TrayIdleMemoryMinutesChanges();
+	void SetTrayIdleMemoryMinutes(int value);
 
 	class Manager : public QObject {
 	Q_OBJECT

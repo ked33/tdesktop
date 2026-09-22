@@ -78,6 +78,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/tooltip.h"
 #include "ui/gl/gl_detection.h"
 #include "ui/text/text_options.h"
+
+#include <QtGui/QPixmapCache>
 #include "ui/effects/spoiler_mess.h"
 #include "ui/cached_round_corners.h"
 #include "ui/power_saving.h"
@@ -182,7 +184,8 @@ Application::Application()
 , _emojiKeywords(std::make_unique<ChatHelpers::EmojiKeywords>())
 , _tray(std::make_unique<Tray>())
 , _setupEmailLock(false)
-, _autoLockTimer([=] { checkAutoLock(); }) {
+, _autoLockTimer([=] { checkAutoLock(); })
+, _trayIdleMemoryTimer([=] { trayIdleMemoryTimedOut(); }) {
 	Ui::Integration::Set(&_private->uiIntegration);
 	_private->proxyRotation = std::make_unique<ProxyRotationManager>();
 
@@ -307,6 +310,10 @@ Application::~Application() {
 
 void Application::run() {
 	EnhancedSettings::Start();
+	EnhancedSettings::TrayIdleMemoryMinutesChanges(
+	) | rpl::on_next([=](int) {
+		refreshTrayIdleMemory();
+	}, _lifetime);
 	// Depends on OpenSSL on macOS, so on ThirdParty::start().
 	// Depends on notifications settings.
 	_notifications = std::make_unique<Window::Notifications::System>();
@@ -600,6 +607,11 @@ void Application::processCreatedWindow(
 	}
 	window->openInMediaViewRequests(
 	) | rpl::start_to_stream(_openInMediaViewRequests, window->lifetime());
+	window->widget()->shownValue(
+	) | rpl::skip(1) | rpl::on_next([=](bool) {
+		refreshTrayIdleMemory();
+	}, window->lifetime());
+	refreshTrayIdleMemory();
 }
 
 void Application::startMediaView() {
@@ -610,6 +622,7 @@ void Application::startMediaView() {
 	InvokeQueued(this, [=] {
 		_mediaView = std::make_unique<Media::View::OverlayWidget>();
 		_mediaView->setSystemMediaControls(_mediaControlsManager.get());
+		attachTrayIdleMediaView();
 	});
 #elif defined Q_OS_WIN // Q_OS_MAC || Q_OS_WIN
 	// On Windows we needed such hack for the main window, otherwise
@@ -619,9 +632,11 @@ void Application::startMediaView() {
 	_mediaView = std::make_unique<Media::View::OverlayWidget>();
 	_mediaView->setSystemMediaControls(_mediaControlsManager.get());
 	_lastActivePrimaryWindow->widget()->Ui::RpWidget::setGeometry(current);
+	attachTrayIdleMediaView();
 #else
 	_mediaView = std::make_unique<Media::View::OverlayWidget>();
 	_mediaView->setSystemMediaControls(_mediaControlsManager.get());
+	attachTrayIdleMediaView();
 #endif // Q_OS_MAC || Q_OS_WIN
 }
 
@@ -709,6 +724,145 @@ bool Application::isActiveForTrayMenu() const {
 	});
 }
 
+bool Application::trayIdleWindowsHidden() const {
+	if (_windows.empty()) {
+		return false;
+	}
+	for (const auto &window : ranges::views::values(_windows)) {
+		if (window->widget()->isVisible()) {
+			return false;
+		}
+	}
+	return !_mediaView || _mediaView->isHidden();
+}
+
+bool Application::trayIdleMemoryBusy() const {
+	if (calls().inCall() || calls().inGroupCall()) {
+		return true;
+	}
+	const auto player = Media::Player::instance();
+	return player->current(AudioMsgId::Type::Voice)
+		|| player->current(AudioMsgId::Type::Song)
+		|| player->current(AudioMsgId::Type::Video);
+}
+
+void Application::attachTrayIdleMediaView() {
+	if (_mediaView) {
+		_mediaView->widget()->installEventFilter(this);
+	}
+}
+
+void Application::refreshTrayIdleMemory() {
+	const auto minutes = EnhancedSettings::TrayIdleMemoryMinutes();
+	if (minutes <= 0 || !trayIdleWindowsHidden()) {
+		_trayIdleMemoryTimer.cancel();
+		_trayIdleMemoryFired = false;
+		_trayIdleMemoryDeferBusy = false;
+		_trayIdleMemoryArmedMinutes = 0;
+		if (minutes > 0) {
+			restoreTrayIdleChats();
+		}
+		return;
+	}
+	if (_trayIdleMemoryFired) {
+		return;
+	}
+	if (_trayIdleMemoryDeferBusy) {
+		if (!trayIdleMemoryBusy()) {
+			_trayIdleMemoryDeferBusy = false;
+			releaseTrayIdleMemory();
+		} else if (!_trayIdleMemoryTimer.isActive()) {
+			_trayIdleMemoryTimer.callOnce(5 * crl::time(1000));
+		}
+		return;
+	}
+	if (trayIdleMemoryBusy()) {
+		_trayIdleMemoryDeferBusy = true;
+		_trayIdleMemoryArmedMinutes = 0;
+		_trayIdleMemoryTimer.callOnce(5 * crl::time(1000));
+		return;
+	}
+	if (_trayIdleMemoryArmedMinutes != minutes
+		|| !_trayIdleMemoryTimer.isActive()) {
+		_trayIdleMemoryArmedMinutes = minutes;
+		_trayIdleMemoryTimer.callOnce(crl::time(minutes) * 60 * 1000);
+	}
+}
+
+void Application::trayIdleMemoryTimedOut() {
+	const auto minutes = EnhancedSettings::TrayIdleMemoryMinutes();
+	if (minutes <= 0 || !trayIdleWindowsHidden()) {
+		_trayIdleMemoryFired = false;
+		_trayIdleMemoryDeferBusy = false;
+		_trayIdleMemoryArmedMinutes = 0;
+		return;
+	}
+	if (trayIdleMemoryBusy()) {
+		_trayIdleMemoryDeferBusy = true;
+		_trayIdleMemoryArmedMinutes = 0;
+		_trayIdleMemoryTimer.callOnce(5 * crl::time(1000));
+		return;
+	}
+	_trayIdleMemoryDeferBusy = false;
+	releaseTrayIdleMemory();
+}
+
+void Application::releaseTrayIdleMemory() {
+	if (_trayIdleMemoryFired
+		|| EnhancedSettings::TrayIdleMemoryMinutes() <= 0
+		|| !trayIdleWindowsHidden()
+		|| trayIdleMemoryBusy()) {
+		return;
+	}
+	_trayIdleMemoryFired = true;
+	_trayIdleMemoryDeferBusy = false;
+	_trayIdleMemoryArmedMinutes = 0;
+	_trayIdleMemoryTimer.cancel();
+
+	const auto before = Platform::CurrentProcessMemory();
+	for (const auto &account : _domain->orderedAccounts()) {
+		if (account->sessionExists()) {
+			account->session().data().releaseIdleMemory();
+		}
+	}
+	QPixmapCache::clear();
+	clearEmojiSourceImages();
+	Platform::TrimProcessHeaps();
+	const auto after = Platform::CurrentProcessMemory();
+	const auto mb = uint64(1024 * 1024);
+	LOG(("Tray idle memory: working set %1 -> %2 MB, private %3 -> %4 MB."
+		).arg((before.workingSet + mb / 2) / mb
+		).arg((after.workingSet + mb / 2) / mb
+		).arg((before.privateBytes + mb / 2) / mb
+		).arg((after.privateBytes + mb / 2) / mb));
+}
+
+void Application::restoreTrayIdleChats() {
+	enumerateWindows([&](not_null<Window::Controller*> window) {
+		if (!window->widget()->isVisible()) {
+			return;
+		}
+		const auto controller = window->sessionController();
+		if (!controller) {
+			return;
+		}
+		const auto thread = controller->activeChatCurrent().thread();
+		if (!thread) {
+			return;
+		}
+		if (!thread->owningHistory()->takeIdleUnloaded()) {
+			return;
+		}
+		controller->showThread(
+			thread,
+			ShowAtUnreadMsgId,
+			SectionShow(
+				SectionShow::Way::Forward,
+				anim::type::instant,
+				anim::activation::background));
+	});
+}
+
 bool Application::hideMediaView() {
 	if (_mediaView
 		&& _mediaView->isFullScreen()
@@ -721,6 +875,12 @@ bool Application::hideMediaView() {
 }
 
 bool Application::eventFilter(QObject *object, QEvent *e) {
+	if (_mediaView && object == _mediaView->widget()) {
+		if (e->type() == QEvent::Show || e->type() == QEvent::Hide) {
+			refreshTrayIdleMemory();
+		}
+		return false;
+	}
 	switch (e->type()) {
 	case QEvent::KeyPress: {
 		updateNonIdle();

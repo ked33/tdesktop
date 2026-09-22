@@ -31,6 +31,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QStandardPaths>
 #include <QtCore/QProcess>
 
+#include <cstdio>
+#include <cstring>
+
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif // __GLIBC__
+
 #include <kshell.h>
 #include <ksandbox.h>
 
@@ -853,6 +860,31 @@ QString ApplicationIconName() {
 		: QGuiApplication::desktopFileName().remove(
 		u"._"_q + Core::Launcher::Instance().instanceHash());
 	return Result;
+}
+
+void TrimProcessHeaps() {
+#ifdef __GLIBC__
+	malloc_trim(0);
+#endif // __GLIBC__
+}
+
+ProcessMemory CurrentProcessMemory() {
+	auto result = ProcessMemory();
+	auto file = std::fopen("/proc/self/status", "r");
+	if (!file) {
+		return result;
+	}
+	char line[256];
+	while (std::fgets(line, sizeof(line), file)) {
+		auto value = 0UL;
+		if (std::sscanf(line, "VmRSS: %lu", &value) == 1) {
+			result.workingSet = uint64(value) * 1024;
+		} else if (std::sscanf(line, "RssAnon: %lu", &value) == 1) {
+			result.privateBytes = uint64(value) * 1024;
+		}
+	}
+	std::fclose(file);
+	return result;
 }
 
 void LaunchMaps(const Data::LocationPoint &point, Fn<void()> fail) {

@@ -1100,6 +1100,51 @@ void SearchPornIntervalBox::save() {
 	closeBox();
 }
 
+TrayIdleMemoryBox::TrayIdleMemoryBox(QWidget *parent)
+: _minutes(
+	this,
+	st::defaultInputField,
+	tr::lng_settings_tray_idle_memory_placeholder()) {
+}
+
+void TrayIdleMemoryBox::prepare() {
+	setTitle(tr::lng_settings_tray_idle_memory());
+	addButton(tr::lng_settings_save(), [=] { save(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+	_minutes->setText(QString::number(
+		EnhancedSettings::TrayIdleMemoryMinutes()));
+	_minutes->setMaxLength(4);
+	_minutes->submits() | rpl::on_next([=] { save(); }, lifetime());
+	setDimensions(
+		st::boxWidth,
+		_minutes->height() + st::boxPadding.top() + st::boxPadding.bottom());
+}
+
+void TrayIdleMemoryBox::setInnerFocus() {
+	_minutes->setFocusFast();
+}
+
+void TrayIdleMemoryBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+	_minutes->resizeToWidth(
+		width() - st::boxPadding.left() - st::boxPadding.right());
+	_minutes->moveToLeft(st::boxPadding.left(), st::boxPadding.top());
+}
+
+void TrayIdleMemoryBox::save() {
+	auto valid = false;
+	const auto value = _minutes->getLastText().trimmed().toInt(&valid);
+	if (!valid
+		|| value < EnhancedSettings::kTrayIdleMemoryMinutesMinimum
+		|| value > EnhancedSettings::kTrayIdleMemoryMinutesMaximum) {
+		_minutes->showError();
+		Ui::Toast::Show(tr::lng_settings_tray_idle_memory_invalid(tr::now));
+		return;
+	}
+	EnhancedSettings::SetTrayIdleMemoryMinutes(value);
+	closeBox();
+}
+
 SearchDialogFilterBox::SearchDialogFilterBox(QWidget *parent)
 	: _ids(
 		this,

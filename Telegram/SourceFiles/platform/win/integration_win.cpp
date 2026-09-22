@@ -28,9 +28,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <propvarutil.h>
 #include <propkey.h>
 
-#include <malloc.h>
-#include <vector>
-
 namespace Platform {
 namespace {
 
@@ -39,20 +36,7 @@ constexpr auto kMemoryTrimEach = crl::time(10000);
 crl::time MemoryTrimmedAt = 0;
 
 void TrimWindowsHeaps() {
-	_heapmin();
-
-	auto count = GetProcessHeaps(0, nullptr);
-	if (!count) {
-		return;
-	}
-	auto heaps = std::vector<HANDLE>(count);
-	const auto filled = GetProcessHeaps(count, heaps.data());
-	if (!filled || filled > count) {
-		return;
-	}
-	for (auto i = DWORD(); i != filled; ++i) {
-		HeapCompact(heaps[i], 0);
-	}
+	TrimProcessHeaps();
 }
 
 } // namespace
