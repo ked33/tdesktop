@@ -8974,7 +8974,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_search_porn_interval_placeholder" = "0–5000 ms (default: 500)";
 "lng_settings_search_porn_interval_invalid" = "Enter a whole number from 0 to 5000.";
 "lng_settings_search_porn_interval_about" = "The interval controls how often requests start. 0 ms uses only the concurrency limit. Shorter intervals send more requests. If Telegram imposes a wait, searching pauses and resumes automatically.";
-"lng_settings_performance" = "性能";
 "lng_settings_tray_idle_memory" = "托盘闲置后清理内存";
 "lng_settings_tray_idle_memory_off" = "关闭";
 "lng_settings_tray_idle_memory_about" = "仅当任务栏没有本客户端窗口时，闲置达到该分钟数后清理一次内存缓存。0 为关闭。";
