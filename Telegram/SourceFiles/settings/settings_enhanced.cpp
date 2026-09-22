@@ -11,6 +11,8 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #include <QJsonDocument>
 #include "settings/settings_enhanced.h"
 
+#include "settings/sections/settings_main.h"
+#include "settings/settings_builder.h"
 #include "settings/settings_common.h"
 #include <ui/vertical_list.h>
 #include "ui/wrap/vertical_layout.h"
@@ -37,6 +39,7 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #include "media/streaming/media_streaming_diagnostics.h"
 #include "layout/layout_item_base.h"
 #include "facades.h"
+#include "styles/style_menu_icons.h"
 #include "styles/style_settings.h"
 #include "apiwrap.h"
 #include "api/api_blocked_peers.h"
@@ -52,36 +55,44 @@ namespace Settings {
 
 		AddDividerText(inner, tr::lng_settings_restart_hint());
 		AddSkip(inner);
-		AddSubsectionTitle(inner, tr::lng_settings_network());
+		trackSearch(
+			AddSubsectionTitle(inner, tr::lng_settings_network()),
+			u"enhanced/section_network"_q);
 
-		auto uploadBoostBtn = AddButtonWithLabel(
+		auto uploadBoostBtn = trackSearch(
+			AddButtonWithLabel(
 				inner,
 				tr::lng_settings_net_upload_speed_boost(),
 				rpl::single(NetBoostBox::BoostLabel(GetEnhancedInt("net_speed_boost"))),
 				st::settingsButtonNoIcon
-		);
+			),
+			u"enhanced/net_speed_boost"_q);
 		uploadBoostBtn->setColorOverride(QColor(255, 0, 0));
 		uploadBoostBtn->addClickHandler([=] {
 			Ui::show(Box<NetBoostBox>());
 		});
 
-		auto downloadBoostBtn = AddButtonWithLabel(
+		auto downloadBoostBtn = trackSearch(
+			AddButtonWithLabel(
 				inner,
 				tr::lng_settings_net_download_speed_boost(),
 				rpl::single(DownloadBoostBox::BoostLabel(
 					GetEnhancedInt("net_download_speed_boost"))),
 				st::settingsButtonNoIcon
-		);
+			),
+			u"enhanced/net_download_speed_boost"_q);
 		downloadBoostBtn->setColorOverride(QColor(255, 0, 0));
 		downloadBoostBtn->addClickHandler([=] {
 			Ui::show(Box<DownloadBoostBox>());
 		});
 
-		AddButtonWithIcon(
-			inner,
-			tr::lng_settings_video_player_prefer_original(),
-			st::settingsButtonNoIcon
-		)->toggleOn(
+		trackSearch(
+			AddButtonWithIcon(
+				inner,
+				tr::lng_settings_video_player_prefer_original(),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/video_player_prefer_original"_q)->toggleOn(
 			rpl::single(GetEnhancedBool(u"video_player_prefer_original"_q))
 		)->toggledChanges(
 		) | rpl::filter([=](bool toggled) {
@@ -95,19 +106,23 @@ namespace Settings {
 			inner,
 			tr::lng_settings_video_player_prefer_original_about());
 
-		AddButtonWithIcon(
-			inner,
-			tr::lng_settings_online_playback_parameters_title(),
-			st::settingsButtonNoIcon
-		)->addClickHandler([=] {
+		trackSearch(
+			AddButtonWithIcon(
+				inner,
+				tr::lng_settings_online_playback_parameters_title(),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/online_playback_parameters"_q)->addClickHandler([=] {
 			Ui::show(Box<DownloadBoostProfilesBox>());
 		});
 
-		AddButtonWithIcon(
-			inner,
-			tr::lng_settings_online_playback_debug_logs(),
-			st::settingsButtonNoIcon
-		)->toggleOn(
+		trackSearch(
+			AddButtonWithIcon(
+				inner,
+				tr::lng_settings_online_playback_debug_logs(),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/online_playback_debug_logs"_q)->toggleOn(
 			rpl::single(GetEnhancedBool("online_playback_debug_logs"))
 		)->toggledChanges(
 		) | rpl::filter([=](bool toggled) {
@@ -130,12 +145,14 @@ namespace Settings {
 		) | rpl::map([=] {
 			return currentFloodPremiumWaitLabel();
 		});
-		auto floodPremiumWaitButton = AddButtonWithLabel(
-			inner,
-			tr::lng_settings_flood_premium_wait_title(),
-			std::move(floodPremiumWaitValue),
-			st::settingsButtonNoIcon
-		);
+		auto floodPremiumWaitButton = trackSearch(
+			AddButtonWithLabel(
+				inner,
+				tr::lng_settings_flood_premium_wait_title(),
+				std::move(floodPremiumWaitValue),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/flood_premium_wait_override_ms"_q);
 		floodPremiumWaitButton->setColorOverride(QColor(255, 0, 0));
 		floodPremiumWaitButton->events(
 		) | rpl::on_next([=](not_null<QEvent*> e) {
@@ -206,7 +223,9 @@ namespace Settings {
 			not_null<Ui::VerticalLayout *> container) {
 		AddDivider(container);
 		AddSkip(container);
-		AddSubsectionTitle(container, tr::lng_settings_messages());
+		trackSearch(
+			AddSubsectionTitle(container, tr::lng_settings_messages()),
+			u"enhanced/section_messages"_q);
 
 		const auto wrap = container->add(
 				object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
@@ -214,11 +233,13 @@ namespace Settings {
 						object_ptr<Ui::VerticalLayout>(container)));
 		const auto inner = wrap->entity();
 
-		auto MsgIdBtn = AddButtonWithIcon(
+		auto MsgIdBtn = trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_show_message_id(),
 				st::settingsButtonNoIcon
-		);
+			),
+			u"enhanced/show_messages_id"_q);
 		MsgIdBtn->setColorOverride(QColor(255, 0, 0));
 		MsgIdBtn->toggleOn(
 				rpl::single(GetEnhancedBool("show_messages_id"))
@@ -231,11 +252,13 @@ namespace Settings {
 			Core::Restart();
 		}, container->lifetime());
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_label_channel_user(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/label_channel_user"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("label_channel_user"))
 		)->toggledChanges(
 		) | rpl::filter([=](bool toggled) {
@@ -245,21 +268,26 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
-		auto messageMediaSizeButton = AddButtonWithLabel(
-			inner,
-			tr::lng_settings_message_media_size(),
-			rpl::single(MessageMediaSizeBox::SizeLabel()),
-			st::settingsButtonNoIcon);
+		auto messageMediaSizeButton = trackSearch(
+			AddButtonWithLabel(
+				inner,
+				tr::lng_settings_message_media_size(),
+				rpl::single(MessageMediaSizeBox::SizeLabel()),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/message_media_size"_q);
 		messageMediaSizeButton->setColorOverride(QColor(255, 0, 0));
 		messageMediaSizeButton->addClickHandler([=] {
 			Ui::show(Box<MessageMediaSizeBox>());
 		});
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_show_repeater_option(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/show_repeater_option"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("show_repeater_option"))
 		)->toggledChanges(
 		) | rpl::filter([=](bool toggled) {
@@ -270,11 +298,13 @@ namespace Settings {
 		}, container->lifetime());
 
 		if (GetEnhancedBool("show_repeater_option")) {
-			AddButtonWithIcon(
+			trackSearch(
+				AddButtonWithIcon(
 					inner,
 					tr::lng_settings_repeater_reply_to_orig_msg(),
 					st::settingsButtonNoIcon
-			)->toggleOn(
+				),
+				u"enhanced/repeater_reply_to_orig_msg"_q)->toggleOn(
 					rpl::single(GetEnhancedBool("repeater_reply_to_orig_msg"))
 			)->toggledChanges(
 			) | rpl::filter([=](bool toggled) {
@@ -293,12 +323,14 @@ namespace Settings {
 			return AlwaysDeleteBox::DeleteLabel(GetEnhancedInt("always_delete_for"));
 		});
 
-		auto btn = AddButtonWithLabel(
+		auto btn = trackSearch(
+			AddButtonWithLabel(
 				container,
 				tr::lng_settings_always_delete_for(),
 				std::move(value),
 				st::settingsButtonNoIcon
-		);
+			),
+			u"enhanced/always_delete_for"_q);
 		btn->events(
 		) | rpl::on_next([=](not_null<QEvent*> e) {
 			const auto event = e->type();
@@ -308,11 +340,13 @@ namespace Settings {
 			Ui::show(Box<AlwaysDeleteBox>());
 		});
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_disable_cloud_draft_sync(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/disable_cloud_draft_sync"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("disable_cloud_draft_sync"))
 		)->toggledChanges(
 		) | rpl::filter([=](bool toggled) {
@@ -324,11 +358,13 @@ namespace Settings {
 
 		AddSkip(container);
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_hide_classic_forward(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/hide_classic_fwd"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("hide_classic_fwd"))
 		)->toggledChanges(
 		) | rpl::filter([=](bool toggled) {
@@ -338,11 +374,13 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_keep_selected_messages_across_chats(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/keep_selected_messages_across_chats"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("keep_selected_messages_across_chats"))
 		)->toggledChanges(
 		) | rpl::filter([=](bool toggled) {
@@ -355,11 +393,13 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_lift_message_selection_limit(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/lift_message_selection_limit"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("lift_message_selection_limit"))
 		)->toggledChanges(
 		) | rpl::filter([=](bool toggled) {
@@ -380,12 +420,14 @@ namespace Settings {
 		) | rpl::map([=] {
 			return currentQuickCopyTargetsLabel();
 		});
-		auto quickCopyTargetsButton = AddButtonWithLabel(
-			inner,
-			tr::lng_settings_quick_copy_targets_title(),
-			std::move(quickCopyTargetsValue),
-			st::settingsButtonNoIcon
-		);
+		auto quickCopyTargetsButton = trackSearch(
+			AddButtonWithLabel(
+				inner,
+				tr::lng_settings_quick_copy_targets_title(),
+				std::move(quickCopyTargetsValue),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/quick_copy_targets"_q);
 		quickCopyTargetsButton->events(
 		) | rpl::on_next([=](not_null<QEvent*> e) {
 			if (e->type() == QEvent::UpdateLater) {
@@ -410,11 +452,14 @@ namespace Settings {
 			) | rpl::map([=] {
 				return currentLabel();
 			});
-			auto button = AddButtonWithLabel(
-				inner,
-				titleFn(),
-				std::move(value),
-				st::settingsButtonNoIcon);
+			auto button = trackSearch(
+				AddButtonWithLabel(
+					inner,
+					titleFn(),
+					std::move(value),
+					st::settingsButtonNoIcon
+				),
+				u"enhanced/"_q + key);
 			button->events(
 			) | rpl::on_next([=](not_null<QEvent*> e) {
 				if (e->type() == QEvent::UpdateLater) {
@@ -462,11 +507,14 @@ namespace Settings {
 		) | rpl::map([=] {
 			return currentCustomChatShortcutsLabel();
 		});
-		auto customChatShortcutsButton = AddButtonWithLabel(
-			inner,
-			tr::lng_settings_custom_chat_shortcuts_title(),
-			std::move(customChatShortcutsValue),
-			st::settingsButtonNoIcon);
+		auto customChatShortcutsButton = trackSearch(
+			AddButtonWithLabel(
+				inner,
+				tr::lng_settings_custom_chat_shortcuts_title(),
+				std::move(customChatShortcutsValue),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/custom_chat_shortcuts"_q);
 		customChatShortcutsButton->events(
 		) | rpl::on_next([=](not_null<QEvent*> e) {
 			if (e->type() == QEvent::UpdateLater) {
@@ -477,11 +525,13 @@ namespace Settings {
 			Ui::show(Box<CustomChatShortcutsBox>());
 		});
 
-		AddButtonWithIcon(
-			inner,
-			tr::lng_settings_double_click_copy_link(),
-			st::settingsButtonNoIcon
-		)->toggleOn(
+		trackSearch(
+			AddButtonWithIcon(
+				inner,
+				tr::lng_settings_double_click_copy_link(),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/double_click_copy_link"_q)->toggleOn(
 			rpl::single(GetEnhancedBool("double_click_copy_link"))
 		)->toggledChanges(
 		) | rpl::filter([=](bool toggled) {
@@ -502,12 +552,14 @@ namespace Settings {
 		) | rpl::map([=] {
 			return currentNoForwardsBadgeColorLabel();
 		});
-		auto noForwardsBadgeColorButton = AddButtonWithLabel(
-			inner,
-			tr::lng_settings_no_forwards_badge_color(),
-			std::move(noForwardsBadgeColorValue),
-			st::settingsButtonNoIcon
-		);
+		auto noForwardsBadgeColorButton = trackSearch(
+			AddButtonWithLabel(
+				inner,
+				tr::lng_settings_no_forwards_badge_color(),
+				std::move(noForwardsBadgeColorValue),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/no_forwards_badge_color"_q);
 		noForwardsBadgeColorButton->events(
 		) | rpl::on_next([=](not_null<QEvent*> e) {
 			if (e->type() == QEvent::UpdateLater) {
@@ -529,12 +581,14 @@ namespace Settings {
 		) | rpl::map([=] {
 			return currentCodeBlockBgColorLabel();
 		});
-		auto codeBlockBgColorButton = AddButtonWithLabel(
-			inner,
-			tr::lng_settings_code_block_bg_color(),
-			std::move(codeBlockBgColorValue),
-			st::settingsButtonNoIcon
-		);
+		auto codeBlockBgColorButton = trackSearch(
+			AddButtonWithLabel(
+				inner,
+				tr::lng_settings_code_block_bg_color(),
+				std::move(codeBlockBgColorValue),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/code_block_bg_color"_q);
 		codeBlockBgColorButton->events(
 		) | rpl::on_next([=](not_null<QEvent*> e) {
 			if (e->type() == QEvent::UpdateLater) {
@@ -556,12 +610,14 @@ namespace Settings {
 		) | rpl::map([=] {
 			return currentSearchMessageHighlightBgColorLabel();
 		});
-		auto searchMessageHighlightBgColorButton = AddButtonWithLabel(
-			inner,
-			tr::lng_settings_search_message_highlight_bg_color(),
-			std::move(searchMessageHighlightBgColorValue),
-			st::settingsButtonNoIcon
-		);
+		auto searchMessageHighlightBgColorButton = trackSearch(
+			AddButtonWithLabel(
+				inner,
+				tr::lng_settings_search_message_highlight_bg_color(),
+				std::move(searchMessageHighlightBgColorValue),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/search_message_highlight_bg_color"_q);
 		searchMessageHighlightBgColorButton->events(
 		) | rpl::on_next([=](not_null<QEvent*> e) {
 			if (e->type() == QEvent::UpdateLater) {
@@ -572,11 +628,13 @@ namespace Settings {
 			Ui::show(Box<SearchMessageHighlightBgColorBox>());
 		});
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_disable_link_warning(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/disable_link_warning"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("disable_link_warning"))
 		)->toggledChanges(
 		) | rpl::filter([=](bool toggled) {
@@ -586,11 +644,13 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_disable_premium_animation(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/disable_premium_animation"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("disable_premium_animation"))
 		)->toggledChanges(
 		) | rpl::filter([=](bool toggled) {
@@ -600,11 +660,13 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_disable_global_search(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/disable_global_search"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("disable_global_search"))
 		)->toggledChanges(
 		) | rpl::filter([=](bool toggled) {
@@ -614,11 +676,13 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_search_main_and_archive(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/search_main_and_archive"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("search_main_and_archive"))
 		)->toggledChanges(
 		) | rpl::filter([=](bool toggled) {
@@ -628,22 +692,26 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_search_include_porn(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/search_include_porn"_q)->toggleOn(
 				rpl::single(EnhancedSettings::SearchIncludePorn())
 		)->toggledChanges(
 		) | rpl::on_next([](bool toggled) {
 			EnhancedSettings::SetSearchIncludePorn(toggled);
 		}, container->lifetime());
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_search_dialog_filter(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/search_dialog_filter"_q)->toggleOn(
 				rpl::single(EnhancedSettings::SearchDialogFilterEnabled())
 		)->toggledChanges(
 		) | rpl::on_next([](bool toggled) {
@@ -660,45 +728,54 @@ namespace Settings {
 					EnhancedSettings::SearchDialogFilterIds());
 			})
 		);
-		AddButtonWithLabel(
-			inner,
-			rpl::single(QString()),
-			std::move(searchDialogFilterIdsValue),
-			st::settingsButtonNoIcon
-		)->addClickHandler([] {
+		trackSearch(
+			AddButtonWithLabel(
+				inner,
+				rpl::single(QString()),
+				std::move(searchDialogFilterIdsValue),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/search_dialog_filter_ids"_q)->addClickHandler([] {
 			Ui::show(Box<SearchDialogFilterBox>());
 		});
 
-		AddButtonWithLabel(
-			inner,
-			tr::lng_settings_search_porn_concurrency(),
-			rpl::single(EnhancedSettings::SearchPornConcurrency())
-				| rpl::then(EnhancedSettings::SearchPornConcurrencyChanges())
-				| rpl::map([](int value) { return QString::number(value); }),
-			st::settingsButtonNoIcon
-		)->addClickHandler([] {
+		trackSearch(
+			AddButtonWithLabel(
+				inner,
+				tr::lng_settings_search_porn_concurrency(),
+				rpl::single(EnhancedSettings::SearchPornConcurrency())
+					| rpl::then(EnhancedSettings::SearchPornConcurrencyChanges())
+					| rpl::map([](int value) { return QString::number(value); }),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/search_porn_concurrency"_q)->addClickHandler([] {
 			Ui::show(Box<SearchPornConcurrencyBox>());
 		});
 
-		AddButtonWithLabel(
-			inner,
-			tr::lng_settings_search_porn_interval(),
-			rpl::single(EnhancedSettings::SearchPornRequestInterval())
-				| rpl::then(EnhancedSettings::SearchPornRequestIntervalChanges())
-				| rpl::map([](int value) {
-					return QString::number(value) + u" ms"_q;
-				}),
-			st::settingsButtonNoIcon
-		)->addClickHandler([] {
+		trackSearch(
+			AddButtonWithLabel(
+				inner,
+				tr::lng_settings_search_porn_interval(),
+				rpl::single(EnhancedSettings::SearchPornRequestInterval())
+					| rpl::then(
+						EnhancedSettings::SearchPornRequestIntervalChanges())
+					| rpl::map([](int value) {
+						return QString::number(value) + u" ms"_q;
+					}),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/search_porn_interval"_q)->addClickHandler([] {
 			Ui::show(Box<SearchPornIntervalBox>());
 		});
 		AddDividerText(inner, tr::lng_settings_search_porn_interval_about());
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_show_group_sender_avatar(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/show_group_sender_avatar"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("show_group_sender_avatar"))
 		)->toggledChanges(
 		) | rpl::filter([=](bool toggled) {
@@ -710,11 +787,13 @@ namespace Settings {
 
 		QString langPackBaseId = Lang::GetInstance().baseId();
 		if (langPackBaseId == "zh-hant-raw" || langPackBaseId == "zh-hans-raw") {
-			AddButtonWithIcon(
+			trackSearch(
+				AddButtonWithIcon(
 					inner,
 					tr::lng_settings_translate_to_tc(),
 					st::settingsButtonNoIcon
-			)->toggleOn(
+				),
+				u"enhanced/translate_to_tc"_q)->toggleOn(
 					rpl::single(GetEnhancedBool("translate_to_tc"))
 			)->toggledChanges(
 			) | rpl::filter([=](bool toggled) {
@@ -725,11 +804,13 @@ namespace Settings {
 			}, container->lifetime());
 		}
 
-		auto secondsBtn = AddButtonWithIcon(
-			inner,
-			tr::lng_settings_show_seconds(),
-			st::settingsButtonNoIcon
-		);
+		auto secondsBtn = trackSearch(
+			AddButtonWithIcon(
+				inner,
+				tr::lng_settings_show_seconds(),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/show_seconds"_q);
 		secondsBtn->setColorOverride(QColor(255, 0, 0));
 		secondsBtn->toggleOn(
 			rpl::single(GetEnhancedBool("show_seconds"))
@@ -742,12 +823,16 @@ namespace Settings {
 			QTimer::singleShot(1 * 1000, []{ Core::Restart(); });
 		}, container->lifetime());
 
-		const auto addMessageContextToggle = [&](const QString &text, const char *key) {
-			AddButtonWithIcon(
-				inner,
-				rpl::single(text),
-				st::settingsButtonNoIcon
-			)->toggleOn(
+		const auto addMessageContextToggle = [&](
+				const QString &text,
+				const char *key) {
+			trackSearch(
+				AddButtonWithIcon(
+					inner,
+					rpl::single(text),
+					st::settingsButtonNoIcon
+				),
+				u"enhanced/"_q + QLatin1String(key))->toggleOn(
 				rpl::single(GetEnhancedBool(key))
 			)->toggledChanges(
 			) | rpl::filter([=](bool toggled) {
@@ -799,12 +884,14 @@ namespace Settings {
 			) | rpl::map([=] {
 				return currentMpvPathLabel();
 			});
-			auto mpvPathButton = AddButtonWithLabel(
-				inner,
-				tr::lng_settings_mpv_path(),
-				std::move(mpvPathValue),
-				st::settingsButtonNoIcon
-			);
+			auto mpvPathButton = trackSearch(
+				AddButtonWithLabel(
+					inner,
+					tr::lng_settings_mpv_path(),
+					std::move(mpvPathValue),
+					st::settingsButtonNoIcon
+				),
+				u"enhanced/mpv_path"_q);
 			mpvPathButton->events(
 			) | rpl::on_next([=](not_null<QEvent*> e) {
 				if (e->type() == QEvent::UpdateLater) {
@@ -860,11 +947,13 @@ namespace Settings {
 				tr::lng_context_reschedule(tr::now),
 				"show_message_context_reschedule");
 
-		auto jsonBtn = AddButtonWithIcon(
-			inner,
-			tr::lng_settings_show_view_as_json(),
-			st::settingsButtonNoIcon
-		);
+		auto jsonBtn = trackSearch(
+			AddButtonWithIcon(
+				inner,
+				tr::lng_settings_show_view_as_json(),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/show_json"_q);
 		jsonBtn->toggleOn(
 			rpl::single(GetEnhancedBool("show_json"))
 		)->toggledChanges(
@@ -875,11 +964,13 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
-		auto enhancedJsonBtn = AddButtonWithIcon(
-			inner,
-			tr::lng_settings_show_view_as_enhanced_json(),
-			st::settingsButtonNoIcon
-		);
+		auto enhancedJsonBtn = trackSearch(
+			AddButtonWithIcon(
+				inner,
+				tr::lng_settings_show_view_as_enhanced_json(),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/show_enhanced_json"_q);
 		enhancedJsonBtn->toggleOn(
 			rpl::single(GetEnhancedBool("show_enhanced_json"))
 		)->toggledChanges(
@@ -890,11 +981,13 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
-		auto messageStatsBtn = AddButtonWithIcon(
-			inner,
-			tr::lng_settings_show_message_stats(),
-			st::settingsButtonNoIcon
-		);
+		auto messageStatsBtn = trackSearch(
+			AddButtonWithIcon(
+				inner,
+				tr::lng_settings_show_message_stats(),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/show_message_stats"_q);
 		messageStatsBtn->toggleOn(
 			rpl::single(GetEnhancedBool("show_message_stats"))
 		)->toggledChanges(
@@ -905,11 +998,13 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
-		auto hideBtn = AddButtonWithIcon(
-			inner,
-			tr::lng_settings_hide_messages(),
-			st::settingsButtonNoIcon
-		);
+		auto hideBtn = trackSearch(
+			AddButtonWithIcon(
+				inner,
+				tr::lng_settings_hide_messages(),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/blocked_user_spoiler_mode"_q);
 		hideBtn->setColorOverride(QColor(255, 0, 0));
 		hideBtn->toggleOn(
 				rpl::single(GetEnhancedBool("blocked_user_spoiler_mode"))
@@ -940,7 +1035,9 @@ namespace Settings {
 	void Enhanced::SetupEnhancedButton(not_null<Ui::VerticalLayout *> container) {
 		AddDivider(container);
 		AddSkip(container);
-		AddSubsectionTitle(container, tr::lng_settings_button());
+		trackSearch(
+			AddSubsectionTitle(container, tr::lng_settings_button()),
+			u"enhanced/section_button"_q);
 
 		const auto wrap = container->add(
 				object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
@@ -948,11 +1045,13 @@ namespace Settings {
 						object_ptr<Ui::VerticalLayout>(container)));
 		const auto inner = wrap->entity();
 
-		auto EmojiBtn = AddButtonWithIcon(
+		auto EmojiBtn = trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_show_emoji_button_as_text(),
 				st::settingsButtonNoIcon
-		);
+			),
+			u"enhanced/show_emoji_button_as_text"_q);
 		EmojiBtn->setColorOverride(QColor(255, 0, 0));
 		EmojiBtn->toggleOn(
 				rpl::single(GetEnhancedBool("show_emoji_button_as_text"))
@@ -967,11 +1066,13 @@ namespace Settings {
 
 		AddDividerText(inner, tr::lng_show_emoji_button_as_text_desc());
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_show_scheduled_button(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/show_scheduled_button"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("show_scheduled_button"))
 		)->toggledChanges(
 		) | rpl::filter([=](bool toggled) {
@@ -987,7 +1088,9 @@ namespace Settings {
 	void Enhanced::SetupEnhancedVoiceChat(not_null<Ui::VerticalLayout *> container) {
 		AddDivider(container);
 		AddSkip(container);
-		AddSubsectionTitle(container, tr::lng_settings_voice_chat());
+		trackSearch(
+			AddSubsectionTitle(container, tr::lng_settings_voice_chat()),
+			u"enhanced/section_voice_chat"_q);
 
 		const auto wrap = container->add(
 				object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
@@ -995,21 +1098,25 @@ namespace Settings {
 						object_ptr<Ui::VerticalLayout>(container)));
 		const auto inner = wrap->entity();
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_radio_controller(),
 				st::settingsButtonNoIcon
-		)->addClickHandler([=] {
+			),
+			u"enhanced/radio_controller"_q)->addClickHandler([=] {
 			Ui::show(Box<RadioController>());
 		});
 
 		AddDividerText(inner, tr::lng_radio_controller_desc());
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_auto_unmute(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/auto_unmute"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("auto_unmute"))
 		)->toggledChanges(
 		) | rpl::filter([=](bool toggled) {
@@ -1029,12 +1136,14 @@ namespace Settings {
 			return BitrateController::BitrateLabel(GetEnhancedInt("bitrate"));
 		});
 
-		auto btn = AddButtonWithLabel(
+		auto btn = trackSearch(
+			AddButtonWithLabel(
 				container,
 				tr::lng_bitrate_controller(),
 				std::move(value),
 				st::settingsButtonNoIcon
-		);
+			),
+			u"enhanced/bitrate"_q);
 		btn->events(
 		) | rpl::on_next([=](not_null<QEvent*> e) {
 			const auto event = e->type();
@@ -1044,11 +1153,13 @@ namespace Settings {
 			Ui::show(Box<BitrateController>());
 		});
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_enable_hd_video(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/hd_video"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("hd_video"))
 		)->toggledChanges(
 		) | rpl::filter([=](bool toggled) {
@@ -1065,7 +1176,9 @@ namespace Settings {
 	void Enhanced::SetupEnhancedOthers(not_null<Window::SessionController*> controller, not_null<Ui::VerticalLayout *> container) {
 		AddDivider(container);
 		AddSkip(container);
-		AddSubsectionTitle(container, tr::lng_settings_other());
+		trackSearch(
+			AddSubsectionTitle(container, tr::lng_settings_other()),
+			u"enhanced/section_other"_q);
 
 		const auto currentChatSwitchShortcutLabel = [] {
 			return ChatSwitchShortcutBox::ShortcutLabel(
@@ -1078,11 +1191,14 @@ namespace Settings {
 		) | rpl::map([=] {
 			return currentChatSwitchShortcutLabel();
 		});
-		auto chatSwitchShortcutButton = AddButtonWithLabel(
-			container,
-			tr::lng_settings_chat_switch_shortcut_title(),
-			std::move(chatSwitchShortcutValue),
-			st::settingsButtonNoIcon);
+		auto chatSwitchShortcutButton = trackSearch(
+			AddButtonWithLabel(
+				container,
+				tr::lng_settings_chat_switch_shortcut_title(),
+				std::move(chatSwitchShortcutValue),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/chat_switch_persistent_shortcut"_q);
 		chatSwitchShortcutButton->events(
 		) | rpl::on_next([=](not_null<QEvent*> e) {
 			if (e->type() == QEvent::UpdateLater) {
@@ -1104,11 +1220,14 @@ namespace Settings {
 		) | rpl::map([=] {
 			return currentJumpToDialogShortcutLabel();
 		});
-		auto jumpToDialogShortcutButton = AddButtonWithLabel(
-			container,
-			tr::lng_settings_jump_to_dialog_shortcut_title(),
-			std::move(jumpToDialogShortcutValue),
-			st::settingsButtonNoIcon);
+		auto jumpToDialogShortcutButton = trackSearch(
+			AddButtonWithLabel(
+				container,
+				tr::lng_settings_jump_to_dialog_shortcut_title(),
+				std::move(jumpToDialogShortcutValue),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/jump_to_dialog_shortcut"_q);
 		jumpToDialogShortcutButton->events(
 		) | rpl::on_next([=](not_null<QEvent*> e) {
 			if (e->type() == QEvent::UpdateLater) {
@@ -1137,11 +1256,14 @@ namespace Settings {
 		) | rpl::map([=] {
 			return currentGlobalSearchShortcutLabel();
 		});
-		auto globalSearchShortcutButton = AddButtonWithLabel(
-			container,
-			tr::lng_settings_global_search_shortcut_title(),
-			std::move(globalSearchShortcutValue),
-			st::settingsButtonNoIcon);
+		auto globalSearchShortcutButton = trackSearch(
+			AddButtonWithLabel(
+				container,
+				tr::lng_settings_global_search_shortcut_title(),
+				std::move(globalSearchShortcutValue),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/global_search_shortcut"_q);
 		globalSearchShortcutButton->events(
 		) | rpl::on_next([=](not_null<QEvent*> e) {
 			if (e->type() == QEvent::UpdateLater) {
@@ -1159,11 +1281,13 @@ namespace Settings {
 				}));
 		});
 
-		AddButtonWithIcon(
-			container,
-			tr::lng_settings_multiple_chat_windows(),
-			st::settingsButtonNoIcon
-		)->toggleOn(
+		trackSearch(
+			AddButtonWithIcon(
+				container,
+				tr::lng_settings_multiple_chat_windows(),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/multiple_chat_windows"_q)->toggleOn(
 				rpl::single(EnhancedSettings::MultipleChatWindows())
 		)->toggledValue(
 		) | rpl::filter([](bool enabled) {
@@ -1176,11 +1300,13 @@ namespace Settings {
 			container,
 			tr::lng_settings_multiple_chat_windows_about());
 
-		auto hideBtn = AddButtonWithIcon(
-			container,
-			tr::lng_settings_hide_all_chats(),
-			st::settingsButtonNoIcon
-		);
+		auto hideBtn = trackSearch(
+			AddButtonWithIcon(
+				container,
+				tr::lng_settings_hide_all_chats(),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/hide_all_chats"_q);
 		hideBtn->setColorOverride(QColor(255, 0, 0));
 		hideBtn->toggleOn(
 				rpl::single(GetEnhancedBool("hide_all_chats"))
@@ -1193,11 +1319,13 @@ namespace Settings {
 			Core::Restart();
 		}, container->lifetime());
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				container,
 				tr::lng_settings_replace_edit_button(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/replace_edit_button"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("replace_edit_button"))
 		)->toggledValue(
 		) | rpl::filter([](bool enabled) {
@@ -1208,11 +1336,13 @@ namespace Settings {
 			controller->reloadFiltersMenu();
 		}, container->lifetime());
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				container,
 				tr::lng_settings_skip_message(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/skip_to_next"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("skip_to_next"))
 		)->toggledValue(
 		) | rpl::filter([](bool enabled) {
@@ -1224,11 +1354,13 @@ namespace Settings {
 
 		AddDividerText(container, tr::lng_settings_skip_message_desc());
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				container,
 				tr::lng_settings_hide_counter(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/hide_counter"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("hide_counter"))
 		)->toggledValue(
 		) | rpl::filter([](bool enabled) {
@@ -1238,11 +1370,13 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				container,
 				tr::lng_settings_hide_stories(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/hide_stories"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("hide_stories"))
 		)->toggledValue(
 		) | rpl::filter([](bool enabled) {
@@ -1255,11 +1389,13 @@ namespace Settings {
 		const auto brightnessToggleHolder
 			= std::make_shared<Ui::SlideWrap<Ui::VerticalLayout>*>(nullptr);
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				container,
 				tr::lng_settings_preview_brightness(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/preview_brightness_enabled"_q)->toggleOn(
 				rpl::single(GetEnhancedBool("preview_brightness_enabled"))
 		)->toggledValue(
 		) | rpl::filter([](bool enabled) {
@@ -1293,11 +1429,14 @@ namespace Settings {
 				GetEnhancedInt("preview_brightness"));
 		});
 
-		auto brightnessBtn = AddButtonWithLabel(
+		auto brightnessBtn = trackSearch(
+			AddButtonWithLabel(
 				brightnessInner,
 				tr::lng_settings_preview_brightness_value(),
 				std::move(brightnessValue),
-				st::settingsButtonNoIcon);
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/preview_brightness"_q);
 		brightnessBtn->events(
 		) | rpl::on_next([=](not_null<QEvent*> e) {
 			if (e->type() == QEvent::UpdateLater) {
@@ -1312,11 +1451,13 @@ namespace Settings {
 			brightnessInner,
 			tr::lng_settings_preview_brightness_desc());
 
-		AddButtonWithIcon(
+		trackSearch(
+			AddButtonWithIcon(
 				container,
 				tr::lng_settings_media_wheel_control(),
 				st::settingsButtonNoIcon
-		)->toggleOn(
+			),
+			u"enhanced/media_viewer_wheel_control_enabled"_q)->toggleOn(
 				rpl::single(
 					GetEnhancedBool("media_viewer_wheel_control_enabled"))
 		)->toggledValue(
@@ -1335,30 +1476,36 @@ namespace Settings {
 		AddSkip(container);
 		AddDivider(container);
 		AddSkip(container);
-		AddSubsectionTitle(container, tr::lng_settings_performance());
+		trackSearch(
+			AddSubsectionTitle(container, tr::lng_settings_performance()),
+			u"enhanced/section_performance"_q);
 
 		const auto trayIdleLabel = [](int minutes) {
 			return minutes
 				? QString::number(minutes) + u" 分钟"_q
 				: tr::lng_settings_tray_idle_memory_off(tr::now);
 		};
-		AddButtonWithLabel(
-			container,
-			tr::lng_settings_tray_idle_memory(),
-			rpl::single(trayIdleLabel(
-				EnhancedSettings::TrayIdleMemoryMinutes()))
-				| rpl::then(
-					EnhancedSettings::TrayIdleMemoryMinutesChanges()
-					| rpl::map(trayIdleLabel)),
-			st::settingsButtonNoIcon
-		)->addClickHandler([] {
+		trackSearch(
+			AddButtonWithLabel(
+				container,
+				tr::lng_settings_tray_idle_memory(),
+				rpl::single(trayIdleLabel(
+					EnhancedSettings::TrayIdleMemoryMinutes()))
+					| rpl::then(
+						EnhancedSettings::TrayIdleMemoryMinutesChanges()
+						| rpl::map(trayIdleLabel)),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/tray_idle_memory"_q)->addClickHandler([] {
 			Ui::show(Box<TrayIdleMemoryBox>());
 		});
-		AddButtonWithIcon(
-			container,
-			tr::lng_settings_tray_idle_memory_clear(),
-			st::settingsButtonNoIcon
-		)->addClickHandler([] {
+		trackSearch(
+			AddButtonWithIcon(
+				container,
+				tr::lng_settings_tray_idle_memory_clear(),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/tray_idle_memory_clear"_q)->addClickHandler([] {
 			if (Core::App().cleanupIdleMemory()) {
 				Ui::Toast::Show(
 					tr::lng_settings_tray_idle_memory_cleared(tr::now));
@@ -1372,8 +1519,409 @@ namespace Settings {
 		AddSkip(container);
 	}
 
+	namespace {
+
+	[[nodiscard]] Builder::SearchEntryCheckIcon EnhancedCheckIcon(bool checked) {
+		return checked
+			? Builder::SearchEntryCheckIcon::Checked
+			: Builder::SearchEntryCheckIcon::Unchecked;
+	}
+
+	void AddEnhancedSearchButton(
+			Builder::SectionBuilder &builder,
+			const QString &id,
+			const QString &title,
+			QStringList keywords = {}) {
+		builder.add(nullptr, [=] {
+			return Builder::SearchEntry{
+				.id = id,
+				.title = title,
+				.keywords = keywords,
+			};
+		});
+	}
+
+	void AddEnhancedSearchToggle(
+			Builder::SectionBuilder &builder,
+			const QString &id,
+			const QString &title,
+			bool checked,
+			QStringList keywords = {}) {
+		builder.add(nullptr, [=] {
+			return Builder::SearchEntry{
+				.id = id,
+				.title = title,
+				.keywords = keywords,
+				.checkIcon = EnhancedCheckIcon(checked),
+			};
+		});
+	}
+
+	void FillEnhancedSearch(Builder::SectionBuilder &builder) {
+		const auto addButton = [&](
+				const QString &id,
+				const QString &title,
+				QStringList keywords = {}) {
+			AddEnhancedSearchButton(
+				builder,
+				id,
+				title,
+				std::move(keywords));
+		};
+		const auto addToggle = [&](
+				const QString &id,
+				const QString &title,
+				bool checked,
+				QStringList keywords = {}) {
+			AddEnhancedSearchToggle(
+				builder,
+				id,
+				title,
+				checked,
+				std::move(keywords));
+		};
+		const auto addBool = [&](
+				const char *key,
+				const QString &title,
+				QStringList keywords = {}) {
+			addToggle(
+				u"enhanced/"_q + QLatin1String(key),
+				title,
+				GetEnhancedBool(key),
+				std::move(keywords));
+		};
+
+		addButton(
+			u"enhanced/section_network"_q,
+			tr::lng_settings_network(tr::now));
+		addButton(
+			u"enhanced/net_speed_boost"_q,
+			tr::lng_settings_net_upload_speed_boost(tr::now));
+		addButton(
+			u"enhanced/net_download_speed_boost"_q,
+			tr::lng_settings_net_download_speed_boost(tr::now));
+		addBool(
+			"video_player_prefer_original",
+			tr::lng_settings_video_player_prefer_original(tr::now),
+			{ tr::lng_settings_video_player_prefer_original_about(tr::now) });
+		addButton(
+			u"enhanced/online_playback_parameters"_q,
+			tr::lng_settings_online_playback_parameters_title(tr::now));
+		addBool(
+			"online_playback_debug_logs",
+			tr::lng_settings_online_playback_debug_logs(tr::now));
+		addButton(
+			u"enhanced/flood_premium_wait_override_ms"_q,
+			tr::lng_settings_flood_premium_wait_title(tr::now));
+
+		addButton(
+			u"enhanced/section_messages"_q,
+			tr::lng_settings_messages(tr::now));
+		addBool(
+			"show_messages_id",
+			tr::lng_settings_show_message_id(tr::now));
+		addBool(
+			"label_channel_user",
+			tr::lng_settings_label_channel_user(tr::now));
+		addButton(
+			u"enhanced/message_media_size"_q,
+			tr::lng_settings_message_media_size(tr::now));
+		addBool(
+			"show_repeater_option",
+			tr::lng_settings_show_repeater_option(tr::now));
+		if (GetEnhancedBool("show_repeater_option")) {
+			addBool(
+				"repeater_reply_to_orig_msg",
+				tr::lng_settings_repeater_reply_to_orig_msg(tr::now));
+		}
+		addButton(
+			u"enhanced/always_delete_for"_q,
+			tr::lng_settings_always_delete_for(tr::now));
+		addBool(
+			"disable_cloud_draft_sync",
+			tr::lng_settings_disable_cloud_draft_sync(tr::now));
+		addBool(
+			"hide_classic_fwd",
+			tr::lng_settings_hide_classic_forward(tr::now));
+		addBool(
+			"keep_selected_messages_across_chats",
+			tr::lng_settings_keep_selected_messages_across_chats(tr::now));
+		addBool(
+			"lift_message_selection_limit",
+			tr::lng_settings_lift_message_selection_limit(tr::now));
+		addButton(
+			u"enhanced/quick_copy_targets"_q,
+			tr::lng_settings_quick_copy_targets_title(tr::now));
+		addButton(
+			u"enhanced/shortcut_selected_forward"_q,
+			tr::lng_settings_shortcut_selected_forward(tr::now));
+		addButton(
+			u"enhanced/shortcut_selected_forward_no_quote"_q,
+			tr::lng_settings_shortcut_selected_forward_no_quote(tr::now));
+		addButton(
+			u"enhanced/shortcut_selected_saved"_q,
+			tr::lng_settings_shortcut_selected_saved(tr::now));
+		addButton(
+			u"enhanced/shortcut_selected_quick_copy"_q,
+			tr::lng_settings_shortcut_selected_quick_copy(tr::now));
+		addButton(
+			u"enhanced/shortcut_selected_merge_forward"_q,
+			tr::lng_settings_shortcut_selected_merge_forward(tr::now));
+		addButton(
+			u"enhanced/shortcut_selected_merge_album"_q,
+			tr::lng_settings_shortcut_selected_merge_album(tr::now));
+		addButton(
+			u"enhanced/custom_chat_shortcuts"_q,
+			tr::lng_settings_custom_chat_shortcuts_title(tr::now));
+		addBool(
+			"double_click_copy_link",
+			tr::lng_settings_double_click_copy_link(tr::now));
+		addButton(
+			u"enhanced/no_forwards_badge_color"_q,
+			tr::lng_settings_no_forwards_badge_color(tr::now));
+		addButton(
+			u"enhanced/code_block_bg_color"_q,
+			tr::lng_settings_code_block_bg_color(tr::now));
+		addButton(
+			u"enhanced/search_message_highlight_bg_color"_q,
+			tr::lng_settings_search_message_highlight_bg_color(tr::now));
+		addBool(
+			"disable_link_warning",
+			tr::lng_settings_disable_link_warning(tr::now));
+		addBool(
+			"disable_premium_animation",
+			tr::lng_settings_disable_premium_animation(tr::now));
+		addBool(
+			"disable_global_search",
+			tr::lng_settings_disable_global_search(tr::now));
+		addBool(
+			"search_main_and_archive",
+			tr::lng_settings_search_main_and_archive(tr::now));
+		addToggle(
+			u"enhanced/search_include_porn"_q,
+			tr::lng_settings_search_include_porn(tr::now),
+			EnhancedSettings::SearchIncludePorn());
+		addToggle(
+			u"enhanced/search_dialog_filter"_q,
+			tr::lng_settings_search_dialog_filter(tr::now),
+			EnhancedSettings::SearchDialogFilterEnabled());
+		addButton(
+			u"enhanced/search_dialog_filter_ids"_q,
+			tr::lng_settings_search_dialog_filter(tr::now),
+			{ EnhancedSettings::SearchDialogFilterIds() });
+		addButton(
+			u"enhanced/search_porn_concurrency"_q,
+			tr::lng_settings_search_porn_concurrency(tr::now));
+		addButton(
+			u"enhanced/search_porn_interval"_q,
+			tr::lng_settings_search_porn_interval(tr::now),
+			{ tr::lng_settings_search_porn_interval_about(tr::now) });
+		addBool(
+			"show_group_sender_avatar",
+			tr::lng_settings_show_group_sender_avatar(tr::now));
+		const auto baseId = Lang::GetInstance().baseId();
+		if (baseId == "zh-hant-raw" || baseId == "zh-hans-raw") {
+			addBool(
+				"translate_to_tc",
+				tr::lng_settings_translate_to_tc(tr::now));
+		}
+		addBool(
+			"show_seconds",
+			tr::lng_settings_show_seconds(tr::now));
+		addBool(
+			"show_message_context_read_info",
+			tr::lng_settings_message_read_reactions_info(tr::now));
+		addBool(
+			"show_message_context_details",
+			tr::lng_context_details(tr::now));
+		addBool(
+			"show_message_context_reply",
+			tr::lng_context_reply_msg(tr::now));
+		addBool(
+			"show_message_context_add_task",
+			tr::lng_todo_add_title(tr::now));
+		addBool(
+			"show_message_context_copy_link",
+			tr::lng_context_copy_message_link(tr::now));
+#ifdef Q_OS_WIN
+		addBool(
+			"show_message_context_stream_in_mpv_special",
+			tr::lng_context_stream_in_mpv_special(tr::now),
+			{ tr::lng_settings_mpv_special_desc(tr::now) });
+		addBool(
+			"show_message_context_stream_in_mpv",
+			tr::lng_context_stream_in_mpv(tr::now));
+		addBool(
+			"mpv_streaming_debug_logs",
+			tr::lng_settings_mpv_debug_logs(tr::now));
+		addButton(
+			u"enhanced/mpv_path"_q,
+			tr::lng_settings_mpv_path(tr::now),
+			{ tr::lng_settings_mpv_path_desc(tr::now) });
+#endif // Q_OS_WIN
+		addBool(
+			"show_message_context_show_messages_from",
+			tr::lng_context_show_messages_from(tr::now));
+		addBool(
+			"show_message_context_forward",
+			tr::lng_context_forward(tr::now));
+		addBool(
+			"show_message_context_repeater",
+			tr::lng_context_repeater(tr::now));
+		addBool(
+			"show_message_context_send_now",
+			tr::lng_context_send_now_msg(tr::now));
+		addBool(
+			"show_message_context_go_to_message",
+			tr::lng_context_to_msg(tr::now));
+		addBool(
+			"show_message_context_view_replies",
+			tr::lng_replies_view_thread(tr::now));
+		addBool(
+			"show_message_context_edit",
+			tr::lng_context_edit_msg(tr::now));
+		addBool(
+			"show_message_context_factcheck",
+			tr::lng_context_add_factcheck(tr::now));
+		addBool(
+			"show_message_context_pin",
+			tr::lng_context_pin_msg(tr::now));
+		addBool(
+			"show_message_context_delete",
+			tr::lng_context_delete_msg(tr::now));
+		addBool(
+			"show_message_context_save_as",
+			tr::lng_context_save_file(tr::now));
+		addBool(
+			"show_message_context_report",
+			tr::lng_context_report_msg(tr::now));
+		addBool(
+			"show_message_context_select",
+			tr::lng_context_select_msg(tr::now));
+		addBool(
+			"show_message_context_reschedule",
+			tr::lng_context_reschedule(tr::now));
+		addBool(
+			"show_json",
+			tr::lng_settings_show_view_as_json(tr::now));
+		addBool(
+			"show_enhanced_json",
+			tr::lng_settings_show_view_as_enhanced_json(tr::now));
+		addBool(
+			"show_message_stats",
+			tr::lng_settings_show_message_stats(tr::now));
+		addBool(
+			"blocked_user_spoiler_mode",
+			tr::lng_settings_hide_messages(tr::now),
+			{ tr::lng_settings_hide_messages_desc(tr::now) });
+
+		addButton(
+			u"enhanced/section_button"_q,
+			tr::lng_settings_button(tr::now));
+		addBool(
+			"show_emoji_button_as_text",
+			tr::lng_settings_show_emoji_button_as_text(tr::now),
+			{ tr::lng_show_emoji_button_as_text_desc(tr::now) });
+		addBool(
+			"show_scheduled_button",
+			tr::lng_settings_show_scheduled_button(tr::now));
+
+		addButton(
+			u"enhanced/section_voice_chat"_q,
+			tr::lng_settings_voice_chat(tr::now));
+		addButton(
+			u"enhanced/radio_controller"_q,
+			tr::lng_settings_radio_controller(tr::now),
+			{ tr::lng_radio_controller_desc(tr::now) });
+		addBool(
+			"auto_unmute",
+			tr::lng_settings_auto_unmute(tr::now),
+			{ tr::lng_auto_unmute_desc(tr::now) });
+		addButton(
+			u"enhanced/bitrate"_q,
+			tr::lng_bitrate_controller(tr::now));
+		addBool(
+			"hd_video",
+			tr::lng_settings_enable_hd_video(tr::now),
+			{ tr::lng_hd_video_hint(tr::now) });
+
+		addButton(
+			u"enhanced/section_other"_q,
+			tr::lng_settings_other(tr::now));
+		addButton(
+			u"enhanced/chat_switch_persistent_shortcut"_q,
+			tr::lng_settings_chat_switch_shortcut_title(tr::now));
+		addButton(
+			u"enhanced/jump_to_dialog_shortcut"_q,
+			tr::lng_settings_jump_to_dialog_shortcut_title(tr::now));
+		addButton(
+			u"enhanced/global_search_shortcut"_q,
+			tr::lng_settings_global_search_shortcut_title(tr::now));
+		addToggle(
+			u"enhanced/multiple_chat_windows"_q,
+			tr::lng_settings_multiple_chat_windows(tr::now),
+			EnhancedSettings::MultipleChatWindows(),
+			{ tr::lng_settings_multiple_chat_windows_about(tr::now) });
+		addBool(
+			"hide_all_chats",
+			tr::lng_settings_hide_all_chats(tr::now));
+		addBool(
+			"replace_edit_button",
+			tr::lng_settings_replace_edit_button(tr::now));
+		addBool(
+			"skip_to_next",
+			tr::lng_settings_skip_message(tr::now),
+			{ tr::lng_settings_skip_message_desc(tr::now) });
+		addBool(
+			"hide_counter",
+			tr::lng_settings_hide_counter(tr::now));
+		addBool(
+			"hide_stories",
+			tr::lng_settings_hide_stories(tr::now));
+		addBool(
+			"preview_brightness_enabled",
+			tr::lng_settings_preview_brightness(tr::now));
+		addButton(
+			u"enhanced/preview_brightness"_q,
+			tr::lng_settings_preview_brightness_value(tr::now),
+			{ tr::lng_settings_preview_brightness_desc(tr::now) });
+		addBool(
+			"media_viewer_wheel_control_enabled",
+			tr::lng_settings_media_wheel_control(tr::now),
+			{ tr::lng_settings_media_wheel_control_desc(tr::now) });
+
+		addButton(
+			u"enhanced/section_performance"_q,
+			tr::lng_settings_performance(tr::now));
+		addButton(
+			u"enhanced/tray_idle_memory"_q,
+			tr::lng_settings_tray_idle_memory(tr::now),
+			{ tr::lng_settings_tray_idle_memory_about(tr::now) });
+		addButton(
+			u"enhanced/tray_idle_memory_clear"_q,
+			tr::lng_settings_tray_idle_memory_clear(tr::now));
+	}
+
+	} // namespace
+
+	const auto kEnhancedSearch = Builder::BuildHelper({
+		.id = Enhanced::Id(),
+		.parentId = MainId(),
+		.title = &tr::lng_settings_enhanced,
+		.icon = &st::menuIconManage,
+	}, [](Builder::SectionBuilder &builder) {
+		FillEnhancedSearch(builder);
+	});
+
 	rpl::producer<QString> Enhanced::title() {
 		return tr::lng_settings_enhanced();
+	}
+
+	void Enhanced::showFinished() {
+		Section<Enhanced>::showFinished();
+		for (const auto &target : _searchTargets) {
+			controller()->checkHighlightControl(target.first, target.second);
+		}
 	}
 
 	Enhanced::Enhanced(
@@ -1384,6 +1932,8 @@ namespace Settings {
 	}
 
 	void Enhanced::setupContent(not_null<Window::SessionController *> controller) {
+		Expects(kEnhancedSearch.build != nullptr);
+
 		const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
 
 		SetupEnhancedNetwork(content);

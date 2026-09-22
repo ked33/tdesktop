@@ -23,6 +23,7 @@ namespace Settings {
 				QWidget *parent,
 				not_null<Window::SessionController *> controller);
 		[[nodiscard]] rpl::producer<QString> title() override;
+		void showFinished() override;
 
 	private:
 		void setupContent(not_null<Window::SessionController *> controller);
@@ -35,6 +36,16 @@ namespace Settings {
 		void SetupEnhancedOthers(not_null<Window::SessionController*> controller, not_null<Ui::VerticalLayout *> container);
 		void reqBlocked(int offset);
 		void writeBlocklistFile();
+
+		template <typename Widget>
+		not_null<Widget*> trackSearch(
+				not_null<Widget*> widget,
+				const QString &id) {
+			_searchTargets.push_back(qMakePair(
+				id,
+				static_cast<QWidget*>(widget.get())));
+			return widget;
+		}
 
 			rpl::event_stream<QString> _AlwaysDeleteChanged;
 			rpl::event_stream<QString> _BitrateChanged;
@@ -54,6 +65,8 @@ namespace Settings {
 			mtpRequestId _requestId = 0;
 		QList<int64> blockList;
 		int32 blockCount = 0;
+		QList<QPair<QString, QWidget*>> _searchTargets;
+
 	};
 
 } // namespace Settings
