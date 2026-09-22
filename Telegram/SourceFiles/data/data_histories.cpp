@@ -984,8 +984,15 @@ void Histories::deleteMessages(const MessageIdsList &ids, bool revoke) {
 	base::flat_map<not_null<PeerData*>, QVector<MTPint>> scheduledIdsByPeer;
 	base::flat_map<BusinessShortcutId, QVector<MTPint>> quickIdsByShortcut;
 	base::flat_set<not_null<DocumentData*>> savedMusic;
+	auto seen = base::flat_set<not_null<HistoryItem*>>();
 	for (const auto &itemId : ids) {
 		if (const auto item = _owner->message(itemId)) {
+			if (!seen.emplace(item).second) {
+				LOG(("App Error: deleteMessages duplicate peer=%1 msg=%2."
+				).arg(itemId.peer.value
+				).arg(itemId.msg.bare));
+				continue;
+			}
 			const auto history = item->history();
 			if (item->isSavedMusicItem()) {
 				savedMusic.emplace(item->media()->document());

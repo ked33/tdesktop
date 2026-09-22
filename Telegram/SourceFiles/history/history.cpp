@@ -711,6 +711,14 @@ void History::destroyMessage(not_null<HistoryItem*> item) {
 	const auto i = _items.find(hack);
 	hack.release();
 
+	if (i == end(_items)) {
+		LOG(("History: destroy missing peer=%1 msg=%2 entry=%3 sending=%4 group=%5."
+		).arg(peer->id.value
+		).arg(item->id.bare
+		).arg(item->isHistoryEntry() ? 1 : 0
+		).arg(item->isSending() ? 1 : 0
+		).arg(qulonglong(item->groupId().raw()))));
+	}
 	Assert(i != end(_items));
 	_items.erase(i);
 

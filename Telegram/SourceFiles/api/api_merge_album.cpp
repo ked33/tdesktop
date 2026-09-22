@@ -1485,7 +1485,13 @@ MergeAlbumCleanup CleanupMergedSources(
 		const MessageIdsList &ids) {
 	auto result = MergeAlbumCleanup();
 	auto deleteIds = MessageIdsList();
+	auto seen = base::flat_set<FullMsgId>();
+	auto duplicate = 0;
 	for (const auto &id : ids) {
+		if (!seen.emplace(id).second) {
+			++duplicate;
+			continue;
+		}
 		const auto item = session->data().message(id);
 		if (!item) {
 			continue;
@@ -1495,6 +1501,12 @@ MergeAlbumCleanup CleanupMergedSources(
 			++result.kept;
 		}
 	}
+	LOG(("MergeAlbum: cleanup requested=%1 unique=%2 duplicate=%3 delete=%4 kept=%5"
+	).arg(int(ids.size())
+	).arg(int(seen.size())
+	).arg(duplicate
+	).arg(int(deleteIds.size())
+	).arg(result.kept));
 	if (!deleteIds.empty()) {
 		session->data().histories().deleteMessages(deleteIds, true);
 		session->data().sendHistoryChangeNotifications();
