@@ -856,8 +856,8 @@ void Application::restoreTrayIdleChats() {
 		controller->showThread(
 			thread,
 			ShowAtUnreadMsgId,
-			SectionShow(
-				SectionShow::Way::Forward,
+			Window::SectionShow(
+				Window::SectionShow::Way::Forward,
 				anim::type::instant,
 				anim::activation::background));
 	});
