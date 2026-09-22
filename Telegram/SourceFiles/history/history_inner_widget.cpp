@@ -3196,6 +3196,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			|| (channel->canPostMessages()
 				&& item->viewsCount() >= kMinViewsCount));
 	};
+	HistoryItem *reactionsMenuItem = nullptr;
 	const auto addTopInfoActions = [&](HistoryItem *item) {
 		if (!GetEnhancedBool("show_message_context_read_info")) {
 			return;
@@ -3205,11 +3206,21 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			return;
 		}
 		if (Api::WhoReactedExists(leaderOrSelf, Api::WhoReactedList::All)) {
-			HistoryView::AddWhoReactedAction(
-				_menu,
-				this,
-				leaderOrSelf,
-				_controller);
+			if (leaderOrSelf->history()->peer->isUser()) {
+				HistoryView::AddWhoReactedAction(
+					_menu,
+					this,
+					leaderOrSelf,
+					_controller);
+			} else {
+				reactionsMenuItem = leaderOrSelf;
+				HistoryView::AddWhoReactedAction(
+					_menu,
+					this,
+					leaderOrSelf,
+					_controller,
+					HistoryView::WhoReactedMenuPart::WithoutReactions);
+			}
 		} else {
 			HistoryView::MaybeAddWhenEditedForwardedAction(
 				_menu,
@@ -4651,6 +4662,14 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				leaderOrSelf,
 				poll);
 		}
+	}
+	if (reactionsMenuItem) {
+		HistoryView::AddWhoReactedAction(
+			_menu,
+			this,
+			reactionsMenuItem,
+			_controller,
+			HistoryView::WhoReactedMenuPart::ReactionsOnly);
 	}
 
 	if (_menu->empty()) {

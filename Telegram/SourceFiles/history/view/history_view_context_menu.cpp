@@ -2879,7 +2879,15 @@ void FillContextMenuItems(
 	AddMessageDetailsAction(result, item, view, list->controller());
 	if (!skipWhoReacted) {
 		if (hasWhoReactedItem) {
-			AddWhoReactedAction(result, list, item, list->controller());
+			const auto part = item->history()->peer->isUser()
+				? WhoReactedMenuPart::Combined
+				: WhoReactedMenuPart::WithoutReactions;
+			AddWhoReactedAction(
+				result,
+				list,
+				item,
+				list->controller(),
+				part);
 		} else if (item) {
 			MaybeAddWhenEditedForwardedAction(
 				result,
@@ -3120,6 +3128,17 @@ base::unique_qptr<Ui::PopupMenu> FillContextMenu(
 					}, base::IsCtrlPressed());
 				});
 		});
+	}
+	if (item
+		&& !hasPollOption
+		&& !item->history()->peer->isUser()
+		&& Api::WhoReactedExists(item, Api::WhoReactedList::All)) {
+		AddWhoReactedAction(
+			result,
+			list,
+			item,
+			list->controller(),
+			WhoReactedMenuPart::ReactionsOnly);
 	}
 	return result;
 }
@@ -3809,14 +3828,26 @@ void AddWhenEditedForwardedAuthorActionHelper(
 }
 
 void AddWhoReactedAction(
-			not_null<Ui::PopupMenu*> menu,
-			not_null<QWidget*> context,
-			not_null<HistoryItem*> item,
-			not_null<Window::SessionController*> controller) {
-		if (!GetEnhancedBool("show_message_context_read_info")) {
-			return;
-		}
-		const auto whoReadIds = std::make_shared<Api::WhoReadList>();
+		not_null<Ui::PopupMenu*> menu,
+		not_null<QWidget*> context,
+		not_null<HistoryItem*> item,
+		not_null<Window::SessionController*> controller,
+		WhoReactedMenuPart part) {
+	if (!GetEnhancedBool("show_message_context_read_info")) {
+		return;
+	}
+	const auto userPeer = item->history()->peer->isUser();
+	if (!userPeer && part == WhoReactedMenuPart::WithoutReactions) {
+		AddWhenEditedForwardedAuthorActionHelper(
+			menu,
+			item,
+			controller,
+			true);
+		return;
+	} else if (userPeer && part == WhoReactedMenuPart::ReactionsOnly) {
+		return;
+	}
+	const auto whoReadIds = std::make_shared<Api::WhoReadList>();
 	const auto weak = base::make_weak(menu.get());
 	const auto user = item->history()->peer;
 	const auto showOrPremium = [=] {
@@ -3870,7 +3901,7 @@ void AddWhoReactedAction(
 						whoReadIds)));
 		}
 	};
-	if (item->history()->peer->isUser()) {
+	if (userPeer) {
 		AddWhenEditedForwardedAuthorActionHelper(
 			menu,
 			item,
@@ -3880,14 +3911,16 @@ void AddWhoReactedAction(
 			menu.get(),
 			Api::WhoReacted(item, context, st::defaultWhoRead, whoReadIds),
 			showOrPremium));
-	} else {
-		menu->addAction(Ui::WhoReactedContextAction(
-			menu.get(),
-			Api::WhoReacted(item, context, st::defaultWhoRead, whoReadIds),
-			Data::ReactedMenuFactory(&controller->session()),
-			participantChosen,
-			showAllChosen,
-			moderateReactionChosen));
+		return;
+	}
+	menu->addAction(Ui::WhoReactedContextAction(
+		menu.get(),
+		Api::WhoReacted(item, context, st::defaultWhoRead, whoReadIds),
+		Data::ReactedMenuFactory(&controller->session()),
+		participantChosen,
+		showAllChosen,
+		moderateReactionChosen));
+	if (part != WhoReactedMenuPart::ReactionsOnly) {
 		AddWhenEditedForwardedAuthorActionHelper(
 			menu,
 			item,

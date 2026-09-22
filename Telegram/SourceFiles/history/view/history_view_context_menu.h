@@ -128,11 +128,18 @@ void AddSaveSoundForNotifications(
 	not_null<HistoryItem*> item,
 	not_null<DocumentData*> document,
 	not_null<Window::SessionController*> controller);
+enum class WhoReactedMenuPart {
+	Combined,
+	WithoutReactions,
+	ReactionsOnly,
+};
+
 void AddWhoReactedAction(
 	not_null<Ui::PopupMenu*> menu,
 	not_null<QWidget*> context,
 	not_null<HistoryItem*> item,
-	not_null<Window::SessionController*> controller);
+	not_null<Window::SessionController*> controller,
+	WhoReactedMenuPart part = WhoReactedMenuPart::Combined);
 void AddMessageDetailsAction(
 	not_null<Ui::PopupMenu*> menu,
 	HistoryItem *item,
