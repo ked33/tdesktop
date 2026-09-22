@@ -139,6 +139,46 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_saved_sublist.h"
 
 namespace HistoryView {
+namespace {
+
+class ContextMenuShortcutFilter final : public QObject {
+public:
+	ContextMenuShortcutFilter(
+		not_null<Ui::Menu::Menu*> menu,
+		not_null<QAction*> action,
+		Qt::Key key)
+	: QObject(action)
+	, _menu(menu)
+	, _action(action)
+	, _key(key) {
+	}
+
+	bool eventFilter(QObject *watched, QEvent *event) override {
+		if (watched == nullptr || event->type() != QEvent::KeyPress) {
+			return false;
+		}
+		const auto keyEvent = static_cast<QKeyEvent*>(event);
+		const auto modifiers = keyEvent->modifiers() & ~Qt::KeypadModifier;
+		if (keyEvent->isAutoRepeat()
+			|| modifiers != Qt::NoModifier
+			|| keyEvent->key() != _key
+			|| !_action->isEnabled()) {
+			return false;
+		}
+		if (const auto item = _menu->itemForAction(_action)) {
+			item->setClicked(Ui::Menu::TriggeredSource::Keyboard);
+			return true;
+		}
+		return false;
+	}
+
+private:
+	const not_null<Ui::Menu::Menu*> _menu;
+	const not_null<QAction*> _action;
+	const Qt::Key _key;
+};
+
+} // namespace
 
 QString ContextMenuActionLabel(const QString &text) {
 	const auto index = text.indexOf(QChar('\t'));
@@ -150,6 +190,12 @@ void ApplyContextMenuShortcut(
 		not_null<QAction*> action,
 		Qt::Key key) {
 	action->setText(action->text() + u"\t"_q + QChar(int(key)));
+	const auto filter = new ContextMenuShortcutFilter(
+		menu->menu(),
+		action,
+		key);
+	menu->installEventFilter(filter);
+	menu->menu()->installEventFilter(filter);
 }
 
 namespace {
