@@ -818,7 +818,26 @@ void Application::releaseTrayIdleMemory() {
 	_trayIdleMemoryDeferBusy = false;
 	_trayIdleMemoryArmedMinutes = 0;
 	_trayIdleMemoryTimer.cancel();
+	dropIdleMemoryCaches();
+}
 
+bool Application::cleanupIdleMemory() {
+	if (trayIdleMemoryBusy()) {
+		return false;
+	}
+	dropIdleMemoryCaches();
+	enumerateWindows([&](not_null<Window::Controller*> window) {
+		if (!window->widget()->isVisible()) {
+			return;
+		}
+		if (const auto controller = window->sessionController()) {
+			controller->content()->reloadUnloadedHistory();
+		}
+	});
+	return true;
+}
+
+void Application::dropIdleMemoryCaches() {
 	const auto before = Platform::CurrentProcessMemory();
 	for (const auto &account : _domain->orderedAccounts()) {
 		if (account->sessionExists()) {

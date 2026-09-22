@@ -208,6 +208,7 @@ public:
 		PeerId peer,
 		const SectionShow &params,
 		MsgId msgId);
+	void reloadUnloadedHistory();
 	[[nodiscard]] bool toggleMessageSelection(
 		not_null<HistoryItem*> item);
 	bool handleDrawToReplyRequest(Data::DrawToReplyRequest request);

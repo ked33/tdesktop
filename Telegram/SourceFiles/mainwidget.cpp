@@ -1431,6 +1431,24 @@ bool MainWidget::showHistoryInDifferentWindow(
 	return true;
 }
 
+void MainWidget::reloadUnloadedHistory() {
+	const auto peer = _history->peer();
+	if (!peer) {
+		return;
+	}
+	const auto history = session().data().historyLoaded(peer);
+	if (!history || !history->takeIdleUnloaded()) {
+		return;
+	}
+	_history->showHistory(
+		peer->id,
+		ShowAtUnreadMsgId,
+		SectionShow(
+			SectionShow::Way::Forward,
+			anim::type::instant,
+			anim::activation::background));
+}
+
 void MainWidget::showHistory(
 		PeerId peerId,
 		const SectionShow &params,

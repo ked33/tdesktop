@@ -1354,6 +1354,19 @@ namespace Settings {
 		)->addClickHandler([] {
 			Ui::show(Box<TrayIdleMemoryBox>());
 		});
+		AddButtonWithIcon(
+			container,
+			tr::lng_settings_tray_idle_memory_clear(),
+			st::settingsButtonNoIcon
+		)->addClickHandler([] {
+			if (Core::App().cleanupIdleMemory()) {
+				Ui::Toast::Show(
+					tr::lng_settings_tray_idle_memory_cleared(tr::now));
+			} else {
+				Ui::Toast::Show(
+					tr::lng_settings_tray_idle_memory_busy(tr::now));
+			}
+		});
 		AddDividerText(container, tr::lng_settings_tray_idle_memory_about());
 
 		AddSkip(container);

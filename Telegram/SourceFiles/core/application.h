@@ -170,6 +170,7 @@ public:
 
 	// Windows interface.
 	bool hasActiveWindow(not_null<Main::Session*> session) const;
+	bool cleanupIdleMemory();
 	[[nodiscard]] bool savingPositionFor(
 		not_null<Window::Controller*> window) const;
 	[[nodiscard]] Window::Controller *findWindow(
@@ -389,6 +390,7 @@ private:
 	void refreshTrayIdleMemory();
 	void trayIdleMemoryTimedOut();
 	void releaseTrayIdleMemory();
+	void dropIdleMemoryCaches();
 	void restoreTrayIdleChats();
 	void attachTrayIdleMediaView();
 	[[nodiscard]] bool trayIdleWindowsHidden() const;
