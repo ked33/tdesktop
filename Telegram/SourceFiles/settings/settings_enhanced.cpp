@@ -890,6 +890,21 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
+		auto messageStatsBtn = AddButtonWithIcon(
+			inner,
+			tr::lng_settings_show_message_stats(),
+			st::settingsButtonNoIcon
+		);
+		messageStatsBtn->toggleOn(
+			rpl::single(GetEnhancedBool("show_message_stats"))
+		)->toggledChanges(
+		) | rpl::filter([=](bool toggled) {
+			return (toggled != GetEnhancedBool("show_message_stats"));
+		}) | rpl::on_next([=](bool toggled) {
+			SetEnhancedValue("show_message_stats", toggled);
+			EnhancedSettings::Write();
+		}, container->lifetime());
+
 		auto hideBtn = AddButtonWithIcon(
 			inner,
 			tr::lng_settings_hide_messages(),

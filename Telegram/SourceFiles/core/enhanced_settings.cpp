@@ -161,6 +161,7 @@ namespace EnhancedSettings {
 			ensureBool(qsl("show_message_context_report"), true);
 			ensureBool(qsl("show_message_context_select"), true);
 			ensureBool(qsl("show_message_context_reschedule"), true);
+			ensureBool(qsl("show_message_stats"), true);
 			ensureBool(qsl("keep_selected_messages_across_chats"), false);
 			ensureBool(qsl("lift_message_selection_limit"), false);
 			ensureBool(qsl("share_box_remember_selection"), true);
@@ -696,6 +697,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("message_sticker_size"), kMessageStickerSizeDefault);
 		settings.insert(qsl("show_json"), false);
 		settings.insert(qsl("show_enhanced_json"), false);
+		settings.insert(qsl("show_message_stats"), true);
 		settings.insert(qsl("hide_counter"), false);
 		settings.insert(qsl("translate_to_tc"), false);
 		settings.insert(qsl("translation_provider"), qsl("google"));
@@ -828,6 +830,10 @@ namespace EnhancedSettings {
 		settings.insert(
 			qsl("show_enhanced_json"),
 			GetEnhancedBool("show_enhanced_json"));
+		settings.insert(
+			qsl("show_message_stats"),
+			GetEnhancedBool("show_message_stats")
+				|| !gEnhancedOptions.contains(qsl("show_message_stats")));
 		settings.insert(qsl("hide_counter"), GetEnhancedBool("hide_counter"));
 		settings.insert(qsl("translate_to_tc"), GetEnhancedBool("translate_to_tc"));
 		settings.insert(

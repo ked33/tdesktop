@@ -3309,7 +3309,9 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 					Window::ToggleMessagePinned(controller, pinItemId, !isPinned);
 				}), isPinned ? &st::menuIconUnpin : &st::menuIconPin);
 			}
-			if (!item->isService()
+			if (GetEnhancedBool("show_message_stats")
+				&& showSpecialMpv
+				&& !item->isService()
 				&& peerIsChannel(itemId.peer)
 				&& !_peer->isMegagroup()) {
 				constexpr auto kMinViewsCount = 10;

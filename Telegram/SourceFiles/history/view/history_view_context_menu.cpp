@@ -2428,6 +2428,9 @@ bool AddViewStatisticsAction(
 		not_null<Ui::PopupMenu*> menu,
 		const ContextMenuRequest &request,
 		not_null<ListWidget*> list) {
+	if (!GetEnhancedBool("show_message_stats") || !request.showSpecialMpv) {
+		return false;
+	}
 	const auto item = request.item;
 	if (!item || !item->isRegular() || item->isService()) {
 		return false;
