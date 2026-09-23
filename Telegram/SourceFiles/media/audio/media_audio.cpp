@@ -128,7 +128,7 @@ bool CreatePlaybackDevice() {
 void ClosePlaybackDevice(not_null<Instance*> instance) {
 	if (!AudioDevice) return;
 
-	LOG(("Audio Info: Closing audio playback device."));
+	DEBUG_LOG(("Audio Info: Closing audio playback device."));
 
 	if (Player::mixer()) {
 		Player::mixer()->prepareToCloseDevice();
@@ -174,7 +174,7 @@ bool AttachToDevice() {
 	if (AudioDevice) {
 		return true;
 	}
-	LOG(("Audio Info: recreating audio device and reattaching the tracks"));
+	DEBUG_LOG(("Audio Info: recreating audio device and reattaching the tracks"));
 
 	CreatePlaybackDevice();
 	if (!AudioDevice) {

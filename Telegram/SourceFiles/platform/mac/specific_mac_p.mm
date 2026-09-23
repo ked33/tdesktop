@@ -164,7 +164,7 @@ ApplicationDelegate *_sharedDelegate = nil;
 	Core::Sandbox::Instance().customEnterFromEventLoop([&] {
 		Core::App().checkLocalTime();
 
-		LOG(("Audio Info: "
+		DEBUG_LOG(("Audio Info: "
 			"-receiveWakeNote: received, scheduling detach from audio device"));
 		Media::Audio::ScheduleDetachFromDeviceSafe();
 
