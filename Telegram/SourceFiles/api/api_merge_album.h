@@ -57,9 +57,9 @@ struct MergeAlbumCleanup {
 	const std::vector<PeerId> &sourcePeers,
 	int maxItems = 10);
 
-[[nodiscard]] QString DedupeMergeText(const QString &text);
-[[nodiscard]] QString SummarizeMergeCaptions(
-	const std::vector<QString> &captions);
+[[nodiscard]] TextWithEntities DedupeMergeText(const TextWithEntities &text);
+[[nodiscard]] TextWithEntities SummarizeMergeCaptions(
+	const std::vector<TextWithEntities> &captions);
 [[nodiscard]] QString SourceMessageLink(not_null<HistoryItem*> item);
 [[nodiscard]] TextWithEntities SourceLinkFooter(
 	const std::vector<not_null<HistoryItem*>> &items);
