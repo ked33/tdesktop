@@ -147,6 +147,7 @@ public:
 	void readRecentHashtagsAndBots();
 	void saveRecentSentHashtags(const QString &text);
 	void saveRecentSearchHashtags(const QString &text);
+	void applyRecentWriteHashtagLimit(int limit);
 
 	void writeExportSettings(const Export::Settings &settings);
 	[[nodiscard]] Export::Settings readExportSettings();
@@ -297,7 +298,8 @@ private:
 
 	std::optional<RecentHashtagPack> saveRecentHashtags(
 		Fn<RecentHashtagPack()> getPack,
-		const QString &text);
+		const QString &text,
+		int limit);
 
 	template <typename Type>
 	void writePrefImpl(std::string_view key, Type value);

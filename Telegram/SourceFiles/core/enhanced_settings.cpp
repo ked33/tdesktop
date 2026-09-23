@@ -10,6 +10,9 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #include "mainwidget.h"
 #include "window/window_controller.h"
 #include "core/application.h"
+#include "main/main_domain.h"
+#include "main/main_account.h"
+#include "storage/storage_account.h"
 #include "base/flat_set.h"
 #include "base/parse_helper.h"
 #include "facades.h"
@@ -116,6 +119,11 @@ namespace EnhancedSettings {
 			return events;
 		}
 
+		rpl::event_stream<int> &HashtagAutocompleteLimitEvents() {
+			static auto events = rpl::event_stream<int>();
+			return events;
+		}
+
 		void FillMissingDefaults() {
 			const auto ensureBool = [](const QString &key, bool value) {
 				if (!gEnhancedOptions.contains(key)) {
@@ -184,6 +192,9 @@ namespace EnhancedSettings {
 			ensureInt(
 				u"tray_idle_memory_minutes"_q,
 				kTrayIdleMemoryMinutesDefault);
+			ensureInt(
+				u"hashtag_autocomplete_limit"_q,
+				kHashtagAutocompleteLimitDefault);
 			ensureString(qsl("mpv_path"), QString());
 			ensureString(
 				qsl("net_download_speed_boost_profiles"),
@@ -469,6 +480,41 @@ namespace EnhancedSettings {
 		}
 	}
 
+	int HashtagAutocompleteLimit() {
+		auto valid = false;
+		const auto value = gEnhancedOptions.value(
+			u"hashtag_autocomplete_limit"_q,
+			kHashtagAutocompleteLimitDefault).toInt(&valid);
+		return (valid
+			&& value >= kHashtagAutocompleteLimitMinimum
+			&& value <= kHashtagAutocompleteLimitMaximum)
+			? value
+			: kHashtagAutocompleteLimitDefault;
+	}
+
+	rpl::producer<int> HashtagAutocompleteLimitChanges() {
+		return HashtagAutocompleteLimitEvents().events();
+	}
+
+	void SetHashtagAutocompleteLimit(int value) {
+		value = std::clamp(
+			value,
+			kHashtagAutocompleteLimitMinimum,
+			kHashtagAutocompleteLimitMaximum);
+		if (HashtagAutocompleteLimit() == value) {
+			return;
+		}
+		SetEnhancedValue(u"hashtag_autocomplete_limit"_q, value);
+		Write();
+		HashtagAutocompleteLimitEvents().fire_copy(value);
+		if (Core::App().domain().started()) {
+			auto &account = Core::App().domain().active();
+			if (account.sessionExists()) {
+				account.local().applyRecentWriteHashtagLimit(value);
+			}
+		}
+	}
+
 	int MessageEmojiSize() {
 		const auto size = GetEnhancedInt(qsl("message_emoji_size"));
 		return (size >= kMessageEmojiSizeMinimum
@@ -702,6 +748,9 @@ namespace EnhancedSettings {
 		settings.insert(
 			u"tray_idle_memory_minutes"_q,
 			kTrayIdleMemoryMinutesDefault);
+		settings.insert(
+			u"hashtag_autocomplete_limit"_q,
+			kHashtagAutocompleteLimitDefault);
 		settings.insert(qsl("show_group_sender_avatar"), false);
 		settings.insert(qsl("show_seconds"), false);
 		settings.insert(qsl("show_message_context_read_info"), true);
@@ -829,6 +878,9 @@ namespace EnhancedSettings {
 		settings.insert(
 			u"tray_idle_memory_minutes"_q,
 			TrayIdleMemoryMinutes());
+		settings.insert(
+			u"hashtag_autocomplete_limit"_q,
+			HashtagAutocompleteLimit());
 		settings.insert(qsl("show_group_sender_avatar"), GetEnhancedBool("show_group_sender_avatar"));
 		settings.insert(qsl("show_seconds"), GetEnhancedBool("show_seconds"));
 		settings.insert(qsl("show_message_context_read_info"), GetEnhancedBool("show_message_context_read_info"));

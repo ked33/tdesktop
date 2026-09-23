@@ -1412,7 +1412,14 @@ Window::Theme::Object ReadThemeContent() {
 	return result;
 }
 
-void incrementRecentHashtag(RecentHashtagPack &recent, const QString &tag) {
+void incrementRecentHashtag(
+		RecentHashtagPack &recent,
+		const QString &tag,
+		int limit) {
+	if (limit < 1) {
+		recent.clear();
+		return;
+	}
 	auto i = recent.begin(), e = recent.end();
 	for (; i != e; ++i) {
 		if (i->first == tag) {
@@ -1436,7 +1443,6 @@ void incrementRecentHashtag(RecentHashtagPack &recent, const QString &tag) {
 		}
 	}
 	if (i == e) {
-		while (recent.size() >= 64) recent.pop_back();
 		recent.push_back(qMakePair(tag, 1));
 		for (i = recent.end() - 1; i != recent.begin(); --i) {
 			if ((i - 1)->second > i->second) {
@@ -1444,6 +1450,9 @@ void incrementRecentHashtag(RecentHashtagPack &recent, const QString &tag) {
 			}
 			qSwap(*i, *(i - 1));
 		}
+	}
+	while (recent.size() > limit) {
+		recent.pop_back();
 	}
 }
 

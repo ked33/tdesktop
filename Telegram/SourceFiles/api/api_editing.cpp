@@ -30,6 +30,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "iv/iv_rich_page.h"
 #include "lang/lang_keys.h"
 #include "main/main_session.h"
+#include "storage/storage_account.h"
 #include "mtproto/mtproto_response.h"
 #include "boxes/abstract_box.h" // Ui::show().
 
@@ -301,6 +302,8 @@ mtpRequestId EditMessage(
 		DoneCallback &&done,
 		FailCallback &&fail,
 		std::optional<MTPInputMedia> inputMedia = std::nullopt) {
+	item->history()->session().local().saveRecentSentHashtags(
+		textWithEntities.text);
 	if (item->computeSuggestionActions()
 		== SuggestionActions::AcceptAndDecline) {
 		return SuggestMessageOrMedia(
@@ -537,6 +540,7 @@ mtpRequestId EditTextMessage(
 		VideoCoverEdit videoCover) {
 	if (item->isWelcomeTemplate()) {
 		const auto history = item->history();
+		history->session().local().saveRecentSentHashtags(caption.text);
 		auto &welcome = history->session().welcomeMessages();
 		welcome.edit(
 			history,

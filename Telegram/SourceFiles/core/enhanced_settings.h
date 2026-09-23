@@ -28,6 +28,9 @@ namespace EnhancedSettings {
 	inline constexpr auto kTrayIdleMemoryMinutesMinimum = 0;
 	inline constexpr auto kTrayIdleMemoryMinutesDefault = 60;
 	inline constexpr auto kTrayIdleMemoryMinutesMaximum = 1440;
+	inline constexpr auto kHashtagAutocompleteLimitMinimum = 1;
+	inline constexpr auto kHashtagAutocompleteLimitDefault = 1000;
+	inline constexpr auto kHashtagAutocompleteLimitMaximum = 5000;
 
 	[[nodiscard]] int MessageEmojiSize();
 	[[nodiscard]] int MessageStickerSize();
@@ -50,6 +53,9 @@ namespace EnhancedSettings {
 	[[nodiscard]] int TrayIdleMemoryMinutes();
 	[[nodiscard]] rpl::producer<int> TrayIdleMemoryMinutesChanges();
 	void SetTrayIdleMemoryMinutes(int value);
+	[[nodiscard]] int HashtagAutocompleteLimit();
+	[[nodiscard]] rpl::producer<int> HashtagAutocompleteLimitChanges();
+	void SetHashtagAutocompleteLimit(int value);
 
 	class Manager : public QObject {
 	Q_OBJECT

@@ -27,6 +27,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "core/application.h"
 #include "core/core_settings.h"
+#include "core/enhanced_settings.h"
 #include "core/file_location.h"
 #include "core/version.h"
 #include "data/components/recent_inline_bots.h"
@@ -2857,6 +2858,10 @@ void Account::readRecentHashtagsAndBots() {
 			search.push_back(qMakePair(tag.trimmed(), count));
 		}
 	}
+	const auto writeLimit = EnhancedSettings::HashtagAutocompleteLimit();
+	if (write.size() > writeLimit) {
+		write.resize(writeLimit);
+	}
 	cSetRecentWriteHashtags(write);
 	cSetRecentSearchHashtags(search);
 
@@ -2888,7 +2893,8 @@ void Account::readRecentHashtagsAndBots() {
 
 std::optional<RecentHashtagPack> Account::saveRecentHashtags(
 		Fn<RecentHashtagPack()> getPack,
-		const QString &text) {
+		const QString &text,
+		int limit) {
 	auto found = false;
 	auto m = QRegularExpressionMatch();
 	auto recent = getPack();
@@ -2916,7 +2922,7 @@ std::optional<RecentHashtagPack> Account::saveRecentHashtags(
 			recent = getPack();
 		}
 		found = true;
-		Local::incrementRecentHashtag(recent, tag);
+		Local::incrementRecentHashtag(recent, tag, limit);
 	}
 	return found ? base::make_optional(recent) : std::nullopt;
 }
@@ -2924,17 +2930,32 @@ std::optional<RecentHashtagPack> Account::saveRecentHashtags(
 void Account::saveRecentSentHashtags(const QString &text) {
 	const auto result = saveRecentHashtags(
 		[] { return cRecentWriteHashtags(); },
-		text);
+		text,
+		EnhancedSettings::HashtagAutocompleteLimit());
 	if (result) {
 		cSetRecentWriteHashtags(*result);
 		writeRecentHashtagsAndBots();
 	}
 }
 
+void Account::applyRecentWriteHashtagLimit(int limit) {
+	if (!_recentHashtagsAndBotsWereRead) {
+		readRecentHashtagsAndBots();
+	}
+	auto recent = cRecentWriteHashtags();
+	if (recent.size() <= limit) {
+		return;
+	}
+	recent.resize(qMax(limit, 0));
+	cSetRecentWriteHashtags(recent);
+	writeRecentHashtagsAndBots();
+}
+
 void Account::saveRecentSearchHashtags(const QString &text) {
 	const auto result = saveRecentHashtags(
 		[] { return cRecentSearchHashtags(); },
-		text);
+		text,
+		64);
 	if (result) {
 		cSetRecentSearchHashtags(*result);
 		writeRecentHashtagsAndBots();

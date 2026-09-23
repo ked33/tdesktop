@@ -221,6 +221,22 @@ private:
 
 };
 
+class HashtagAutocompleteLimitBox final : public Ui::BoxContent {
+public:
+	explicit HashtagAutocompleteLimitBox(QWidget *parent);
+
+protected:
+	void prepare() override;
+	void setInnerFocus() override;
+	void resizeEvent(QResizeEvent *e) override;
+
+private:
+	void save();
+
+	object_ptr<Ui::InputField> _limit;
+
+};
+
 class TrayIdleMemoryBox final : public Ui::BoxContent {
 public:
 	explicit TrayIdleMemoryBox(QWidget *parent);

@@ -1100,6 +1100,52 @@ void SearchPornIntervalBox::save() {
 	closeBox();
 }
 
+HashtagAutocompleteLimitBox::HashtagAutocompleteLimitBox(QWidget *parent)
+: _limit(
+	this,
+	st::defaultInputField,
+	tr::lng_settings_hashtag_autocomplete_limit_placeholder()) {
+}
+
+void HashtagAutocompleteLimitBox::prepare() {
+	setTitle(tr::lng_settings_hashtag_autocomplete_limit());
+	addButton(tr::lng_settings_save(), [=] { save(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+	_limit->setText(QString::number(
+		EnhancedSettings::HashtagAutocompleteLimit()));
+	_limit->setMaxLength(4);
+	_limit->submits() | rpl::on_next([=] { save(); }, lifetime());
+	setDimensions(
+		st::boxWidth,
+		_limit->height() + st::boxPadding.top() + st::boxPadding.bottom());
+}
+
+void HashtagAutocompleteLimitBox::setInnerFocus() {
+	_limit->setFocusFast();
+}
+
+void HashtagAutocompleteLimitBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+	_limit->resizeToWidth(
+		width() - st::boxPadding.left() - st::boxPadding.right());
+	_limit->moveToLeft(st::boxPadding.left(), st::boxPadding.top());
+}
+
+void HashtagAutocompleteLimitBox::save() {
+	auto valid = false;
+	const auto value = _limit->getLastText().trimmed().toInt(&valid);
+	if (!valid
+		|| value < EnhancedSettings::kHashtagAutocompleteLimitMinimum
+		|| value > EnhancedSettings::kHashtagAutocompleteLimitMaximum) {
+		_limit->showError();
+		Ui::Toast::Show(
+			tr::lng_settings_hashtag_autocomplete_limit_invalid(tr::now));
+		return;
+	}
+	EnhancedSettings::SetHashtagAutocompleteLimit(value);
+	closeBox();
+}
+
 TrayIdleMemoryBox::TrayIdleMemoryBox(QWidget *parent)
 : _minutes(
 	this,

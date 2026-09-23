@@ -94,7 +94,10 @@ void pushRecentLanguage(const Lang::Language &language);
 std::vector<Lang::Language> readRecentLanguages();
 void saveRecentLanguages(const std::vector<Lang::Language> &list);
 void removeRecentLanguage(const QString &id);
-void incrementRecentHashtag(RecentHashtagPack &recent, const QString &tag);
+void incrementRecentHashtag(
+	RecentHashtagPack &recent,
+	const QString &tag,
+	int limit);
 
 bool readOldMtpData(
 	bool remove,

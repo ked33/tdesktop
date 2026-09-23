@@ -1045,6 +1045,23 @@ namespace Settings {
 						object_ptr<Ui::VerticalLayout>(container)));
 		const auto inner = wrap->entity();
 
+		trackSearch(
+			AddButtonWithLabel(
+				inner,
+				tr::lng_settings_hashtag_autocomplete_limit(),
+				rpl::single(EnhancedSettings::HashtagAutocompleteLimit())
+					| rpl::then(
+						EnhancedSettings::HashtagAutocompleteLimitChanges())
+					| rpl::map([](int value) { return QString::number(value); }),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/hashtag_autocomplete_limit"_q)->addClickHandler([] {
+			Ui::show(Box<HashtagAutocompleteLimitBox>());
+		});
+		AddDividerText(
+			inner,
+			tr::lng_settings_hashtag_autocomplete_limit_about());
+
 		auto EmojiBtn = trackSearch(
 			AddButtonWithIcon(
 				inner,
@@ -1818,6 +1835,10 @@ namespace Settings {
 		addButton(
 			u"enhanced/section_button"_q,
 			tr::lng_settings_button(tr::now));
+		addButton(
+			u"enhanced/hashtag_autocomplete_limit"_q,
+			tr::lng_settings_hashtag_autocomplete_limit(tr::now),
+			{ tr::lng_settings_hashtag_autocomplete_limit_about(tr::now) });
 		addBool(
 			"show_emoji_button_as_text",
 			tr::lng_settings_show_emoji_button_as_text(tr::now),
