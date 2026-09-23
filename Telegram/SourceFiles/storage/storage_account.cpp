@@ -2859,8 +2859,8 @@ void Account::readRecentHashtagsAndBots() {
 		}
 	}
 	const auto writeLimit = EnhancedSettings::HashtagAutocompleteLimit();
-	if (write.size() > writeLimit) {
-		write.resize(writeLimit);
+	while (write.size() > writeLimit) {
+		write.pop_back();
 	}
 	cSetRecentWriteHashtags(write);
 	cSetRecentSearchHashtags(search);
@@ -2946,7 +2946,9 @@ void Account::applyRecentWriteHashtagLimit(int limit) {
 	if (recent.size() <= limit) {
 		return;
 	}
-	recent.resize(qMax(limit, 0));
+	while (recent.size() > limit) {
+		recent.pop_back();
+	}
 	cSetRecentWriteHashtags(recent);
 	writeRecentHashtagsAndBots();
 }
