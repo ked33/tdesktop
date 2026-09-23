@@ -161,6 +161,8 @@ protected:
 	void mousePressEvent(QMouseEvent *e) override;
 	void enterEventHook(QEnterEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
+	void enterFromChildEvent(QEvent *e, QWidget *child) override;
+	void leaveToChildEvent(QEvent *e, QWidget *child) override;
 	void resizeEvent(QResizeEvent *e) override;
 	bool eventFilter(QObject *obj, QEvent *e) override;
 
@@ -179,6 +181,7 @@ private:
 	void updateSearchVisibility();
 	void refreshMessagesProgress();
 	void setMessagesProgressHovered(bool hovered);
+	void updateMessagesProgressHover();
 	void updateSearchJumpToDateVisibility();
 	[[nodiscard]] bool searchJumpToDateFits() const;
 	void updateChooseFromUserGeometry();

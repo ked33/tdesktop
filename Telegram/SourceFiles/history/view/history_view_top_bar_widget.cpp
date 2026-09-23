@@ -473,14 +473,30 @@ void TopBarWidget::setMessagesProgressHovered(bool hovered) {
 	updateControlsGeometry();
 }
 
+void TopBarWidget::updateMessagesProgressHover() {
+	const auto hovered = isVisible()
+		&& rect().contains(mapFromGlobal(QCursor::pos()));
+	setMessagesProgressHovered(hovered);
+}
+
 void TopBarWidget::enterEventHook(QEnterEvent *e) {
 	RpWidget::enterEventHook(e);
-	setMessagesProgressHovered(true);
+	updateMessagesProgressHover();
 }
 
 void TopBarWidget::leaveEventHook(QEvent *e) {
 	RpWidget::leaveEventHook(e);
-	setMessagesProgressHovered(rect().contains(mapFromGlobal(QCursor::pos())));
+	updateMessagesProgressHover();
+}
+
+void TopBarWidget::enterFromChildEvent(QEvent *e, QWidget *child) {
+	RpWidget::enterFromChildEvent(e, child);
+	updateMessagesProgressHover();
+}
+
+void TopBarWidget::leaveToChildEvent(QEvent *e, QWidget *child) {
+	RpWidget::leaveToChildEvent(e, child);
+	updateMessagesProgressHover();
 }
 
 void TopBarWidget::setChooseForReportReason(
