@@ -825,7 +825,9 @@ private:
 	Over _down = Over::None;
 	QPoint _lastAction, _lastMouseMovePos;
 	bool _ignoringDropdown = false;
-	bool _videoPlaybackToggledOnLastRelease = false;
+	crl::time _videoPressTime = 0;
+	base::Timer _videoClickPauseTimer;
+	bool _swallowNextVideoClickRelease = false;
 
 	Ui::Animations::Basic _stateAnimation;
 

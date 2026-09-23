@@ -753,6 +753,12 @@ OverlayWidget::OverlayWidget()
 		startSpeedBoost();
 	});
 
+	_videoClickPauseTimer.setCallback([=] {
+		if (_streamed && !_stories) {
+			playbackPauseResume();
+		}
+	});
+
 	_frameStepThrottle.setCallback([=] {
 		flushPendingFrameStep();
 	});
@@ -1627,6 +1633,8 @@ void OverlayWidget::clearStreaming(bool savePosition) {
 			_streamed->instance.player().prepareLegacyState());
 	}
 	_fullScreenVideo = false;
+	_videoClickPauseTimer.cancel();
+	_swallowNextVideoClickRelease = false;
 	_streamed = nullptr;
 }
 
@@ -8422,7 +8430,8 @@ void OverlayWidget::handleMousePress(
 	ClickHandler::pressed();
 
 	if (button == Qt::LeftButton) {
-		_videoPlaybackToggledOnLastRelease = false;
+		_videoClickPauseTimer.cancel();
+		_videoPressTime = crl::now();
 		_down = Over::None;
 		if (!ClickHandler::getPressed()) {
 			if ((_over == Over::Left && moveToNext(-1))
@@ -8500,6 +8509,8 @@ bool OverlayWidget::handleDoubleClick(
 		return false;
 	}
 	_speedBoostHoldTimer.cancel();
+	_videoClickPauseTimer.cancel();
+	_swallowNextVideoClickRelease = true;
 	_speedBoostFromMouse = false;
 	_down = Over::None;
 	if (_speedBoostActive) {
@@ -8509,9 +8520,6 @@ bool OverlayWidget::handleDoubleClick(
 		toggleFullScreen(_windowed);
 	} else {
 		playbackToggleFullScreen(true);
-		if (base::take(_videoPlaybackToggledOnLastRelease)) {
-			playbackPauseResume();
-		}
 	}
 	return true;
 }
@@ -8891,6 +8899,7 @@ void OverlayWidget::handleMouseRelease(
 		QPoint position,
 		Qt::MouseButton button) {
 	updateOver(position);
+	const auto swallowVideoClick = base::take(_swallowNextVideoClickRelease);
 
 	if (const auto activated = ClickHandler::unpressed()) {
 		if (activated->url() == u"internal:show_saved_message"_q) {
@@ -8995,9 +9004,17 @@ void OverlayWidget::handleMouseRelease(
 							sponsoredMessages->clicked(fullId, true, true);
 							hide();
 						}
-					} else {
-						playbackPauseResume();
-						_videoPlaybackToggledOnLastRelease = true;
+					} else if (!swallowVideoClick) {
+						const auto interval = crl::time(
+							QApplication::doubleClickInterval());
+						const auto elapsed = crl::now() - _videoPressTime;
+						if (elapsed >= interval) {
+							playbackPauseResume();
+						} else {
+							_videoClickPauseTimer.callOnce(
+								interval - elapsed,
+								Qt::PreciseTimer);
+						}
 					}
 				}
 			}
