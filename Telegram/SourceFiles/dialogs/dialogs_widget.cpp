@@ -76,6 +76,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_account.h"
 #include "storage/storage_domain.h"
 #include "data/components/recent_peers.h"
+#include "data/components/recent_search_queries.h"
 #include "data/components/sponsored_messages.h"
 #include "data/data_session.h"
 #include "data/data_channel.h"
@@ -1008,6 +1009,11 @@ void Widget::setupSwipeBack() {
 
 void Widget::chosenRow(const ChosenRow &row) {
 	storiesToggleExplicitExpand(false);
+
+	if (!_searchState.inChat && !_searchState.query.trimmed().isEmpty()) {
+		noteRecentSearchQuery(_searchState.query);
+		commitRecentSearchDraft();
+	}
 
 	if (!row.sponsoredRandomId.isEmpty()) {
 		auto &messages = session().sponsoredMessages();
@@ -2359,16 +2365,24 @@ void Widget::updateSuggestions(anim::type animated) {
 		_suggestions = std::make_unique<Suggestions>(
 			this,
 			controller(),
-			TopPeersContent(&session()),
-			RecentPeersContent(&session()));
+			TopPeersContent(&session()));
 		_suggestions->clearSearchQueryRequests() | rpl::on_next([=] {
 			setSearchQuery(QString());
 		}, _suggestions->lifetime());
 		_searchSuggestionsLocked = false;
 
+		_suggestions->recentQueryChosen(
+		) | rpl::on_next([=](const QString &query) {
+			if (!query.isEmpty() && _recentSearchDraft != query) {
+				commitRecentSearchDraft();
+			}
+			session().recentSearchQueries().bump(query);
+			_recentSearchDraft = query;
+			setSearchQuery(query);
+		}, _suggestions->lifetime());
+
 		rpl::merge(
 			_suggestions->topPeerChosen(),
-			_suggestions->recentPeerChosen(),
 			_suggestions->myChannelChosen(),
 			_suggestions->recommendationChosen()
 		) | rpl::on_next([=](not_null<PeerData*> peer) {
@@ -3353,6 +3367,7 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 		.peer = (inPeer != nullptr),
 	};
 	if (trimmed.isEmpty() && !fromPeer && inTags.empty()) {
+		noteRecentSearchQuery(QString());
 		cancelSearchRequest();
 
 		// Otherwise inside first searchApplyEmpty we call searchMode(),
@@ -3514,6 +3529,7 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 	}
 	if (!inCache || result) {
 		updatePornSearch();
+		noteRecentSearchQuery(query);
 	}
 	return result;
 }
@@ -3553,6 +3569,7 @@ bool Widget::searchPornMessages(bool inCache) {
 	}
 	updatePornSearch();
 	updateNativeSearchState();
+	noteRecentSearchQuery(empty ? QString() : query);
 	return true;
 }
 
@@ -3658,6 +3675,32 @@ bool Widget::searchForTopicsRequired(const QString &query) const {
 		&& (IsHashOrCashtagSearchQuery(query) == HashOrCashtag::None)
 		&& !TextUtilities::PrepareSearchWords(query).isEmpty()
 		&& !_openedForum->topicsList()->loaded();
+}
+
+void Widget::noteRecentSearchQuery(const QString &query) {
+	if (_searchState.inChat) {
+		commitRecentSearchDraft();
+		return;
+	}
+	const auto normalized = Data::NormalizeRecentSearchQuery(query);
+	if (normalized.isEmpty()) {
+		commitRecentSearchDraft();
+		return;
+	}
+	const auto &current = _recentSearchDraft;
+	if (!current.isEmpty()
+		&& !normalized.startsWith(current, Qt::CaseInsensitive)
+		&& !current.startsWith(normalized, Qt::CaseInsensitive)) {
+		commitRecentSearchDraft();
+	}
+	_recentSearchDraft = normalized;
+}
+
+void Widget::commitRecentSearchDraft() {
+	if (_recentSearchDraft.isEmpty()) {
+		return;
+	}
+	session().recentSearchQueries().bump(base::take(_recentSearchDraft));
 }
 
 void Widget::searchRequested(SearchRequestDelay delay) {
@@ -5536,6 +5579,7 @@ bool Widget::cancelSearch(CancelSearchOptions options) {
 }
 
 Widget::~Widget() {
+	commitRecentSearchDraft();
 	cancelSearchRequest();
 
 	// Destructor may hide the bar and attempt to double-destroy it.

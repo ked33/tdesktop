@@ -648,6 +648,8 @@ PRIVATE
     data/components/recent_inline_bots.h
     data/components/recent_peers.cpp
     data/components/recent_peers.h
+    data/components/recent_search_queries.cpp
+    data/components/recent_search_queries.h
     data/components/recent_shared_media_gifts.cpp
     data/components/recent_shared_media_gifts.h
     data/components/scheduled_messages.cpp
@@ -828,6 +830,8 @@ PRIVATE
     dialogs/ui/dialogs_layout.h
     dialogs/ui/dialogs_message_view.cpp
     dialogs/ui/dialogs_message_view.h
+    dialogs/ui/dialogs_recent_queries.cpp
+    dialogs/ui/dialogs_recent_queries.h
     dialogs/ui/dialogs_stories_content.cpp
     dialogs/ui/dialogs_stories_content.h
     dialogs/ui/dialogs_suggestions.cpp

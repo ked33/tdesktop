@@ -15,7 +15,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/peer_list_box.h"
 #include "core/application.h"
 #include "core/ui_integration.h"
-#include "data/components/recent_peers.h"
 #include "data/components/top_peers.h"
 #include "data/stickers/data_custom_emoji.h"
 #include "data/data_changes.h"
@@ -29,6 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_user.h"
 #include "dialogs/ui/chat_search_empty.h"
 #include "dialogs/ui/chat_search_in.h"
+#include "dialogs/ui/dialogs_recent_queries.h"
 #include "dialogs/ui/posts_search_intro.h"
 #include "dialogs/dialogs_inner_widget.h"
 #include "dialogs/dialogs_search_posts.h"
@@ -47,7 +47,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_shared_media.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/controls/swipe_handler.h"
-#include "ui/effects/ripple_animation.h"
 #include "ui/toast/toast.h"
 #include "ui/text/custom_emoji_helper.h"
 #include "ui/text/custom_emoji_text_badge.h"
@@ -65,7 +64,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/dynamic_thumbnails.h"
 #include "ui/painter.h"
 #include "ui/search_field_controller.h"
-#include "ui/unread_badge_paint.h"
 #include "ui/ui_utility.h"
 #include "window/window_separate_id.h"
 #include "window/window_session_controller.h"
@@ -85,42 +83,6 @@ constexpr auto kProbablyMaxChannels = 1000;
 constexpr auto kCollapsedAppsCount = 5;
 constexpr auto kProbablyMaxApps = 100;
 constexpr auto kSearchQueryDelay = crl::time(900);
-
-class RecentRow final : public PeerListRow {
-public:
-	explicit RecentRow(not_null<PeerData*> peer);
-
-	bool refreshBadge();
-
-	QSize rightActionSize() const override;
-	QMargins rightActionMargins() const override;
-	void rightActionPaint(
-		Painter &p,
-		int x,
-		int y,
-		int outerWidth,
-		bool selected,
-		bool actionSelected) override;
-	bool rightActionDisabled() const override;
-	void rightActionAddRipple(
-		QPoint point,
-		Fn<void()> updateCallback) override;
-	void rightActionStopLastRipple() override;
-
-	const style::PeerListItem &computeSt(
-		const style::PeerListItem &st) const override;
-
-private:
-	const not_null<History*> _history;
-	std::unique_ptr<Ui::Text::String> _mainAppText;
-	std::unique_ptr<Ui::RippleAnimation> _actionRipple;
-	QString _badgeString;
-	QSize _badgeSize;
-	uint32 _counter : 30 = 0;
-	uint32 _unread : 1 = 0;
-	uint32 _muted : 1 = 0;
-
-};
 
 class ChannelRow final : public PeerListRow {
 public:
@@ -241,189 +203,6 @@ void FillEntryMenu(
 	}
 }
 
-RecentRow::RecentRow(not_null<PeerData*> peer)
-: PeerListRow(peer)
-, _history(peer->owner().history(peer))
-, _mainAppText([&]() -> std::unique_ptr<Ui::Text::String> {
-	if (const auto user = peer->asUser()) {
-		if (user->botInfo && user->botInfo->hasMainApp) {
-			return std::make_unique<Ui::Text::String>(
-				st::dialogRowOpenBotRecent.button.style,
-				tr::lng_profile_open_app_short(tr::now));
-		}
-	}
-	return nullptr;
-}()) {
-	if (peer->isSelf() || peer->isRepliesChat() || peer->isVerifyCodes()) {
-		setCustomStatus(u" "_q);
-	} else if (const auto chat = peer->asChat()) {
-		if (chat->count > 0) {
-			setCustomStatus(
-				tr::lng_chat_status_members(
-					tr::now,
-					lt_count_decimal,
-					chat->count));
-		}
-	} else if (const auto channel = peer->asChannel()) {
-		if (!channel->isCommunity() && channel->membersCountKnown()) {
-			setCustomStatus((channel->isBroadcast()
-				? tr::lng_chat_status_subscribers
-				: tr::lng_chat_status_members)(
-					tr::now,
-					lt_count_decimal,
-					channel->membersCount()));
-		}
-	}
-	refreshBadge();
-}
-
-bool RecentRow::refreshBadge() {
-	if (_history->peer->isSelf()) {
-		return false;
-	}
-	auto result = false;
-	const auto muted = _history->muted() ? 1 : 0;
-	if (_muted != muted) {
-		_muted = muted;
-		if (_counter || _unread) {
-			result = true;
-		}
-	}
-	const auto badges = _history->chatListBadgesState();
-	const auto unread = badges.unread ? 1 : 0;
-	if (_counter != badges.unreadCounter || _unread != unread) {
-		_counter = badges.unreadCounter;
-		_unread = unread;
-		result = true;
-
-		_badgeString = !_counter
-			? (_unread ? u" "_q : QString())
-			: (_counter < 1000)
-			? QString::number(_counter)
-			: (QString::number(_counter / 1000) + 'K');
-		if (_badgeString.isEmpty()) {
-			_badgeSize = QSize();
-		} else {
-			auto st = Ui::UnreadBadgeStyle();
-			const auto unreadRectHeight = st.size;
-			const auto unreadWidth = st.font->width(_badgeString);
-			_badgeSize = QSize(
-				std::max(unreadWidth + 2 * st.padding, unreadRectHeight),
-				unreadRectHeight);
-		}
-	}
-	return result;
-}
-
-QSize RecentRow::rightActionSize() const {
-	if (_mainAppText && _badgeSize.isEmpty()) {
-		return QSize(
-			_mainAppText->maxWidth() + _mainAppText->minHeight(),
-			st::dialogRowOpenBotRecent.button.height);
-	}
-	return _badgeSize;
-}
-
-QMargins RecentRow::rightActionMargins() const {
-	if (_mainAppText && _badgeSize.isEmpty()) {
-		const auto &st = st::dialogRowOpenBotRecent;
-		auto margins = st.margin;
-		margins.setTop((st::recentPeersItem.height - st.button.height) / 2);
-		return margins;
-	} else if (_badgeSize.isEmpty()) {
-		return {};
-	}
-	const auto x = st::recentPeersItem.photoPosition.x();
-	const auto y = (st::recentPeersItem.height - _badgeSize.height()) / 2;
-	return QMargins(x, y, x, y);
-}
-
-void RecentRow::rightActionPaint(
-		Painter &p,
-		int x,
-		int y,
-		int outerWidth,
-		bool selected,
-		bool actionSelected) {
-	if (_mainAppText && _badgeSize.isEmpty()) {
-		const auto size = RecentRow::rightActionSize();
-		p.setPen(Qt::NoPen);
-		p.setBrush(actionSelected
-			? st::activeButtonBgOver
-			: st::activeButtonBg);
-		const auto radius = size.height() / 2;
-		auto hq = PainterHighQualityEnabler(p);
-		p.drawRoundedRect(QRect(QPoint(x, y), size), radius, radius);
-		if (_actionRipple) {
-			_actionRipple->paint(p, x, y, outerWidth);
-			if (_actionRipple->empty()) {
-				_actionRipple.reset();
-			}
-		}
-		p.setPen(actionSelected
-			? st::activeButtonFgOver
-			: st::activeButtonFg);
-		const auto top = st::dialogRowOpenBotRecent.button.textTop;
-		_mainAppText->draw(p, {
-			.position = QPoint(x + size.height() / 2, y + top),
-			.outerWidth = outerWidth,
-			.availableWidth = outerWidth,
-			.elisionLines = 1,
-		});
-	}
-	if (!_counter && !_unread) {
-		return;
-	} else if (_badgeString.isEmpty()) {
-		_badgeString = !_counter
-			? u" "_q
-			: (_counter < 1000)
-			? QString::number(_counter)
-			: (QString::number(_counter / 1000) + 'K');
-	}
-	auto st = Ui::UnreadBadgeStyle();
-	st.selected = selected;
-	st.muted = _muted;
-	const auto &counter = _badgeString;
-	PaintUnreadBadge(p, counter, x + _badgeSize.width(), y, st);
-}
-
-bool RecentRow::rightActionDisabled() const {
-	return !_mainAppText || !_badgeSize.isEmpty();
-}
-
-void RecentRow::rightActionAddRipple(
-		QPoint point,
-		Fn<void()> updateCallback) {
-	if (!_mainAppText || !_badgeSize.isEmpty()) {
-		return;
-	}
-	if (!_actionRipple) {
-		const auto size = rightActionSize();
-		const auto radius = size.height() / 2;
-		auto mask = Ui::RippleAnimation::RoundRectMask(size, radius);
-		_actionRipple = std::make_unique<Ui::RippleAnimation>(
-			st::defaultActiveButton.ripple,
-			std::move(mask),
-			std::move(updateCallback));
-	}
-	_actionRipple->add(point);
-}
-
-void RecentRow::rightActionStopLastRipple() {
-	if (_actionRipple) {
-		_actionRipple->lastStop();
-	}
-}
-
-const style::PeerListItem &RecentRow::computeSt(
-		const style::PeerListItem &st) const {
-	return (peer()->isSelf()
-		|| peer()->isRepliesChat()
-		|| peer()->isVerifyCodes())
-		? st::recentPeersSpecialName
-		: st;
-}
-
 void ChannelRow::setActive(bool active) {
 	_active = active;
 }
@@ -491,35 +270,6 @@ private:
 	rpl::variable<int> _count;
 	rpl::variable<Ui::RpWidget*> _toggleExpanded = nullptr;
 	rpl::variable<bool> _expanded = false;
-
-};
-
-class RecentsController final : public Suggestions::ObjectListController {
-public:
-	using RightActionCallback = Fn<void(not_null<PeerData*>)>;
-
-	RecentsController(
-		not_null<Window::SessionController*> window,
-		RecentPeersList list,
-		RightActionCallback rightActionCallback,
-		Fn<void()> closeCallback);
-
-	void prepare() override;
-	base::unique_qptr<Ui::PopupMenu> rowContextMenu(
-		QWidget *parent,
-		not_null<PeerListRow*> row) override;
-	void rowRightActionClicked(not_null<PeerListRow*> row) override;
-
-	QString savedMessagesChatStatus() const override;
-
-private:
-	void setupDivider();
-	void subscribeToEvents();
-	[[nodiscard]] Fn<void()> removeAllCallback();
-
-	RecentPeersList _recent;
-	RightActionCallback _rightActionCallback;
-	rpl::lifetime _lifetime;
 
 };
 
@@ -819,166 +569,6 @@ void Suggestions::ObjectListController::setupExpandDivider(
 	}, raw->lifetime());
 
 	delegate()->peerListSetAboveWidget(std::move(result));
-}
-
-RecentsController::RecentsController(
-	not_null<Window::SessionController*> window,
-	RecentPeersList list,
-	RightActionCallback rightActionCallback,
-	Fn<void()> closeCallback)
-: ObjectListController(window)
-, _recent(std::move(list))
-, _rightActionCallback(std::move(rightActionCallback)) {
-	_closeCallback = std::move(closeCallback);
-}
-
-void RecentsController::prepare() {
-	setupDivider();
-
-	for (const auto &peer : _recent.list) {
-		delegate()->peerListAppendRow(std::make_unique<RecentRow>(peer));
-	}
-	delegate()->peerListRefreshRows();
-	setCount(_recent.list.size());
-
-	subscribeToEvents();
-}
-
-Fn<void()> RecentsController::removeAllCallback() {
-	const auto weak = base::make_weak(this);
-	const auto session = &this->session();
-	return crl::guard(session, [=] {
-		if (weak) {
-			setCount(0);
-			while (delegate()->peerListFullRowsCount() > 0) {
-				delegate()->peerListRemoveRow(delegate()->peerListRowAt(0));
-			}
-			delegate()->peerListRefreshRows();
-		}
-		session->recentPeers().clear();
-	});
-}
-
-base::unique_qptr<Ui::PopupMenu> RecentsController::rowContextMenu(
-		QWidget *parent,
-		not_null<PeerListRow*> row) {
-	auto result = base::make_unique_q<Ui::PopupMenu>(
-		parent,
-		st::popupMenuWithIcons);
-	const auto peer = row->peer();
-	const auto weak = base::make_weak(this);
-	const auto session = &this->session();
-	const auto removeOne = crl::guard(session, [=] {
-		if (weak) {
-			const auto rowId = peer->id.value;
-			if (const auto row = delegate()->peerListFindRow(rowId)) {
-				setCount(std::max(0, countCurrent() - 1));
-				delegate()->peerListRemoveRow(row);
-				delegate()->peerListRefreshRows();
-			}
-		}
-		session->recentPeers().remove(peer);
-	});
-	FillEntryMenu(Ui::Menu::CreateAddActionCallback(result), {
-		.controller = window(),
-		.peer = peer,
-		.removeOneText = tr::lng_recent_remove(tr::now),
-		.removeOne = removeOne,
-		.removeAllText = tr::lng_recent_clear_all(tr::now),
-		.removeAllConfirm = tr::lng_recent_clear_sure(tr::now),
-		.removeAll = removeAllCallback(),
-		.closeCallback = crl::guard(this, [=] {
-			if (_closeCallback) {
-				_closeCallback();
-			}
-		}),
-	});
-	return result;
-}
-
-void RecentsController::rowRightActionClicked(not_null<PeerListRow*> row) {
-	if (_rightActionCallback) {
-		if (const auto peer = row->peer()) {
-			_rightActionCallback(peer);
-		}
-	}
-}
-
-QString RecentsController::savedMessagesChatStatus() const {
-	return tr::lng_saved_forward_here(tr::now);
-}
-
-void RecentsController::setupDivider() {
-	auto result = object_ptr<Ui::FixedHeightWidget>(
-		(QWidget*)nullptr,
-		st::searchedBarHeight);
-	const auto raw = result.data();
-	const auto label = Ui::CreateChild<Ui::FlatLabel>(
-		raw,
-		tr::lng_recent_title(),
-		st::searchedBarLabel);
-	const auto clear = Ui::CreateChild<Ui::LinkButton>(
-		raw,
-		tr::lng_recent_clear(tr::now),
-		st::searchedBarLink);
-	clear->setClickedCallback(RemoveAllConfirm(
-		window(),
-		tr::lng_recent_clear_sure(tr::now),
-		removeAllCallback()));
-	rpl::combine(
-		raw->sizeValue(),
-		clear->widthValue()
-	) | rpl::on_next([=](QSize size, int width) {
-		const auto x = st::searchedBarPosition.x();
-		const auto y = st::searchedBarPosition.y();
-		clear->moveToRight(0, 0, size.width());
-		label->resizeToWidth(size.width() - x - width);
-		label->moveToLeft(x, y, size.width());
-	}, raw->lifetime());
-	raw->paintRequest() | rpl::on_next([=](QRect clip) {
-		QPainter(raw).fillRect(clip, st::searchedBarBg);
-	}, raw->lifetime());
-
-	delegate()->peerListSetAboveWidget(std::move(result));
-}
-
-void RecentsController::subscribeToEvents() {
-	using Flag = Data::PeerUpdate::Flag;
-	session().changes().peerUpdates(
-		Flag::Notifications
-		| Flag::OnlineStatus
-	) | rpl::on_next([=](const Data::PeerUpdate &update) {
-		const auto peer = update.peer;
-		if (peer->isSelf()) {
-			return;
-		}
-		auto refreshed = false;
-		const auto row = delegate()->peerListFindRow(update.peer->id.value);
-		if (!row) {
-			return;
-		} else if (update.flags & Flag::Notifications) {
-			refreshed = static_cast<RecentRow*>(row)->refreshBadge();
-		}
-		if (!peer->isRepliesChat()
-			&& !peer->isVerifyCodes()
-			&& (update.flags & Flag::OnlineStatus)) {
-			row->clearCustomStatus();
-			refreshed = true;
-		}
-		if (refreshed) {
-			delegate()->peerListUpdateRow(row);
-		}
-	}, _lifetime);
-
-	session().data().unreadBadgeChanges(
-	) | rpl::on_next([=] {
-		for (auto i = 0; i != countCurrent(); ++i) {
-			const auto row = delegate()->peerListRowAt(i);
-			if (static_cast<RecentRow*>(row.get())->refreshBadge()) {
-				delegate()->peerListUpdateRow(row);
-			}
-		}
-	}, _lifetime);
 }
 
 MyChannelsController::MyChannelsController(
@@ -1367,8 +957,7 @@ void PopularAppsController::appendRow(not_null<UserData*> bot) {
 Suggestions::Suggestions(
 	not_null<QWidget*> parent,
 	not_null<Window::SessionController*> controller,
-	rpl::producer<TopPeersList> topPeers,
-	RecentPeersList recentPeers)
+	rpl::producer<TopPeersList> topPeers)
 : RpWidget(parent)
 , _controller(controller)
 , _tabsScroll(
@@ -1385,7 +974,11 @@ Suggestions::Suggestions(
 		this,
 		object_ptr<TopPeersStrip>(this, std::move(topPeers)))))
 , _topPeers(_topPeersWrap->entity())
-, _recent(setupRecentPeers(std::move(recentPeers)))
+, _recentWrap(_chatsContent->add(
+	object_ptr<Ui::SlideWrap<RecentQueries>>(
+		this,
+		object_ptr<RecentQueries>(this, _controller))))
+, _recentQueries(_recentWrap->entity())
 , _emptyRecent(_chatsContent->add(setupEmptyRecent()))
 , _channelsScroll(std::make_unique<Ui::ElasticScroll>(this))
 , _channelsContent(
@@ -1495,10 +1088,21 @@ void Suggestions::setupTabs() {
 }
 
 void Suggestions::setupChats() {
-	_recent->count.value() | rpl::on_next([=](int count) {
-		_recent->wrap->toggle(count > 0, anim::type::instant);
+	_recentQueries->countValue() | rpl::on_next([=](int count) {
+		_recentWrap->toggle(count > 0, anim::type::instant);
 		_emptyRecent->toggle(count == 0, anim::type::instant);
-	}, _recent->wrap->lifetime());
+	}, _recentWrap->lifetime());
+
+	_recentQueries->selectedIndexValue(
+	) | rpl::filter(rpl::mappers::_1 >= 0) | rpl::on_next([=] {
+		_topPeers->deselectByKeyboard();
+	}, _recentQueries->lifetime());
+
+	_recentQueries->scrollToRequests(
+	) | rpl::on_next([=](Ui::ScrollToRequest request) {
+		const auto add = _topPeersWrap->toggled() ? _topPeers->height() : 0;
+		_chatsScroll->scrollToY(request.ymin + add, request.ymax + add);
+	}, _recentQueries->lifetime());
 
 	_topPeers->emptyValue() | rpl::on_next([=](bool empty) {
 		_topPeersWrap->toggle(!empty, anim::type::instant);
@@ -1564,7 +1168,6 @@ void Suggestions::setupChats() {
 	}, _topPeers->lifetime());
 
 	_chatsScroll->setVisible(_key.current().tab == Tab::Chats);
-	_chatsScroll->setCustomTouchProcess(_recent->processTouch);
 }
 
 void Suggestions::handlePressForChatPreview(
@@ -1687,19 +1290,19 @@ void Suggestions::selectJump(Qt::Key direction, int pageSize) {
 
 void Suggestions::selectJumpChats(Qt::Key direction, int pageSize) {
 	const auto recentHasSelection = [=] {
-		return _recent->selectJump({}, 0) == JumpResult::Applied;
+		return recentJump({}, 0) == JumpResult::Applied;
 	};
 	if (pageSize) {
 		if (direction == Qt::Key_Down || direction == Qt::Key_Up) {
 			_topPeers->deselectByKeyboard();
 			if (!recentHasSelection()) {
 				if (direction == Qt::Key_Down) {
-					_recent->selectJump(direction, 0);
+					recentJump(direction, 0);
 				} else {
 					return;
 				}
 			}
-			if (_recent->selectJump(direction, pageSize)
+			if (recentJump(direction, pageSize)
 				== JumpResult::AppliedAndOut) {
 				if (direction == Qt::Key_Up) {
 					_chatsScroll->scrollTo(0);
@@ -1707,7 +1310,7 @@ void Suggestions::selectJumpChats(Qt::Key direction, int pageSize) {
 			}
 		}
 	} else if (direction == Qt::Key_Up) {
-		if (_recent->selectJump(direction, pageSize)
+		if (recentJump(direction, pageSize)
 			== JumpResult::AppliedAndOut) {
 			_topPeers->selectByKeyboard(direction);
 		} else if (_topPeers->selectedByKeyboard()) {
@@ -1715,12 +1318,12 @@ void Suggestions::selectJumpChats(Qt::Key direction, int pageSize) {
 		}
 	} else if (direction == Qt::Key_Down) {
 		if (!_topPeersWrap->toggled() || recentHasSelection()) {
-			_recent->selectJump(direction, pageSize);
+			recentJump(direction, pageSize);
 		} else if (_topPeers->selectedByKeyboard()) {
 			if (!_topPeers->selectByKeyboard(direction)
-				&& _recent->count.current() > 0) {
+				&& _recentQueries->count() > 0) {
 				_topPeers->deselectByKeyboard();
-				_recent->selectJump(direction, pageSize);
+				recentJump(direction, pageSize);
 			}
 		} else {
 			_topPeers->selectByKeyboard({});
@@ -1863,7 +1466,7 @@ void Suggestions::chooseRow() {
 	switch (_key.current().tab) {
 	case Tab::Chats:
 		if (!_topPeers->chooseRow()) {
-			_recent->choose();
+			_recentQueries->choose();
 		}
 		break;
 	case Tab::Channels:
@@ -2104,7 +1707,7 @@ Data::Thread *Suggestions::updateFromChatsDrag(QPoint globalPosition) {
 	if (const auto top = _topPeers->updateFromParentDrag(globalPosition)) {
 		return _controller->session().data().history(PeerId(top));
 	}
-	return fromListId(_recent->updateFromParentDrag(globalPosition));
+	return nullptr;
 }
 
 Data::Thread *Suggestions::updateFromChannelsDrag(QPoint globalPosition) {
@@ -2129,7 +1732,6 @@ Data::Thread *Suggestions::fromListId(uint64 peerListRowId) {
 
 void Suggestions::dragLeft() {
 	_topPeers->dragLeft();
-	_recent->dragLeft();
 	_myChannels->dragLeft();
 	_recommendations->dragLeft();
 	_recentApps->dragLeft();
@@ -2402,53 +2004,18 @@ void Suggestions::updateControlsGeometry() {
 	}
 }
 
-auto Suggestions::setupRecentPeers(RecentPeersList recentPeers)
--> std::unique_ptr<ObjectList> {
-	const auto controller = lifetime().make_state<RecentsController>(
-		_controller,
-		std::move(recentPeers),
-		[=](not_null<PeerData*> p) { _openBotMainAppRequests.fire_copy(p); },
-		[=] { _closeRequests.fire({}); });
-
-	const auto addToScroll = [=] {
-		return _topPeersWrap->toggled() ? _topPeers->height() : 0;
-	};
-	auto result = setupObjectList(
-		_chatsScroll.get(),
-		_chatsContent,
-		controller,
-		addToScroll);
-	const auto raw = result.get();
-	const auto list = raw->wrap->entity();
-
-	raw->selectJump = [list](Qt::Key direction, int pageSize) {
-		const auto had = list->hasSelection();
-		if (direction == Qt::Key()) {
-			return had ? JumpResult::Applied : JumpResult::NotApplied;
-		} else if (direction == Qt::Key_Up && !had) {
-			return JumpResult::NotApplied;
-		} else if (direction == Qt::Key_Down || direction == Qt::Key_Up) {
-			const auto delta = (direction == Qt::Key_Down) ? 1 : -1;
-			if (pageSize > 0) {
-				list->selectSkipPage(pageSize, delta);
-			} else {
-				list->selectSkip(delta);
-			}
-			return list->hasSelection()
-				? JumpResult::Applied
-				: had
-				? JumpResult::AppliedAndOut
-				: JumpResult::NotApplied;
-		}
-		return JumpResult::NotApplied;
-	};
-
-	raw->chosen.events(
-	) | rpl::on_next([=](not_null<PeerData*> peer) {
-		_controller->session().recentPeers().bump(peer);
-	}, list->lifetime());
-
-	return result;
+Suggestions::JumpResult Suggestions::recentJump(
+		Qt::Key direction,
+		int pageSize) {
+	switch (_recentQueries->selectJump(direction, pageSize)) {
+	case RecentQueries::Jump::Applied:
+		return JumpResult::Applied;
+	case RecentQueries::Jump::AppliedAndOut:
+		return JumpResult::AppliedAndOut;
+	case RecentQueries::Jump::NotApplied:
+		break;
+	}
+	return JumpResult::NotApplied;
 }
 
 object_ptr<Ui::SlideWrap<>> Suggestions::setupEmptyRecent() {
@@ -2923,10 +2490,6 @@ rpl::producer<TopPeersList> TopPeersContent(
 		push();
 		return lifetime;
 	};
-}
-
-RecentPeersList RecentPeersContent(not_null<Main::Session*> session) {
-	return RecentPeersList{ session->recentPeers().list() };
 }
 
 object_ptr<Ui::BoxContent> StarsExamplesBox(

@@ -818,6 +818,16 @@ searchedBarLink: LinkButton(defaultLinkButton) {
 	overColor: searchedBarFg;
 	padding: margins(14px, 5px, 14px, 5px);
 }
+recentQueryHeight: 40px;
+recentQueryIconLeft: 12px;
+recentQueryTextLeft: 44px;
+recentQueryTextSkip: 12px;
+recentQueryIcon: icon{{ "menu/search", dialogsChatIconFg }};
+recentQueryIconOver: icon{{ "menu/search", dialogsChatIconFgOver }};
+recentQueryIconActive: icon{{ "menu/search", dialogsChatIconFgActive }};
+recentQueryRipple: RippleAnimation(defaultRippleAnimation) {
+	color: dialogsRippleBg;
+}
 
 dialogsSearchTagSkip: point(8px, 4px);
 dialogsSearchTagBottom: 10px;

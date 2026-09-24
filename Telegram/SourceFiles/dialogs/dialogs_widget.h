@@ -193,6 +193,8 @@ private:
 	[[nodiscard]] QString currentSearchQuery() const;
 	[[nodiscard]] int currentSearchQueryCursorPosition() const;
 	void clearSearchField();
+	void noteRecentSearchQuery(const QString &query);
+	void commitRecentSearchDraft();
 	void searchRequested(SearchRequestDelay delay);
 	bool search(bool inCache = false, SearchRequestDelay after = {});
 	bool searchPornMessages(bool inCache);
@@ -447,6 +449,7 @@ private:
 	mtpRequestId _topicSearchRequest = 0;
 
 	QString _searchQuery;
+	QString _recentSearchDraft;
 	PeerData *_searchQueryFrom = nullptr;
 	std::vector<Data::ReactionId> _searchQueryTags;
 	ChatSearchTab _searchQueryTab = {};

@@ -32,6 +32,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/version.h"
 #include "data/components/recent_inline_bots.h"
 #include "data/components/recent_peers.h"
+#include "data/components/recent_search_queries.h"
 #include "settings/settings_recent_searches.h"
 #include "data/components/top_peers.h"
 #include "data/stickers/data_stickers.h"
@@ -3235,10 +3236,13 @@ void Account::writeSearchSuggestions() {
 		= _owner->session().recentSettingsSearches().serialize();
 	const auto guestChatBots
 		= _owner->session().topGuestChatBots().serialize();
+	const auto searchQueries
+		= _owner->session().recentSearchQueries().serialize();
 	if (top.isEmpty()
 		&& recent.isEmpty()
 		&& settingsSearches.isEmpty()
-		&& guestChatBots.isEmpty()) {
+		&& guestChatBots.isEmpty()
+		&& searchQueries.isEmpty()) {
 		if (_searchSuggestionsKey) {
 			ClearKey(_searchSuggestionsKey, _basePath);
 			_searchSuggestionsKey = 0;
@@ -3253,9 +3257,15 @@ void Account::writeSearchSuggestions() {
 	quint32 size = Serialize::bytearraySize(top)
 		+ Serialize::bytearraySize(recent)
 		+ Serialize::bytearraySize(settingsSearches)
-		+ Serialize::bytearraySize(guestChatBots);
+		+ Serialize::bytearraySize(guestChatBots)
+		+ Serialize::bytearraySize(searchQueries);
 	EncryptedDescriptor data(size);
-	data.stream << top << recent << settingsSearches << guestChatBots;
+	data.stream
+		<< top
+		<< recent
+		<< settingsSearches
+		<< guestChatBots
+		<< searchQueries;
 
 	FileWriteDescriptor file(_searchSuggestionsKey, _basePath);
 	file.writeEncrypted(data, _localKey);
@@ -3284,6 +3294,7 @@ void Account::readSearchSuggestions() {
 	auto recent = QByteArray();
 	auto settingsSearches = QByteArray();
 	auto guestChatBots = QByteArray();
+	auto searchQueries = QByteArray();
 	suggestions.stream >> top >> recent;
 	if (!suggestions.stream.atEnd()) {
 		suggestions.stream >> settingsSearches;
@@ -3291,12 +3302,16 @@ void Account::readSearchSuggestions() {
 	if (!suggestions.stream.atEnd()) {
 		suggestions.stream >> guestChatBots;
 	}
+	if (!suggestions.stream.atEnd()) {
+		suggestions.stream >> searchQueries;
+	}
 	if (CheckStreamStatus(suggestions.stream)) {
 		_owner->session().topPeers().applyLocal(top);
 		_owner->session().recentPeers().applyLocal(recent);
 		_owner->session().recentSettingsSearches().applyLocal(
 			settingsSearches);
 		_owner->session().topGuestChatBots().applyLocal(guestChatBots);
+		_owner->session().recentSearchQueries().applyLocal(searchQueries);
 	} else {
 		DEBUG_LOG(("Suggestions: Could not read content."));
 	}

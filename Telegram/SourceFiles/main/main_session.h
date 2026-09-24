@@ -35,6 +35,7 @@ class Changes;
 class GiftAuctions;
 class RecentInlineBots;
 class RecentPeers;
+class RecentSearchQueries;
 class RecentSharedMediaGifts;
 class ScheduledMessages;
 class WelcomeMessages;
@@ -146,6 +147,9 @@ public:
 	}
 	[[nodiscard]] Data::RecentPeers &recentPeers() const {
 		return *_recentPeers;
+	}
+	[[nodiscard]] Data::RecentSearchQueries &recentSearchQueries() const {
+		return *_recentSearchQueries;
 	}
 	[[nodiscard]] Data::RecentSharedMediaGifts &recentSharedGifts() const {
 		return *_recentSharedGifts;
@@ -328,6 +332,7 @@ private:
 	const std::unique_ptr<SendAsPeers> _sendAsPeers;
 	const std::unique_ptr<InlineBots::AttachWebView> _attachWebView;
 	const std::unique_ptr<Data::RecentPeers> _recentPeers;
+	const std::unique_ptr<Data::RecentSearchQueries> _recentSearchQueries;
 	const std::unique_ptr<Data::RecentSharedMediaGifts> _recentSharedGifts;
 	const std::unique_ptr<Data::GiftAuctions> _giftAuctions;
 	const std::unique_ptr<Data::ScheduledMessages> _scheduledMessages;

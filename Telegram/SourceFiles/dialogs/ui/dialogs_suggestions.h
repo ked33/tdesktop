@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/object_ptr.h"
 #include "base/timer.h"
+#include "dialogs/ui/dialogs_recent_queries.h"
 #include "dialogs/ui/top_peers_strip.h"
 #include "ui/controls/swipe_handler_data.h"
 #include "ui/effects/animations.h"
@@ -58,17 +59,12 @@ class PostsSearchIntro;
 struct PostsSearchIntroState;
 enum class SearchEmptyIcon;
 
-struct RecentPeersList {
-	std::vector<not_null<PeerData*>> list;
-};
-
 class Suggestions final : public Ui::RpWidget {
 public:
 	Suggestions(
 		not_null<QWidget*> parent,
 		not_null<Window::SessionController*> controller,
-		rpl::producer<TopPeersList> topPeers,
-		RecentPeersList recentPeers);
+		rpl::producer<TopPeersList> topPeers);
 	~Suggestions();
 
 	void selectJump(Qt::Key direction, int pageSize = 0);
@@ -90,9 +86,8 @@ public:
 	[[nodiscard]] rpl::producer<not_null<PeerData*>> topPeerChosen() const {
 		return _topPeerChosen.events();
 	}
-	[[nodiscard]] auto recentPeerChosen() const
-	-> rpl::producer<not_null<PeerData*>> {
-		return _recent->chosen.events();
+	[[nodiscard]] rpl::producer<QString> recentQueryChosen() const {
+		return _recentQueries->chosen();
 	}
 	[[nodiscard]] auto myChannelChosen() const
 	-> rpl::producer<not_null<PeerData*>> {
@@ -183,9 +178,8 @@ private:
 		QPoint globalPosition);
 	[[nodiscard]] Data::Thread *updateFromAppsDrag(QPoint globalPosition);
 	[[nodiscard]] Data::Thread *fromListId(uint64 peerListRowId);
+	[[nodiscard]] JumpResult recentJump(Qt::Key direction, int pageSize);
 
-	[[nodiscard]] std::unique_ptr<ObjectList> setupRecentPeers(
-		RecentPeersList recentPeers);
 	[[nodiscard]] auto setupEmptyRecent()
 		-> object_ptr<Ui::SlideWrap<Ui::RpWidget>>;
 
@@ -241,7 +235,8 @@ private:
 	rpl::event_stream<not_null<PeerData*>> _openBotMainAppRequests;
 	rpl::event_stream<> _closeRequests;
 
-	const std::unique_ptr<ObjectList> _recent;
+	const not_null<Ui::SlideWrap<RecentQueries>*> _recentWrap;
+	const not_null<RecentQueries*> _recentQueries;
 
 	const not_null<Ui::SlideWrap<Ui::RpWidget>*> _emptyRecent;
 
@@ -291,9 +286,6 @@ private:
 };
 
 [[nodiscard]] rpl::producer<TopPeersList> TopPeersContent(
-	not_null<Main::Session*> session);
-
-[[nodiscard]] RecentPeersList RecentPeersContent(
 	not_null<Main::Session*> session);
 
 [[nodiscard]] object_ptr<Ui::BoxContent> StarsExamplesBox(
