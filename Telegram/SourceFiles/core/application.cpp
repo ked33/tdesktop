@@ -135,6 +135,12 @@ void SetCrashAnnotationsGL() {
 		Unexpected("Ui::GL::CurrentANGLE value in SetupANGLE.");
 	}());
 #else // DESKTOP_APP_USE_ANGLE
+#if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+	if (Ui::GL::WidgetsRhiSupported()) {
+		CrashReports::SetAnnotation("Graphics", "Direct3D 11");
+		return;
+	}
+#endif // Q_OS_WIN && Qt >= 6.7
 	CrashReports::SetAnnotation(
 		"OpenGL",
 		Core::App().settings().disableOpenGL() ? "Disabled" : "Enabled");

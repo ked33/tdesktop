@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - merge
+      - win-qt-6.11.2
   workflow_dispatch:
 
 jobs:
@@ -51,6 +52,7 @@ jobs:
           DOC_PATH="$GITHUB_WORKSPACE/$TBUILD_REL/$REPO_NAME/docs/building-win.md"
           {
             find "$PREPARE_ROOT" -type f -print0 | sort -z | xargs -0 sha256sum
+            sha256sum "$GITHUB_WORKSPACE/$TBUILD_REL/$REPO_NAME/Telegram/build/qt_version.py"
             if [ -f "$DOC_PATH" ]; then
               sha256sum "$DOC_PATH"
             fi
@@ -88,10 +90,9 @@ jobs:
           path: |
             ${{ env.LibrariesPath }}\[qQ]t[_-]*
             ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
-          key: win64-qt-release-${{ env.CACHE_KEY }}
+          key: win64-qt-6.11.2-${{ env.CACHE_KEY }}
           restore-keys: |
-            win64-qt-release-
-            win64-qt-${{ env.CACHE_KEY }}
+            win64-qt-6.11.2-
 
       - name: Set up sccache
         id: sccache

@@ -980,6 +980,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_performance" = "Performance";
 "lng_settings_enable_hwaccel" = "Hardware accelerated video decoding";
 "lng_settings_enable_opengl" = "Enable OpenGL rendering for media";
+"lng_settings_enable_d3d11" = "Use Direct3D 11 for the interface";
 "lng_settings_angle_backend" = "ANGLE graphics backend";
 "lng_settings_angle_backend_auto" = "Auto";
 "lng_settings_angle_backend_d3d9" = "Direct3D 9";
