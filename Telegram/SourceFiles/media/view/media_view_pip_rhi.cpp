@@ -436,6 +436,9 @@ void Pip::RendererRhi::releaseResources() {
 #ifdef Q_OS_MAC
 	_metalTextureCache.flush();
 #endif // Q_OS_MAC
+#ifdef Q_OS_WIN
+	_d3d11Frames.reset();
+#endif // Q_OS_WIN
 
 	delete _vertexBuffer;
 	_vertexBuffer = nullptr;
@@ -495,6 +498,25 @@ void Pip::RendererRhi::paintTransformedVideoFrame(
 		paintTransformedStaticContent(data.image, geometry);
 		return;
 	}
+#ifdef Q_OS_WIN
+	if (data.format == Streaming::FrameFormat::NativeTexture
+		&& data.nativeFrame
+		&& data.nativeFrame->sharedHandle) {
+		if (const auto imported = _d3d11Frames.import(
+				_rhi,
+				data.nativeFrame->sharedHandle,
+				data.nativeFrame->retained.get(),
+				data.nativeFrame->size)) {
+			paintImportedVideoFrame(imported, geometry);
+			return;
+		}
+		const auto image = _owner->currentVideoFrameImage();
+		if (!image.isNull()) {
+			paintTransformedStaticContent(image, geometry);
+		}
+		return;
+	}
+#endif // Q_OS_WIN
 	const auto nativeTexture =
 		(data.format == Streaming::FrameFormat::NativeTexture);
 	const auto nv12 = nativeTexture
@@ -723,6 +745,43 @@ void Pip::RendererRhi::paintTransformedStaticContent(
 
 	_shadowImage.upload(_rhi, _rub);
 
+	paintTransformedContent(_argb32Pipeline, srb, geometry, slot);
+}
+
+void Pip::RendererRhi::paintImportedVideoFrame(
+		QRhiTexture *texture,
+		ContentGeometry geometry) {
+	if (!texture || !_argb32Pipeline) {
+		return;
+	}
+	const auto slot = allocateDrawSlot();
+	if (slot < 0) {
+		return;
+	}
+	auto *srb = allocateSrb();
+	srb->setBindings({
+		QRhiShaderResourceBinding::uniformBuffer(
+			0,
+			QRhiShaderResourceBinding::VertexStage
+				| QRhiShaderResourceBinding::FragmentStage,
+			_uniformBuffer,
+			slot * 256,
+			sizeof(PipUniforms)),
+		QRhiShaderResourceBinding::sampledTexture(
+			1,
+			QRhiShaderResourceBinding::FragmentStage,
+			texture,
+			_sampler),
+		QRhiShaderResourceBinding::sampledTexture(
+			2,
+			QRhiShaderResourceBinding::FragmentStage,
+			_shadowImage.texture()
+				? _shadowImage.texture()
+				: _placeholderTexture,
+			_sampler),
+	});
+	srb->create();
+	_shadowImage.upload(_rhi, _rub);
 	paintTransformedContent(_argb32Pipeline, srb, geometry, slot);
 }
 

@@ -13,6 +13,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #ifdef Q_OS_MAC
 #include "media/view/media_view_metal_texture.h"
 #endif
+#ifdef Q_OS_WIN
+#include "media/view/media_view_d3d11_texture.h"
+#endif
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
 
@@ -59,6 +62,12 @@ private:
 		bool semiTransparent,
 		bool fillTransparentBackground,
 		int index = 0) override;
+	void paintTextureContent(
+		QRhiTexture *texture,
+		QSize size,
+		ContentGeometry geometry,
+		bool semiTransparent,
+		bool fillTransparentBackground);
 	void paintRadialLoading(
 		QRect inner,
 		bool radial,
@@ -188,6 +197,9 @@ private:
 	bool _usingExternalVideoTextures = false;
 	int _trackFrameIndex = 0;
 	int _streamedIndex = 0;
+#ifdef Q_OS_WIN
+	D3D11SharedTexture _d3d11Frames;
+#endif
 
 	struct PoolTexture {
 		QRhiTexture *texture = nullptr;

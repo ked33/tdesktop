@@ -20,6 +20,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <CoreVideo/CoreVideo.h>
 #endif // Q_OS_MAC
+#ifdef Q_OS_WIN
+#include "media/streaming/media_streaming_d3d11_frame.h"
+#endif // Q_OS_WIN
 
 namespace Media {
 namespace Streaming {
@@ -472,6 +475,9 @@ void VideoTrackObject::rasterizeFrame(not_null<Frame*> frame) {
 
 	fillRequests(frame);
 	frame->format = FrameFormat::None;
+#ifdef Q_OS_WIN
+	auto retainedGpuFrame = std::move(frame->nativeFrame.retained);
+#endif // Q_OS_WIN
 	frame->nativeFrame = NativeFrame();
 	if (frame->decoded->hw_frames_ctx) {
 #ifdef Q_OS_MAC
@@ -508,6 +514,25 @@ void VideoTrackObject::rasterizeFrame(not_null<Frame*> frame) {
 				return;
 		}
 #endif // Q_OS_MAC
+#ifdef Q_OS_WIN
+		if (!requireARGB32()
+			&& frame->decoded->format == AV_PIX_FMT_D3D11
+			&& RetainD3D11Frame(
+				frame->decoded.get(),
+				std::move(retainedGpuFrame),
+				&frame->nativeFrame)) {
+			frame->alpha = false;
+			frame->yuv = FrameYUV();
+			frame->format = FrameFormat::NativeTexture;
+			if (!frame->original.isNull()) {
+				frame->original = QImage();
+				for (auto &[_, prepared] : frame->prepared) {
+					prepared.image = QImage();
+				}
+			}
+			return;
+		}
+#endif // Q_OS_WIN
 		if (!frame->transferred) {
 			frame->transferred = FFmpeg::MakeFramePointer();
 		}
@@ -1330,6 +1355,10 @@ QImage VideoTrack::frameImage(
 		} else if (frame->format == FrameFormat::NativeTexture) {
 			frame->original = ConvertNativeFrameToARGB32(frame->nativeFrame);
 #endif // Q_OS_MAC
+#ifdef Q_OS_WIN
+		} else if (frame->format == FrameFormat::NativeTexture) {
+			frame->original = ReadD3D11Frame(frame->nativeFrame);
+#endif // Q_OS_WIN
 		}
 	}
 	if (GoodForRequest(
@@ -1376,6 +1405,10 @@ QImage VideoTrack::currentFrameImage() {
 		} else if (frame->format == FrameFormat::NativeTexture) {
 			frame->original = ConvertNativeFrameToARGB32(frame->nativeFrame);
 #endif // Q_OS_MAC
+#ifdef Q_OS_WIN
+		} else if (frame->format == FrameFormat::NativeTexture) {
+			frame->original = ReadD3D11Frame(frame->nativeFrame);
+#endif // Q_OS_WIN
 		}
 	}
 	return frame->original;

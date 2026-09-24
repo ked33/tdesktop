@@ -2307,6 +2307,14 @@ if (APPLE AND NOT build_macstore)
 endif()
 
 if (WIN32)
+    nice_target_sources(Telegram ${src_loc}
+    PRIVATE
+        media/streaming/media_streaming_d3d11_frame.cpp
+        media/streaming/media_streaming_d3d11_frame.h
+        media/view/media_view_d3d11_texture.cpp
+        media/view/media_view_d3d11_texture.h
+    )
+
     # message(${CMAKE_GENERATOR})
     # mt.exe -manifest "${res_loc}/winrc/Telegram.manifest" "-inputresource:\"$<TARGET_FILE:Telegram>\";#1" "-outputresource:\"$<TARGET_FILE:Telegram>\";#1" >NUL
     # set(hash_symbol "#")

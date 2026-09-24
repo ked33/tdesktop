@@ -11,6 +11,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/image/image_prepare.h"
 #include "ui/rect_part.h"
 
+#include <memory>
+
 namespace Media {
 
 inline constexpr auto kTimeUnknown = std::numeric_limits<crl::time>::min();
@@ -208,6 +210,8 @@ struct FrameYUV {
 
 struct NativeFrame {
 	void *pixelBuffer = nullptr;
+	void *sharedHandle = nullptr;
+	std::shared_ptr<void> retained;
 	QSize size;
 	QSize chromaSize;
 };

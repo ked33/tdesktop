@@ -15,6 +15,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #ifdef Q_OS_MAC
 #include "media/view/media_view_metal_texture.h"
 #endif
+#ifdef Q_OS_WIN
+#include "media/view/media_view_d3d11_texture.h"
+#endif
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
 
@@ -64,6 +67,9 @@ private:
 	void paintTransformedStaticContent(
 		const QImage &image,
 		ContentGeometry geometry) override;
+	void paintImportedVideoFrame(
+		QRhiTexture *texture,
+		ContentGeometry geometry);
 	void paintRadialLoading(
 		QRect inner,
 		float64 controlsShown) override;
@@ -177,6 +183,9 @@ private:
 
 #ifdef Q_OS_MAC
 	MetalTextureCache _metalTextureCache;
+#endif
+#ifdef Q_OS_WIN
+	D3D11SharedTexture _d3d11Frames;
 #endif
 
 	rpl::lifetime _lifetime;

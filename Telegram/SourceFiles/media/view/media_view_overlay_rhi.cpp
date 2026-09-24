@@ -663,6 +663,9 @@ void OverlayWidget::RendererRhi::releaseResources() {
 #ifdef Q_OS_MAC
 	_metalTextureCache.flush();
 #endif // Q_OS_MAC
+#ifdef Q_OS_WIN
+	_d3d11Frames.reset();
+#endif // Q_OS_WIN
 
 	delete _placeholderTexture;
 	_placeholderTexture = nullptr;
@@ -1036,7 +1039,36 @@ void OverlayWidget::RendererRhi::paintTransformedVideoFrame(
 	const auto data = _owner->videoFrameWithInfo();
 	if (data.format == Streaming::FrameFormat::None) {
 		return;
-	} else if (data.format == Streaming::FrameFormat::ARGB32) {
+	}
+#ifdef Q_OS_WIN
+	if (data.format == Streaming::FrameFormat::NativeTexture
+		&& data.nativeFrame
+		&& data.nativeFrame->sharedHandle) {
+		if (const auto imported = _d3d11Frames.import(
+				_rhi,
+				data.nativeFrame->sharedHandle,
+				data.nativeFrame->retained.get(),
+				data.nativeFrame->size)) {
+			paintTextureContent(
+				imported,
+				data.nativeFrame->size,
+				geometry,
+				data.alpha,
+				false);
+			return;
+		}
+		const auto image = _owner->currentVideoFrameImage();
+		if (!image.isNull()) {
+			paintTransformedStaticContent(
+				image,
+				geometry,
+				data.alpha,
+				data.alpha);
+		}
+		return;
+	}
+#endif // Q_OS_WIN
+	if (data.format == Streaming::FrameFormat::ARGB32) {
 		Assert(!data.image.isNull());
 		paintTransformedStaticContent(
 			data.image,
@@ -1416,41 +1448,18 @@ void OverlayWidget::RendererRhi::paintRecognitionOverlay(
 	drawTexturedQuad(_imagePipeline, tex, coords, 1.f, true);
 }
 
-void OverlayWidget::RendererRhi::paintTransformedStaticContent(
-		const QImage &image,
+void OverlayWidget::RendererRhi::paintTextureContent(
+		QRhiTexture *texture,
+		QSize size,
 		ContentGeometry geometry,
 		bool semiTransparent,
-		bool fillTransparentBackground,
-		int index) {
-	Expects(index >= 0 && index < 3);
-
-	if (image.isNull() || geometry.rect.isEmpty() || !_imagePipeline) {
+		bool fillTransparentBackground) {
+	if (!texture || size.isEmpty() || geometry.rect.isEmpty() || !_imagePipeline) {
 		return;
 	}
-
-	const auto cacheKey = image.cacheKey();
-	const auto upload = (_cacheKeys[index] != cacheKey);
-	if (upload) {
-		_cacheKeys[index] = cacheKey;
-		if (!_rgbaTextures[index]
-			|| _rgbaSizes[index] != image.size()) {
-			delete _rgbaTextures[index];
-			_rgbaTextures[index] = _rhi->newTexture(
-				QRhiTexture::BGRA8,
-				image.size());
-			_rgbaTextures[index]->create();
-			_rgbaSizes[index] = image.size();
-		}
-		_rub->uploadTexture(
-			_rgbaTextures[index],
-			QRhiTextureUploadDescription(
-				QRhiTextureUploadEntry(0, 0,
-					QRhiTextureSubresourceUploadDescription(image))));
-	}
-
 	const auto textureRect = _owner->_stories
 		? StoryCropTextureRect(
-			QSizeF(image.size()),
+			QSizeF(size),
 			geometry.rect.size())
 		: QRectF(0., 0., 1., 1.);
 	const auto texLeft = float(textureRect.x());
@@ -1489,11 +1498,50 @@ void OverlayWidget::RendererRhi::paintTransformedStaticContent(
 	const auto blend = (geometry.roundRadius > 0.)
 		|| (semiTransparent && !fillTransparentBackground);
 	drawContentQuad(
-		_rgbaTextures[index],
+		texture,
 		coords,
 		geometry,
 		fillTransparentBackground,
 		blend);
+}
+
+void OverlayWidget::RendererRhi::paintTransformedStaticContent(
+		const QImage &image,
+		ContentGeometry geometry,
+		bool semiTransparent,
+		bool fillTransparentBackground,
+		int index) {
+	Expects(index >= 0 && index < 3);
+
+	if (image.isNull() || geometry.rect.isEmpty() || !_imagePipeline) {
+		return;
+	}
+
+	const auto cacheKey = image.cacheKey();
+	const auto upload = (_cacheKeys[index] != cacheKey);
+	if (upload) {
+		_cacheKeys[index] = cacheKey;
+		if (!_rgbaTextures[index]
+			|| _rgbaSizes[index] != image.size()) {
+			delete _rgbaTextures[index];
+			_rgbaTextures[index] = _rhi->newTexture(
+				QRhiTexture::BGRA8,
+				image.size());
+			_rgbaTextures[index]->create();
+			_rgbaSizes[index] = image.size();
+		}
+		_rub->uploadTexture(
+			_rgbaTextures[index],
+			QRhiTextureUploadDescription(
+				QRhiTextureUploadEntry(0, 0,
+					QRhiTextureSubresourceUploadDescription(image))));
+	}
+	paintTextureContent(
+		_rgbaTextures[index],
+		image.size(),
+		geometry,
+		semiTransparent,
+		fillTransparentBackground);
 	paintRecognitionOverlay(image, geometry);
 }
 
