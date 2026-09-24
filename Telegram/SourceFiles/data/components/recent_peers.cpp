@@ -21,7 +21,6 @@ namespace Data {
 namespace {
 
 constexpr auto kLimit = 48;
-constexpr auto kMaxRememberedOpenChats = 32;
 
 } // namespace
 

@@ -16,6 +16,8 @@ class Session;
 
 namespace Data {
 
+constexpr auto kMaxRememberedOpenChats = 50;
+
 class Thread;
 
 class RecentPeers final {

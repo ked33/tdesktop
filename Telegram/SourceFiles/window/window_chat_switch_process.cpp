@@ -206,6 +206,66 @@ void Button::mouseMoveEvent(QMouseEvent *e) {
 	}
 }
 
+constexpr auto kFullscreenColumns = 10;
+constexpr auto kFullscreenRows = 5;
+
+static_assert(
+	kFullscreenColumns * kFullscreenRows
+		== Data::kMaxRememberedOpenChats);
+
+struct Grid {
+	int rows = 0;
+	int perRow = 0;
+	int count = 0;
+};
+
+[[nodiscard]] Grid ComputeAdaptiveGrid(int canPerRow, int count) {
+	auto result = Grid();
+	const auto canRows = (canPerRow > 2 * 7)
+		? 1
+		: (canPerRow > 3 * 4)
+		? 2
+		: 3;
+	result.rows = std::min(canRows, (count + canPerRow - 1) / canPerRow);
+	result.perRow = std::min(count / result.rows, canPerRow);
+	if (result.rows > 2) {
+		if (result.perRow * 2 > result.rows * 4) {
+			result.rows = 2;
+		} else if (result.perRow > 4) {
+			result.perRow = 4;
+		}
+	}
+	if (result.rows > 1) {
+		if (result.perRow > result.rows * 7) {
+			result.rows = 1;
+		} else if (result.perRow > 7) {
+			result.perRow = 7;
+		}
+	}
+	result.count = result.perRow * result.rows;
+	return result;
+}
+
+[[nodiscard]] Grid ComputeFullscreenGrid(
+		int canPerRow,
+		int canRows,
+		int count) {
+	const auto shownLimit = std::min(
+		count,
+		kFullscreenColumns * kFullscreenRows);
+	const auto perRow = std::min(
+		std::min(kFullscreenColumns, std::max(canPerRow, 1)),
+		std::max(shownLimit, 1));
+	const auto rows = std::min(
+		std::min(kFullscreenRows, std::max(canRows, 1)),
+		(shownLimit + perRow - 1) / perRow);
+	auto result = Grid();
+	result.perRow = perRow;
+	result.rows = std::max(rows, 1);
+	result.count = std::min(shownLimit, result.rows * result.perRow);
+	return result;
+}
+
 } // namespace
 
 struct ChatSwitchProcess::Entry {
@@ -420,14 +480,8 @@ void ChatSwitchProcess::setupView() {
 void ChatSwitchProcess::layout(QSize size) {
 	const auto full = QRect(QPoint(), size);
 	const auto outer = full.marginsRemoved(st::chatSwitchMargins);
-	auto inner = outer.marginsRemoved(st::chatSwitchPadding);
-	const auto available = inner.width();
-	const auto canPerRow = (available / st::chatSwitchSize.width());
-	const auto canRows = (canPerRow > 2 * 7)
-		? 1
-		: (canPerRow > 3 * 4)
-		? 2
-		: 3;
+	const auto inner = outer.marginsRemoved(st::chatSwitchPadding);
+	const auto canPerRow = inner.width() / st::chatSwitchSize.width();
 	if (canPerRow < 1) {
 		return;
 	} else if (_list.size() < 2) {
@@ -435,31 +489,33 @@ void ChatSwitchProcess::layout(QSize size) {
 		return;
 	}
 	const auto count = int(_list.size());
-	_shownRows = std::min(canRows, (count + canPerRow - 1) / canPerRow);
-	_shownPerRow = std::min(count / _shownRows, canPerRow);
-	if (_shownRows > 2) {
-		if (_shownPerRow * 2 > _shownRows * 4) {
-			_shownRows = 2;
-		} else if (_shownPerRow > 4) {
-			_shownPerRow = 4;
+	const auto state = _widget->window()->windowState();
+	const auto useFullscreenGrid = (state & Qt::WindowMaximized)
+		|| (state & Qt::WindowFullScreen);
+	const auto canRows = inner.height() / st::chatSwitchSize.height();
+	const auto grid = useFullscreenGrid
+		? ComputeFullscreenGrid(canPerRow, canRows, count)
+		: ComputeAdaptiveGrid(canPerRow, count);
+	_shownRows = grid.rows;
+	_shownPerRow = grid.perRow;
+	_shownCount = grid.count;
+	if (_shownCount > int(_entries.size())) {
+		_shownCount = int(_entries.size());
+		if (_shownPerRow > 0) {
+			_shownRows = (_shownCount + _shownPerRow - 1) / _shownPerRow;
 		}
 	}
-	if (_shownRows > 1) {
-		if (_shownPerRow > _shownRows * 7) {
-			_shownRows = 1;
-		} else if (_shownPerRow > 7) {
-			_shownPerRow = 7;
-		}
-	}
-	_shownCount = _shownPerRow * _shownRows;
 	if (_selected >= _shownCount) {
+		if (_selected < int(_entries.size())) {
+			_entries[_selected].button->setSelected(
+				false,
+				anim::type::instant);
+		}
 		_selected = -1;
 	}
 
 	const auto width = _shownPerRow * st::chatSwitchSize.width();
 	const auto height = _shownRows * st::chatSwitchSize.height();
-
-	size = QSize(width, height);
 	_inner = QRect(
 		(full.width() - width) / 2,
 		(full.height() - height) / 2,
@@ -468,12 +524,14 @@ void ChatSwitchProcess::layout(QSize size) {
 	_outer = _inner.marginsAdded(st::chatSwitchPadding);
 
 	const auto padding = st::boxRoundShadow.extend + st::chatSwitchPadding;
-
 	auto index = 0;
 	auto top = padding.top();
 	for (auto row = 0; row != _shownRows; ++row) {
 		auto left = padding.left();
 		for (auto column = 0; column != _shownPerRow; ++column) {
+			if (index >= _shownCount) {
+				break;
+			}
 			const auto &entry = _entries[index++];
 			entry.button->moveToLeft(left, top, _inner.width());
 			entry.button->show();
@@ -481,7 +539,7 @@ void ChatSwitchProcess::layout(QSize size) {
 		}
 		top += st::chatSwitchSize.height();
 	}
-	for (auto i = _shownRows * _shownPerRow; i < count; ++i) {
+	for (auto i = _shownCount; i < int(_entries.size()); ++i) {
 		_entries[i].button->hide();
 	}
 
