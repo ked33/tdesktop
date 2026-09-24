@@ -23,6 +23,7 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #include "settings.h"
 
 #include <algorithm>
+#include <optional>
 
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
@@ -823,21 +824,17 @@ namespace EnhancedSettings {
 		loadSettings(settings);
 	}
 
-	void Manager::writeCurrentSettings() {
-		auto file = QFile(CustomFilePath());
-		if (!file.open(QIODevice::WriteOnly)) {
-			return;
-		}
-		if (_jsonWriteTimer.isActive()) {
-			writing();
-		}
-		const char *customHeader = R"HEADER(
+	namespace {
+
+	const char *CustomFileHeader() {
+		return R"HEADER(
 // This file was automatically generated from current settings
 // It's better to edit it with app closed, so there will be no rewrites
 // You should restart app to see changes
 )HEADER";
-		file.write(customHeader);
+	}
 
+	QJsonObject CurrentSettingsObject() {
 		auto settings = QJsonObject();
 		settings.insert(qsl("net_speed_boost"), GetEnhancedInt("net_speed_boost"));
 		settings.insert(qsl("net_download_speed_boost"), GetEnhancedInt("net_download_speed_boost"));
@@ -1006,10 +1003,107 @@ namespace EnhancedSettings {
 		settings.insert(
 			qsl("multiple_chat_windows"),
 			MultipleChatWindows());
+		return settings;
+	}
 
+	QByteArray CurrentSettingsDocument() {
 		auto document = QJsonDocument();
-		document.setObject(settings);
-		file.write(document.toJson(QJsonDocument::Indented));
+		document.setObject(CurrentSettingsObject());
+		return QByteArray(CustomFileHeader())
+			+ document.toJson(QJsonDocument::Indented);
+	}
+
+	[[nodiscard]] std::optional<QJsonObject> ParsedImport(
+			const QByteArray &content) {
+		auto bytes = content;
+		if (bytes.startsWith(QByteArrayLiteral("\xEF\xBB\xBF"))) {
+			bytes.remove(0, 3);
+		}
+		auto error = QJsonParseError{0, QJsonParseError::NoError};
+		const auto document = QJsonDocument::fromJson(
+			base::parse::stripComments(bytes),
+			&error);
+		if (error.error != QJsonParseError::NoError || !document.isObject()) {
+			return std::nullopt;
+		}
+		const auto incoming = document.object();
+		if (incoming.isEmpty()) {
+			return std::nullopt;
+		}
+		const auto known = CurrentSettingsObject();
+		auto applicable = 0;
+		for (const auto &key : incoming.keys()) {
+			if (!known.contains(key)) {
+				continue;
+			}
+			const auto value = incoming.value(key);
+			const auto expected = known.value(key);
+			if ((expected.isBool() && value.isBool())
+				|| (expected.isDouble() && value.isDouble())
+				|| (expected.isString() && value.isString())) {
+				++applicable;
+			}
+		}
+		if (!applicable) {
+			return std::nullopt;
+		}
+		return incoming;
+	}
+
+	bool ApplyImportedObject(const QJsonObject &incoming) {
+		const auto known = CurrentSettingsObject();
+		auto applied = 0;
+		for (const auto &key : incoming.keys()) {
+			if (!known.contains(key)) {
+				continue;
+			}
+			const auto value = incoming.value(key);
+			const auto expected = known.value(key);
+			if (expected.isBool() && value.isBool()) {
+				SetEnhancedValue(key, value.toBool());
+				++applied;
+			} else if (expected.isDouble() && value.isDouble()) {
+				SetEnhancedValue(key, value.toInt());
+				++applied;
+			} else if (expected.isString() && value.isString()) {
+				SetEnhancedValue(key, value.toString());
+				++applied;
+			}
+		}
+		if (!applied) {
+			return false;
+		}
+		SetNetworkBoost(GetEnhancedInt(u"net_speed_boost"_q));
+		SetDownloadBoost(GetEnhancedInt(u"net_download_speed_boost"_q));
+		SetEnhancedValue(
+			u"bitrate"_q,
+			std::clamp(GetEnhancedInt(u"bitrate"_q), 0, 7));
+		if (GetEnhancedString(u"radio_controller"_q).isEmpty()) {
+			SetEnhancedValue(
+				u"radio_controller"_q,
+				u"http://localhost:2468"_q);
+		}
+		InvalidateSearchDialogFilterCache();
+		return true;
+	}
+
+	} // namespace
+
+	bool Manager::writeCurrentSettings() {
+		auto file = QFile(CustomFilePath());
+		if (!file.open(QIODevice::WriteOnly)) {
+			return false;
+		}
+		if (_jsonWriteTimer.isActive()) {
+			writing();
+		}
+		const auto bytes = CurrentSettingsDocument();
+		return file.write(bytes) == qint64(bytes.size());
+	}
+
+	bool Manager::writeNow() {
+		_jsonWriteTimer.stop();
+		return writeCurrentSettings();
 	}
 
 	void Manager::writeTimeout() {
@@ -1025,6 +1119,7 @@ namespace EnhancedSettings {
 
 		Data = std::make_unique<Manager>();
 		Data->fill();
+		Media::Streaming::LogOnlinePlaybackProfile();
 	}
 
 	void Write() {
@@ -1037,6 +1132,45 @@ namespace EnhancedSettings {
 		if (!Data) return;
 
 		Data->write(true);
+	}
+
+	QByteArray ExportDocument() {
+		return CurrentSettingsDocument();
+	}
+
+	bool CanImportDocument(const QByteArray &content) {
+		return ParsedImport(content).has_value();
+	}
+
+	bool ImportDocument(const QByteArray &content) {
+		const auto parsed = ParsedImport(content);
+		if (!parsed) {
+			return false;
+		}
+		const auto backup = gEnhancedOptions;
+		const auto requests = cNetRequestsCount();
+		const auto uploadSessions = cNetUploadSessionsCount();
+		const auto uploadInterval = cNetUploadRequestInterval();
+		if (!ApplyImportedObject(*parsed)) {
+			return false;
+		}
+		if (!WriteNow()) {
+			gEnhancedOptions = backup;
+			cSetNetRequestsCount(requests);
+			cSetNetUploadSessionsCount(uploadSessions);
+			cSetNetUploadRequestInterval(uploadInterval);
+			InvalidateSearchDialogFilterCache();
+			Write();
+			return false;
+		}
+		return true;
+	}
+
+	bool WriteNow() {
+		if (!Data) {
+			return false;
+		}
+		return Data->writeNow();
 	}
 
 } // namespace EnhancedSettings

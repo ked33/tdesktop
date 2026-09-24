@@ -1671,25 +1671,35 @@ void DeleteChatBox(not_null<Ui::GenericBox*> box, not_null<PeerData*> peer) {
 	};
 
 	const auto maybeChatsFiltersCheckbox = [&]() -> Ui::Checkbox* {
-		const auto history = (isBot || !maybeUser)
-			? peer->owner().history(peer).get()
-			: nullptr;
-		if (!history || removeFromChatsFilters(history).empty()) {
+		const auto history = peer->owner().history(peer);
+		if (removeFromChatsFilters(history).empty()) {
 			return nullptr;
 		}
 		Ui::AddSkip(container);
 		Ui::AddSkip(container);
+		const auto text = [&]() -> TextWithEntities {
+			if (isBot) {
+				return tr::lng_filters_checkbox_remove_bot(
+					tr::now,
+					tr::marked);
+			} else if (maybeUser) {
+				return tr::lng_filters_checkbox_remove_private(
+					tr::now,
+					tr::marked);
+			} else if (peer->isChannel() && !peer->isMegagroup()) {
+				return tr::lng_filters_checkbox_remove_channel(
+					tr::now,
+					tr::marked);
+			}
+			return tr::lng_filters_checkbox_remove_group(
+				tr::now,
+				tr::marked);
+		}();
 		return box->addRow(
 			object_ptr<Ui::Checkbox>(
 				container,
-				(maybeBotCheckbox
-					? tr::lng_filters_checkbox_remove_bot
-					: (peer->isChannel() && !peer->isMegagroup())
-					? tr::lng_filters_checkbox_remove_channel
-					: tr::lng_filters_checkbox_remove_group)(
-						tr::now,
-						tr::marked),
-				false,
+				text,
+				true,
 				st::defaultBoxCheckbox));
 	}();
 

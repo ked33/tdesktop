@@ -6,9 +6,11 @@ https://github.com/telegramdesktop/tdesktop/blob/dev/LEGAL
 */
 #include "media/streaming/media_streaming_boost.h"
 
+#include "logs.h"
 #include "settings.h"
 
 #include <QtCore/QJsonArray>
+#include <QtCore/QStringList>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 
@@ -397,6 +399,67 @@ QString SerializeBoostProfiles(const BoostProfiles &profiles) {
 const BoostProfile &BoostProfileFor(int level) {
 	static const auto profiles = LoadBoostProfiles();
 	return profiles[std::clamp(level, 0, int(profiles.size() - 1))];
+}
+
+void LogOnlinePlaybackProfile() {
+	if (!GetEnhancedBool("online_playback_debug_logs")) {
+		return;
+	}
+	const auto profiles = LoadBoostProfiles();
+	const auto level = std::clamp(
+		GetEnhancedInt("net_download_speed_boost"),
+		0,
+		int(profiles.size()) - 1);
+	const auto &profile = profiles[level];
+	constexpr auto kLevelNames = std::array<const char*, 7>{
+		"disabled",
+		"slight",
+		"medium",
+		"big",
+		"aggressive",
+		"extreme",
+		"smart",
+	};
+	static_assert(kLevelNames.size() == 7);
+	const auto name = (level < int(kLevelNames.size()))
+		? QString::fromLatin1(kLevelNames[level])
+		: QString::number(level);
+	const auto flag = [](bool value) {
+		return value ? u"true"_q : u"false"_q;
+	};
+	const auto fields = QStringList{
+		u"requestsLimit=%1"_q.arg(profile.requestsLimit),
+		u"preloadPartsAhead=%1"_q.arg(profile.preloadPartsAhead),
+		u"tailPrefetchParts=%1"_q.arg(profile.tailPrefetchParts),
+		u"seekCancelEnabled=%1"_q.arg(flag(profile.seekCancelEnabled)),
+		u"seekCancelJumpParts=%1"_q.arg(profile.seekCancelJumpParts),
+		u"seekCancelGuardParts=%1"_q.arg(profile.seekCancelGuardParts),
+		u"loadInAdvanceMs=%1"_q.arg(profile.loadInAdvanceMs),
+		u"waitingBufferMs=%1"_q.arg(profile.waitingBufferMs),
+		u"startWaitedParts=%1"_q.arg(profile.startWaitedParts),
+		u"maxWaitedParts=%1"_q.arg(profile.maxWaitedParts),
+		u"startSessions=%1"_q.arg(profile.startSessions),
+		u"maxSessions=%1"_q.arg(profile.maxSessions),
+		u"mpvTailPrefetchParts=%1"_q.arg(profile.mpvTailPrefetchParts),
+		u"mpvCacheMaxMb=%1"_q.arg(profile.mpvCacheMaxMb),
+		u"mpvCacheBackMb=%1"_q.arg(profile.mpvCacheBackMb),
+		u"nonPremiumPreloadLimit=%1"_q.arg(profile.nonPremiumPreloadLimit),
+		u"smartMinimumPreload=%1"_q.arg(profile.smartMinimumPreload),
+		u"smartMinimumRequests=%1"_q.arg(profile.smartMinimumRequests),
+		u"smartMaximumPreload=%1"_q.arg(profile.smartMaximumPreload),
+		u"smartInitialRequestLimit=%1"_q.arg(
+			profile.smartInitialRequestLimit),
+		u"smartMinimumRequestLimit=%1"_q.arg(
+			profile.smartMinimumRequestLimit),
+		u"smartMaximumRequestLimit=%1"_q.arg(
+			profile.smartMaximumRequestLimit),
+		u"smartCapacityMinimumRequestLimit=%1"_q.arg(
+			profile.smartCapacityMinimumRequestLimit),
+	};
+	LOG(("Online playback profile: level=%1 (%2); %3").arg(
+		level).arg(
+		name).arg(
+		fields.join(u", "_q)));
 }
 
 int AveragePlaybackBytesPerSecond(int64 size, int64 duration) {

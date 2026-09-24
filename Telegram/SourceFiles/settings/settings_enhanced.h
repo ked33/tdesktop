@@ -27,6 +27,7 @@ namespace Settings {
 
 	private:
 		void setupContent(not_null<Window::SessionController *> controller);
+		void SetupEnhancedBackup(not_null<Ui::VerticalLayout *> container);
 		void SetupEnhancedNetwork(not_null<Ui::VerticalLayout *> container);
 		void SetupEnhancedMessages(
 			not_null<Window::SessionController*> controller,

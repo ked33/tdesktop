@@ -8001,6 +8001,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_filters_checkbox_remove_bot" = "Remove bot from all folders";
 "lng_filters_checkbox_remove_group" = "Remove group from all folders";
 "lng_filters_checkbox_remove_channel" = "Remove channel from all folders";
+"lng_filters_checkbox_remove_private" = "Remove chat from all folders";
 
 "lng_filters_link_create" = "Create an Invite Link";
 "lng_filters_link_cant" = "You can’t share folders which include or exclude specific chat types like 'Groups', 'Contacts', etc.";
@@ -8921,6 +8922,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_intro_about2" = "Welcome to the 64Gram Desktop app.\nIt's fast and secure.";
 
 "lng_settings_enhanced" = "Enhanced Settings";
+"lng_settings_enhanced_export" = "Export";
+"lng_settings_enhanced_import" = "Import";
+"lng_settings_enhanced_backup_about" = "Save every enhanced setting to a file, or replace them from a file. Import restarts the app.";
+"lng_settings_enhanced_export_done" = "Enhanced settings exported.";
+"lng_settings_enhanced_export_failed" = "Could not export enhanced settings.";
+"lng_settings_enhanced_import_failed" = "This file does not contain enhanced settings.";
+"lng_settings_enhanced_import_confirm" = "Replace all enhanced settings with this file and restart?";
 "lng_settings_network" = "Network";
 "lng_settings_net_upload_speed_boost" = "Upload speed boost";
 "lng_settings_net_download_speed_boost" = "Optimize online playback";

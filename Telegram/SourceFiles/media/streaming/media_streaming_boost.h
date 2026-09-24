@@ -46,6 +46,7 @@ using BoostProfiles = std::array<BoostProfile, 7>;
 [[nodiscard]] BoostProfiles LoadBoostProfiles();
 [[nodiscard]] QString SerializeBoostProfiles(const BoostProfiles &profiles);
 [[nodiscard]] const BoostProfile &BoostProfileFor(int level);
+void LogOnlinePlaybackProfile();
 [[nodiscard]] int AveragePlaybackBytesPerSecond(
 	int64 size,
 	int64 duration);

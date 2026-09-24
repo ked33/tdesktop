@@ -9,6 +9,7 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #include "data/data_peer_id.h"
 #include "rpl/producer.h"
 
+#include <QtCore/QByteArray>
 #include <QtCore/QTimer>
 
 namespace EnhancedSettings {
@@ -67,6 +68,8 @@ namespace EnhancedSettings {
 
 		void write(bool force = false);
 
+		[[nodiscard]] bool writeNow();
+
 		void addIdToBlocklist(int64 userId);
 
 		void removeIdFromBlocklist(int64 userId);
@@ -78,7 +81,7 @@ namespace EnhancedSettings {
 	private:
 		void writeDefaultFile();
 
-		void writeCurrentSettings();
+		bool writeCurrentSettings();
 
 		bool readCustomFile();
 
@@ -94,6 +97,14 @@ namespace EnhancedSettings {
 
 	void Write();
 
+	[[nodiscard]] bool WriteNow();
+
 	void Finish();
+
+	[[nodiscard]] QByteArray ExportDocument();
+
+	[[nodiscard]] bool CanImportDocument(const QByteArray &content);
+
+	[[nodiscard]] bool ImportDocument(const QByteArray &content);
 
 } // namespace EnhancedSettings

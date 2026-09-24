@@ -33,9 +33,11 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #include "core/update_checker.h"
 #include "core/enhanced_settings.h"
 #include "core/application.h"
+#include "core/file_utilities.h"
 #include "storage/localstorage.h"
 #include "data/data_session.h"
 #include "main/main_session.h"
+#include "media/streaming/media_streaming_boost.h"
 #include "media/streaming/media_streaming_diagnostics.h"
 #include "layout/layout_item_base.h"
 #include "facades.h"
@@ -45,6 +47,100 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #include "api/api_blocked_peers.h"
 
 namespace Settings {
+namespace {
+
+void ExportEnhancedSettings() {
+	const auto bytes = EnhancedSettings::ExportDocument();
+	if (bytes.isEmpty()) {
+		Ui::Toast::Show(tr::lng_settings_enhanced_export_failed(tr::now));
+		return;
+	}
+	FileDialog::GetWritePath(
+		Core::App().getFileDialogParent(),
+		tr::lng_settings_enhanced_export(tr::now),
+		u"JSON (*.json)"_q,
+		u"enhanced-settings.json"_q,
+		[=](QString &&path) {
+			if (path.isEmpty()) {
+				return;
+			}
+			auto file = QFile(path);
+			if (!file.open(QIODevice::WriteOnly)
+				|| file.write(bytes) != qint64(bytes.size())) {
+				Ui::Toast::Show(
+					tr::lng_settings_enhanced_export_failed(tr::now));
+				return;
+			}
+			Ui::Toast::Show(tr::lng_settings_enhanced_export_done(tr::now));
+		});
+}
+
+void ImportEnhancedSettings() {
+	FileDialog::GetOpenPath(
+		Core::App().getFileDialogParent(),
+		tr::lng_settings_enhanced_import(tr::now),
+		u"JSON (*.json)"_q,
+		[=](const FileDialog::OpenResult &result) {
+			auto bytes = result.remoteContent;
+			if (bytes.isEmpty()) {
+				if (result.paths.isEmpty()) {
+					return;
+				}
+				auto file = QFile(result.paths.front());
+				if (!file.open(QIODevice::ReadOnly)) {
+					Ui::Toast::Show(
+						tr::lng_settings_enhanced_import_failed(tr::now));
+					return;
+				}
+				bytes = file.readAll();
+			}
+			if (!EnhancedSettings::CanImportDocument(bytes)) {
+				Ui::Toast::Show(
+					tr::lng_settings_enhanced_import_failed(tr::now));
+				return;
+			}
+			const auto imported = bytes;
+			Ui::show(Ui::MakeConfirmBox({
+				.text = tr::lng_settings_enhanced_import_confirm(tr::now),
+				.confirmed = [=](Fn<void()> &&close) {
+					if (!EnhancedSettings::ImportDocument(imported)) {
+						close();
+						Ui::Toast::Show(
+							tr::lng_settings_enhanced_import_failed(tr::now));
+						return;
+					}
+					close();
+					Core::Restart();
+				},
+				.confirmText = tr::lng_settings_restart_now(tr::now),
+				.cancelText = tr::lng_cancel(tr::now),
+			}));
+		});
+}
+
+} // namespace
+
+	void Enhanced::SetupEnhancedBackup(
+			not_null<Ui::VerticalLayout *> container) {
+		AddSkip(container);
+		trackSearch(
+			AddButtonWithIcon(
+				container,
+				tr::lng_settings_enhanced_export(),
+				st::settingsButtonNoIcon),
+			u"enhanced/export"_q)->addClickHandler([] {
+			ExportEnhancedSettings();
+		});
+		trackSearch(
+			AddButtonWithIcon(
+				container,
+				tr::lng_settings_enhanced_import(),
+				st::settingsButtonNoIcon),
+			u"enhanced/import"_q)->addClickHandler([] {
+			ImportEnhancedSettings();
+		});
+		AddDividerText(container, tr::lng_settings_enhanced_backup_about());
+	}
 
 	void Enhanced::SetupEnhancedNetwork(not_null<Ui::VerticalLayout *> container) {
 		const auto wrap = container->add(
@@ -131,6 +227,9 @@ namespace Settings {
 		}) | rpl::on_next([=](bool toggled) {
 			SetEnhancedValue("online_playback_debug_logs", toggled);
 			Media::Streaming::RefreshPlaybackDiagnosticsSettings();
+			if (toggled) {
+				Media::Streaming::LogOnlinePlaybackProfile();
+			}
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
@@ -1609,6 +1708,14 @@ namespace Settings {
 		};
 
 		addButton(
+			u"enhanced/export"_q,
+			tr::lng_settings_enhanced_export(tr::now),
+			{ tr::lng_settings_enhanced_backup_about(tr::now) });
+		addButton(
+			u"enhanced/import"_q,
+			tr::lng_settings_enhanced_import(tr::now),
+			{ tr::lng_settings_enhanced_backup_about(tr::now) });
+		addButton(
 			u"enhanced/section_network"_q,
 			tr::lng_settings_network(tr::now));
 		addButton(
@@ -1957,6 +2064,7 @@ namespace Settings {
 
 		const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
 
+		SetupEnhancedBackup(content);
 		SetupEnhancedNetwork(content);
 		SetupEnhancedMessages(controller, content);
 		SetupEnhancedButton(content);
