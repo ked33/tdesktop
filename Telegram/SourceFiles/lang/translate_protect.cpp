@@ -167,8 +167,8 @@ TextWithEntities Restore(
 			continue;
 		}
 		hits.push_back({
-			.offset = pos,
-			.placeholderLength = span.placeholder.size(),
+			.offset = int(pos),
+			.placeholderLength = int(span.placeholder.size()),
 			.type = span.type,
 			.data = span.data,
 			.original = span.original,
@@ -190,7 +190,7 @@ TextWithEntities Restore(
 		entities.push_back({
 			hit.type,
 			hit.offset,
-			hit.original.size(),
+			int(hit.original.size()),
 			hit.data,
 		});
 	}
