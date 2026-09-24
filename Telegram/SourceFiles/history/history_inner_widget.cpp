@@ -4556,10 +4556,12 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				if (GetEnhancedBool("show_message_context_select")) {
 					addSelectMessageAction(Element::Moused()->data());
 				}
-				HistoryView::AddEphemeralMessageActions(
-					_menu,
-					_controller->uiShow(),
-					item);
+				if (item) {
+					HistoryView::AddEphemeralMessageActions(
+						_menu,
+						_controller->uiShow(),
+						item);
+				}
 			}
 		if (GetEnhancedBool("show_json")
 			&& showSpecialMpv
