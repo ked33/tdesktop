@@ -202,7 +202,7 @@ jobs:
           if "%TDESKTOP_API_ID%"=="" exit /b 1
           if "%TDESKTOP_API_HASH%"=="" exit /b 1
           cd /d %TBUILD%\%REPO_NAME%\Telegram
-          configure.bat -G "Ninja Multi-Config" ^
+          configure.bat -G "Ninja Multi-Config" qt6 ^
             -D TDESKTOP_API_ID=%TDESKTOP_API_ID% ^
             -D TDESKTOP_API_HASH=%TDESKTOP_API_HASH% ^
             -D TDESKTOP_GIT_COMMIT=%GITHUB_SHA:~0,7% ^

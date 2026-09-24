@@ -4,6 +4,16 @@ def resolve(arch):
     if sys.platform == 'darwin':
         os.environ['QT'] = '6.11.2'
     elif sys.platform == 'win32':
+        # Ninja configure.bat does not receive x64. Native Tools still sets
+        # Platform, which prepare.py already uses.
+        if not arch:
+            platform = os.environ.get('Platform', '').lower()
+            if platform == 'x64':
+                arch = 'x64'
+            elif platform == 'x86':
+                arch = 'x86'
+            elif platform == 'arm64':
+                arch = 'arm'
         # x64 on this branch uses Qt 6.11.2. ANGLE exists only in the Qt 5
         # build; Qt 6 draws the window with QRhi on Direct3D 11.
         if arch == 'arm' or arch == 'x64' or 'qt6' in sys.argv:

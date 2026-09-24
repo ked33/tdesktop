@@ -180,7 +180,7 @@ jobs:
           cd /d %TBUILD%\%REPO_NAME%\Telegram
           set "SCCACHE_LAUNCHER_FLAGS="
           if defined SCCACHE_PATH if exist "%SCCACHE_PATH%" set "SCCACHE_LAUNCHER_FLAGS=-D CMAKE_C_COMPILER_LAUNCHER=sccache -D CMAKE_CXX_COMPILER_LAUNCHER=sccache"
-          configure.bat -G "Ninja Multi-Config" ^
+          configure.bat -G "Ninja Multi-Config" qt6 ^
             -D TDESKTOP_API_ID=%TDESKTOP_API_ID% ^
             -D TDESKTOP_API_HASH=%TDESKTOP_API_HASH% ^
             -D TDESKTOP_GIT_COMMIT=%GITHUB_SHA:~0,7% ^
