@@ -20,12 +20,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_shared_media.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
+#include "settings.h"
 #include "main/main_session.h"
 #include "mtproto/mtproto_config.h"
 #include "lang/lang_keys.h"
 #include "core/shortcuts.h"
 #include "core/application.h"
 #include "core/core_settings.h"
+#include "core/enhanced_settings.h"
 #include "ui/controls/userpic_button.h"
 #include "ui/wrap/fade_wrap.h"
 #include "ui/widgets/buttons.h"
@@ -44,7 +46,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/controls/button_context_menu.h"
 #include "ui/ui_utility.h"
 
-#include <QtGui/QCursor>
 #include "rpl/producer.h"
 #include "window/window_adaptive.h"
 #include "window/window_session_controller.h"
@@ -85,6 +86,16 @@ namespace HistoryView {
 namespace {
 
 constexpr auto kEmojiInteractionSeenDuration = 3 * crl::time(1000);
+constexpr auto kMessagesProgressDetailsKey = "messages_progress_details";
+
+rpl::event_stream<bool> &MessagesProgressDetailsStream() {
+	static auto stream = rpl::event_stream<bool>();
+	return stream;
+}
+
+[[nodiscard]] bool MessagesProgressDetailsShown() {
+	return GetEnhancedBool(kMessagesProgressDetailsKey);
+}
 
 [[nodiscard]] inline bool HasGroupCallMenu(not_null<PeerData*> peer) {
 	return !peer->isUser()
@@ -161,6 +172,7 @@ TopBarWidget::TopBarWidget(
 , _noForwardsLock(this, st::topBarNoForwardsLock)
 , _search(this, st::topBarSearch)
 , _messagesProgress(this, st::topBarMessagesProgress)
+, _messagesProgressCount(this, st::topBarMessagesProgress)
 , _recentActions(this, st::topBarRecentActions)
 , _admins(this, st::topBarAdmins)
 , _infoToggle(this, st::topBarInfo)
@@ -328,6 +340,14 @@ TopBarWidget::TopBarWidget(
 	_messagesProgress->setAttribute(Qt::WA_TransparentForMouseEvents);
 	_messagesProgress->setSelectable(false);
 	_messagesProgress->hide();
+	_messagesProgressCount->setAttribute(Qt::WA_TransparentForMouseEvents);
+	_messagesProgressCount->setSelectable(false);
+	_messagesProgressCount->hide();
+	MessagesProgressDetailsStream().events(
+	) | rpl::on_next([=](bool) {
+		refreshMessagesProgress();
+		updateControlsGeometry();
+	}, lifetime());
 	_infoToggle->setAccessibleName(tr::lng_settings_section_info(tr::now));
 	_menuToggle->setAccessibleName(tr::lng_chat_menu(tr::now));
 	_back->setAccessibleName(tr::lng_go_back(tr::now));
@@ -444,59 +464,37 @@ void TopBarWidget::refreshMessagesProgress() {
 		// 		.arg(Logs::b(showSelectedState())));
 		// }
 		_messagesProgress->hide();
+		_messagesProgressCount->hide();
 		return;
 	}
 	const auto percent = FormatMessagesProgressPercent(
 		_messagesProgressCurrent,
 		_messagesProgressTotal);
-	const auto text = _messagesProgressHovered
-		? tr::lng_history_messages_progress(
-			tr::now,
-			lt_n,
-			QString::number(_messagesProgressCurrent),
-			lt_amount,
-			QString::number(_messagesProgressTotal),
-			lt_percent,
-			percent)
-		: (percent + u"%"_q);
-	_messagesProgress->setText(text);
+	_messagesProgress->setText(percent + u"%"_q);
 	_messagesProgress->resizeToWidth(_messagesProgress->textMaxWidth());
 	_messagesProgress->show();
-}
-
-void TopBarWidget::setMessagesProgressHovered(bool hovered) {
-	if (_messagesProgressHovered == hovered) {
-		return;
+	if (MessagesProgressDetailsShown()) {
+		_messagesProgressCount->setText(u"%1/%2"_q
+			.arg(_messagesProgressCurrent)
+			.arg(_messagesProgressTotal));
+		_messagesProgressCount->resizeToWidth(
+			_messagesProgressCount->textMaxWidth());
+		_messagesProgressCount->show();
+	} else {
+		_messagesProgressCount->hide();
 	}
-	_messagesProgressHovered = hovered;
-	refreshMessagesProgress();
-	updateControlsGeometry();
 }
 
-void TopBarWidget::updateMessagesProgressHover() {
-	const auto hovered = isVisible()
-		&& rect().contains(mapFromGlobal(QCursor::pos()));
-	setMessagesProgressHovered(hovered);
+void TopBarWidget::toggleMessagesProgressDetails() {
+	const auto shown = !MessagesProgressDetailsShown();
+	SetEnhancedValue(kMessagesProgressDetailsKey, shown);
+	EnhancedSettings::Write();
+	MessagesProgressDetailsStream().fire(shown);
 }
 
-void TopBarWidget::enterEventHook(QEnterEvent *e) {
-	RpWidget::enterEventHook(e);
-	updateMessagesProgressHover();
-}
-
-void TopBarWidget::leaveEventHook(QEvent *e) {
-	RpWidget::leaveEventHook(e);
-	updateMessagesProgressHover();
-}
-
-void TopBarWidget::enterFromChildEvent(QEvent *e, QWidget *child) {
-	RpWidget::enterFromChildEvent(e, child);
-	updateMessagesProgressHover();
-}
-
-void TopBarWidget::leaveToChildEvent(QEvent *e, QWidget *child) {
-	RpWidget::leaveToChildEvent(e, child);
-	updateMessagesProgressHover();
+bool TopBarWidget::messagesProgressPercentHit(QPoint position) const {
+	return !_messagesProgress->isHidden()
+		&& _messagesProgress->geometry().contains(position);
 }
 
 void TopBarWidget::setChooseForReportReason(
@@ -983,6 +981,11 @@ QRect TopBarWidget::getMembersShowAreaGeometry() const {
 }
 
 void TopBarWidget::mousePressEvent(QMouseEvent *e) {
+	if ((e->button() == Qt::LeftButton)
+		&& messagesProgressPercentHit(e->pos())) {
+		toggleMessagesProgressDetails();
+		return;
+	}
 	const auto handleClick = (e->button() == Qt::LeftButton)
 		&& (e->pos().y() < st::topBarHeight)
 		&& !showSelectedState()
@@ -1546,13 +1549,21 @@ void TopBarWidget::updateControlsGeometry() {
 		_rightTaken += _search->width() + st::topBarCallSkip;
 	}
 	if (!_messagesProgress->isHidden()) {
-		_messagesProgress->moveToRight(
-			_rightTaken,
-			otherButtonsTop
-				+ (height() - _messagesProgress->height()) / 2);
-		_rightTaken += _messagesProgress->width()
-			+ st::topBarMessagesProgressSkip;
+		const auto progressTop = otherButtonsTop
+			+ (height() - _messagesProgress->height()) / 2;
+		_messagesProgress->moveToRight(_rightTaken, progressTop);
+		_rightTaken += _messagesProgress->width();
 		_messagesProgress->raise();
+		if (!_messagesProgressCount->isHidden()) {
+			_rightTaken += st::topBarMessagesProgress.style.font->spacew;
+			_messagesProgressCount->moveToRight(
+				_rightTaken,
+				otherButtonsTop
+					+ (height() - _messagesProgressCount->height()) / 2);
+			_rightTaken += _messagesProgressCount->width();
+			_messagesProgressCount->raise();
+		}
+		_rightTaken += st::topBarMessagesProgressSkip;
 	}
 	_noForwardsLock->moveToRight(_rightTaken, otherButtonsTop);
 	if (!_noForwardsLock->isHidden()) {
