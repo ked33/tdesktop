@@ -20,9 +20,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <CoreVideo/CoreVideo.h>
 #endif // Q_OS_MAC
-#ifdef Q_OS_WIN
+#if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
 #include "media/streaming/media_streaming_d3d11_frame.h"
-#endif // Q_OS_WIN
+#endif // Q_OS_WIN && Qt >= 6.7
 
 namespace Media {
 namespace Streaming {
@@ -475,9 +475,9 @@ void VideoTrackObject::rasterizeFrame(not_null<Frame*> frame) {
 
 	fillRequests(frame);
 	frame->format = FrameFormat::None;
-#ifdef Q_OS_WIN
+#if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
 	auto retainedGpuFrame = std::move(frame->nativeFrame.retained);
-#endif // Q_OS_WIN
+#endif // Q_OS_WIN && Qt >= 6.7
 	frame->nativeFrame = NativeFrame();
 	if (frame->decoded->hw_frames_ctx) {
 #ifdef Q_OS_MAC
@@ -514,7 +514,7 @@ void VideoTrackObject::rasterizeFrame(not_null<Frame*> frame) {
 				return;
 		}
 #endif // Q_OS_MAC
-#ifdef Q_OS_WIN
+#if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
 		if (!requireARGB32()
 			&& frame->decoded->format == AV_PIX_FMT_D3D11
 			&& RetainD3D11Frame(
@@ -532,7 +532,7 @@ void VideoTrackObject::rasterizeFrame(not_null<Frame*> frame) {
 			}
 			return;
 		}
-#endif // Q_OS_WIN
+#endif // Q_OS_WIN && Qt >= 6.7
 		if (!frame->transferred) {
 			frame->transferred = FFmpeg::MakeFramePointer();
 		}
@@ -1355,10 +1355,10 @@ QImage VideoTrack::frameImage(
 		} else if (frame->format == FrameFormat::NativeTexture) {
 			frame->original = ConvertNativeFrameToARGB32(frame->nativeFrame);
 #endif // Q_OS_MAC
-#ifdef Q_OS_WIN
+#if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
 		} else if (frame->format == FrameFormat::NativeTexture) {
 			frame->original = ReadD3D11Frame(frame->nativeFrame);
-#endif // Q_OS_WIN
+#endif // Q_OS_WIN && Qt >= 6.7
 		}
 	}
 	if (GoodForRequest(
@@ -1405,10 +1405,10 @@ QImage VideoTrack::currentFrameImage() {
 		} else if (frame->format == FrameFormat::NativeTexture) {
 			frame->original = ConvertNativeFrameToARGB32(frame->nativeFrame);
 #endif // Q_OS_MAC
-#ifdef Q_OS_WIN
+#if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
 		} else if (frame->format == FrameFormat::NativeTexture) {
 			frame->original = ReadD3D11Frame(frame->nativeFrame);
-#endif // Q_OS_WIN
+#endif // Q_OS_WIN && Qt >= 6.7
 		}
 	}
 	return frame->original;
