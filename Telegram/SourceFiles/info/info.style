@@ -410,7 +410,7 @@ infoProfileTopBarBoostFooterColored: FlatLabel(infoProfileTopBarBoostFooter) {
 
 
 infoMinimalWidth: 324px;
-infoDesiredWidth: 800px;
+infoDesiredWidth: 720px;
 infoMinimalLayerMargin: 48px;
 
 InfoProfileCover {
