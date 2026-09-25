@@ -323,7 +323,17 @@ private:
 
 	void refreshFolding();
 	void toggleFolding();
+	[[nodiscard]] bool foldingHeaderToggle() const;
+	[[nodiscard]] bool foldingButtonOutside() const;
+	[[nodiscard]] bool foldingButtonVisible() const;
+	[[nodiscard]] int foldingButtonSize() const;
 	[[nodiscard]] int foldingLayoutSkip(int rightMargin) const;
+	[[nodiscard]] int foldedOuterHeight() const;
+	[[nodiscard]] QRect foldingButtonGeometry(
+		QRect geometry,
+		QRect clip) const;
+	void syncFoldingButton() const;
+	[[nodiscard]] QRect foldedTextRect(QRect geometry) const;
 	void paintFolded(Painter &p, const PaintContext &context, QRect g) const;
 	void paintFoldingButton(
 		Painter &p,

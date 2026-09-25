@@ -543,6 +543,31 @@ struct Message::Folding {
 
 namespace {
 
+constexpr auto kFoldChevronExtentRatio = 0.32;
+
+void PaintFoldChevron(
+		Painter &p,
+		const QRectF &button,
+		int direction,
+		const QColor &color) {
+	const auto center = button.center();
+	const auto extent = std::min(
+		float64(st::historyMessageFoldChevronSize),
+		float64(button.width()) * kFoldChevronExtentRatio);
+	const auto rise = extent / 2.;
+	auto path = QPainterPath();
+	path.moveTo(center.x() - extent, center.y() - direction * rise);
+	path.lineTo(center.x(), center.y() + direction * rise);
+	path.lineTo(center.x() + extent, center.y() - direction * rise);
+	auto pen = QPen(color);
+	pen.setWidthF(st::lineWidth);
+	pen.setCapStyle(Qt::RoundCap);
+	pen.setJoinStyle(Qt::RoundJoin);
+	p.setPen(pen);
+	p.setBrush(Qt::NoBrush);
+	p.drawPath(path);
+}
+
 class FoldingClickHandler final : public LambdaClickHandler {
 public:
 	FoldingClickHandler(Fn<void()> callback, bool expanded)
@@ -652,15 +677,102 @@ void Message::resetMessageFolding() {
 	}
 }
 
+bool Message::foldingHeaderToggle() const {
+	return _folding && displayFromName();
+}
+
+bool Message::foldingButtonOutside() const {
+	return _folding && !displayFromName();
+}
+
+bool Message::foldingButtonVisible() const {
+	return foldingButtonOutside() || (_folding && isMessageFolded());
+}
+
+int Message::foldingButtonSize() const {
+	return foldingHeaderToggle()
+		? std::min(
+			st::historyMessageFoldInlineButtonSize,
+			st::msgNameFont->height)
+		: st::historyMessageFoldButtonSize;
+}
+
 int Message::foldingLayoutSkip(int rightMargin) const {
+	if (!foldingButtonOutside()) {
+		return 0;
+	}
 	const auto effectiveMargin = data()->isSponsored()
-		? st::msgMargin.left() : rightMargin;
-	return (_folding && _folding->expanded)
-		? (st::historyMessageFoldButtonSize
-			+ st::historyMessageFoldButtonSkip
-			+ std::max(0, st::historyFastShareLeft
-				+ st::historyFastShareSize - effectiveMargin))
-		: 0;
+		? st::msgMargin.left()
+		: rightMargin;
+	return st::historyMessageFoldButtonSize
+		+ st::historyMessageFoldButtonSkip
+		+ std::max(
+			0,
+			st::historyFastShareLeft
+				+ st::historyFastShareSize
+				- effectiveMargin);
+}
+
+int Message::foldedOuterHeight() const {
+	return marginTop()
+		+ marginBottom()
+		+ st::msgPadding.top()
+		+ st::msgPadding.bottom()
+		+ st::msgNameFont->height;
+}
+
+QRect Message::foldingButtonGeometry(QRect geometry, QRect clip) const {
+	const auto size = foldingButtonSize();
+	if (size < 1 || geometry.width() < 1) {
+		return {};
+	}
+	if (foldingHeaderToggle()) {
+		const auto rowHeight = st::msgNameFont->height;
+		const auto rowTop = geometry.top() + st::msgPadding.top();
+		const auto top = rowTop + std::max((rowHeight - size) / 2, 0);
+		const auto left = geometry.left()
+			+ geometry.width()
+			- st::msgPadding.right()
+			- size;
+		return QRect(left, top, size, size);
+	}
+	const auto visible = geometry.intersected(clip);
+	const auto centerY = visible.isEmpty()
+		? geometry.center().y()
+		: visible.center().y();
+	const auto minTop = geometry.top();
+	const auto maxTop = std::max(minTop, geometry.bottom() - size + 1);
+	const auto top = std::clamp(centerY - size / 2, minTop, maxTop);
+	const auto left = geometry.left()
+		+ geometry.width()
+		+ st::historyFastShareLeft
+		+ st::historyFastShareSize
+		+ st::historyMessageFoldButtonSkip;
+	return QRect(left, top, size, size);
+}
+
+void Message::syncFoldingButton() const {
+	if (!_folding) {
+		return;
+	} else if (!foldingButtonVisible()) {
+		_folding->button = QRect();
+	} else if (foldingHeaderToggle() || _folding->button.isEmpty()) {
+		const auto geometry = countGeometry();
+		_folding->button = foldingButtonGeometry(geometry, geometry);
+	}
+}
+
+QRect Message::foldedTextRect(QRect geometry) const {
+	auto textRect = geometry.marginsRemoved(st::msgPadding);
+	if (!foldingHeaderToggle()) {
+		return textRect;
+	}
+	textRect.setWidth(std::max(
+		0,
+		textRect.width()
+			- foldingButtonSize()
+			- st::historyMessageFoldButtonSkip));
+	return textRect;
 }
 
 void Message::paintFolded(
@@ -677,10 +789,7 @@ void Message::paintFolded(
 		.outbg = context.outbg,
 		.rounding = countMessageRounding(),
 	});
-	auto textRect = g.marginsRemoved(st::msgPadding);
-	textRect.setWidth(std::max(0, textRect.width()
-		- st::historyMessageFoldButtonSize
-		- st::historyMessageFoldButtonSkip));
+	auto textRect = foldedTextRect(g);
 	if (displayFromName()) {
 		fromNameUpdated(textRect.width()
 			+ st::msgPadding.left() + st::msgPadding.right());
@@ -688,7 +797,8 @@ void Message::paintFolded(
 	} else {
 		p.setFont(st::msgNameFont);
 		p.setPen(context.messageStyle()->msgServiceFg);
-		p.drawTextLeft(textRect.x(),
+		p.drawTextLeft(
+			textRect.x(),
 			textRect.y() + (textRect.height() - st::msgNameFont->height) / 2,
 			width(),
 			st::msgNameFont->elided(_folding->label, textRect.width()));
@@ -699,35 +809,26 @@ void Message::paintFoldingButton(
 		Painter &p,
 		const PaintContext &context,
 		QRect g) const {
-	if (!_folding || isHidden()) {
+	if (!_folding || isHidden() || !foldingButtonVisible()) {
+		if (_folding) {
+			_folding->button = QRect();
+		}
 		return;
 	}
-	const auto size = st::historyMessageFoldButtonSize;
-	const auto skip = st::historyMessageFoldButtonSkip;
-	const auto visible = g.intersected(context.area);
-	const auto centerY = visible.isEmpty() ? g.center().y() : visible.center().y();
-	const auto left = isMessageFolded()
-		? (g.right() - st::msgPadding.right() - size + 1)
-		: (g.right() + st::historyFastShareLeft
-			+ st::historyFastShareSize + skip);
-	const auto top = std::clamp(centerY - size / 2,
-		g.top(), std::max(g.top(), g.bottom() - size + 1));
-	_folding->button = QRect(left, top, size, size);
-	const auto button = style::rtlrect(_folding->button, width());
+	_folding->button = foldingButtonGeometry(g, context.area);
+	if (_folding->button.isEmpty()) {
+		return;
+	}
+	const auto button = QRectF(style::rtlrect(_folding->button, width()));
 	const auto hq = PainterHighQualityEnabler(p);
 	p.setPen(Qt::NoPen);
 	p.setBrush(context.st->msgServiceBg());
 	p.drawEllipse(button);
-	auto pen = QPen(context.st->msgServiceFg());
-	pen.setWidth(st::lineWidth);
-	p.setPen(pen);
-	const auto center = button.center();
-	const auto arrow = st::historyMessageFoldChevronSize;
-	const auto direction = isMessageFolded() ? 1 : -1;
-	p.drawLine(center + QPoint(-arrow, -direction * arrow / 2),
-		center + QPoint(0, direction * arrow / 2));
-	p.drawLine(center + QPoint(0, direction * arrow / 2),
-		center + QPoint(arrow, -direction * arrow / 2));
+	PaintFoldChevron(
+		p,
+		button,
+		isMessageFolded() ? 1 : -1,
+		context.st->msgServiceFg()->c);
 }
 
 TextState Message::foldedTextState(QPoint point) const {
@@ -736,10 +837,7 @@ TextState Message::foldedTextState(QPoint point) const {
 	if (!g.contains(point)) {
 		return result;
 	}
-	auto textRect = g.marginsRemoved(st::msgPadding);
-	textRect.setWidth(std::max(0, textRect.width()
-		- st::historyMessageFoldButtonSize
-		- st::historyMessageFoldButtonSkip));
+	auto textRect = foldedTextRect(g);
 	if (!_folding->button.contains(point)) {
 		getStateFromName(point, textRect, &result);
 	}
@@ -1574,10 +1672,7 @@ QSize Message::performCountOptimalSize() {
 	if (isMessageFolded() && !isHidden()) {
 		_bubbleWidthLimit = st::msgMaxWidth;
 		refreshRightBadge();
-		return QSize(st::msgMaxWidth,
-			st::msgPadding.top() + st::msgPadding.bottom()
-				+ std::max(st::msgNameFont->height,
-					st::historyMessageFoldButtonSize));
+		return QSize(st::msgMaxWidth, foldedOuterHeight());
 	}
 
 	const auto replyData = item->Get<HistoryMessageReply>();
@@ -3518,11 +3613,16 @@ void Message::paintRichText(
 }
 
 PointState Message::pointState(QPoint point) const {
-	if (_folding && _folding->button.contains(point) && !isHidden()) {
-		return PointState::Inside;
-	} else if (isMessageFolded()) {
+	if (_folding && !isHidden()) {
+		syncFoldingButton();
+		if (_folding->button.contains(point)) {
+			return PointState::Inside;
+		}
+	}
+	if (isMessageFolded()) {
 		return !isHidden() && countGeometry().contains(point)
-			? PointState::Inside : PointState::Outside;
+			? PointState::Inside
+			: PointState::Outside;
 	}
 	auto g = countGeometry();
 	if (g.width() < 1 || isHidden()) {
@@ -4184,10 +4284,12 @@ TextState Message::textState(
 		StateRequest request) const {
 	_fromLinkRipplePointSet = 0;
 	if (_folding && !isHidden()) {
+		syncFoldingButton();
+		if (_folding->button.contains(point)) {
+			return TextState(data(), _folding->link);
+		}
 		if (isMessageFolded()) {
 			return foldedTextState(point);
-		} else if (_folding->button.contains(point)) {
-			return TextState(data(), _folding->link);
 		}
 	}
 
@@ -4515,7 +4617,14 @@ bool Message::getStateFromName(
 	if (!displayFromName()) {
 		return false;
 	}
-	if (point.y() >= trect.top() && point.y() < trect.top() + st::msgNameFont->height) {
+	const auto nameTop = trect.top();
+	if (_folding
+		&& point.y() >= nameTop - st::msgPadding.top()
+		&& point.y() < nameTop) {
+		outResult->link = _folding->link;
+		return true;
+	}
+	if (point.y() >= nameTop && point.y() < nameTop + st::msgNameFont->height) {
 		auto availableLeft = trect.left();
 		auto availableWidth = trect.width();
 		const auto badgeWidth = rightBadgeWidth();
@@ -4689,6 +4798,10 @@ bool Message::getStateFromName(
 				outResult->link = badge->tagLink;
 				return true;
 			}
+		}
+		if (_folding) {
+			outResult->link = _folding->link;
+			return true;
 		}
 	}
 	trect.setTop(trect.top() + st::msgNameFont->height);
@@ -6877,14 +6990,27 @@ bool Message::isCommentsRootView() const {
 
 QRect Message::countGeometry() const {
 	if (isMessageFolded()) {
+		const auto useMoreSpace = (delegate()->elementChatMode()
+			== ElementChatMode::Narrow);
+		const auto marginRight = useMoreSpace
+			? st::msgMargin.left()
+			: st::msgMargin.right();
+		const auto outside = foldingButtonOutside()
+			? foldingLayoutSkip(marginRight)
+			: 0;
 		const auto left = st::msgMargin.left()
 			+ (hasFromPhoto() ? st::msgPhotoSkip : 0);
-		const auto available = std::max(0,
-			width() - left - st::msgMargin.right());
+		const auto available = std::max(
+			0,
+			width() - left - marginRight - outside);
 		const auto contentWidth = std::min(available, st::msgMaxWidth);
-		return QRect(data()->isSponsored()
-			? width() - st::msgMargin.left() - contentWidth : left,
-			marginTop(), contentWidth,
+		const auto contentLeft = data()->isSponsored()
+			? (width() - st::msgMargin.left() - outside - contentWidth)
+			: left;
+		return QRect(
+			contentLeft,
+			marginTop(),
+			contentWidth,
 			height() - marginTop() - marginBottom());
 	}
 	const auto item = data();
@@ -7008,10 +7134,7 @@ int Message::resizeContentGetHeight(int newWidth) {
 	if (isHidden()) {
 		return marginTop() + marginBottom();
 	} else if (isMessageFolded()) {
-		return marginTop() + marginBottom()
-			+ st::msgPadding.top() + st::msgPadding.bottom()
-			+ std::max(st::msgNameFont->height,
-				st::historyMessageFoldButtonSize);
+		return foldedOuterHeight();
 	} else if (newWidth < st::msgMinWidth) {
 		return height();
 	}

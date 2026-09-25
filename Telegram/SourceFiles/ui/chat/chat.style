@@ -493,6 +493,7 @@ historyAdminLogWhatIsThis: IconButton(historyAttach) {
 historyFastShareSize: topPeersSelectorUserpicSize;
 historyFastShareLeft: 13px;
 historyMessageFoldButtonSize: 24px;
+historyMessageFoldInlineButtonSize: 14px;
 historyMessageFoldButtonSkip: 6px;
 historyMessageFoldChevronSize: 5px;
 historyFastShareBottom: 5px;
