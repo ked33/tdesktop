@@ -863,6 +863,35 @@ void BuildANGLEOption(SectionBuilder &builder) {
 		.keywords = { u"angle"_q, u"opengl"_q, u"d3d"_q, u"graphics"_q },
 	});
 }
+#elif defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+void BuildD3D11Option(SectionBuilder &builder) {
+	const auto controller = builder.controller();
+	const auto direct3d = builder.addButton({
+		.id = u"advanced/d3d11"_q,
+		.title = tr::lng_settings_enable_d3d11(),
+		.st = &st::settingsButtonNoIcon,
+		.toggled = rpl::single(!Core::App().settings().disableOpenGL()),
+		.keywords = { u"d3d11"_q, u"direct3d"_q, u"graphics"_q, u"gpu"_q },
+	});
+
+	if (direct3d) {
+		direct3d->toggledValue(
+		) | rpl::filter([](bool enabled) {
+			return (enabled == Core::App().settings().disableOpenGL());
+		}) | rpl::on_next([=](bool enabled) {
+			const auto confirmed = crl::guard(direct3d, [=] {
+				Core::App().settings().setDisableOpenGL(!enabled);
+				Local::writeSettings();
+				Core::Restart();
+			});
+			controller->show(Ui::MakeConfirmBox({
+				.text = tr::lng_settings_need_restart(),
+				.confirmed = confirmed,
+				.confirmText = tr::lng_settings_restart_now(),
+			}));
+		}, direct3d->lifetime());
+	}
+}
 #else
 void BuildOpenGLOption(SectionBuilder &builder) {
 	const auto controller = builder.controller();
@@ -936,6 +965,8 @@ void BuildPerformanceSection(SectionBuilder &builder) {
 
 #ifdef DESKTOP_APP_USE_ANGLE
 	BuildANGLEOption(builder);
+#elif defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+	BuildD3D11Option(builder);
 #else
 	if constexpr (!Platform::IsMac()) {
 		BuildOpenGLOption(builder);

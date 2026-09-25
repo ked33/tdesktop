@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - merge
+      - win-qt-6.11.2
   workflow_dispatch:
 
 jobs:
@@ -51,6 +52,7 @@ jobs:
           DOC_PATH="$GITHUB_WORKSPACE/$TBUILD_REL/$REPO_NAME/docs/building-win.md"
           {
             find "$PREPARE_ROOT" -type f -print0 | sort -z | xargs -0 sha256sum
+            sha256sum "$GITHUB_WORKSPACE/$TBUILD_REL/$REPO_NAME/Telegram/build/qt_version.py"
             if [ -f "$DOC_PATH" ]; then
               sha256sum "$DOC_PATH"
             fi
@@ -88,10 +90,12 @@ jobs:
           path: |
             ${{ env.LibrariesPath }}\[qQ]t[_-]*
             ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
-          key: win64-qt-release-${{ env.CACHE_KEY }}
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*.pdb
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*d.lib
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*d.prl
+          key: win64-qt-6.11.2-${{ env.CACHE_KEY }}
           restore-keys: |
-            win64-qt-release-
-            win64-qt-${{ env.CACHE_KEY }}
+            win64-qt-6.11.2-
 
       - name: Set up sccache
         id: sccache
@@ -166,6 +170,9 @@ jobs:
           path: |
             ${{ env.LibrariesPath }}\[qQ]t[_-]*
             ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*.pdb
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*d.lib
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*d.prl
           key: ${{ steps.cache_qt.outputs.cache-primary-key }}
 
       - name: Configure project
@@ -179,7 +186,7 @@ jobs:
           cd /d %TBUILD%\%REPO_NAME%\Telegram
           set "SCCACHE_LAUNCHER_FLAGS="
           if defined SCCACHE_PATH if exist "%SCCACHE_PATH%" set "SCCACHE_LAUNCHER_FLAGS=-D CMAKE_C_COMPILER_LAUNCHER=sccache -D CMAKE_CXX_COMPILER_LAUNCHER=sccache"
-          configure.bat -G "Ninja Multi-Config" ^
+          configure.bat -G "Ninja Multi-Config" qt6 ^
             -D TDESKTOP_API_ID=%TDESKTOP_API_ID% ^
             -D TDESKTOP_API_HASH=%TDESKTOP_API_HASH% ^
             -D TDESKTOP_GIT_COMMIT=%GITHUB_SHA:~0,7% ^

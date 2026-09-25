@@ -90,10 +90,12 @@ jobs:
           path: |
             ${{ env.LibrariesPath }}\[qQ]t[_-]*
             ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
-          key: win64-qt-release-${{ env.CACHE_KEY }}
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*.pdb
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*d.lib
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*d.prl
+          key: win64-qt-6.11.2-${{ env.CACHE_KEY }}
           restore-keys: |
-            win64-qt-release-
-            win64-qt-${{ env.CACHE_KEY }}
+            win64-qt-6.11.2-
 
       # GitHub-hosted (windows-2022): puts sccache.exe on PATH and uses
       # the ghac backend. On Avrea that PATH wrap makes meson treat
@@ -191,6 +193,9 @@ jobs:
           path: |
             ${{ env.LibrariesPath }}\[qQ]t[_-]*
             ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*.pdb
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*d.lib
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*d.prl
           key: ${{ steps.cache_qt.outputs.cache-primary-key }}
 
       - name: Configure project
@@ -202,7 +207,7 @@ jobs:
           if "%TDESKTOP_API_ID%"=="" exit /b 1
           if "%TDESKTOP_API_HASH%"=="" exit /b 1
           cd /d %TBUILD%\%REPO_NAME%\Telegram
-          configure.bat -G "Ninja Multi-Config" ^
+          configure.bat -G "Ninja Multi-Config" qt6 ^
             -D TDESKTOP_API_ID=%TDESKTOP_API_ID% ^
             -D TDESKTOP_API_HASH=%TDESKTOP_API_HASH% ^
             -D TDESKTOP_GIT_COMMIT=%GITHUB_SHA:~0,7% ^

@@ -77,6 +77,7 @@ private:
 	void paintSaveMsg(QRect outer) override;
 	void paintChapter(QRect outer) override;
 	void paintSpeedBoost(QRect outer) override;
+	void paintWheelHint(QRect outer) override;
 	void paintControlsStart() override;
 	void paintControl(
 		Over control,

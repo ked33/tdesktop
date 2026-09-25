@@ -88,6 +88,12 @@ FilteredCommandLineArguments::FilteredCommandLineArguments(
 		pushArgument("cocoa:fontengine=freetype");
 #endif // !Q_OS_WIN
 	}
+#if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	else {
+		pushArgument("-platform");
+		pushArgument("windows:fontengine=gdi");
+	}
+#endif // Q_OS_WIN && Qt >= 6
 #endif // Q_OS_WIN || Q_OS_MAC
 
 	pushArgument(nullptr);

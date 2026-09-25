@@ -1593,6 +1593,13 @@ void OverlayWidget::RendererRhi::paintSpeedBoost(QRect outer) {
 	}, true);
 }
 
+void OverlayWidget::RendererRhi::paintWheelHint(QRect outer) {
+	paintUsingRaster(outer, [&](Painter &p) {
+		const auto newOuter = QRect(QPoint(), outer.size());
+		_owner->paintWheelHintContent(p, newOuter, newOuter);
+	}, true);
+}
+
 auto OverlayWidget::RendererRhi::controlMeta(Over control) const
 -> Control {
 	const auto stories = [&] {
