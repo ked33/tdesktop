@@ -568,6 +568,18 @@ void PaintFoldChevron(
 	p.drawPath(path);
 }
 
+[[nodiscard]] QRect SponsoredRightActionRect(QRect geometry, QSize size) {
+	const auto skip = std::clamp(
+		(geometry.height() - size.height()) / 2,
+		0,
+		st::historyFastShareBottom);
+	return QRect(
+		geometry.left() + geometry.width() + st::historyFastShareLeft,
+		geometry.top() + skip,
+		size.width(),
+		size.height());
+}
+
 class FoldingClickHandler final : public LambdaClickHandler {
 public:
 	FoldingClickHandler(Fn<void()> callback, bool expanded)
@@ -698,7 +710,7 @@ int Message::foldingButtonSize() const {
 }
 
 int Message::foldingLayoutSkip(int rightMargin) const {
-	if (!foldingButtonOutside()) {
+	if (!foldingButtonOutside() || data()->isSponsored()) {
 		return 0;
 	}
 	const auto effectiveMargin = data()->isSponsored()
@@ -735,6 +747,17 @@ QRect Message::foldingButtonGeometry(QRect geometry, QRect clip) const {
 			- st::msgPadding.right()
 			- size;
 		return QRect(left, top, size, size);
+	}
+	if (data()->isSponsored()) {
+		const auto action = rightActionSize().value_or(QSize(
+			st::historyFastCloseSize,
+			st::historyFastCloseSize));
+		const auto placed = SponsoredRightActionRect(geometry, action);
+		return QRect(
+			placed.left() + (placed.width() - size) / 2,
+			placed.top() + placed.height(),
+			size,
+			size);
 	}
 	const auto visible = geometry.intersected(clip);
 	const auto centerY = visible.isEmpty()
@@ -2132,6 +2155,24 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 
 	if (isMessageFolded()) {
 		paintFolded(p, context, g);
+		if (data()->isSponsored()) {
+			if (const auto size = rightActionSize()) {
+				const auto placed = SponsoredRightActionRect(g, *size);
+				const auto o = p.opacity();
+				if (selectionModeResult.progress > 0) {
+					p.setOpacity(1. - selectionModeResult.progress);
+				}
+				drawRightAction(
+					p,
+					context,
+					placed.left(),
+					placed.top(),
+					width());
+				if (selectionModeResult.progress > 0) {
+					p.setOpacity(o);
+				}
+			}
+		}
 	} else {
 		const auto entry = logEntryOriginal();
 		const auto check = factcheckBlock();
@@ -3620,9 +3661,19 @@ PointState Message::pointState(QPoint point) const {
 		}
 	}
 	if (isMessageFolded()) {
-		return !isHidden() && countGeometry().contains(point)
-			? PointState::Inside
-			: PointState::Outside;
+		if (!isHidden() && countGeometry().contains(point)) {
+			return PointState::Inside;
+		}
+		if (data()->isSponsored()) {
+			if (const auto size = rightActionSize()) {
+				if (SponsoredRightActionRect(
+						countGeometry(),
+						*size).contains(point)) {
+					return PointState::Inside;
+				}
+			}
+		}
+		return PointState::Outside;
 	}
 	auto g = countGeometry();
 	if (g.width() < 1 || isHidden()) {
@@ -4289,6 +4340,19 @@ TextState Message::textState(
 			return TextState(data(), _folding->link);
 		}
 		if (isMessageFolded()) {
+			if (data()->isSponsored()) {
+				if (const auto size = rightActionSize()) {
+					const auto placed = SponsoredRightActionRect(
+						countGeometry(),
+						*size);
+					if (placed.contains(point)) {
+						auto result = TextState(data());
+						result.link = rightActionLink(
+							point - placed.topLeft());
+						return result;
+					}
+				}
+			}
 			return foldedTextState(point);
 		}
 	}
