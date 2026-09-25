@@ -193,7 +193,7 @@ private:
 	[[nodiscard]] QString currentSearchQuery() const;
 	[[nodiscard]] int currentSearchQueryCursorPosition() const;
 	void clearSearchField();
-	void noteRecentSearchQuery(const QString &query);
+	void updateRecentSearchDraft();
 	void commitRecentSearchDraft();
 	void searchRequested(SearchRequestDelay delay);
 	bool search(bool inCache = false, SearchRequestDelay after = {});

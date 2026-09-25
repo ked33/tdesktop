@@ -65,6 +65,7 @@ private:
 	rpl::event_stream<QString> _chosen;
 	rpl::event_stream<Ui::ScrollToRequest> _scrollToRequests;
 	base::unique_qptr<Ui::PopupMenu> _menu;
+	bool _rebuildScheduled = false;
 
 };
 

@@ -112,7 +112,14 @@ RecentQueries::RecentQueries(
 
 	_controller->session().recentSearchQueries().updates(
 	) | rpl::on_next([=] {
-		crl::on_main(this, [=] { rebuild(); });
+		if (_rebuildScheduled) {
+			return;
+		}
+		_rebuildScheduled = true;
+		crl::on_main(this, [=] {
+			_rebuildScheduled = false;
+			rebuild();
+		});
 	}, lifetime());
 }
 
@@ -179,7 +186,8 @@ bool RecentQueries::choose() {
 	if (selected < 0 || selected >= int(_queries.size())) {
 		return false;
 	}
-	_chosen.fire_copy(_queries[selected]);
+	const auto query = _queries[selected];
+	_chosen.fire_copy(query);
 	return true;
 }
 
@@ -218,10 +226,10 @@ void RecentQueries::setupHeader() {
 	clear->setClickedCallback([=] {
 		controller->show(Ui::MakeConfirmBox({
 			.text = tr::lng_recent_clear_sure(tr::now),
-			.confirmed = [=](Fn<void()> close) {
+			.confirmed = crl::guard(controller, [=](Fn<void()> close) {
 				controller->session().recentSearchQueries().clear();
 				close();
-			},
+			}),
 		}));
 	});
 	rpl::combine(
@@ -312,10 +320,10 @@ void RecentQueries::showMenu(not_null<QWidget*> row, const QString &query) {
 	_menu->addAction(tr::lng_recent_clear_all(tr::now), [=] {
 		controller->show(Ui::MakeConfirmBox({
 			.text = tr::lng_recent_clear_sure(tr::now),
-			.confirmed = [=](Fn<void()> close) {
+			.confirmed = crl::guard(controller, [=](Fn<void()> close) {
 				controller->session().recentSearchQueries().clear();
 				close();
-			},
+			}),
 		}));
 	}, &st::menuIconCancel);
 	_menu->popup(QCursor::pos());

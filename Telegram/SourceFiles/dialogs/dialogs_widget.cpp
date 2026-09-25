@@ -56,6 +56,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
+#include "main/main_account.h"
 #include "main/main_domain.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
@@ -1010,10 +1011,7 @@ void Widget::setupSwipeBack() {
 void Widget::chosenRow(const ChosenRow &row) {
 	storiesToggleExplicitExpand(false);
 
-	if (!_searchState.inChat && !_searchState.query.trimmed().isEmpty()) {
-		noteRecentSearchQuery(_searchState.query);
-		commitRecentSearchDraft();
-	}
+	commitRecentSearchDraft();
 
 	if (!row.sponsoredRandomId.isEmpty()) {
 		auto &messages = session().sponsoredMessages();
@@ -2371,14 +2369,14 @@ void Widget::updateSuggestions(anim::type animated) {
 		}, _suggestions->lifetime());
 		_searchSuggestionsLocked = false;
 
+		const auto suggestions = _suggestions.get();
 		_suggestions->recentQueryChosen(
 		) | rpl::on_next([=](const QString &query) {
-			if (!query.isEmpty() && _recentSearchDraft != query) {
+			crl::on_main(suggestions, [=] {
 				commitRecentSearchDraft();
-			}
-			session().recentSearchQueries().bump(query);
-			_recentSearchDraft = query;
-			setSearchQuery(query);
+				session().recentSearchQueries().bump(query);
+				setSearchQuery(query);
+			});
 		}, _suggestions->lifetime());
 
 		rpl::merge(
@@ -3282,7 +3280,9 @@ void Widget::submit() {
 	if (_suggestions) {
 		_suggestions->chooseRow();
 		return;
-	} else if (_inner->chooseRow()) {
+	}
+	commitRecentSearchDraft();
+	if (_inner->chooseRow()) {
 		return;
 	}
 	const auto state = _inner->state();
@@ -3367,7 +3367,6 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 		.peer = (inPeer != nullptr),
 	};
 	if (trimmed.isEmpty() && !fromPeer && inTags.empty()) {
-		noteRecentSearchQuery(QString());
 		cancelSearchRequest();
 
 		// Otherwise inside first searchApplyEmpty we call searchMode(),
@@ -3529,7 +3528,6 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 	}
 	if (!inCache || result) {
 		updatePornSearch();
-		noteRecentSearchQuery(query);
 	}
 	return result;
 }
@@ -3569,7 +3567,6 @@ bool Widget::searchPornMessages(bool inCache) {
 	}
 	updatePornSearch();
 	updateNativeSearchState();
-	noteRecentSearchQuery(empty ? QString() : query);
 	return true;
 }
 
@@ -3677,23 +3674,13 @@ bool Widget::searchForTopicsRequired(const QString &query) const {
 		&& !_openedForum->topicsList()->loaded();
 }
 
-void Widget::noteRecentSearchQuery(const QString &query) {
-	if (_searchState.inChat) {
+void Widget::updateRecentSearchDraft() {
+	if (_searchState.inChat || _searchState.query.trimmed().isEmpty()) {
 		commitRecentSearchDraft();
-		return;
+	} else {
+		_recentSearchDraft = Data::NormalizeRecentSearchQuery(
+			_searchState.query);
 	}
-	const auto normalized = Data::NormalizeRecentSearchQuery(query);
-	if (normalized.isEmpty()) {
-		commitRecentSearchDraft();
-		return;
-	}
-	const auto &current = _recentSearchDraft;
-	if (!current.isEmpty()
-		&& !normalized.startsWith(current, Qt::CaseInsensitive)
-		&& !current.startsWith(normalized, Qt::CaseInsensitive)) {
-		commitRecentSearchDraft();
-	}
-	_recentSearchDraft = normalized;
 }
 
 void Widget::commitRecentSearchDraft() {
@@ -4709,13 +4696,8 @@ bool Widget::applySearchState(SearchState state) {
 	_searchInMigrated = migrateFrom
 		? peer->owner().history(migrateFrom).get()
 		: nullptr;
-	if (!_searchState.inChat
-		&& !_searchState.query.isEmpty()
-		&& (state.query.isEmpty() || state.inChat)) {
-		noteRecentSearchQuery(_searchState.query);
-		commitRecentSearchDraft();
-	}
 	_searchState = state;
+	updateRecentSearchDraft();
 	if (queryChanged) {
 		cancelSearchRequest();
 		_searchQuery = QString();
@@ -5585,7 +5567,9 @@ bool Widget::cancelSearch(CancelSearchOptions options) {
 }
 
 Widget::~Widget() {
-	commitRecentSearchDraft();
+	if (session().account().sessionExists()) {
+		commitRecentSearchDraft();
+	}
 	cancelSearchRequest();
 
 	// Destructor may hide the bar and attempt to double-destroy it.

@@ -87,6 +87,8 @@ void RecentSearchQueries::remove(const QString &entry) {
 	if (query.isEmpty()) {
 		return;
 	}
+	_session->local().readSearchSuggestions();
+
 	const auto i = ranges::find_if(_list, [&](const QString &other) {
 		return SameQuery(other, query);
 	});
