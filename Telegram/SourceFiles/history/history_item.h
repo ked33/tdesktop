@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 class HiddenSenderInfo;
 class History;
+class HistoryItem;
 class DocumentData;
 class PhotoData;
 
@@ -81,6 +82,10 @@ class ServiceMessagePainter;
 namespace Iv {
 struct RichPage;
 } // namespace Iv
+
+namespace MessageFolding {
+[[nodiscard]] bool Matches(not_null<HistoryItem*> item);
+} // namespace MessageFolding
 
 namespace Ui {
 struct ColorCollectible;
@@ -843,6 +848,7 @@ private:
 	friend class HistoryView::Message;
 	friend class HistoryView::Service;
 	friend class HistoryView::ServiceMessagePainter;
+	friend bool MessageFolding::Matches(not_null<HistoryItem*> item);
 
 };
 
