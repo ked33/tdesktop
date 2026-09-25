@@ -27,6 +27,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/gl/gl_detection.h"
 #include "ui/chat/chat_style_radius.h"
 #include "ui/controls/compose_ai_button_factory.h"
+#include "base/assertion.h"
 #include "base/options.h"
 #include "boxes/moderate_messages_box.h"
 #include "core/application.h"
@@ -172,6 +173,13 @@ namespace {
 #endif
 	} else if (id == FFmpeg::kOptionFFmpegMultiThread) {
 		return tr::lng_settings_experimental_ffmpeg_multithread(tr::now);
+	} else if (id == kOptionUseNewChatView) {
+		return tr::lng_settings_experimental_new_chat_view(tr::now);
+	} else if (id == Ui::GL::kOptionEnableVulkanRhi) {
+		return tr::lng_settings_experimental_enable_vulkan(tr::now);
+	} else if (id == Window::Notifications::kOptionMacModernNotifications) {
+		return tr::lng_settings_experimental_mac_modern_notifications(
+			tr::now);
 	}
 	const auto &name = option.name();
 	return name.isEmpty() ? option.id() : name;
@@ -281,6 +289,15 @@ namespace {
 #endif
 	} else if (id == FFmpeg::kOptionFFmpegMultiThread) {
 		return tr::lng_settings_experimental_ffmpeg_multithread_desc(tr::now);
+	} else if (id == kOptionUseNewChatView) {
+		return tr::lng_settings_experimental_new_chat_view_desc(tr::now);
+	} else if (id == Ui::GL::kOptionUseQtRhi) {
+		return tr::lng_settings_experimental_use_qt_rhi_desc(tr::now);
+	} else if (id == Ui::GL::kOptionEnableVulkanRhi) {
+		return tr::lng_settings_experimental_enable_vulkan_desc(tr::now);
+	} else if (id == Window::Notifications::kOptionMacModernNotifications) {
+		return tr::lng_settings_experimental_mac_modern_notifications_desc(
+			tr::now);
 	}
 	return option.description();
 }
@@ -342,14 +359,20 @@ void SetupCopyDeepLink(
 		*menu = base::make_unique_q<Ui::PopupMenu>(
 			button,
 			st::popupMenuWithIcons);
-		(*menu)->addAction(u"Copy deep link"_q, [=] {
-			TextUtilities::SetClipboardText({ link });
-			window->showToast({
-				.text = { u"Deep link copied to clipboard."_q },
-				.iconLottie = u"toast/voip_invite"_q,
-				.iconLottieSize = st::toastLottieIconSize,
-			});
-		}, &st::menuIconCopy);
+		(*menu)->addAction(
+			tr::lng_settings_experimental_copy_deep_link(tr::now),
+			[=] {
+				TextUtilities::SetClipboardText({ link });
+				window->showToast({
+					.text = {
+						tr::lng_settings_experimental_deep_link_copied(
+							tr::now),
+					},
+					.iconLottie = u"toast/voip_invite"_q,
+					.iconLottieSize = st::toastLottieIconSize,
+				});
+			},
+			&st::menuIconCopy);
 		(*menu)->popup(QCursor::pos());
 		e->accept();
 	}, button->lifetime());
@@ -498,10 +521,9 @@ QString AddFavoriteLinkButton(
 		Fn<void(const QString&, not_null<QWidget*>)> registerHighlight) {
 	const auto option = &base::options::lookup<QString>(
 		Window::kOptionFolderFavoriteLink);
-	const auto name = option->name().isEmpty()
-		? option->id()
-		: option->name();
-	const auto &description = option->description();
+	const auto name = tr::lng_settings_experimental_favorite_folder(tr::now);
+	const auto description
+		= tr::lng_settings_experimental_favorite_folder_desc(tr::now);
 
 	const auto wrap = container->add(
 		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
@@ -595,13 +617,45 @@ void SetupExperimental(
 		headerWrap->toggle(text.trimmed().isEmpty(), anim::type::instant);
 	}, headerWrap->lifetime());
 
+	enum class ExperimentalGroup {
+		Chats,
+		Messages,
+		Profile,
+		Stickers,
+		Media,
+		Notifications,
+		Interface,
+		System,
+	};
+	const auto groupTitle = [](ExperimentalGroup group)
+	-> rpl::producer<QString> {
+		switch (group) {
+		case ExperimentalGroup::Chats:
+			return tr::lng_settings_experimental_chats();
+		case ExperimentalGroup::Messages:
+			return tr::lng_settings_experimental_messages();
+		case ExperimentalGroup::Profile:
+			return tr::lng_settings_experimental_profile();
+		case ExperimentalGroup::Stickers:
+			return tr::lng_settings_experimental_stickers();
+		case ExperimentalGroup::Media:
+			return tr::lng_settings_experimental_media();
+		case ExperimentalGroup::Notifications:
+			return tr::lng_settings_experimental_notifications();
+		case ExperimentalGroup::Interface:
+			return tr::lng_settings_experimental_interface();
+		case ExperimentalGroup::System:
+			return tr::lng_settings_experimental_system();
+		}
+		Unexpected("Experimental group in Settings.");
+	};
 	struct Category {
-		QString title;
+		ExperimentalGroup group;
 		std::vector<const char*> options;
 	};
 	const auto categories = std::vector<Category>{
 		{
-			u"Chats"_q,
+			ExperimentalGroup::Chats,
 			{
 				Dialogs::kOptionForumHideChatsList,
 				Dialogs::kOptionDialogsUnreadOnTop,
@@ -614,7 +668,7 @@ void SetupExperimental(
 			}
 		},
 		{
-			u"Messages"_q,
+			ExperimentalGroup::Messages,
 			{
 				Ui::kOptionUseSmallMsgBubbleRadius,
 				Ui::kOptionUncoloredQuote,
@@ -625,7 +679,7 @@ void SetupExperimental(
 			}
 		},
 		{
-			u"Profile"_q,
+			ExperimentalGroup::Profile,
 			{
 				Window::kOptionViewProfileInChatsListContextMenu,
 				Info::Profile::kOptionShowPeerIdBelowAbout,
@@ -635,14 +689,14 @@ void SetupExperimental(
 			}
 		},
 		{
-			u"Stickers and emoji"_q,
+			ExperimentalGroup::Stickers,
 			{
 				ChatHelpers::kOptionTabbedPanelShowOnClick,
 				ChatHelpers::kOptionUnlimitedRecentStickers,
 			}
 		},
 		{
-			u"Media"_q,
+			ExperimentalGroup::Media,
 			{
 				Media::Player::kOptionDisableAutoplayNext,
 				Window::kOptionExternalMediaViewer,
@@ -650,7 +704,7 @@ void SetupExperimental(
 			}
 		},
 		{
-			u"Notifications"_q,
+			ExperimentalGroup::Notifications,
 			{
 				Window::Notifications::kOptionHideReplyButton,
 				Window::Notifications::kOptionCustomNotification,
@@ -659,7 +713,7 @@ void SetupExperimental(
 			}
 		},
 		{
-			u"Interface"_q,
+			ExperimentalGroup::Interface,
 			{
 				Core::kOptionFractionalScalingEnabled,
 				Core::kOptionHighDpiDownscale,
@@ -674,7 +728,7 @@ void SetupExperimental(
 			}
 		},
 		{
-			u"System"_q,
+			ExperimentalGroup::System,
 			{
 				MTP::details::kOptionPreferIPv6,
 				Core::kOptionSkipUrlSchemeRegister,
@@ -700,7 +754,7 @@ void SetupExperimental(
 			registerHighlight);
 	};
 	const auto addCategory = [&](
-			const QString &title,
+			rpl::producer<QString> title,
 			auto &&fill) {
 		const auto wrap = container->add(
 			object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
@@ -708,7 +762,7 @@ void SetupExperimental(
 				object_ptr<Ui::VerticalLayout>(container)));
 		const auto inner = wrap->entity();
 		Ui::AddSkip(inner);
-		Ui::AddSubsectionTitle(inner, rpl::single(title));
+		Ui::AddSubsectionTitle(inner, std::move(title));
 		auto searchable = std::vector<QString>();
 		fill(inner, searchable);
 		Ui::AddSkip(inner);
@@ -731,7 +785,7 @@ void SetupExperimental(
 	};
 
 	for (const auto &category : categories) {
-		addCategory(category.title, [&](
+		addCategory(groupTitle(category.group), [&](
 				not_null<Ui::VerticalLayout*> inner,
 				std::vector<QString> &searchable) {
 			for (const auto name : category.options) {
@@ -740,7 +794,7 @@ void SetupExperimental(
 		});
 	}
 
-	addCategory(u"Other"_q, [&](
+	addCategory(tr::lng_settings_experimental_other(), [&](
 			not_null<Ui::VerticalLayout*> inner,
 			std::vector<QString> &searchable) {
 		if (base::options::lookup<bool>(kOptionFastButtonsMode).value()) {
@@ -772,12 +826,12 @@ rpl::producer<QString> Experimental::title() {
 void Experimental::fillTopBarMenu(const Ui::Menu::MenuCallback &addAction) {
 	const auto window = &controller()->window();
 	addAction(
-		u"Export"_q,
+		tr::lng_settings_experimental_export(tr::now),
 		[=] {
 			TextUtilities::SetClipboardText(
 				{ EncodeOptionsToText(base::options::serialize()) });
 			window->showToast({
-				.text = { u"Experimental settings code copied to clipboard."_q },
+				.text = { tr::lng_settings_experimental_export_done(tr::now) },
 				.iconLottie = u"toast/copy"_q,
 				.iconLottieSize = st::toastLottieIconSize,
 			});
@@ -787,24 +841,25 @@ void Experimental::fillTopBarMenu(const Ui::Menu::MenuCallback &addAction) {
 		return;
 	}
 	addAction(
-		u"Import"_q,
+		tr::lng_settings_experimental_import(tr::now),
 		[=] {
 			const auto decoded = DecodeOptionsFromText(
 				QGuiApplication::clipboard()->text());
 			if (!decoded.ok) {
-				window->showToast(u"Clipboard does not contain "
-					"a valid experimental settings code."_q);
+				window->showToast(
+					tr::lng_settings_experimental_import_invalid(tr::now));
 				return;
 			}
 			if (!base::options::deserialize(
 					Core::MigrateExperimentalOptions(decoded.json))) {
-				window->showToast(u"Experimental settings code is valid"
-					", but data format is not supported."_q);
+				window->showToast(
+					tr::lng_settings_experimental_import_unsupported(
+						tr::now));
 				return;
 			}
 			_reloadOptionsRequests.fire({});
-			window->showToast(u"Experimental settings imported "
-				"from code in clipboard."_q);
+			window->showToast(
+				tr::lng_settings_experimental_import_done(tr::now));
 		},
 		&st::menuIconImportTheme);
 }
