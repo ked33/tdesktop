@@ -1661,7 +1661,9 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 			not_null<Element*> view,
 			int top,
 			int height) {
-		_translateTracker->add(view);
+		if (!view->isMessageFolded()) {
+			_translateTracker->add(view);
+		}
 		const auto item = view->data();
 		if (metricsStale && height > 0) {
 			_readMetricsTracker->push(item, top, height);
@@ -1670,12 +1672,14 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 		const auto isUnread = !item->out()
 			&& item->unread(_history)
 			&& (item->history() == _history);
-		const auto withReaction = item->hasUnreadReaction();
+		const auto withReaction = !view->isMessageFolded()
+			&& item->hasUnreadReaction();
 		const auto yShown = [&](int y) {
 			return (_visibleAreaBottom >= y && _visibleAreaTop <= y);
 		};
 		const auto markShown = isSponsored
-			? view->markSponsoredViewed(_visibleAreaBottom - top)
+			? view->markSponsoredViewed(
+				_visibleAreaBottom - top, _visibleAreaTop - top)
 			: withReaction
 			? yShown(top + context.reactionInfo->position.y())
 			: isUnread
@@ -1687,10 +1691,12 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 			} else if (isUnread) {
 				readTill = item;
 			}
-			if (markingAsViewed && item->hasUnwatchedEffect()) {
+			if (markingAsViewed && !view->isMessageFolded()
+				&& item->hasUnwatchedEffect()) {
 				startEffects.emplace(view);
 			}
 			if (markingAsViewed
+				&& !view->isMessageFolded()
 				&& !item->out()
 				&& !_animatedStickersPlayed.contains(item)
 				&& !PowerSaving::On(PowerSaving::kEmojiChat)

@@ -253,6 +253,23 @@ private:
 
 };
 
+class MessageFoldingBox final : public Ui::BoxContent {
+public:
+	explicit MessageFoldingBox(QWidget *parent);
+
+protected:
+	void prepare() override;
+	void setInnerFocus() override;
+	void resizeEvent(QResizeEvent *e) override;
+
+private:
+	void save();
+
+	object_ptr<Ui::InputField> _keywords;
+	object_ptr<Ui::InputField> _ids;
+
+};
+
 class SearchDialogFilterBox : public Ui::BoxContent {
 public:
 	SearchDialogFilterBox(QWidget *parent);

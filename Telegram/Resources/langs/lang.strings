@@ -8978,6 +8978,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_search_main_and_archive" = "Include main list and archived chats in global search";
 "lng_settings_search_include_porn" = "Include messages from channels and groups marked porn in global search";
 "lng_settings_search_dialog_filter" = "Filter chats from global search";
+"lng_message_folding_enabled" = "Enable message folding";
+"lng_message_folding_rules" = "Message folding rules";
+"lng_message_folding_keywords" = "Keywords, separated by commas";
+"lng_message_folding_user_ids" = "User IDs, separated by commas";
+"lng_message_folding_invalid_ids" = "Enter positive numeric user IDs separated by commas.";
+"lng_message_folding_about" = "Fold incoming messages matching any keyword or sender ID. Matching ignores letter case. Promoted messages start folded. Turning this off expands all messages and keeps your rules.";
+"lng_message_folding_placeholder" = "Folded message";
+"lng_message_folding_album" = "Folded album · {amount} items";
+"lng_message_folding_promoted" = "Sponsored · {name}";
+"lng_message_folding_expand" = "Expand message";
+"lng_message_folding_collapse" = "Collapse message";
 "lng_settings_search_dialog_filter_placeholder" = "-1002615379741,-1001887545270";
 "lng_settings_search_dialog_filter_disabled" = "Disabled";
 "lng_settings_search_porn_concurrency" = "Supplemental search concurrency";

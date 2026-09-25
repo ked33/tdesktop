@@ -2250,7 +2250,21 @@ void Element::nextInBlocksRemoved() {
 	setAttachToNext(false);
 }
 
-bool Element::markSponsoredViewed(int shownFromTop) const {
+bool Element::isMessageFolded() const {
+	return false;
+}
+
+void Element::expandFoldedMessage() {
+}
+
+void Element::resetMessageFolding() {
+}
+
+bool Element::markSponsoredViewed(int shownFromTop, int hiddenFromTop) const {
+	if (isMessageFolded()) {
+		return hiddenFromTop <= marginTop()
+			&& shownFromTop >= height() - marginBottom();
+	}
 	const auto sponsoredTextTop = height()
 		- st::msgPadding.bottom()
 		- st::historyViewButtonHeight;

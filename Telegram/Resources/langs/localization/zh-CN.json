@@ -411,5 +411,16 @@
     "lng_settings_search_message_highlight_bg_color": "搜索跳转消息关键词高亮背景色",
     "lng_settings_search_message_highlight_bg_color_placeholder": "#3482d555",
     "lng_settings_search_message_highlight_bg_color_invalid": "请输入有效的颜色代码，例如 #3482d555。",
-    "lng_channel_badge": "频道"
+    "lng_channel_badge": "频道",
+    "lng_message_folding_enabled": "启用消息折叠",
+    "lng_message_folding_rules": "消息折叠规则",
+    "lng_message_folding_keywords": "关键词，多个用逗号分隔，例如：股票,VPN,",
+    "lng_message_folding_user_ids": "用户 ID，多个用逗号分隔",
+    "lng_message_folding_invalid_ids": "请输入有效的正整数用户 ID，多个用逗号分隔。",
+    "lng_message_folding_about": "收到的消息命中任一关键词或用户 ID 时自动折叠，关键词不区分大小写。推广消息默认折叠。关闭总开关会展开全部消息并保留规则。",
+    "lng_message_folding_placeholder": "已折叠的消息",
+    "lng_message_folding_album": "已折叠的相册 · {amount} 项",
+    "lng_message_folding_promoted": "广告 · {name}",
+    "lng_message_folding_expand": "展开消息",
+    "lng_message_folding_collapse": "折叠消息"
 }

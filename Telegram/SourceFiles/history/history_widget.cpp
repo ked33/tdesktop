@@ -3901,6 +3901,11 @@ void HistoryWidget::setHistory(History *history) {
 
 	const auto unloadHeavyViewParts = [](History *history) {
 		if (history) {
+			for (const auto &block : history->blocks) {
+				for (const auto &view : block->messages) {
+					view->resetMessageFolding();
+				}
+			}
 			history->owner().unloadHeavyViewParts(
 				history->delegateMixin()->delegate());
 			history->forceFullResize();
@@ -8971,8 +8976,19 @@ int HistoryWidget::countInitialScrollTop() {
 			controller()->showToast(tr::lng_message_not_found(tr::now));
 			return countInitialScrollTop();
 		} else {
-			const auto view = item->mainView();
+			auto view = item->mainView();
 			Assert(view != nullptr);
+			if (const auto group = session().data().groups().find(item)) {
+				if (const auto leader = group->items.front()->mainView()) {
+					view = leader;
+				}
+			}
+			const auto wasFolded = view->isMessageFolded();
+			view->expandFoldedMessage();
+			if (wasFolded) {
+				_list->recountHistoryGeometry(false);
+				_list->updateSize();
+			}
 
 			enqueueMessageHighlight({
 				item,

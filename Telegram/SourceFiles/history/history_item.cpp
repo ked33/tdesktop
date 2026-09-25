@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_item.h"
+#include "core/message_folding.h"
 
 #include "api/api_premium.h"
 #include "api/api_sensitive_content.h"
@@ -4647,6 +4648,7 @@ void HistoryItem::clearRichPage() {
 }
 
 void HistoryItem::setTextValue(TextWithEntities text, bool force) {
+	MessageFolding::Invalidate(this);
 	if (const auto processId = Spellchecker::TryHighlightSyntax(text)) {
 		_flags |= MessageFlag::InHighlightProcess;
 		history()->owner().registerHighlightProcess(processId, this);

@@ -6,6 +6,10 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_message.h"
+#include "core/message_folding.h"
+#include "data/data_groups.h"
+#include "data/data_media_types.h"
+#include "data/data_web_page.h"
 
 #include "api/api_suggest_post.h"
 #include "api/api_transcribes.h"
@@ -528,6 +532,222 @@ struct Message::RightAction {
 	QPoint lastPoint;
 	std::unique_ptr<SecondRightAction> second;
 };
+
+struct Message::Folding {
+	uint64 version = 0;
+	bool expanded = false;
+	QString label;
+	ClickHandlerPtr link;
+	mutable QRect button;
+};
+
+namespace {
+
+class FoldingClickHandler final : public LambdaClickHandler {
+public:
+	FoldingClickHandler(Fn<void()> callback, bool expanded)
+	: LambdaClickHandler(std::move(callback))
+	, _expanded(expanded) {
+	}
+
+	QString tooltip() const override {
+		return _expanded
+			? tr::lng_message_folding_collapse(tr::now)
+			: tr::lng_message_folding_expand(tr::now);
+	}
+
+private:
+	bool _expanded = false;
+
+};
+
+} // namespace
+
+bool Message::isMessageFolded() const {
+	return _folding && !_folding->expanded;
+}
+
+void Message::refreshFolding() {
+	const auto applicable = (context() == Context::History)
+		|| (context() == Context::Replies)
+		|| (context() == Context::Monoforum);
+	const auto item = data();
+	const auto group = history()->owner().groups().find(item);
+	auto matched = false;
+	if (applicable && MessageFolding::Enabled()) {
+		if (item->isSponsored()) {
+			matched = true;
+		} else if (group) {
+			for (const auto part : group->items) {
+				if (MessageFolding::Matches(part)) {
+					matched = true;
+					break;
+				}
+			}
+		} else {
+			matched = MessageFolding::Matches(item);
+		}
+	}
+	if (!matched) {
+		_folding = nullptr;
+		return;
+	}
+	const auto wasFolded = isMessageFolded();
+	if (!_folding || _folding->version != MessageFolding::Version()) {
+		_folding = std::make_unique<Folding>();
+		_folding->version = MessageFolding::Version();
+	}
+	if (item->isSponsored()) {
+		const auto media = item->media();
+		const auto page = media ? media->webpage() : nullptr;
+		_folding->label = tr::lng_message_folding_promoted(
+			tr::now, lt_name, page ? page->title : QString());
+	} else if (group && group->items.size() > 1) {
+		_folding->label = tr::lng_message_folding_album(
+			tr::now, lt_amount, QString::number(group->items.size()));
+	} else {
+		_folding->label = tr::lng_message_folding_placeholder(tr::now);
+	}
+	if (!_folding->link) {
+		_folding->link = std::make_shared<FoldingClickHandler>(
+			crl::guard(this, [=] { toggleFolding(); }), _folding->expanded);
+	}
+	if (!wasFolded && isMessageFolded()) {
+		unloadHeavyPart();
+	}
+}
+
+void Message::toggleFolding() {
+	if (!_folding) {
+		return;
+	}
+	_folding->expanded = !_folding->expanded;
+	_folding->link = nullptr;
+	if (!_folding->expanded) {
+		unloadHeavyPart();
+	}
+	refreshFolding();
+	history()->owner().requestViewResize(this);
+	if (isMessageFolded()) {
+		crl::on_main(crl::guard(this, [=] {
+			if (isMessageFolded()
+				&& !delegate()->elementIntersectsRange(this, 0, height())) {
+				delegate()->elementScrollToLocalY(this, 0);
+			}
+		}));
+	}
+}
+
+void Message::expandFoldedMessage() {
+	refreshFolding();
+	if (isMessageFolded()) {
+		toggleFolding();
+	}
+}
+
+void Message::resetMessageFolding() {
+	if (_folding) {
+		_folding = nullptr;
+		setPendingResize();
+	}
+}
+
+int Message::foldingLayoutSkip(int rightMargin) const {
+	const auto effectiveMargin = data()->isSponsored()
+		? st::msgMargin.left() : rightMargin;
+	return (_folding && _folding->expanded)
+		? (st::historyMessageFoldButtonSize
+			+ st::historyMessageFoldButtonSkip
+			+ std::max(0, st::historyFastShareLeft
+				+ st::historyFastShareSize - effectiveMargin))
+		: 0;
+}
+
+void Message::paintFolded(
+		Painter &p,
+		const PaintContext &context,
+		QRect g) const {
+	Ui::PaintBubble(p, Ui::SimpleBubble{
+		.st = context.st,
+		.geometry = g,
+		.pattern = context.bubblesPattern,
+		.patternViewport = context.viewport,
+		.outerWidth = width(),
+		.selected = context.selected(),
+		.outbg = context.outbg,
+		.rounding = countMessageRounding(),
+	});
+	auto textRect = g.marginsRemoved(st::msgPadding);
+	textRect.setWidth(std::max(0, textRect.width()
+		- st::historyMessageFoldButtonSize
+		- st::historyMessageFoldButtonSkip));
+	if (displayFromName()) {
+		fromNameUpdated(textRect.width()
+			+ st::msgPadding.left() + st::msgPadding.right());
+		paintFromName(p, textRect, context);
+	} else {
+		p.setFont(st::msgNameFont);
+		p.setPen(context.messageStyle()->msgServiceFg);
+		p.drawTextLeft(textRect.x(),
+			textRect.y() + (textRect.height() - st::msgNameFont->height) / 2,
+			width(),
+			st::msgNameFont->elided(_folding->label, textRect.width()));
+	}
+}
+
+void Message::paintFoldingButton(
+		Painter &p,
+		const PaintContext &context,
+		QRect g) const {
+	if (!_folding || isHidden()) {
+		return;
+	}
+	const auto size = st::historyMessageFoldButtonSize;
+	const auto skip = st::historyMessageFoldButtonSkip;
+	const auto visible = g.intersected(context.area);
+	const auto centerY = visible.isEmpty() ? g.center().y() : visible.center().y();
+	const auto left = isMessageFolded()
+		? (g.right() - st::msgPadding.right() - size + 1)
+		: (g.right() + st::historyFastShareLeft
+			+ st::historyFastShareSize + skip);
+	const auto top = std::clamp(centerY - size / 2,
+		g.top(), std::max(g.top(), g.bottom() - size + 1));
+	_folding->button = QRect(left, top, size, size);
+	const auto button = style::rtlrect(_folding->button, width());
+	const auto hq = PainterHighQualityEnabler(p);
+	p.setPen(Qt::NoPen);
+	p.setBrush(context.st->msgServiceBg());
+	p.drawEllipse(button);
+	auto pen = QPen(context.st->msgServiceFg());
+	pen.setWidth(st::lineWidth);
+	p.setPen(pen);
+	const auto center = button.center();
+	const auto arrow = st::historyMessageFoldChevronSize;
+	const auto direction = isMessageFolded() ? 1 : -1;
+	p.drawLine(center + QPoint(-arrow, -direction * arrow / 2),
+		center + QPoint(0, direction * arrow / 2));
+	p.drawLine(center + QPoint(0, direction * arrow / 2),
+		center + QPoint(arrow, -direction * arrow / 2));
+}
+
+TextState Message::foldedTextState(QPoint point) const {
+	auto result = TextState(data());
+	const auto g = countGeometry();
+	if (!g.contains(point)) {
+		return result;
+	}
+	auto textRect = g.marginsRemoved(st::msgPadding);
+	textRect.setWidth(std::max(0, textRect.width()
+		- st::historyMessageFoldButtonSize
+		- st::historyMessageFoldButtonSkip));
+	if (!_folding->button.contains(point)) {
+		getStateFromName(point, textRect, &result);
+	}
+	if (!result.link) {
+		result.link = _folding->link;
+	}
+	return result;
+}
 
 struct Message::LinkRipple {
 	std::unique_ptr<Ui::RippleAnimation> ripple;
@@ -1350,6 +1570,15 @@ QRect Message::effectIconGeometry() const {
 
 QSize Message::performCountOptimalSize() {
 	const auto item = data();
+	refreshFolding();
+	if (isMessageFolded() && !isHidden()) {
+		_bubbleWidthLimit = st::msgMaxWidth;
+		refreshRightBadge();
+		return QSize(st::msgMaxWidth,
+			st::msgPadding.top() + st::msgPadding.bottom()
+				+ std::max(st::msgNameFont->height,
+					st::historyMessageFoldButtonSize));
+	}
 
 	const auto replyData = item->Get<HistoryMessageReply>();
 	const auto &summary = item->summaryEntry();
@@ -1775,7 +2004,7 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 		p.translate(selectionTranslation, 0);
 	}
 
-	if (item->hasUnrequestedFactcheck()) {
+	if (!isMessageFolded() && item->hasUnrequestedFactcheck()) {
 		item->history()->session().factchecks().requestFor(item);
 	}
 
@@ -1806,197 +2035,99 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 		return;
 	}
 
-	const auto entry = logEntryOriginal();
-	const auto check = factcheckBlock();
-	auto mediaDisplayed = media && media->isDisplayed();
+	if (isMessageFolded()) {
+		paintFolded(p, context, g);
+	} else {
+		const auto entry = logEntryOriginal();
+		const auto check = factcheckBlock();
+		auto mediaDisplayed = media && media->isDisplayed();
 
-	// Entry page is always a bubble bottom.
-	auto mediaOnBottom = (mediaDisplayed && media->isBubbleBottom()) || check || (entry/* && entry->isBubbleBottom()*/);
-	auto mediaOnTop = (mediaDisplayed && media->isBubbleTop()) || (entry && entry->isBubbleTop());
+		// Entry page is always a bubble bottom.
+		auto mediaOnBottom = (mediaDisplayed && media->isBubbleBottom()) || check || (entry/* && entry->isBubbleBottom()*/);
+		auto mediaOnTop = (mediaDisplayed && media->isBubbleTop()) || (entry && entry->isBubbleTop());
 
-	const auto displayInfo = needInfoDisplay();
-	const auto reactionsInBubble = _reactions && embedReactionsInBubble();
+		const auto displayInfo = needInfoDisplay();
+		const auto reactionsInBubble = _reactions && embedReactionsInBubble();
 
-	// We need to count geometry without keyboard and reactions
-	// for bubble selection intervals counting below.
-	auto gForIntervals = g;
-	if (_reactions && !reactionsInBubble) {
-		const auto reactionsHeight = st::mediaInBubbleSkip + _reactions->height();
-		gForIntervals.setHeight(gForIntervals.height() - reactionsHeight);
-	}
-	const auto keyboard = item->inlineReplyKeyboard();
-	if (keyboard) {
-		const auto keyboardHeight = st::msgBotKbButton.margin + keyboard->naturalHeight();
-		gForIntervals.setHeight(gForIntervals.height() - keyboardHeight);
-	}
-
-	auto mediaSelectionIntervals = (!context.selected() && mediaDisplayed)
-		? media->getBubbleSelectionIntervals(context.selection)
-		: std::vector<Ui::BubbleSelectionInterval>();
-	auto localMediaTop = 0;
-	const auto customHighlight = mediaDisplayed && media->customHighlight();
-	if (!mediaSelectionIntervals.empty() || customHighlight) {
-		auto localMediaBottom = gForIntervals.top() + gForIntervals.height();
-		if (data()->repliesAreComments() || data()->externalReply()) {
-			localMediaBottom -= st::historyCommentsButtonHeight;
+		// We need to count geometry without keyboard and reactions
+		// for bubble selection intervals counting below.
+		auto gForIntervals = g;
+		if (_reactions && !reactionsInBubble) {
+			const auto reactionsHeight = st::mediaInBubbleSkip + _reactions->height();
+			gForIntervals.setHeight(gForIntervals.height() - reactionsHeight);
 		}
-		if (_viewButton) {
-			localMediaBottom -= st::mediaInBubbleSkip + _viewButton->height();
+		const auto keyboard = item->inlineReplyKeyboard();
+		if (keyboard) {
+			const auto keyboardHeight = st::msgBotKbButton.margin + keyboard->naturalHeight();
+			gForIntervals.setHeight(gForIntervals.height() - keyboardHeight);
 		}
-		if (reactionsInBubble) {
-			localMediaBottom -= st::mediaInBubbleSkip + _reactions->height();
-		}
-		if (!mediaOnBottom && (!_viewButton || !reactionsInBubble)) {
-			localMediaBottom -= st::msgPadding.bottom();
-			if (mediaDisplayed) {
-				localMediaBottom -= st::mediaInBubbleSkip;
+
+		auto mediaSelectionIntervals = (!context.selected() && mediaDisplayed)
+			? media->getBubbleSelectionIntervals(context.selection)
+			: std::vector<Ui::BubbleSelectionInterval>();
+		auto localMediaTop = 0;
+		const auto customHighlight = mediaDisplayed && media->customHighlight();
+		if (!mediaSelectionIntervals.empty() || customHighlight) {
+			auto localMediaBottom = gForIntervals.top() + gForIntervals.height();
+			if (data()->repliesAreComments() || data()->externalReply()) {
+				localMediaBottom -= st::historyCommentsButtonHeight;
 			}
-		}
-		if (check) {
-			localMediaBottom -= check->height();
-		}
-		if (entry) {
-			localMediaBottom -= entry->height();
-		}
-		localMediaTop = localMediaBottom - media->height();
-		for (auto &[top, height] : mediaSelectionIntervals) {
-			top += localMediaTop;
-		}
-	}
-
-	{
-		if (selectionTranslation) {
-			p.translate(-selectionTranslation, 0);
-		}
-		if (customHighlight) {
-			media->drawHighlight(p, context, localMediaTop);
-		} else {
-			paintHighlight(p, context, g.height());
-		}
-		if (selectionTranslation) {
-			p.translate(selectionTranslation, 0);
-		}
-	}
-
-	const auto roll = media ? media->bubbleRoll() : Media::BubbleRoll();
-	if (roll) {
-		p.save();
-		p.translate(g.center());
-		p.rotate(roll.rotate);
-		p.scale(roll.scale, roll.scale);
-		p.translate(-g.center());
-	}
-
-	p.setTextPalette(stm->textPalette);
-
-	if (_reactions && !reactionsInBubble) {
-		const auto reactionsHeight = st::mediaInBubbleSkip + _reactions->height();
-		const auto reactionsLeft = (!bubble && mediaDisplayed)
-			? media->contentRectForReactions().x()
-			: 0;
-		g.setHeight(g.height() - reactionsHeight);
-		const auto reactionsPosition = QPoint(reactionsLeft + g.left(), g.top() + g.height() + st::mediaInBubbleSkip);
-		p.translate(reactionsPosition);
-		prepareCustomEmojiPaint(p, context, *_reactions);
-		_reactions->paint(p, context, g.width(), context.clip.translated(-reactionsPosition));
-		if (context.reactionInfo) {
-			context.reactionInfo->position = reactionsPosition;
-		}
-		p.translate(-reactionsPosition);
-	}
-
-	const auto messageRounding = countMessageRounding();
-	if (keyboard) {
-		const auto keyboardHeight = st::msgBotKbButton.margin + keyboard->naturalHeight();
-		g.setHeight(g.height() - keyboardHeight);
-
-		const auto keyboardPosition = QPoint(g.left(), g.top() + g.height() + st::msgBotKbButton.margin);
-		p.translate(keyboardPosition);
-		keyboard->paint(
-			p,
-			context.st,
-			messageRounding,
-			g.width(),
-			context.clip.translated(-keyboardPosition),
-			context.paused);
-		p.translate(-keyboardPosition);
-	}
-
-	if (context.highlightPathCache) {
-		context.highlightInterpolateTo = g;
-		context.highlightPathCache->clear();
-	}
-	if (bubble) {
-		const auto from = displayFromName() ? displayFrom() : nullptr;
-		if (from && (_fromNameVersion < from->nameVersion())) {
-			fromNameUpdated(g.width());
-		}
-		const auto simple = Ui::SimpleBubble{
-			.st = context.st,
-			.geometry = g,
-			.pattern = context.bubblesPattern,
-			.patternViewport = context.viewport,
-			.outerWidth = width(),
-			.selected = context.selected(),
-			.outbg = context.outbg,
-			.rounding = countBubbleRounding(messageRounding),
-		};
-		const auto rich = const_cast<Message*>(this)->richpage();
-		auto richPageGaps = std::vector<Ui::BubbleSelectionInterval>();
-		if (rich && rich->hasUnsupportedBlocks) {
-			auto richTrect = QRect();
-			if (prepareRichPageTextRect(richTrect)) {
-				const auto origin = richPageRect(richTrect).topLeft();
-				const auto rects = rich->article.unsupportedNoticeRects();
-				richPageGaps.reserve(rects.size());
-				for (const auto &notice : rects) {
-					const auto mapped = notice.translated(origin);
-					richPageGaps.push_back({
-						mapped.y(),
-						mapped.height(),
-					});
+			if (_viewButton) {
+				localMediaBottom -= st::mediaInBubbleSkip + _viewButton->height();
+			}
+			if (reactionsInBubble) {
+				localMediaBottom -= st::mediaInBubbleSkip + _reactions->height();
+			}
+			if (!mediaOnBottom && (!_viewButton || !reactionsInBubble)) {
+				localMediaBottom -= st::msgPadding.bottom();
+				if (mediaDisplayed) {
+					localMediaBottom -= st::mediaInBubbleSkip;
 				}
 			}
-		}
-		if (!richPageGaps.empty()) {
-			if (!rich->tornEdges) {
-				rich->tornEdges = std::make_unique<Ui::TornEdgeCache>();
+			if (check) {
+				localMediaBottom -= check->height();
 			}
-			Ui::ValidateTornEdges(*rich->tornEdges, g.width());
-			Ui::PaintBubble(
-				p,
-				Ui::BubbleWithGaps{
-					.simple = simple,
-					.gaps = richPageGaps,
-					.torn = rich->tornEdges.get(),
-				});
-		} else {
-			Ui::PaintBubble(
-				p,
-				Ui::ComplexBubble{
-					.simple = simple,
-					.selection = mediaSelectionIntervals,
-				});
+			if (entry) {
+				localMediaBottom -= entry->height();
+			}
+			localMediaTop = localMediaBottom - media->height();
+			for (auto &[top, height] : mediaSelectionIntervals) {
+				top += localMediaTop;
+			}
 		}
 
-		auto inner = g;
-		paintCommentsButton(p, inner, context);
+		{
+			if (selectionTranslation) {
+				p.translate(-selectionTranslation, 0);
+			}
+			if (customHighlight) {
+				media->drawHighlight(p, context, localMediaTop);
+			} else {
+				paintHighlight(p, context, g.height());
+			}
+			if (selectionTranslation) {
+				p.translate(selectionTranslation, 0);
+			}
+		}
 
-		auto trect = inner.marginsRemoved(st::msgPadding);
+		const auto roll = media ? media->bubbleRoll() : Media::BubbleRoll();
+		if (roll) {
+			p.save();
+			p.translate(g.center());
+			p.rotate(roll.rotate);
+			p.scale(roll.scale, roll.scale);
+			p.translate(-g.center());
+		}
 
-		const auto additionalInfoSkip = (mediaDisplayed
-			&& !media->additionalInfoString().isEmpty())
-			? st::msgDateFont->height
-			: 0;
-		const auto reactionsTop = (reactionsInBubble && !_viewButton)
-			? (additionalInfoSkip + st::mediaInBubbleSkip)
-			: additionalInfoSkip;
-		const auto reactionsHeight = reactionsInBubble
-			? (reactionsTop + _reactions->height())
-			: 0;
-		if (reactionsInBubble) {
-			trect.setHeight(trect.height() - reactionsHeight);
-			const auto reactionsPosition = QPoint(trect.left(), trect.top() + trect.height() + reactionsTop);
+		p.setTextPalette(stm->textPalette);
+
+		if (_reactions && !reactionsInBubble) {
+			const auto reactionsHeight = st::mediaInBubbleSkip + _reactions->height();
+			const auto reactionsLeft = (!bubble && mediaDisplayed)
+				? media->contentRectForReactions().x()
+				: 0;
+			g.setHeight(g.height() - reactionsHeight);
+			const auto reactionsPosition = QPoint(reactionsLeft + g.left(), g.top() + g.height() + st::mediaInBubbleSkip);
 			p.translate(reactionsPosition);
 			prepareCustomEmojiPaint(p, context, *_reactions);
 			_reactions->paint(p, context, g.width(), context.clip.translated(-reactionsPosition));
@@ -2006,357 +2137,460 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 			p.translate(-reactionsPosition);
 		}
 
-		if (_viewButton) {
-			const auto belowInfo = _viewButton->belowMessageInfo();
-			const auto infoHeight = reactionsInBubble
-				? (reactionsHeight + 2 * st::mediaInBubbleSkip)
-				: bottomInfoHeight();
-			const auto heightMargins = QMargins(0, 0, 0, infoHeight);
-			_viewButton->draw(
+		const auto messageRounding = countMessageRounding();
+		if (keyboard) {
+			const auto keyboardHeight = st::msgBotKbButton.margin + keyboard->naturalHeight();
+			g.setHeight(g.height() - keyboardHeight);
+
+			const auto keyboardPosition = QPoint(g.left(), g.top() + g.height() + st::msgBotKbButton.margin);
+			p.translate(keyboardPosition);
+			keyboard->paint(
 				p,
-				_viewButton->countRect(belowInfo
-					? inner
-					: inner - heightMargins),
-				context);
-			if (belowInfo) {
-				inner.setHeight(inner.height() - _viewButton->height());
-			}
-			trect.setHeight(trect.height() - _viewButton->height());
-			if (reactionsInBubble) {
-				trect.setHeight(trect.height() - st::mediaInBubbleSkip + st::msgPadding.bottom());
-			} else if (mediaDisplayed) {
-				trect.setHeight(trect.height() - st::mediaInBubbleSkip);
-			}
+				context.st,
+				messageRounding,
+				g.width(),
+				context.clip.translated(-keyboardPosition),
+				context.paused);
+			p.translate(-keyboardPosition);
 		}
 
-		if (mediaOnBottom) {
-			trect.setHeight(trect.height() + st::msgPadding.bottom());
+		if (context.highlightPathCache) {
+			context.highlightInterpolateTo = g;
+			context.highlightPathCache->clear();
 		}
-		if (mediaOnTop) {
-			trect.setY(trect.y() - st::msgPadding.top());
-		} else {
-			paintFromName(p, trect, context);
-			paintEphemeralBadge(p, trect, context);
-			paintTopicButton(p, trect, context);
-			validateForwardedNameText(item);
-			paintForwardedInfo(p, trect, context);
-			paintViaBotIdInfo(p, trect, context);
-			paintReplyInfo(p, trect, context);
-			paintSummaryHeaderInfo(p, trect, context);
-		}
-		if (entry) {
-			trect.setHeight(trect.height() - entry->height());
-		}
-		if (check) {
-			trect.setHeight(trect.height() - check->height() - st::mediaInBubbleSkip);
-		}
-		if (displayInfo) {
-			trect.setHeight(trect.height()
-				- (_bottomInfo.height() - st::msgDateFont->height));
-		}
-		auto textSelection = context.selection;
-		auto highlightRange = context.highlight.range;
-		const auto mediaHeight = mediaDisplayed ? media->height() : 0;
-		const auto paintMedia = [&](int top) {
-			if (!mediaDisplayed) {
-				return;
+		if (bubble) {
+			const auto from = displayFromName() ? displayFrom() : nullptr;
+			if (from && (_fromNameVersion < from->nameVersion())) {
+				fromNameUpdated(g.width());
 			}
-			const auto mediaSelection = _invertMedia
-				? context.selection
-				: skipTextSelection(context.selection);
-			const auto maybeMediaHighlight = context.highlightPathCache
-				&& context.highlightPathCache->isEmpty();
-			auto mediaPosition = QPoint(inner.left(), top);
-			_lastMediaPosition = mediaPosition;
-			p.translate(mediaPosition);
-			media->draw(p, context.translated(
-				-mediaPosition
-			).withSelection(mediaSelection));
-			if (context.reactionInfo && !displayInfo && !_reactions) {
-				const auto add = QPoint(0, mediaHeight);
-				context.reactionInfo->position = mediaPosition + add;
-				if (context.reactionInfo->effectPaint) {
-					context.reactionInfo->effectOffset -= add;
+			const auto simple = Ui::SimpleBubble{
+				.st = context.st,
+				.geometry = g,
+				.pattern = context.bubblesPattern,
+				.patternViewport = context.viewport,
+				.outerWidth = width(),
+				.selected = context.selected(),
+				.outbg = context.outbg,
+				.rounding = countBubbleRounding(messageRounding),
+			};
+			const auto rich = const_cast<Message*>(this)->richpage();
+			auto richPageGaps = std::vector<Ui::BubbleSelectionInterval>();
+			if (rich && rich->hasUnsupportedBlocks) {
+				auto richTrect = QRect();
+				if (prepareRichPageTextRect(richTrect)) {
+					const auto origin = richPageRect(richTrect).topLeft();
+					const auto rects = rich->article.unsupportedNoticeRects();
+					richPageGaps.reserve(rects.size());
+					for (const auto &notice : rects) {
+						const auto mapped = notice.translated(origin);
+						richPageGaps.push_back({
+							mapped.y(),
+							mapped.height(),
+						});
+					}
 				}
 			}
-			if (maybeMediaHighlight
-				&& !context.highlightPathCache->isEmpty()) {
-				context.highlightPathCache->translate(mediaPosition);
-			}
-			p.translate(-mediaPosition);
-		};
-		if (mediaDisplayed && _invertMedia) {
-			if (!mediaOnTop) {
-				trect.setY(trect.y() + st::mediaInBubbleSkip);
-			}
-			paintMedia(trect.y());
-			trect.setY(trect.y()
-				+ mediaHeight
-				+ (mediaOnBottom ? 0 : st::mediaInBubbleSkip));
-			textSelection = media->skipSelection(textSelection);
-			highlightRange = media->skipSelection(highlightRange);
-		}
-		const auto drawText = context.skipDrawingParts
-			!= PaintContext::SkipDrawingParts::Content;
-		const auto drawOnlyText = drawText
-			&& (context.skipDrawingParts
-				!= PaintContext::SkipDrawingParts::None);
-		if (drawOnlyText) {
-			p.save();
-			p.setClipping(false);
-		}
-		if (drawText) {
-			auto copy = context;
-			copy.selection = textSelection;
-			copy.highlight.range = highlightRange;
-			paintText(p, trect, copy);
-		}
-		if (drawOnlyText) {
-			p.restore();
-		}
-		if (mediaDisplayed && !_invertMedia) {
-			paintMedia(trect.y() + trect.height() - mediaHeight);
-			if (context.reactionInfo && !displayInfo && !_reactions) {
-				context.reactionInfo->position
-					= QPoint(inner.left(), trect.y() + trect.height());
-				if (context.reactionInfo->effectPaint) {
-					context.reactionInfo->effectOffset -= QPoint(0, mediaHeight);
+			if (!richPageGaps.empty()) {
+				if (!rich->tornEdges) {
+					rich->tornEdges = std::make_unique<Ui::TornEdgeCache>();
 				}
-			}
-		}
-		if (check) {
-			auto checkLeft = inner.left();
-			auto checkTop = trect.y() + trect.height() + st::mediaInBubbleSkip;
-			p.translate(checkLeft, checkTop);
-			auto checkContext = context.translated(checkLeft, -checkTop);
-			checkContext.selection = skipTextSelection(context.selection);
-			if (mediaDisplayed) {
-				checkContext.selection = media->skipSelection(
-					checkContext.selection);
-			}
-			check->draw(p, checkContext);
-			p.translate(-checkLeft, -checkTop);
-		}
-		if (entry) {
-			auto entryLeft = inner.left();
-			auto entryTop = trect.y() + trect.height();
-			p.translate(entryLeft, entryTop);
-			auto entryContext = context.translated(-entryLeft, -entryTop);
-			entryContext.selection = skipTextSelection(context.selection);
-			if (mediaDisplayed) {
-				entryContext.selection = media->skipSelection(
-					entryContext.selection);
-			}
-			entry->draw(p, entryContext);
-			p.translate(-entryLeft, -entryTop);
-		}
-		if (displayInfo) {
-			const auto bottomSelected = context.selected()
-				|| (!mediaSelectionIntervals.empty()
-					&& (mediaSelectionIntervals.back().top
-						+ mediaSelectionIntervals.back().height
-						>= inner.y() + inner.height()));
-			drawInfo(
-				p,
-				context.withSelection(
-					bottomSelected ? FullSelection : TextSelection()),
-				inner.left() + inner.width(),
-				inner.top() + inner.height(),
-				2 * inner.left() + inner.width(),
-				InfoDisplayType::Default);
-			if (context.reactionInfo && !_reactions) {
-				const auto add = QPoint(0, inner.top() + inner.height());
-				context.reactionInfo->position = add;
-				if (context.reactionInfo->effectPaint) {
-					context.reactionInfo->effectOffset -= add;
-				}
-			}
-			if (_comments) {
-				const auto o = p.opacity();
-				p.setOpacity(0.3);
-				p.fillRect(g.left(), g.top() + g.height() - st::historyCommentsButtonHeight - st::lineWidth, g.width(), st::lineWidth, stm->msgDateFg);
-				p.setOpacity(o);
-			}
-		}
-		ensureSummarizeButton();
-		if (const auto size = rightActionSize(); size || _summarize) {
-			const auto rightActionWidth = size
-				? size->width()
-				: _summarize->size().width();
-			const auto fastShareSkip = size
-				? std::clamp(
-					(g.height() - size->height()) / 2,
-					0,
-					st::historyFastShareBottom)
-				: st::historyFastShareBottom;
-			const auto fastShareLeft = hasRightLayout()
-				? (g.left()
-					- (_summarize ? 0 : rightActionWidth)
-					- st::historyFastShareLeft)
-				: (g.left() + g.width() + st::historyFastShareLeft);
-			const auto fastShareTop = g.top() + (data()->isSponsored()
-				? fastShareSkip
-				: g.height() - fastShareSkip - (size ? size->height() : 0));
-			if (size) {
-				const auto o = p.opacity();
-				if (selectionModeResult.progress > 0) {
-					p.setOpacity(1. - selectionModeResult.progress);
-				}
-				drawRightAction(
+				Ui::ValidateTornEdges(*rich->tornEdges, g.width());
+				Ui::PaintBubble(
 					p,
-					context,
-					fastShareLeft,
-					fastShareTop,
-					width());
-				if (selectionModeResult.progress > 0) {
+					Ui::BubbleWithGaps{
+						.simple = simple,
+						.gaps = richPageGaps,
+						.torn = rich->tornEdges.get(),
+					});
+			} else {
+				Ui::PaintBubble(
+					p,
+					Ui::ComplexBubble{
+						.simple = simple,
+						.selection = mediaSelectionIntervals,
+					});
+			}
+
+			auto inner = g;
+			paintCommentsButton(p, inner, context);
+
+			auto trect = inner.marginsRemoved(st::msgPadding);
+
+			const auto additionalInfoSkip = (mediaDisplayed
+				&& !media->additionalInfoString().isEmpty())
+				? st::msgDateFont->height
+				: 0;
+			const auto reactionsTop = (reactionsInBubble && !_viewButton)
+				? (additionalInfoSkip + st::mediaInBubbleSkip)
+				: additionalInfoSkip;
+			const auto reactionsHeight = reactionsInBubble
+				? (reactionsTop + _reactions->height())
+				: 0;
+			if (reactionsInBubble) {
+				trect.setHeight(trect.height() - reactionsHeight);
+				const auto reactionsPosition = QPoint(trect.left(), trect.top() + trect.height() + reactionsTop);
+				p.translate(reactionsPosition);
+				prepareCustomEmojiPaint(p, context, *_reactions);
+				_reactions->paint(p, context, g.width(), context.clip.translated(-reactionsPosition));
+				if (context.reactionInfo) {
+					context.reactionInfo->position = reactionsPosition;
+				}
+				p.translate(-reactionsPosition);
+			}
+
+			if (_viewButton) {
+				const auto belowInfo = _viewButton->belowMessageInfo();
+				const auto infoHeight = reactionsInBubble
+					? (reactionsHeight + 2 * st::mediaInBubbleSkip)
+					: bottomInfoHeight();
+				const auto heightMargins = QMargins(0, 0, 0, infoHeight);
+				_viewButton->draw(
+					p,
+					_viewButton->countRect(belowInfo
+						? inner
+						: inner - heightMargins),
+					context);
+				if (belowInfo) {
+					inner.setHeight(inner.height() - _viewButton->height());
+				}
+				trect.setHeight(trect.height() - _viewButton->height());
+				if (reactionsInBubble) {
+					trect.setHeight(trect.height() - st::mediaInBubbleSkip + st::msgPadding.bottom());
+				} else if (mediaDisplayed) {
+					trect.setHeight(trect.height() - st::mediaInBubbleSkip);
+				}
+			}
+
+			if (mediaOnBottom) {
+				trect.setHeight(trect.height() + st::msgPadding.bottom());
+			}
+			if (mediaOnTop) {
+				trect.setY(trect.y() - st::msgPadding.top());
+			} else {
+				paintFromName(p, trect, context);
+				paintEphemeralBadge(p, trect, context);
+				paintTopicButton(p, trect, context);
+				validateForwardedNameText(item);
+				paintForwardedInfo(p, trect, context);
+				paintViaBotIdInfo(p, trect, context);
+				paintReplyInfo(p, trect, context);
+				paintSummaryHeaderInfo(p, trect, context);
+			}
+			if (entry) {
+				trect.setHeight(trect.height() - entry->height());
+			}
+			if (check) {
+				trect.setHeight(trect.height() - check->height() - st::mediaInBubbleSkip);
+			}
+			if (displayInfo) {
+				trect.setHeight(trect.height()
+					- (_bottomInfo.height() - st::msgDateFont->height));
+			}
+			auto textSelection = context.selection;
+			auto highlightRange = context.highlight.range;
+			const auto mediaHeight = mediaDisplayed ? media->height() : 0;
+			const auto paintMedia = [&](int top) {
+				if (!mediaDisplayed) {
+					return;
+				}
+				const auto mediaSelection = _invertMedia
+					? context.selection
+					: skipTextSelection(context.selection);
+				const auto maybeMediaHighlight = context.highlightPathCache
+					&& context.highlightPathCache->isEmpty();
+				auto mediaPosition = QPoint(inner.left(), top);
+				_lastMediaPosition = mediaPosition;
+				p.translate(mediaPosition);
+				media->draw(p, context.translated(
+					-mediaPosition
+				).withSelection(mediaSelection));
+				if (context.reactionInfo && !displayInfo && !_reactions) {
+					const auto add = QPoint(0, mediaHeight);
+					context.reactionInfo->position = mediaPosition + add;
+					if (context.reactionInfo->effectPaint) {
+						context.reactionInfo->effectOffset -= add;
+					}
+				}
+				if (maybeMediaHighlight
+					&& !context.highlightPathCache->isEmpty()) {
+					context.highlightPathCache->translate(mediaPosition);
+				}
+				p.translate(-mediaPosition);
+			};
+			if (mediaDisplayed && _invertMedia) {
+				if (!mediaOnTop) {
+					trect.setY(trect.y() + st::mediaInBubbleSkip);
+				}
+				paintMedia(trect.y());
+				trect.setY(trect.y()
+					+ mediaHeight
+					+ (mediaOnBottom ? 0 : st::mediaInBubbleSkip));
+				textSelection = media->skipSelection(textSelection);
+				highlightRange = media->skipSelection(highlightRange);
+			}
+			const auto drawText = context.skipDrawingParts
+				!= PaintContext::SkipDrawingParts::Content;
+			const auto drawOnlyText = drawText
+				&& (context.skipDrawingParts
+					!= PaintContext::SkipDrawingParts::None);
+			if (drawOnlyText) {
+				p.save();
+				p.setClipping(false);
+			}
+			if (drawText) {
+				auto copy = context;
+				copy.selection = textSelection;
+				copy.highlight.range = highlightRange;
+				paintText(p, trect, copy);
+			}
+			if (drawOnlyText) {
+				p.restore();
+			}
+			if (mediaDisplayed && !_invertMedia) {
+				paintMedia(trect.y() + trect.height() - mediaHeight);
+				if (context.reactionInfo && !displayInfo && !_reactions) {
+					context.reactionInfo->position
+						= QPoint(inner.left(), trect.y() + trect.height());
+					if (context.reactionInfo->effectPaint) {
+						context.reactionInfo->effectOffset -= QPoint(0, mediaHeight);
+					}
+				}
+			}
+			if (check) {
+				auto checkLeft = inner.left();
+				auto checkTop = trect.y() + trect.height() + st::mediaInBubbleSkip;
+				p.translate(checkLeft, checkTop);
+				auto checkContext = context.translated(checkLeft, -checkTop);
+				checkContext.selection = skipTextSelection(context.selection);
+				if (mediaDisplayed) {
+					checkContext.selection = media->skipSelection(
+						checkContext.selection);
+				}
+				check->draw(p, checkContext);
+				p.translate(-checkLeft, -checkTop);
+			}
+			if (entry) {
+				auto entryLeft = inner.left();
+				auto entryTop = trect.y() + trect.height();
+				p.translate(entryLeft, entryTop);
+				auto entryContext = context.translated(-entryLeft, -entryTop);
+				entryContext.selection = skipTextSelection(context.selection);
+				if (mediaDisplayed) {
+					entryContext.selection = media->skipSelection(
+						entryContext.selection);
+				}
+				entry->draw(p, entryContext);
+				p.translate(-entryLeft, -entryTop);
+			}
+			if (displayInfo) {
+				const auto bottomSelected = context.selected()
+					|| (!mediaSelectionIntervals.empty()
+						&& (mediaSelectionIntervals.back().top
+							+ mediaSelectionIntervals.back().height
+							>= inner.y() + inner.height()));
+				drawInfo(
+					p,
+					context.withSelection(
+						bottomSelected ? FullSelection : TextSelection()),
+					inner.left() + inner.width(),
+					inner.top() + inner.height(),
+					2 * inner.left() + inner.width(),
+					InfoDisplayType::Default);
+				if (context.reactionInfo && !_reactions) {
+					const auto add = QPoint(0, inner.top() + inner.height());
+					context.reactionInfo->position = add;
+					if (context.reactionInfo->effectPaint) {
+						context.reactionInfo->effectOffset -= add;
+					}
+				}
+				if (_comments) {
+					const auto o = p.opacity();
+					p.setOpacity(0.3);
+					p.fillRect(g.left(), g.top() + g.height() - st::historyCommentsButtonHeight - st::lineWidth, g.width(), st::lineWidth, stm->msgDateFg);
 					p.setOpacity(o);
 				}
 			}
-			if (_summarize) {
-				paintSummarize(
-					p,
-					fastShareLeft,
-					fastShareTop,
-					!context.outbg,
-					context,
-					g);
+			ensureSummarizeButton();
+			if (const auto size = rightActionSize(); size || _summarize) {
+				const auto rightActionWidth = size
+					? size->width()
+					: _summarize->size().width();
+				const auto fastShareSkip = size
+					? std::clamp(
+						(g.height() - size->height()) / 2,
+						0,
+						st::historyFastShareBottom)
+					: st::historyFastShareBottom;
+				const auto fastShareLeft = hasRightLayout()
+					? (g.left()
+						- (_summarize ? 0 : rightActionWidth)
+						- st::historyFastShareLeft)
+					: (g.left() + g.width() + st::historyFastShareLeft);
+				const auto fastShareTop = g.top() + (data()->isSponsored()
+					? fastShareSkip
+					: g.height() - fastShareSkip - (size ? size->height() : 0));
+				if (size) {
+					const auto o = p.opacity();
+					if (selectionModeResult.progress > 0) {
+						p.setOpacity(1. - selectionModeResult.progress);
+					}
+					drawRightAction(
+						p,
+						context,
+						fastShareLeft,
+						fastShareTop,
+						width());
+					if (selectionModeResult.progress > 0) {
+						p.setOpacity(o);
+					}
+				}
+				if (_summarize) {
+					paintSummarize(
+						p,
+						fastShareLeft,
+						fastShareTop,
+						!context.outbg,
+						context,
+						g);
+				}
+			}
+
+			if (media) {
+				media->paintBubbleFireworks(p, g, context.now);
+			}
+		} else if (media && media->isDisplayed()) {
+			p.translate(g.topLeft());
+			media->draw(p, context.translated(
+				-g.topLeft()
+			).withSelection(skipTextSelection(context.selection)));
+			if (context.reactionInfo && !_reactions) {
+				const auto add = QPoint(0, g.height());
+				context.reactionInfo->position = g.topLeft() + add;
+				if (context.reactionInfo->effectPaint) {
+					context.reactionInfo->effectOffset -= add;
+				}
+			}
+			p.translate(-g.topLeft());
+		}
+
+		p.restoreTextPalette();
+
+		if (context.highlightPathCache
+			&& !context.highlightPathCache->isEmpty()) {
+			auto color = context.highlight.searchQuery
+				? SearchMessageHighlightBgColor()
+				: context.messageStyle()->textPalette.linkFg->c;
+			const auto opacity = context.highlight.collapsion
+				* context.highlight.opacity;
+			if (context.highlight.searchQuery) {
+				color.setAlphaF(color.alphaF() * opacity);
+			} else {
+				color.setAlpha(int(0.25 * opacity * 255));
+			}
+			if (color.alpha() > 0) {
+				context.highlightPathCache->setFillRule(Qt::WindingFill);
+				p.fillPath(*context.highlightPathCache, color);
 			}
 		}
 
-		if (media) {
-			media->paintBubbleFireworks(p, g, context.now);
+		if (roll) {
+			p.restore();
 		}
-	} else if (media && media->isDisplayed()) {
-		p.translate(g.topLeft());
-		media->draw(p, context.translated(
-			-g.topLeft()
-		).withSelection(skipTextSelection(context.selection)));
-		if (context.reactionInfo && !_reactions) {
-			const auto add = QPoint(0, g.height());
-			context.reactionInfo->position = g.topLeft() + add;
-			if (context.reactionInfo->effectPaint) {
-				context.reactionInfo->effectOffset -= add;
+
+		if (const auto reply = Get<Reply>()) {
+			if (const auto replyData = item->Get<HistoryMessageReply>()) {
+				if (reply->isNameUpdated(this, replyData)) {
+					const_cast<Message*>(this)->setPendingResize();
+				}
 			}
 		}
-		p.translate(-g.topLeft());
-	}
 
-	p.restoreTextPalette();
-
-	if (context.highlightPathCache
-		&& !context.highlightPathCache->isEmpty()) {
-		auto color = context.highlight.searchQuery
-			? SearchMessageHighlightBgColor()
-			: context.messageStyle()->textPalette.linkFg->c;
-		const auto opacity = context.highlight.collapsion
-			* context.highlight.opacity;
-		if (context.highlight.searchQuery) {
-			color.setAlphaF(color.alphaF() * opacity);
-		} else {
-			color.setAlpha(int(0.25 * opacity * 255));
+		if (GetEnhancedBool("screenshot_mode") != _previousMode) {
+			_previousMode = GetEnhancedBool("screenshot_mode"); // Update the previous mode
 		}
-		if (color.alpha() > 0) {
-			context.highlightPathCache->setFillRule(Qt::WindingFill);
-			p.fillPath(*context.highlightPathCache, color);
-		}
-	}
 
-	if (roll) {
-		p.restore();
-	}
-
-	if (const auto reply = Get<Reply>()) {
-		if (const auto replyData = item->Get<HistoryMessageReply>()) {
-			if (reply->isNameUpdated(this, replyData)) {
-				const_cast<Message*>(this)->setPendingResize();
+		if (gestureShift) {
+			p.translate(-gestureShift, 0);
+			if (context.reactionInfo && context.reactionInfo->effectPaint) {
+				context.reactionInfo->effectOffset += QPoint(gestureShift, 0);
 			}
-		}
-	}
 
-	if (GetEnhancedBool("screenshot_mode") != _previousMode) {
-		_previousMode = GetEnhancedBool("screenshot_mode"); // Update the previous mode
-	}
+			constexpr auto kShiftRatio = 1.5;
+			constexpr auto kBouncePart = 0.25;
+			constexpr auto kMaxHeightRatio = 3.5;
+			constexpr auto kStrokeWidth = 2.;
+			constexpr auto kWaveWidth = 10.;
+			const auto mirrored = !context.gestureHorizontal.inverted;
+			const auto isLeftSize = !context.outbg
+				|| (delegate()->elementChatMode() == ElementChatMode::Wide);
+			const auto ratio = std::min(context.gestureHorizontal.ratio, 1.);
+			const auto reachRatio = context.gestureHorizontal.reachRatio;
+			const auto size = st::historyFastShareSize;
+			const auto bubbleRight = mirrored
+				? (width() - g.x())
+				: rect::right(g);
+			const auto outerWidth = st::historySwipeIconSkip
+				+ (isLeftSize ? bubbleRight : width())
+				+ ((g.height() < size * kMaxHeightRatio)
+					? rightActionSize().value_or(QSize()).width()
+					: 0);
+			const auto shift = std::min(
+				(size * kShiftRatio * context.gestureHorizontal.ratio),
+				-1. * context.gestureHorizontal.translation
+			) + (st::historySwipeIconSkip * ratio * (isLeftSize ? .7 : 1.));
+			const auto rect = QRectF(
+				outerWidth - shift,
+				g.y() + (g.height() - size) / 2,
+				size,
+				size);
+			const auto center = rect::center(rect);
+			const auto spanAngle = ratio * arc::kFullLength;
+			const auto strokeWidth = style::ConvertFloatScale(kStrokeWidth);
 
-	if (gestureShift) {
-		p.translate(-gestureShift, 0);
-		if (context.reactionInfo && context.reactionInfo->effectPaint) {
-			context.reactionInfo->effectOffset += QPoint(gestureShift, 0);
-		}
-
-		constexpr auto kShiftRatio = 1.5;
-		constexpr auto kBouncePart = 0.25;
-		constexpr auto kMaxHeightRatio = 3.5;
-		constexpr auto kStrokeWidth = 2.;
-		constexpr auto kWaveWidth = 10.;
-		const auto mirrored = !context.gestureHorizontal.inverted;
-		const auto isLeftSize = !context.outbg
-			|| (delegate()->elementChatMode() == ElementChatMode::Wide);
-		const auto ratio = std::min(context.gestureHorizontal.ratio, 1.);
-		const auto reachRatio = context.gestureHorizontal.reachRatio;
-		const auto size = st::historyFastShareSize;
-		const auto bubbleRight = mirrored
-			? (width() - g.x())
-			: rect::right(g);
-		const auto outerWidth = st::historySwipeIconSkip
-			+ (isLeftSize ? bubbleRight : width())
-			+ ((g.height() < size * kMaxHeightRatio)
-				? rightActionSize().value_or(QSize()).width()
-				: 0);
-		const auto shift = std::min(
-			(size * kShiftRatio * context.gestureHorizontal.ratio),
-			-1. * context.gestureHorizontal.translation
-		) + (st::historySwipeIconSkip * ratio * (isLeftSize ? .7 : 1.));
-		const auto rect = QRectF(
-			outerWidth - shift,
-			g.y() + (g.height() - size) / 2,
-			size,
-			size);
-		const auto center = rect::center(rect);
-		const auto spanAngle = ratio * arc::kFullLength;
-		const auto strokeWidth = style::ConvertFloatScale(kStrokeWidth);
-
-		const auto reachScale = std::clamp(
-			(reachRatio > kBouncePart)
-				? (kBouncePart * 2 - reachRatio)
-				: reachRatio,
-			0.,
-			1.);
-		auto pen = Window::Theme::IsNightMode()
-			? QPen(anim::with_alpha(context.st->msgServiceFg()->c, 0.3))
-			: QPen(context.st->msgServiceBg());
-		pen.setWidthF(strokeWidth - (1. * (reachScale / kBouncePart)));
-		const auto arcRect = rect - Margins(strokeWidth);
-		p.save();
-		if (mirrored) {
-			p.translate(width(), 0);
-			p.scale(-1., 1.);
-		}
-		{
-			auto hq = PainterHighQualityEnabler(p);
-			p.setPen(Qt::NoPen);
-			p.setBrush(context.st->msgServiceBg());
-			p.setOpacity(ratio);
-			const auto scale = 1. + 1. * reachScale;
-			p.translate(center);
-			p.scale(mirrored ? scale : -scale, scale);
-			p.translate(-center);
-			p.drawEllipse(rect);
-			context.st->historyFastShareIcon().paintInCenter(p, rect);
-			p.setPen(pen);
-			p.setBrush(Qt::NoBrush);
-			p.drawArc(arcRect, arc::kQuarterLength, spanAngle);
-			// p.drawArc(arcRect, arc::kQuarterLength, spanAngle);
-			if (reachRatio) {
-				const auto w = style::ConvertFloatScale(kWaveWidth);
-				p.setOpacity(ratio - reachRatio);
-				p.drawArc(
-					arcRect + Margins(reachRatio * reachRatio * w),
-					arc::kQuarterLength,
-					spanAngle);
+			const auto reachScale = std::clamp(
+				(reachRatio > kBouncePart)
+					? (kBouncePart * 2 - reachRatio)
+					: reachRatio,
+				0.,
+				1.);
+			auto pen = Window::Theme::IsNightMode()
+				? QPen(anim::with_alpha(context.st->msgServiceFg()->c, 0.3))
+				: QPen(context.st->msgServiceBg());
+			pen.setWidthF(strokeWidth - (1. * (reachScale / kBouncePart)));
+			const auto arcRect = rect - Margins(strokeWidth);
+			p.save();
+			if (mirrored) {
+				p.translate(width(), 0);
+				p.scale(-1., 1.);
 			}
+			{
+				auto hq = PainterHighQualityEnabler(p);
+				p.setPen(Qt::NoPen);
+				p.setBrush(context.st->msgServiceBg());
+				p.setOpacity(ratio);
+				const auto scale = 1. + 1. * reachScale;
+				p.translate(center);
+				p.scale(mirrored ? scale : -scale, scale);
+				p.translate(-center);
+				p.drawEllipse(rect);
+				context.st->historyFastShareIcon().paintInCenter(p, rect);
+				p.setPen(pen);
+				p.setBrush(Qt::NoBrush);
+				p.drawArc(arcRect, arc::kQuarterLength, spanAngle);
+				// p.drawArc(arcRect, arc::kQuarterLength, spanAngle);
+				if (reachRatio) {
+					const auto w = style::ConvertFloatScale(kWaveWidth);
+					p.setOpacity(ratio - reachRatio);
+					p.drawArc(
+						arcRect + Margins(reachRatio * reachRatio * w),
+						arc::kQuarterLength,
+						spanAngle);
+				}
+			}
+			p.restore();
 		}
-		p.restore();
 	}
+	paintFoldingButton(p, context, countGeometry());
 	if (selectionTranslation) {
 		p.translate(-selectionTranslation, 0);
 	}
@@ -3284,6 +3518,12 @@ void Message::paintRichText(
 }
 
 PointState Message::pointState(QPoint point) const {
+	if (_folding && _folding->button.contains(point) && !isHidden()) {
+		return PointState::Inside;
+	} else if (isMessageFolded()) {
+		return !isHidden() && countGeometry().contains(point)
+			? PointState::Inside : PointState::Outside;
+	}
 	auto g = countGeometry();
 	if (g.width() < 1 || isHidden()) {
 		return PointState::Outside;
@@ -3943,6 +4183,13 @@ TextState Message::textState(
 		QPoint point,
 		StateRequest request) const {
 	_fromLinkRipplePointSet = 0;
+	if (_folding && !isHidden()) {
+		if (isMessageFolded()) {
+			return foldedTextState(point);
+		} else if (_folding->button.contains(point)) {
+			return TextState(data(), _folding->link);
+		}
+	}
 
 	const auto item = data();
 	const auto media = this->media();
@@ -4065,6 +4312,9 @@ TextState Message::textState(
 			trect.setY(trect.y() - st::msgPadding.top());
 		} else if (inBubble) {
 			if (getStateFromName(point, trect, &result)) {
+				if (_folding && !result.link) {
+					result.link = _folding->link;
+				}
 				return result;
 			}
 			if (const auto badge = Get<EphemeralBadge>()) {
@@ -4871,6 +5121,9 @@ bool Message::getStateText(
 
 // Forward to media.
 void Message::updatePressed(QPoint point) {
+	if (isMessageFolded()) {
+		return;
+	}
 	if (const auto rich = richpage()) {
 		auto trect = QRect();
 		if (prepareRichPageTextRect(trect)) {
@@ -4956,6 +5209,9 @@ bool Message::consumeHorizontalScroll(
 		QPoint position,
 		int delta,
 		Qt::ScrollPhase phase) {
+	if (isMessageFolded()) {
+		return false;
+	}
 	const auto rich = richpage();
 	auto trect = QRect();
 	if (!rich || !prepareRichPageTextRect(trect)) {
@@ -4968,6 +5224,9 @@ bool Message::consumeHorizontalScroll(
 }
 
 bool Message::canConsumeHorizontalScroll(QPoint position, int delta) const {
+	if (isMessageFolded()) {
+		return false;
+	}
 	const auto rich = richpage();
 	auto trect = QRect();
 	if (!rich || !prepareRichPageTextRect(trect)) {
@@ -5035,6 +5294,33 @@ MessageSelection Message::selectionFromStates(
 }
 
 TextForMimeData Message::selectedText(TextSelection selection) const {
+	if (isMessageFolded()) {
+		if (selection != FullSelection) {
+			return {};
+		}
+		auto result = TextForMimeData();
+		const auto append = [&](not_null<HistoryItem*> item) {
+			const auto media = item->media();
+			auto text = media ? media->clipboardText() : TextForMimeData();
+			if (text.empty()) {
+				text = item->clipboardText();
+			}
+			if (!text.empty()) {
+				if (!result.empty()) {
+					result.append(u"\n\n"_q);
+				}
+				result.append(std::move(text));
+			}
+		};
+		if (const auto group = history()->owner().groups().find(data())) {
+			for (const auto item : group->items) {
+				append(item);
+			}
+		} else {
+			append(data());
+		}
+		return result;
+	}
 	const auto media = this->media();
 	auto logEntryOriginalResult = TextForMimeData();
 	auto factcheckResult = TextForMimeData();
@@ -5397,6 +5683,9 @@ bool Message::selectionContains(
 Reactions::ButtonParameters Message::reactionButtonParameters(
 		QPoint position,
 		const TextState &reactionState) const {
+	if (isMessageFolded()) {
+		return {};
+	}
 	using namespace Reactions;
 	auto result = ButtonParameters{ .context = data()->fullId() };
 	const auto outsideBubble = (!_comments && !embedReactionsInBubble());
@@ -5447,6 +5736,9 @@ Reactions::ButtonParameters Message::reactionButtonParameters(
 ReplyButton::ButtonParameters Message::replyButtonParameters(
 		QPoint position,
 		const TextState &replyState) const {
+	if (isMessageFolded()) {
+		return {};
+	}
 	using namespace ReplyButton;
 	if (!displayFastReply() || unwrapped()) {
 		return {};
@@ -5631,11 +5923,16 @@ bool Message::updateBottomInfo() {
 }
 
 void Message::itemDataChanged() {
+	const auto wasFolded = isMessageFolded();
+	const auto hadFolding = (_folding != nullptr);
+	refreshFolding();
+	const auto foldingChanged = (wasFolded != isMessageFolded())
+		|| (hadFolding != (_folding != nullptr));
 	const auto infoChanged = updateBottomInfo();
 	const auto reactionsChanged = updateReactions();
 	const auto media = this->media();
 	const auto mediaChanged = media && media->updateItemData();
-	if (infoChanged || reactionsChanged || mediaChanged) {
+	if (infoChanged || reactionsChanged || mediaChanged || foldingChanged) {
 		history()->owner().requestViewResize(this);
 	} else {
 		repaint();
@@ -5831,6 +6128,9 @@ WebPage *Message::factcheckBlock() const {
 
 bool Message::toggleSelectionByHandlerClick(
 		const ClickHandlerPtr &handler) const {
+	if (_folding && _folding->link == handler) {
+		return true;
+	}
 	if (_comments && _comments->link == handler) {
 		return true;
 	} else if (_viewButton && _viewButton->link() == handler) {
@@ -5845,6 +6145,9 @@ bool Message::toggleSelectionByHandlerClick(
 
 bool Message::allowTextSelectionByHandler(
 		const ClickHandlerPtr &handler) const {
+	if (_folding && _folding->link == handler) {
+		return false;
+	}
 	if (const auto media = this->media()) {
 		if (media->allowTextSelectionByHandler(handler)) {
 			return true;
@@ -6517,6 +6820,9 @@ TextSelection Message::unskipTextSelection(TextSelection selection) const {
 }
 
 QRect Message::innerGeometry() const {
+	if (isMessageFolded()) {
+		return countGeometry();
+	}
 	auto result = countGeometry();
 	if (!hasOutLayout()) {
 		const auto w = std::max(
@@ -6570,6 +6876,17 @@ bool Message::isCommentsRootView() const {
 }
 
 QRect Message::countGeometry() const {
+	if (isMessageFolded()) {
+		const auto left = st::msgMargin.left()
+			+ (hasFromPhoto() ? st::msgPhotoSkip : 0);
+		const auto available = std::max(0,
+			width() - left - st::msgMargin.right());
+		const auto contentWidth = std::min(available, st::msgMaxWidth);
+		return QRect(data()->isSponsored()
+			? width() - st::msgMargin.left() - contentWidth : left,
+			marginTop(), contentWidth,
+			height() - marginTop() - marginBottom());
+	}
 	const auto item = data();
 	const auto centeredView = item->isFakeAboutView()
 		|| isCommentsRootView();
@@ -6584,7 +6901,8 @@ QRect Message::countGeometry() const {
 		: st::msgMargin.right();
 	const auto availableWidth = width()
 		- st::msgMargin.left()
-		- (centeredView ? st::msgMargin.left() : wideSkip);
+		- (centeredView ? st::msgMargin.left() : wideSkip)
+		- foldingLayoutSkip(wideSkip);
 	auto contentLeft = hasRightLayout() ? wideSkip : st::msgMargin.left();
 	auto contentWidth = availableWidth;
 	if (hasFromPhoto()) {
@@ -6689,6 +7007,11 @@ Ui::BubbleRounding Message::countBubbleRounding() const {
 int Message::resizeContentGetHeight(int newWidth) {
 	if (isHidden()) {
 		return marginTop() + marginBottom();
+	} else if (isMessageFolded()) {
+		return marginTop() + marginBottom()
+			+ st::msgPadding.top() + st::msgPadding.bottom()
+			+ std::max(st::msgNameFont->height,
+				st::historyMessageFoldButtonSize);
 	} else if (newWidth < st::msgMinWidth) {
 		return height();
 	}
@@ -6725,7 +7048,8 @@ int Message::resizeContentGetHeight(int newWidth) {
 		: st::msgMargin.right();
 	auto contentWidth = newWidth
 		- st::msgMargin.left()
-		- (centeredView ? st::msgMargin.left() : wideSkip);
+		- (centeredView ? st::msgMargin.left() : wideSkip)
+		- foldingLayoutSkip(wideSkip);
 	if (hasFromPhoto()) {
 		if (const auto size = rightActionSize()) {
 			contentWidth -= size->width() + (st::msgPhotoSkip - st::historyFastShareSize);

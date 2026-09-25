@@ -32,6 +32,7 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #include "lang/lang_instance.h"
 #include "core/update_checker.h"
 #include "core/enhanced_settings.h"
+#include "core/message_folding.h"
 #include "core/application.h"
 #include "core/file_utilities.h"
 #include "storage/localstorage.h"
@@ -325,6 +326,34 @@ void ImportEnhancedSettings() {
 		trackSearch(
 			AddSubsectionTitle(container, tr::lng_settings_messages()),
 			u"enhanced/section_messages"_q);
+
+		const auto foldingEnabled = [] {
+			return rpl::single(MessageFolding::Enabled())
+				| rpl::then(MessageFolding::Changes() | rpl::map([] {
+					return MessageFolding::Enabled();
+				}));
+		};
+		trackSearch(AddButtonWithIcon(
+			container,
+			tr::lng_message_folding_enabled(),
+			st::settingsButtonNoIcon),
+			u"enhanced/message_folding_enabled"_q
+		)->toggleOn(foldingEnabled())->toggledChanges(
+		) | rpl::on_next([](bool enabled) {
+			MessageFolding::SetEnabled(enabled);
+		}, container->lifetime());
+		const auto foldingRules = trackSearch(AddButtonWithIcon(
+			container,
+			tr::lng_message_folding_rules(),
+			st::settingsButtonNoIcon),
+			u"enhanced/message_folding_rules"_q);
+		foldingRules->addClickHandler([] {
+			Ui::show(Box<MessageFoldingBox>());
+		});
+		foldingEnabled() | rpl::on_next([=](bool enabled) {
+			foldingRules->setDisabled(!enabled);
+		}, container->lifetime());
+		AddDividerText(container, tr::lng_message_folding_about());
 
 		const auto wrap = container->add(
 				object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
@@ -1741,6 +1770,14 @@ void ImportEnhancedSettings() {
 		addButton(
 			u"enhanced/section_messages"_q,
 			tr::lng_settings_messages(tr::now));
+		addBool(
+			"message_folding_enabled",
+			tr::lng_message_folding_enabled(tr::now));
+		addButton(
+			u"enhanced/message_folding_rules"_q,
+			tr::lng_message_folding_rules(tr::now),
+			{ tr::lng_message_folding_keywords(tr::now),
+				tr::lng_message_folding_user_ids(tr::now) });
 		addBool(
 			"show_messages_id",
 			tr::lng_settings_show_message_id(tr::now));

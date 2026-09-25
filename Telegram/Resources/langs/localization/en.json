@@ -321,5 +321,16 @@
     "lng_settings_code_block_bg_color_invalid": "Please enter a valid color code, for example #495a7b.",
     "lng_settings_search_message_highlight_bg_color": "Search result message highlight color",
     "lng_settings_search_message_highlight_bg_color_placeholder": "#3482d555",
-    "lng_settings_search_message_highlight_bg_color_invalid": "Please enter a valid color code, for example #3482d555."
-	}
+    "lng_settings_search_message_highlight_bg_color_invalid": "Please enter a valid color code, for example #3482d555.",
+    "lng_message_folding_enabled": "Enable message folding",
+    "lng_message_folding_rules": "Message folding rules",
+    "lng_message_folding_keywords": "Keywords, separated by commas",
+    "lng_message_folding_user_ids": "User IDs, separated by commas",
+    "lng_message_folding_invalid_ids": "Enter positive numeric user IDs separated by commas.",
+    "lng_message_folding_about": "Fold incoming messages matching any keyword or sender ID. Matching ignores letter case. Promoted messages start folded. Turning this off expands all messages and keeps your rules.",
+    "lng_message_folding_placeholder": "Folded message",
+    "lng_message_folding_album": "Folded album · {amount} items",
+    "lng_message_folding_promoted": "Sponsored · {name}",
+    "lng_message_folding_expand": "Expand message",
+    "lng_message_folding_collapse": "Collapse message"
+}

@@ -290,6 +290,9 @@ public:
 	[[nodiscard]] bool isSignedAuthorElided() const override;
 
 	void itemDataChanged() override;
+	bool isMessageFolded() const override;
+	void expandFoldedMessage() override;
+	void resetMessageFolding() override;
 
 	VerticalRepaintRange verticalRepaintRange() const override;
 
@@ -316,6 +319,17 @@ private:
 	struct LinkRipple;
 	struct FromNameStatus;
 	struct RightAction;
+	struct Folding;
+
+	void refreshFolding();
+	void toggleFolding();
+	[[nodiscard]] int foldingLayoutSkip(int rightMargin) const;
+	void paintFolded(Painter &p, const PaintContext &context, QRect g) const;
+	void paintFoldingButton(
+		Painter &p,
+		const PaintContext &context,
+		QRect g) const;
+	[[nodiscard]] TextState foldedTextState(QPoint point) const;
 
 	void refreshDataIdHook() override;
 	bool hasHeavyPart() const override;
@@ -540,6 +554,7 @@ private:
 	mutable QPoint _linkRippleLastPoint;
 	mutable std::unique_ptr<CommentsButton> _comments;
 	mutable std::unique_ptr<TranscribeButton> _summarize;
+	std::unique_ptr<Folding> _folding;
 
 	mutable Ui::Text::String _fromName;
 	mutable std::unique_ptr<FromNameStatus> _fromNameStatus;

@@ -5,6 +5,7 @@ For license and copyright information please follow this link:
 https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 */
 #include "core/enhanced_settings.h"
+#include "core/message_folding.h"
 
 #include "mainwindow.h"
 #include "mainwidget.h"
@@ -186,6 +187,9 @@ namespace EnhancedSettings {
 			ensureBool(qsl("search_main_and_archive"), true);
 			ensureBool(u"search_include_porn"_q, true);
 			ensureBool(u"search_dialog_filter"_q, false);
+			ensureBool(u"message_folding_enabled"_q, true);
+			ensureString(u"message_folding_keywords"_q, QString());
+			ensureString(u"message_folding_user_ids"_q, QString());
 			ensureString(u"search_dialog_filter_ids"_q, QString());
 			ensureInt(u"search_porn_concurrency"_q, kSearchPornConcurrencyDefault);
 			ensureInt(
@@ -546,6 +550,7 @@ namespace EnhancedSettings {
 				WriteDefaultCustomFile();
 			}
 			FillMissingDefaults();
+			MessageFolding::Reload();
 		}
 
 	void Manager::write(bool force) {
@@ -742,6 +747,9 @@ namespace EnhancedSettings {
 		settings.insert(qsl("search_main_and_archive"), true);
 		settings.insert(u"search_include_porn"_q, true);
 		settings.insert(u"search_dialog_filter"_q, false);
+		settings.insert(u"message_folding_enabled"_q, true);
+		settings.insert(u"message_folding_keywords"_q, QString());
+		settings.insert(u"message_folding_user_ids"_q, QString());
 		settings.insert(u"search_dialog_filter_ids"_q, QString());
 		settings.insert(u"search_porn_concurrency"_q, kSearchPornConcurrencyDefault);
 		settings.insert(
@@ -867,6 +875,15 @@ namespace EnhancedSettings {
 		settings.insert(qsl("search_main_and_archive"), GetEnhancedBool("search_main_and_archive"));
 		settings.insert(u"search_include_porn"_q, SearchIncludePorn());
 		settings.insert(u"search_dialog_filter"_q, SearchDialogFilterEnabled());
+		settings.insert(
+			u"message_folding_enabled"_q,
+			gEnhancedOptions.value(u"message_folding_enabled"_q, true).toBool());
+		settings.insert(
+			u"message_folding_keywords"_q,
+			GetEnhancedString(u"message_folding_keywords"_q));
+		settings.insert(
+			u"message_folding_user_ids"_q,
+			GetEnhancedString(u"message_folding_user_ids"_q));
 		settings.insert(
 			u"search_dialog_filter_ids"_q,
 			SearchDialogFilterIds());
@@ -1035,6 +1052,14 @@ namespace EnhancedSettings {
 		if (incoming.isEmpty()) {
 			return std::nullopt;
 		}
+		const auto foldingIds = incoming.value(u"message_folding_user_ids"_q);
+		const auto foldingWords = incoming.value(u"message_folding_keywords"_q);
+		if ((foldingIds.isString()
+				&& !MessageFolding::ValidUserIds(foldingIds.toString()))
+			|| (foldingWords.isString()
+				&& foldingWords.toString().size() > MessageFolding::kMaxRuleLength)) {
+			return std::nullopt;
+		}
 		const auto known = CurrentSettingsObject();
 		auto applicable = 0;
 		for (const auto &key : incoming.keys()) {
@@ -1168,6 +1193,7 @@ namespace EnhancedSettings {
 			Write();
 			return false;
 		}
+		MessageFolding::Reload();
 		return true;
 	}
 

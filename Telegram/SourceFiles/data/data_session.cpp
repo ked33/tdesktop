@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_session.h"
+#include "core/message_folding.h"
 
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
@@ -366,6 +367,21 @@ Session::Session(not_null<Main::Session*> session)
 	setupChannelLeavingViewer();
 	setupPeerNameViewer();
 	setupUserIsContactViewer();
+	MessageFolding::Changes() | rpl::on_next([=] {
+		auto items = std::make_shared<std::vector<FullMsgId>>();
+		auto remaining = std::vector<FullMsgId>();
+		items->reserve(_views.size());
+		for (const auto &[item, views] : _views) {
+			const auto visible = ranges::any_of(views, [](const auto view) {
+				return !view->isHidden()
+					&& view->delegate()->elementIntersectsRange(
+						view, 0, view->height());
+			});
+			(visible ? *items : remaining).push_back(item->fullId());
+		}
+		items->insert(items->end(), remaining.begin(), remaining.end());
+		refreshMessageFolding(std::move(items), 0, MessageFolding::Version());
+	}, _lifetime);
 
 	_chatsList.unreadStateChanges(
 	) | rpl::on_next([=] {
@@ -2279,6 +2295,27 @@ void Session::requestViewRepaint(not_null<const ViewElement*> view, QRect r) {
 
 rpl::producer<RequestViewRepaint> Session::viewRepaintRequest() const {
 	return _viewRepaintRequest.events();
+}
+
+void Session::refreshMessageFolding(
+		std::shared_ptr<std::vector<FullMsgId>> items,
+		size_t offset,
+		uint64 version) {
+	if (version != MessageFolding::Version()) {
+		return;
+	}
+	constexpr auto kBatchSize = size_t(128);
+	const auto till = std::min(items->size(), offset + kBatchSize);
+	for (; offset != till; ++offset) {
+		if (const auto item = message((*items)[offset])) {
+			requestItemResize(item);
+		}
+	}
+	if (offset < items->size()) {
+		crl::on_main(_session, [=] {
+			refreshMessageFolding(items, offset, version);
+		});
+	}
 }
 
 void Session::requestItemResize(not_null<const HistoryItem*> item) {

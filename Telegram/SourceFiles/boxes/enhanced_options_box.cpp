@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <facades.h>
 #include <ui/toast/toast.h>
 #include "boxes/enhanced_options_box.h"
+#include "core/message_folding.h"
 
 #include "lang/lang_keys.h"
 #include "ui/widgets/fields/input_field.h"
@@ -1188,6 +1189,58 @@ void TrayIdleMemoryBox::save() {
 		return;
 	}
 	EnhancedSettings::SetTrayIdleMemoryMinutes(value);
+	closeBox();
+}
+
+MessageFoldingBox::MessageFoldingBox(QWidget *parent)
+: _keywords(this, st::defaultInputField, tr::lng_message_folding_keywords())
+, _ids(this, st::defaultInputField, tr::lng_message_folding_user_ids()) {
+}
+
+void MessageFoldingBox::prepare() {
+	setTitle(tr::lng_message_folding_rules());
+	_keywords->setMaxLength(MessageFolding::kMaxRuleLength);
+	_ids->setMaxLength(MessageFolding::kMaxRuleLength);
+	_keywords->setText(MessageFolding::Keywords());
+	_ids->setText(MessageFolding::UserIds());
+	const auto applyEnabled = [=] {
+		_keywords->setDisabled(!MessageFolding::Enabled());
+		_ids->setDisabled(!MessageFolding::Enabled());
+	};
+	applyEnabled();
+	MessageFolding::Changes() | rpl::on_next(applyEnabled, lifetime());
+	addButton(tr::lng_settings_save(), [=] { save(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+	setDimensions(st::boxWidth,
+		_keywords->height() + _ids->height() + st::boxPadding.top());
+}
+
+void MessageFoldingBox::setInnerFocus() {
+	_keywords->setFocusFast();
+}
+
+void MessageFoldingBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+	const auto width = this->width()
+		- st::boxPadding.left() - st::boxPadding.right();
+	_keywords->resize(width, _keywords->height());
+	_ids->resize(width, _ids->height());
+	_keywords->moveToLeft(st::boxPadding.left(), 0);
+	_ids->moveToLeft(st::boxPadding.left(),
+		_keywords->height() + st::boxPadding.top());
+}
+
+void MessageFoldingBox::save() {
+	if (!MessageFolding::Enabled()) {
+		closeBox();
+		return;
+	}
+	if (!MessageFolding::Save(_keywords->getLastText(), _ids->getLastText())) {
+		_ids->showError();
+		_ids->setFocusFast();
+		Ui::Toast::Show(tr::lng_message_folding_invalid_ids(tr::now));
+		return;
+	}
 	closeBox();
 }
 

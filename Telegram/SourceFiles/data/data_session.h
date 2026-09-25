@@ -1180,6 +1180,10 @@ private:
 	void enumerateItemViews(
 		not_null<const HistoryItem*> item,
 		Method method);
+	void refreshMessageFolding(
+		std::shared_ptr<std::vector<FullMsgId>> items,
+		size_t offset,
+		uint64 version);
 
 	void insertCheckedServiceNotification(
 		const TextWithEntities &message,

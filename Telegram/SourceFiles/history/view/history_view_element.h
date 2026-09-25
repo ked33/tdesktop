@@ -677,6 +677,9 @@ public:
 	[[nodiscard]] virtual bool isSignedAuthorElided() const;
 
 	virtual void itemDataChanged();
+	[[nodiscard]] virtual bool isMessageFolded() const;
+	virtual void expandFoldedMessage();
+	virtual void resetMessageFolding();
 	void itemTextUpdated();
 	void blockquoteExpandChanged();
 
@@ -727,7 +730,9 @@ public:
 		return fromLink();
 	}
 
-	[[nodiscard]] bool markSponsoredViewed(int shownFromTop) const;
+	[[nodiscard]] bool markSponsoredViewed(
+		int shownFromTop,
+		int hiddenFromTop = 0) const;
 
 	virtual void animateReaction(Ui::ReactionFlyAnimationArgs &&args) = 0;
 	void animateUnreadReactions();

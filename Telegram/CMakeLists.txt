@@ -580,6 +580,9 @@ PRIVATE
     core/credits_amount.h
     core/deadlock_detector.h
     core/enhanced_settings.cpp
+    core/message_folding.cpp
+    core/message_folding.h
+    core/message_folding_matcher.h
     core/enhanced_settings.h
     core/deep_links/deep_links_chats.cpp
     core/deep_links/deep_links_chats.h

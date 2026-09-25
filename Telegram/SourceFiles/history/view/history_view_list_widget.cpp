@@ -1220,6 +1220,17 @@ void ListWidget::highlightMessage(
 		FullMsgId itemId,
 		const MessageHighlightId &highlight) {
 	if (const auto view = viewForItem(itemId)) {
+		auto target = view;
+		if (const auto group = session().data().groups().find(view->data())) {
+			if (const auto leader = viewForItem(group->items.front())) {
+				target = leader;
+			}
+		}
+		const auto wasFolded = target->isMessageFolded();
+		target->expandFoldedMessage();
+		if (wasFolded) {
+			updateSize();
+		}
 		_highlighter.highlight({ view->data(), highlight });
 	}
 }
@@ -3406,7 +3417,7 @@ void ListWidget::paintEvent(QPaintEvent *e) {
 			context.highlight = _highlighter.state(item);
 			view->draw(p, context);
 		}
-		if (_translateTracker) {
+		if (_translateTracker && !view->isMessageFolded()) {
 			_translateTracker->add(view);
 		}
 		if (metricsStale && height > 0) {
@@ -3416,13 +3427,15 @@ void ListWidget::paintEvent(QPaintEvent *e) {
 		const auto isUnread = _delegate->listElementShownUnread(view)
 			&& item->isRegular();
 		const auto withReaction = context.reactionInfo
+			&& !view->isMessageFolded()
 			&& item->hasUnreadReaction();
 		const auto yShown = [&](int y) {
 			return (_visibleBottom >= y && _visibleTop <= y);
 		};
 		const auto markShown = (_context != Context::ChatPreview)
 			&& (isSponsored
-				? view->markSponsoredViewed(_visibleBottom - top)
+				? view->markSponsoredViewed(
+					_visibleBottom - top, _visibleTop - top)
 				: withReaction
 				? yShown(top + context.reactionInfo->position.y())
 				: isUnread
@@ -3435,11 +3448,13 @@ void ListWidget::paintEvent(QPaintEvent *e) {
 				readTill = item;
 			}
 			if (markingContentRead
+				&& !view->isMessageFolded()
 				&& item->hasUnwatchedEffect()
 				&& _delegate->listAllowsReadEffect(view)) {
 				startEffects.emplace(view);
 			}
 			if (markingContentRead
+				&& !view->isMessageFolded()
 				&& interactionsWindow
 				&& !item->out()
 				&& !_animatedStickersPlayed.contains(item)
