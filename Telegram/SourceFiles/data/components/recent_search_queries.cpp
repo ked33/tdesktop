@@ -15,7 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Data {
 namespace {
 
-constexpr auto kLimit = 20;
+constexpr auto kLimit = 50;
 constexpr auto kMaxLength = 256;
 
 [[nodiscard]] bool SameQuery(const QString &a, const QString &b) {
