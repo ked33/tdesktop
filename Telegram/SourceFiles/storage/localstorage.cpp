@@ -1424,7 +1424,7 @@ void incrementRecentHashtag(
 	for (; i != e; ++i) {
 		if (i->first == tag) {
 			++i->second;
-			if (qAbs(i->second) > 0x4000) {
+			if (i->second > 0x4000) {
 				for (auto j = recent.begin(); j != e; ++j) {
 					if (j->second > 1) {
 						j->second /= 2;
@@ -1434,21 +1434,21 @@ void incrementRecentHashtag(
 				}
 			}
 			for (; i != recent.begin(); --i) {
-				if (qAbs((i - 1)->second) > qAbs(i->second)) {
+				if ((i - 1)->second > i->second) {
 					break;
 				}
-				qSwap(*i, *(i - 1));
+				std::swap(*i, *(i - 1));
 			}
 			break;
 		}
 	}
 	if (i == e) {
-		recent.push_back(qMakePair(tag, 1));
+		recent.push_back({ tag, 1 });
 		for (i = recent.end() - 1; i != recent.begin(); --i) {
 			if ((i - 1)->second > i->second) {
 				break;
 			}
-			qSwap(*i, *(i - 1));
+			std::swap(*i, *(i - 1));
 		}
 	}
 	while (recent.size() > limit) {

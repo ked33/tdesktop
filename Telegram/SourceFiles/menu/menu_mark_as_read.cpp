@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_histories.h"
 #include "data/data_saved_sublist.h"
 #include "data/data_session.h"
+#include "data/data_unread_value.h"
 #include "data/data_user.h"
 #include "dialogs/dialogs_main_list.h"
 #include "history/history.h"
@@ -35,6 +36,44 @@ constexpr auto kMaxUnreadWithoutConfirmation = 1000;
 
 [[nodiscard]] bool SkipMutedThread(not_null<Data::Thread*> thread) {
 	return thread->muted() && !thread->chatListUnreadState().mentions;
+}
+
+[[nodiscard]] Dialogs::UnreadState MarkAsReadUnreadState(
+		not_null<Dialogs::MainList*> list,
+		MarkAsReadMuted muted) {
+	auto result = Dialogs::UnreadState();
+	for (const auto &row : list->indexed()->all()) {
+		const auto history = row->history();
+		if (!history) {
+			continue;
+		} else if ((muted == MarkAsReadMuted::Skip)
+			&& SkipMutedThread(history)) {
+			continue;
+		}
+		result += history->chatListUnreadState();
+	}
+	result.known = true;
+	return result;
+}
+
+[[nodiscard]] Dialogs::UnreadState MarkAsReadAllChatsState(
+		not_null<Data::Session*> owner,
+		MarkAsReadMuted muted) {
+	auto result = MarkAsReadUnreadState(owner->chatsList(), muted);
+	if (const auto folder = owner->folderLoaded(Data::Folder::kId)) {
+		result += MarkAsReadUnreadState(folder->chatsList(), muted);
+	}
+	return result;
+}
+
+[[nodiscard]] rpl::producer<QString> ConfirmChatListText(ChatListKind kind) {
+	switch (kind) {
+	case ChatListKind::Folder: return tr::lng_context_mark_read_sure();
+	case ChatListKind::Archive:
+		return tr::lng_context_mark_read_archive_sure();
+	case ChatListKind::AllChats: return tr::lng_context_mark_read_all_sure();
+	}
+	Unexpected("Kind in MarkAsReadMenu::ConfirmChatListText.");
 }
 
 } // namespace
@@ -142,12 +181,14 @@ void AddAllChatsAction(
 
 void AddChatListAction(
 		not_null<Window::SessionController*> controller,
+		ChatListKind kind,
 		Fn<not_null<Dialogs::MainList*>()> &&list,
-		const Ui::Menu::MenuCallback &addAction,
-		Fn<Dialogs::UnreadState()> customUnreadState) {
+		const Ui::Menu::MenuCallback &addAction) {
 	// There is no async to make weak from controller.
-	const auto unreadState = customUnreadState
-		? customUnreadState()
+	const auto unreadState = (kind == ChatListKind::AllChats)
+		? Data::MainListMapUnreadState(
+			&controller->session(),
+			list()->unreadState())
 		: list()->unreadState();
 	if (!unreadState.messages && !unreadState.marks && !unreadState.chats) {
 		return;
@@ -161,7 +202,7 @@ void AddChatListAction(
 			};
 			controller->show(
 				Ui::MakeConfirmBox({
-					tr::lng_context_mark_read_sure(),
+					ConfirmChatListText(kind),
 					std::move(boxCallback)
 				}),
 				Ui::LayerOption::CloseOther);
