@@ -67,10 +67,10 @@ void RecentSearchQueries::bump(const QString &entry) {
 	auto i = ranges::find_if(_list, [&](const QString &other) {
 		return SameQuery(other, query);
 	});
-	if (i == begin(_list) && *i == query) {
-		return;
-	}
 	if (i != end(_list)) {
+		if (i == begin(_list) && *i == query) {
+			return;
+		}
 		_list.erase(i);
 	}
 	_list.insert(begin(_list), query);
