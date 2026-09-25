@@ -4709,6 +4709,12 @@ bool Widget::applySearchState(SearchState state) {
 	_searchInMigrated = migrateFrom
 		? peer->owner().history(migrateFrom).get()
 		: nullptr;
+	if (!_searchState.inChat
+		&& !_searchState.query.isEmpty()
+		&& (state.query.isEmpty() || state.inChat)) {
+		noteRecentSearchQuery(_searchState.query);
+		commitRecentSearchDraft();
+	}
 	_searchState = state;
 	if (queryChanged) {
 		cancelSearchRequest();
