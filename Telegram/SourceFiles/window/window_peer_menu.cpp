@@ -86,6 +86,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_updates.h"
 #include "mtproto/mtproto_config.h"
 #include "history/history.h"
+#include "history/history_item.h"
 #include "history/history_item_helpers.h" // GetErrorForSending.
 #include "history/history_widget.h"
 #include "history/history_item_components.h"
@@ -1937,6 +1938,176 @@ void Filler::addPinnedMessages() {
 	}
 }
 
+constexpr auto kRandomHistoryMisses = 4;
+
+[[nodiscard]] bool IsLiveServerMessage(not_null<HistoryItem*> item) {
+	return item->isRegular() && !item->isHistoryClearPlaceholder();
+}
+
+// Message ids are not dense: deleted messages leave holes, so an id drawn
+// from [1, maxId] often does not exist. getHistory(add_offset) addresses
+// live messages by position. A history loaded at both ends is sampled in
+// memory; otherwise one probe learns the live count and one follow-up
+// reads that position. An empty page is retried inside the returned count.
+[[nodiscard]] MsgId RandomLoadedServerMessageId(not_null<History*> history) {
+	auto count = 0;
+	for (const auto &block : history->blocks) {
+		for (const auto &view : block->messages) {
+			if (IsLiveServerMessage(view->data())) {
+				++count;
+			}
+		}
+	}
+	if (!count) {
+		return MsgId();
+	}
+	auto left = base::RandomIndex(count);
+	for (const auto &block : history->blocks) {
+		for (const auto &view : block->messages) {
+			const auto item = view->data();
+			if (!IsLiveServerMessage(item)) {
+				continue;
+			} else if (!left) {
+				return item->id;
+			}
+			--left;
+		}
+	}
+	return MsgId();
+}
+
+struct HistoryPositionSample {
+	int count = 0;
+	MsgId id;
+};
+
+[[nodiscard]] HistoryPositionSample ReadHistoryPositionSample(
+		const MTPmessages_Messages &result) {
+	const auto read = [](
+			const QVector<MTPMessage> &messages,
+			int count) {
+		auto id = MsgId();
+		for (const auto &message : messages) {
+			if (message.type() == mtpc_messageEmpty) {
+				continue;
+			}
+			const auto messageId = IdFromMessage(message);
+			if (IsServerMsgId(messageId)) {
+				id = messageId;
+				break;
+			}
+		}
+		if (count <= 0) {
+			count = int(messages.size());
+		}
+		return HistoryPositionSample{ count, id };
+	};
+	return result.match([&](const MTPDmessages_messages &data) {
+		return read(data.vmessages().v, 0);
+	}, [&](const MTPDmessages_messagesSlice &data) {
+		return read(data.vmessages().v, data.vcount().v);
+	}, [&](const MTPDmessages_channelMessages &data) {
+		return read(data.vmessages().v, data.vcount().v);
+	}, [&](const MTPDmessages_messagesNotModified &) {
+		return HistoryPositionSample();
+	});
+}
+
+void JumpToRandomExistingMessage(
+		not_null<ChannelData*> peer,
+		not_null<Window::SessionController*> controller,
+		History *history) {
+	const auto weak = base::make_weak(controller);
+	const auto show = [=](MsgId id) {
+		if (!IsServerMsgId(id)) {
+			return;
+		}
+		if (const auto strong = weak.get()) {
+			strong->showPeerHistory(
+				peer,
+				Window::SectionShow::Way::Forward,
+				id);
+		}
+	};
+	if (history
+		&& history->peer->id == peer->id
+		&& history->loadedAtTop()
+		&& history->loadedAtBottom()) {
+		show(RandomLoadedServerMessageId(history));
+		return;
+	}
+
+	struct State {
+		MsgId fallback;
+		int misses = 0;
+	};
+	const auto state = std::make_shared<State>();
+	const auto run = std::make_shared<Fn<void(int, bool)>>();
+	*run = [=, weakRun = std::weak_ptr<Fn<void(int, bool)>>(run)](
+			int addOffset,
+			bool probing) {
+		const auto alive = weakRun.lock();
+		if (!alive) {
+			return;
+		}
+		peer->session().api().request(MTPmessages_GetHistory(
+			peer->input(),
+			MTP_int(0),
+			MTP_int(0),
+			MTP_int(addOffset),
+			MTP_int(1),
+			MTP_int(0),
+			MTP_int(0),
+			MTP_long(0)
+		)).done([=](const MTPmessages_Messages &result) {
+			peer->owner().processExistingMessages(peer, result);
+			const auto sample = ReadHistoryPositionSample(result);
+			const auto item = IsServerMsgId(sample.id)
+				? peer->owner().message(peer, sample.id)
+				: nullptr;
+			const auto live = item && IsLiveServerMessage(item);
+			if (live && !state->fallback) {
+				state->fallback = item->id;
+			}
+			if (probing) {
+				if (sample.count <= 1) {
+					show(live ? item->id : state->fallback);
+					return;
+				}
+				const auto index = base::RandomIndex(sample.count);
+				if (!index) {
+					show(live ? item->id : state->fallback);
+					return;
+				}
+				(*alive)(index, false);
+				return;
+			}
+			if (live) {
+				show(item->id);
+				return;
+			}
+			if (++state->misses >= kRandomHistoryMisses) {
+				show(state->fallback);
+				return;
+			}
+			auto next = 0;
+			if (sample.count > 0 && addOffset >= sample.count) {
+				next = base::RandomIndex(sample.count);
+			} else {
+				next = addOffset / 2;
+			}
+			if (next <= 0) {
+				show(state->fallback);
+				return;
+			}
+			(*alive)(next, false);
+		}).fail([=](const MTP::Error &) {
+			show(state->fallback);
+		}).handleFloodErrors().send();
+	};
+	(*run)(0, true);
+}
+
 void Filler::addRandomIdMessage() {
 	const auto peer = _peer->isMegagroup()
 		? _peer->asMegagroup()
@@ -1947,56 +2118,7 @@ void Filler::addRandomIdMessage() {
 	const auto controller = _controller;
 	const auto history = _request.key.history();
 	_addAction(tr::lng_go_to_random_id_message(tr::now), [=] {
-		const auto weak = base::make_weak(controller);
-		const auto jump = [=](MsgId maxId) {
-			if (!IsServerMsgId(maxId)) {
-				return;
-			}
-			const auto limit = uint64(maxId.bare);
-			if (!limit) {
-				return;
-			}
-			const auto randomId = MsgId(
-				1 + (base::RandomValue<uint64>() % limit));
-			if (const auto strong = weak.get()) {
-				strong->showPeerHistory(
-					peer,
-					Window::SectionShow::Way::Forward,
-					randomId);
-			}
-		};
-		if (history) {
-			if (const auto last = history->lastServerMessage()) {
-				jump(last->id);
-				return;
-			}
-		}
-		peer->session().api().request(MTPmessages_GetHistory(
-			peer->input(),
-			MTP_int(0),
-			MTP_int(0),
-			MTP_int(0),
-			MTP_int(1),
-			MTP_int(0),
-			MTP_int(0),
-			MTP_long(0)
-		)).done([=](const MTPmessages_Messages &result) {
-			const auto from = [](const auto &data) {
-				return data.vmessages().v.isEmpty()
-					? MsgId()
-					: IdFromMessage(data.vmessages().v.front());
-			};
-			const auto maxId = result.match([&](const MTPDmessages_messages &data) {
-				return from(data);
-			}, [&](const MTPDmessages_messagesSlice &data) {
-				return from(data);
-			}, [&](const MTPDmessages_channelMessages &data) {
-				return from(data);
-			}, [&](const MTPDmessages_messagesNotModified &) {
-				return MsgId();
-			});
-			jump(maxId);
-		}).send();
+		JumpToRandomExistingMessage(peer, controller, history);
 	}, &st::menuIconShowInChat);
 }
 
