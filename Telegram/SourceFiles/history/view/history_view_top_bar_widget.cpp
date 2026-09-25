@@ -489,7 +489,7 @@ void TopBarWidget::toggleMessagesProgressDetails() {
 	const auto shown = !MessagesProgressDetailsShown();
 	SetEnhancedValue(kMessagesProgressDetailsKey, shown);
 	EnhancedSettings::Write();
-	MessagesProgressDetailsStream().fire(shown);
+	MessagesProgressDetailsStream().fire_copy(shown);
 }
 
 bool TopBarWidget::messagesProgressPercentHit(QPoint position) const {
