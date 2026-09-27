@@ -76,7 +76,7 @@ settings.local.json
 .jpg
 
 # Generated changelog page (built by CI, deployed to GitHub Pages)
-/docs/changelog/
+/docs/
 log.txt
 mpv.log
 .gitignore
