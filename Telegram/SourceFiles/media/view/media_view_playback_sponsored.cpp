@@ -540,8 +540,7 @@ PlaybackSponsored::PlaybackSponsored(
 	not_null<Ui::RpWidget*> controls,
 	std::shared_ptr<ChatHelpers::Show> show,
 	not_null<HistoryItem*> item)
-: _parent(controls->parentWidget())
-, _session(&item->history()->session())
+: _session(&item->history()->session())
 , _show(std::move(show))
 , _itemId(item->fullId())
 , _controlsGeometry(controls->geometryValue())
@@ -659,7 +658,7 @@ void PlaybackSponsored::update() {
 			finish();
 		}
 	} else {
-		if (state.leftTillShow <= 0 && duration) {
+		if (state.leftTillShow <= 0 && duration && !_impressionSent) {
 			_allowCloseAt = now + state.leftTillShow + message->durationMin;
 			if (!_widget) {
 				show(*message);
@@ -673,30 +672,9 @@ void PlaybackSponsored::update() {
 }
 
 void PlaybackSponsored::show(const Data::SponsoredMessage &data) {
-	_widget = std::make_unique<Message>(
-		_parent,
-		_show,
-		data,
-		_allowCloseAt.value());
-	const auto raw = _widget.get();
-
-	_controlsGeometry.value() | rpl::on_next([=](QRect controls) {
-		raw->resizeToWidth(controls.width());
-		raw->setFinalPosition(
-			controls.x(),
-			controls.y() - st::mediaSponsoredSkip - raw->height());
-	}, raw->lifetime());
-
-	raw->actions() | rpl::on_next([=](Action action) {
-		switch (action) {
-		case Action::Close: hide(crl::now()); break;
-		case Action::PromotePremium: showPremiumPromo(); break;
-		case Action::Pause: setPausedInside(true); break;
-		case Action::Unpause: setPausedInside(false); break;
-		}
-	}, raw->lifetime());
-
-	raw->fadeIn();
+	// The impression is still reported; the card is not drawn.
+	_session->sponsoredMessages().view(data.randomId);
+	_impressionSent = true;
 }
 
 void PlaybackSponsored::showPremiumPromo() {
@@ -704,6 +682,7 @@ void PlaybackSponsored::showPremiumPromo() {
 }
 
 void PlaybackSponsored::hide(crl::time now) {
+	_impressionSent = false;
 	if (_widget) {
 		_widget->fadeOut([this, raw = _widget.get()] {
 			if (_widget.get() == raw) {

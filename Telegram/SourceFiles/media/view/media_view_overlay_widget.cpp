@@ -2285,18 +2285,6 @@ void OverlayWidget::refreshPollVotersWidgetGeometry() {
 void OverlayWidget::fillContextMenuActions(
 		not_null<Ui::Menu::Menu*> menu,
 		const Ui::Menu::MenuCallback &addAction) {
-	if (_message && _message->isSponsored()) {
-		if (const auto window = findWindow()) {
-			const auto show = window->uiShow();
-			const auto fullId = _message->fullId();
-			Menu::FillSponsored(
-				addAction,
-				show,
-				fullId,
-				{ .dark = true, .skipInfo = true });
-		}
-		return;
-	}
 	if (_message) {
 		const auto media = _message->media();
 		const auto invoice = media ? media->invoice() : nullptr;
@@ -4318,12 +4306,6 @@ void OverlayWidget::refreshCaption() {
 			}
 			if (const auto media = _message->media()) {
 				if (media->webpage()) {
-					if (_message->isSponsored()) {
-						return TextWithEntities()
-							.append(tr::bold(media->webpage()->title))
-							.append('\n')
-							.append(media->webpage()->description);
-					}
 					return TextWithEntities();
 				} else if (const auto poll = media->poll()) {
 					const auto current = _photo
@@ -5034,27 +5016,8 @@ void OverlayWidget::displayVideoStream(
 }
 
 void OverlayWidget::initSponsoredButton() {
-	const auto has = _message && _message->isSponsored() && _session;
-	if (has && _sponsoredButton) {
-		return;
-	} else if (!has && _sponsoredButton) {
-		_sponsoredButton = nullptr;
-		return;
-	} else if (!has && !_sponsoredButton) {
-		return;
-	}
-	const auto sponsoredMessages = &_session->sponsoredMessages();
-	const auto fullId = _message->fullId();
-	const auto details = sponsoredMessages->lookupDetails(fullId);
-	_sponsoredButton = base::make_unique_q<SponsoredButton>(_body);
-	_sponsoredButton->setText(details.buttonText);
-	_sponsoredButton->setOpacity(1.0);
-
-	_sponsoredButton->setClickedCallback([=, link = details.link] {
-		UrlClickHandler::Open(link);
-		sponsoredMessages->clicked(fullId, false, true);
-		hide();
-	});
+	// The post button is not drawn. Video ads still request and report.
+	_sponsoredButton = nullptr;
 }
 
 void OverlayWidget::updateThemePreviewGeometry() {

@@ -58,7 +58,6 @@ private:
 	[[nodiscard]] State computeState() const;
 	void saveState();
 
-	const not_null<QWidget*> _parent;
 	const not_null<Main::Session*> _session;
 	const std::shared_ptr<ChatHelpers::Show> _show;
 	const FullMsgId _itemId;
@@ -69,6 +68,7 @@ private:
 	rpl::variable<crl::time> _allowCloseAt;
 	crl::time _start = 0;
 	bool _started = false;
+	bool _impressionSent = false;
 	bool _paused = false;
 	bool _pausedInside = false;
 	bool _pausedOutside = false;
