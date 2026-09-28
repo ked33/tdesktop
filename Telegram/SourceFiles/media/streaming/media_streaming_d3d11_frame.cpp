@@ -429,6 +429,10 @@ bool RetainD3D11Frame(
 		}
 		return false;
 	}
+	// The renderer reads the texture through another D3D11 device.
+	if (d3d->device_context) {
+		d3d->device_context->Flush();
+	}
 
 	out->pixelBuffer = nullptr;
 	out->sharedHandle = gpu->handle;

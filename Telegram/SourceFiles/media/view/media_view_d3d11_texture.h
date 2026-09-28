@@ -24,7 +24,7 @@ public:
 	[[nodiscard]] QRhiTexture *import(
 		QRhi *rhi,
 		void *sharedHandle,
-		void *owner,
+		const std::shared_ptr<void> &owner,
 		QSize size);
 	void reset();
 

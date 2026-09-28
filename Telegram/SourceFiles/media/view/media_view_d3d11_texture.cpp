@@ -16,6 +16,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <rhi/qrhi.h>
 
+#include <vector>
+
 #endif // Qt >= 6.7
 
 namespace Media::View {
@@ -24,20 +26,44 @@ namespace Media::View {
 
 using Microsoft::WRL::ComPtr;
 
-struct D3D11SharedTexture::State {
+namespace {
+
+// Decoded frames rotate through a few GPU textures, keep all of them open.
+constexpr auto kMaxOpenedFrames = 8;
+
+struct OpenedFrame {
+	std::weak_ptr<void> owner;
 	void *handle = nullptr;
-	void *owner = nullptr;
 	ComPtr<ID3D11Texture2D> opened;
 	QRhiTexture *texture = nullptr;
 	QSize size;
+	quint64 used = 0;
+};
+
+void Destroy(OpenedFrame &frame) {
+	delete base::take(frame.texture);
+	frame.opened.Reset();
+}
+
+[[nodiscard]] bool SameOwner(
+		const std::weak_ptr<void> &a,
+		const std::shared_ptr<void> &b) {
+	return !a.owner_before(b) && !b.owner_before(a);
+}
+
+} // namespace
+
+struct D3D11SharedTexture::State {
+	std::vector<OpenedFrame> frames;
+	QRhi *rhi = nullptr;
+	quint64 counter = 0;
 
 	void reset() {
-		delete texture;
-		texture = nullptr;
-		opened.Reset();
-		handle = nullptr;
-		owner = nullptr;
-		size = QSize();
+		for (auto &frame : frames) {
+			Destroy(frame);
+		}
+		frames.clear();
+		rhi = nullptr;
 	}
 };
 
@@ -58,7 +84,7 @@ void D3D11SharedTexture::reset() {
 QRhiTexture *D3D11SharedTexture::import(
 		QRhi *rhi,
 		void *sharedHandle,
-		void *owner,
+		const std::shared_ptr<void> &owner,
 		QSize size) {
 	if (!rhi
 		|| !sharedHandle
@@ -67,12 +93,39 @@ QRhiTexture *D3D11SharedTexture::import(
 		|| rhi->backend() != QRhi::D3D11) {
 		return nullptr;
 	}
-	if (_state->texture
-		&& _state->owner == owner
-		&& _state->size == size) {
-		return _state->texture;
+	if (_state->rhi != rhi) {
+		_state->reset();
+		_state->rhi = rhi;
 	}
-	_state->reset();
+	auto &frames = _state->frames;
+	for (auto i = frames.begin(); i != frames.end();) {
+		if (i->owner.expired()) {
+			Destroy(*i);
+			i = frames.erase(i);
+		} else {
+			++i;
+		}
+	}
+	const auto used = ++_state->counter;
+	const auto i = ranges::find_if(frames, [&](const OpenedFrame &frame) {
+		return SameOwner(frame.owner, owner);
+	});
+	if (i != frames.end()) {
+		if (i->handle == sharedHandle && i->size == size) {
+			i->used = used;
+			return i->texture;
+		}
+		Destroy(*i);
+		frames.erase(i);
+	}
+	if (int(frames.size()) >= kMaxOpenedFrames) {
+		const auto oldest = ranges::min_element(
+			frames,
+			ranges::less(),
+			&OpenedFrame::used);
+		Destroy(*oldest);
+		frames.erase(oldest);
+	}
 	const auto *handles = static_cast<const QRhiD3D11NativeHandles *>(
 		rhi->nativeHandles());
 	if (!handles || !handles->dev) {
@@ -98,11 +151,14 @@ QRhiTexture *D3D11SharedTexture::import(
 		delete texture;
 		return nullptr;
 	}
-	_state->handle = sharedHandle;
-	_state->owner = owner;
-	_state->opened = std::move(opened);
-	_state->texture = texture;
-	_state->size = size;
+	frames.push_back({
+		.owner = owner,
+		.handle = sharedHandle,
+		.opened = std::move(opened),
+		.texture = texture,
+		.size = size,
+		.used = used,
+	});
 	return texture;
 }
 
@@ -120,7 +176,11 @@ D3D11SharedTexture::~D3D11SharedTexture() = default;
 void D3D11SharedTexture::reset() {
 }
 
-QRhiTexture *D3D11SharedTexture::import(QRhi *, void *, void *, QSize) {
+QRhiTexture *D3D11SharedTexture::import(
+		QRhi *,
+		void *,
+		const std::shared_ptr<void> &,
+		QSize) {
 	return nullptr;
 }
 

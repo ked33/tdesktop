@@ -1047,7 +1047,7 @@ void OverlayWidget::RendererRhi::paintTransformedVideoFrame(
 		if (const auto imported = _d3d11Frames.import(
 				_rhi,
 				data.nativeFrame->sharedHandle,
-				data.nativeFrame->retained.get(),
+				data.nativeFrame->retained,
 				data.nativeFrame->size)) {
 			paintTextureContent(
 				imported,
