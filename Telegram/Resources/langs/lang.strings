@@ -8639,6 +8639,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_iv_zoom_tooltip_ctrl" = "Hold Ctrl to zoom by 5%.\nHold Alt to zoom by 1%.";
 "lng_iv_zoom_tooltip_cmd" = "Hold Cmd to zoom by 5%.\nHold Alt to zoom by 1%.";
 
+"lng_transfer_limit_download" = "Playback or download temporarily limited";
+"lng_transfer_limit_upload" = "Upload temporarily limited";
+"lng_transfer_limit_wait" = "The server asks you to wait {seconds} seconds before retrying.";
+"lng_transfer_limit_wait_unknown" = "The server is temporarily limiting this transfer. Please try again later.";
+
 "lng_limit_download_title" = "Download speed limited";
 "lng_limit_download_subscribe" = "Subscribe to {link} to increase download speed {increase}.";
 "lng_limit_download_increase_times#one" = "**{count}** time";

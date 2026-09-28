@@ -30,6 +30,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "test/test_rpc_retry.h"
 
 #include <algorithm>
+#include <array>
 
 namespace MTP {
 namespace {
@@ -107,6 +108,8 @@ public:
 				mtpRequestId,
 				Storage::NonPremiumDelayInfo>>;
 		[[nodiscard]] rpl::producer<> frozenErrorReceived() const;
+	[[nodiscard]] rpl::producer<TransferLimitInfo> transferLimits() const;
+	void notifyTransferLimit(mtpRequestId requestId, const Error &error);
 
 	void restart();
 	void restart(ShiftedDcId shiftedDcId);
@@ -297,6 +300,7 @@ private:
 			mtpRequestId,
 			Storage::NonPremiumDelayInfo
 		>> _nonPremiumDelayedRequests;
+	rpl::event_stream<TransferLimitInfo> _transferLimits;
 		rpl::event_stream<> _frozenErrorReceived;
 
 	base::Timer _checkDelayedTimer;
@@ -576,6 +580,56 @@ auto Instance::Private::nonPremiumDelayedRequests() const
 
 rpl::producer<> Instance::Private::frozenErrorReceived() const {
 	return _frozenErrorReceived.events();
+}
+
+rpl::producer<TransferLimitInfo> Instance::Private::transferLimits() const {
+	return _transferLimits.events();
+}
+
+void Instance::Private::notifyTransferLimit(
+		mtpRequestId requestId,
+		const Error &error) {
+	const auto dc = std::abs(queryRequestByDc(requestId).value_or(0));
+	if (!isDownloadDcId(dc) && !isUploadDcId(dc)) {
+		return;
+	}
+	static const auto pattern = QRegularExpression(
+		u"^(FLOOD_WAIT|FLOOD_PREMIUM_WAIT|SLOWMODE_WAIT)_(\\d+)$"_q);
+	const auto match = pattern.match(error.type());
+	if (!match.hasMatch() && error.code() != 420) {
+		return;
+	}
+	const auto request = getRequest(requestId);
+	if (!request
+		|| request->size() <= SerializedRequest::kMessageBodyPosition) {
+		return;
+	}
+	const auto method = mtpTypeId(
+		(*request)[SerializedRequest::kMessageBodyPosition]);
+	constexpr auto kDownloads = std::array{
+		mtpc_upload_getFile,
+		mtpc_upload_getWebFile,
+		mtpc_upload_getCdnFile,
+		mtpc_upload_reuploadCdnFile,
+		mtpc_upload_getCdnFileHashes,
+		mtpc_upload_getFileHashes,
+	};
+	constexpr auto kUploads = std::array{
+		mtpc_upload_saveFilePart,
+		mtpc_upload_saveBigFilePart,
+	};
+	const auto upload = ranges::contains(kUploads, method);
+	if (!upload && !ranges::contains(kDownloads, method)) {
+		return;
+	}
+	auto validSeconds = false;
+	const auto seconds = match.captured(2).toInt(&validSeconds);
+	_transferLimits.fire_copy({
+		.type = error.type(),
+		.dcId = BareDcId(dc),
+		.waitSeconds = validSeconds ? seconds : -1,
+		.upload = upload,
+	});
 }
 
 void Instance::Private::requestConfigIfOld() {
@@ -1240,6 +1294,11 @@ bool Instance::Private::rpcErrorOccured(
 		const Response &response,
 		const FailHandler &onFail,
 		const Error &error) { // return true if need to clean request data
+	const auto guard = QPointer<Instance>(_instance);
+	notifyTransferLimit(response.requestId, error);
+	if (!guard) {
+		return false;
+	}
 	if (IsDefaultHandledError(error)) {
 		const auto guard = QPointer<Instance>(_instance);
 		if (onFail && onFail(error, response)) {
@@ -1981,6 +2040,10 @@ rpl::producer<ShiftedDcId> Instance::restartsByTimeout() const {
 rpl::producer<std::pair<mtpRequestId, Storage::NonPremiumDelayInfo>>
 Instance::nonPremiumDelayedRequests() const {
 	return _private->nonPremiumDelayedRequests();
+}
+
+rpl::producer<TransferLimitInfo> Instance::transferLimits() const {
+	return _private->transferLimits();
 }
 
 rpl::producer<> Instance::frozenErrorReceived() const {

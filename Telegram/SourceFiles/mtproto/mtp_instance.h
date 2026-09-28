@@ -30,6 +30,13 @@ using AuthKeyPtr = std::shared_ptr<AuthKey>;
 using AuthKeysList = std::vector<AuthKeyPtr>;
 enum class Environment : uchar;
 
+struct TransferLimitInfo {
+	QString type;
+	DcId dcId = 0;
+	int waitSeconds = -1;
+	bool upload = false;
+};
+
 class Instance : public QObject {
 	Q_OBJECT
 
@@ -145,6 +152,7 @@ public:
 
 	[[nodiscard]] auto nonPremiumDelayedRequests() const
 		-> rpl::producer<std::pair<mtpRequestId, Storage::NonPremiumDelayInfo>>;
+	[[nodiscard]] rpl::producer<TransferLimitInfo> transferLimits() const;
 	[[nodiscard]] rpl::producer<> frozenErrorReceived() const;
 
 	void syncHttpUnixtime();

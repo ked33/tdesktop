@@ -191,15 +191,6 @@ private:
 
 };
 
-[[nodiscard]] bool DownloadingDocument(not_null<DocumentData*> document) {
-	for (const auto id : Core::App().downloadManager().loadingList()) {
-		if (id->object.document == document.get()) {
-			return true;
-		}
-	}
-	return false;
-}
-
 [[nodiscard]] Ui::CollectibleInfo Parse(
 		const QString &entity,
 		not_null<PeerData*> owner,
@@ -1736,16 +1727,6 @@ SessionController::SessionController(
 		}));
 	}, _lifetime);
 
-	session->downloader().nonPremiumDelays(
-	) | rpl::on_next([=](const auto &data) {
-		checkNonPremiumLimitToastDownload(data.first, data.second);
-	}, _lifetime);
-
-	session->uploader().nonPremiumDelays(
-	) | rpl::on_next([=](const Storage::UploadNonPremiumDelay &data) {
-		checkNonPremiumLimitToastUpload(data.fullId, data.info);
-	}, _lifetime);
-
 	session->addWindow(this);
 
 	crl::on_main(this, [=] {
@@ -1796,77 +1777,6 @@ SessionController::SessionController(
 		}).send();
 	});
 #endif
-}
-
-bool SessionController::skipNonPremiumLimitToast(bool download) const {
-	if (session().premium()) {
-		return true;
-	}
-	const auto now = base::unixtime::now();
-	const auto last = download
-		? session().settings().lastNonPremiumLimitDownload()
-		: session().settings().lastNonPremiumLimitUpload();
-	const auto delay = session().appConfig().get<int>(
-		u"upload_premium_speedup_notify_period"_q,
-		3600);
-	return (last && now < last + delay && now > last - delay);
-}
-
-void SessionController::checkNonPremiumLimitToastDownload(
-		DocumentId id,
-		const Storage::NonPremiumDelayInfo &info) {
-	if (skipNonPremiumLimitToast(true)) {
-		return;
-	}
-	const auto document = session().data().document(id);
-	const auto visible = session().data().queryDocumentVisibility(document)
-		|| DownloadingDocument(document);
-	if (!visible) {
-		return;
-	}
-	const auto floodWait = QString("FLOOD_PREMIUM_WAIT_%1").arg(
-		info.serverWaitSeconds);
-	LOG(("Premium limit toast: type=download flood_premium_wait=%1 "
-		"default_delay_ms=%2 override_ms=%3 actual_delay_ms=%4")
-		.arg(floodWait
-		).arg(info.serverWaitSeconds * 1000
-		).arg((info.overrideWaitMs >= 0)
-			? QString::number(info.overrideWaitMs)
-			: QString("<empty>")
-		).arg(info.appliedWaitMs));
-	content()->showNonPremiumLimitToast(true);
-	const auto now = base::unixtime::now();
-	session().settings().setLastNonPremiumLimitDownload(now);
-	session().saveSettingsDelayed();
-}
-
-void SessionController::checkNonPremiumLimitToastUpload(
-		FullMsgId id,
-		const Storage::NonPremiumDelayInfo &info) {
-	if (skipNonPremiumLimitToast(false)) {
-		return;
-	}
-	const auto item = session().data().message(id);
-	if (!item) {
-		return;
-	}
-	if (!session().data().queryItemVisibility(item)) {
-		return;
-	}
-	const auto floodWait = QString("FLOOD_PREMIUM_WAIT_%1").arg(
-		info.serverWaitSeconds);
-	LOG(("Premium limit toast: type=upload flood_premium_wait=%1 "
-		"default_delay_ms=%2 override_ms=%3 actual_delay_ms=%4")
-		.arg(floodWait
-		).arg(info.serverWaitSeconds * 1000
-		).arg((info.overrideWaitMs >= 0)
-			? QString::number(info.overrideWaitMs)
-			: QString("<empty>")
-		).arg(info.appliedWaitMs));
-	content()->showNonPremiumLimitToast(false);
-	const auto now = base::unixtime::now();
-	session().settings().setLastNonPremiumLimitUpload(now);
-	session().saveSettingsDelayed();
 }
 
 void SessionController::suggestArchiveAndMute() {

@@ -48,10 +48,6 @@ namespace Main {
 class Session;
 } // namespace Main
 
-namespace Storage {
-struct NonPremiumDelayInfo;
-} // namespace Storage
-
 namespace InlineBots {
 class AttachWebView;
 enum class PeerType : uint8;
@@ -798,14 +794,6 @@ private:
 	[[nodiscard]] Ui::ChatThemeBackgroundData backgroundData(
 		CachedTheme &theme,
 		bool generateGradient = true) const;
-
-	[[nodiscard]] bool skipNonPremiumLimitToast(bool download) const;
-	void checkNonPremiumLimitToastDownload(
-		DocumentId id,
-		const Storage::NonPremiumDelayInfo &info);
-	void checkNonPremiumLimitToastUpload(
-		FullMsgId id,
-		const Storage::NonPremiumDelayInfo &info);
 
 	bool openFolderInDifferentWindow(not_null<Data::Folder*> folder);
 	bool openCommunityInDifferentWindow(

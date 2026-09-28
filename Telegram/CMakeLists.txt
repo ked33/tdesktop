@@ -2208,6 +2208,8 @@ PRIVATE
     window/window_setup_email.cpp
     window/window_setup_email.h
     window/window_top_bar_wrap.h
+    window/window_transfer_limit_toast.cpp
+    window/window_transfer_limit_toast.h
     window/window_unlock_passcode_box.cpp
     window/window_unlock_passcode_box.h
     window/themes/window_theme.cpp

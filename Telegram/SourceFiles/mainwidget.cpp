@@ -2324,63 +2324,6 @@ bool MainWidget::preventsCloseSection(
 		&& preventsCloseSection(std::move(callback));
 }
 
-void MainWidget::showNonPremiumLimitToast(bool download) {
-	const auto parent = _mainSection
-		? ((QWidget*)_mainSection.data())
-		: (_dialogs && _history->isHidden())
-		? ((QWidget*)_dialogs.get())
-		: ((QWidget*)_history.get());
-	const auto link = download
-		? tr::lng_limit_download_subscribe_link(tr::now)
-		: tr::lng_limit_upload_subscribe_link(tr::now);
-	const auto better = session().appConfig().get<double>(download
-		? u"upload_premium_speedup_download"_q
-		: u"upload_premium_speedup_upload"_q, 10.);
-	const auto percent = int(base::SafeRound(better * 100.));
-	if (percent <= 100) {
-		return;
-	}
-	const auto increase = ((percent % 100) || percent <= 400)
-		? (download
-			? tr::lng_limit_download_increase_speed
-			: tr::lng_limit_upload_increase_speed)(
-				tr::now,
-				lt_percent,
-				TextWithEntities{ QString::number(percent - 100) },
-				tr::rich)
-		: (download
-			? tr::lng_limit_download_increase_times
-			: tr::lng_limit_upload_increase_times)(
-				tr::now,
-				lt_count,
-				percent / 100,
-				tr::rich);
-	auto text = (download
-		? tr::lng_limit_download_subscribe
-		: tr::lng_limit_upload_subscribe)(
-			tr::now,
-			lt_link,
-			tr::link(tr::bold(link)),
-			lt_increase,
-			TextWithEntities{ increase },
-			tr::rich);
-	auto filter = [=](ClickHandlerPtr handler, Qt::MouseButton button) {
-		Settings::ShowPremium(
-			controller(),
-			download ? u"download_limit"_q : u"upload_limit"_q);
-		return false;
-	};
-	Ui::Toast::Show(parent, {
-		.title = (download
-			? tr::lng_limit_download_title
-			: tr::lng_limit_upload_title)(tr::now),
-		.text = std::move(text),
-		.filter = std::move(filter),
-		.attach = RectPart::Top,
-		.duration = 5 * crl::time(1000),
-	});
-}
-
 bool MainWidget::showBackFromStack(const SectionShow &params) {
 	if (preventsCloseSection([=] { showBackFromStack(params); }, params)) {
 		return false;

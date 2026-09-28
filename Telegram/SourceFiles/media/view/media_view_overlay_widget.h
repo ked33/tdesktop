@@ -119,6 +119,7 @@ public:
 	[[nodiscard]] bool isMinimized() const;
 	[[nodiscard]] bool isFullScreen() const;
 	[[nodiscard]] not_null<QWidget*> widget() const;
+	[[nodiscard]] std::shared_ptr<ChatHelpers::Show> uiShow();
 	void hide();
 	void setCursor(style::cursor cursor);
 	void setFocus();
@@ -282,7 +283,6 @@ private:
 	void playbackPauseMusic();
 	void switchToPip();
 	[[nodiscard]] int topNotchSkip() const;
-	[[nodiscard]] std::shared_ptr<ChatHelpers::Show> uiShow();
 
 	not_null<Ui::RpWidget*> storiesWrap() override;
 	std::shared_ptr<ChatHelpers::Show> storiesShow() override;

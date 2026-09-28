@@ -52,6 +52,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_download_manager.h"
 #include "data/stickers/data_stickers.h"
 #include "window/window_session_controller.h"
+#include "window/window_transfer_limit_toast.h"
 #include "window/window_controller.h"
 #include "window/window_lock_widgets.h"
 #include "base/unixtime.h"
@@ -183,6 +184,8 @@ Session::Session(
 , _fastButtonsBots(std::make_unique<Support::FastButtonsBots>(this))
 , _saveSettingsTimer([=] { saveSettings(); }) {
 	Expects(_settings != nullptr);
+
+	Window::SetupTransferLimitToasts(this);
 
 	_api->requestTermsUpdate();
 	_api->requestFullPeer(_user);
