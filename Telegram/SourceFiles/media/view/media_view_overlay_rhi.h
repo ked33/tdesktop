@@ -134,7 +134,9 @@ private:
 		QRect rect,
 		Fn<void(Painter&)> method,
 		bool transparent = false,
-		float opacity = 1.f);
+		float opacity = 1.f,
+		int cacheIndex = -1,
+		float64 rasterOpacity = 1.);
 
 	[[nodiscard]] Ui::GL::Rect transformRect(const QRect &raster) const;
 	[[nodiscard]] Ui::GL::Rect transformRect(const QRectF &raster) const;
@@ -208,6 +210,15 @@ private:
 	};
 	std::vector<PoolTexture> _texturePool;
 	int _nextPoolIndex = 0;
+	struct RasterCache {
+		QRhiTexture *texture = nullptr;
+		QRect rect;
+		QSize viewport;
+		uint64 revision = 0;
+		float factor = 0.;
+		float64 opacity = 0.;
+	};
+	std::array<RasterCache, 3> _rasterCaches;
 	[[nodiscard]] QRhiTexture *acquirePoolTexture(QSize size);
 
 	static constexpr auto kControlsCount = 8;

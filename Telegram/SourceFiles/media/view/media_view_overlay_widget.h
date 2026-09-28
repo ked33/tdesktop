@@ -646,6 +646,7 @@ private:
 	void refreshScreenshotProtection();
 	[[nodiscard]] bool contentNeedsScreenshotProtection() const;
 
+	uint64 _rasterRevision = 0;
 	bool _opengl = false;
 	bool _screenshotProtected = false;
 	const std::unique_ptr<Ui::GL::Window> _wrap;

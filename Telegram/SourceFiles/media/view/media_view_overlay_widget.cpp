@@ -1771,6 +1771,7 @@ void OverlayWidget::showPremiumDownloadPromo() {
 }
 
 void OverlayWidget::updateControls() {
+	++_rasterRevision;
 	if (_document && documentBubbleShown()) {
 		_docRect = QRect(
 			(width() - st::mediaviewFileSize.width()) / 2,
@@ -4554,10 +4555,12 @@ int OverlayWidget::height() const {
 }
 
 void OverlayWidget::update() {
+	++_rasterRevision;
 	_widget->update();
 }
 
 void OverlayWidget::update(const QRegion &region) {
+	++_rasterRevision;
 	_widget->update(region);
 }
 
@@ -4992,6 +4995,17 @@ void OverlayWidget::displayDocument(
 		switchToPip();
 	} else {
 		displayFinished(activation);
+		if (activation != anim::activation::background
+			&& !startStreaming.continueStreaming
+			&& !_stories
+			&& _document
+			&& _document->isVideoFile()
+			&& _streamed
+			&& _streamed->controls
+			&& !_fullScreenVideo
+			&& GetEnhancedBool(u"video_player_auto_fullscreen"_q)) {
+			playbackToggleFullScreen(true);
+		}
 	}
 }
 
@@ -5469,7 +5483,12 @@ void OverlayWidget::handleStreamingUpdate(Streaming::Update &&update) {
 	}, [&](PreloadedVideo) {
 		updatePlaybackState();
 	}, [&](UpdateVideo update) {
-		updateContentRect();
+		// Video frames do not invalidate the cached controls.
+		if (_opengl) {
+			_widget->update();
+		} else {
+			_widget->update(finalContentRect());
+		}
 		Core::App().updateNonIdle();
 		updatePlaybackState();
 		_streamedPosition = update.position;

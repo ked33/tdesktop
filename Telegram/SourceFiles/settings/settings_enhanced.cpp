@@ -206,6 +206,25 @@ void ImportEnhancedSettings() {
 		trackSearch(
 			AddButtonWithIcon(
 				inner,
+				tr::lng_settings_video_player_auto_fullscreen(),
+				st::settingsButtonNoIcon),
+			u"enhanced/video_player_auto_fullscreen"_q)->toggleOn(
+			rpl::single(GetEnhancedBool(u"video_player_auto_fullscreen"_q))
+		)->toggledChanges(
+		) | rpl::filter([=](bool toggled) {
+			return toggled
+				!= GetEnhancedBool(u"video_player_auto_fullscreen"_q);
+		}) | rpl::on_next([=](bool toggled) {
+			SetEnhancedValue(u"video_player_auto_fullscreen"_q, toggled);
+			EnhancedSettings::Write();
+		}, container->lifetime());
+		AddDividerText(
+			inner,
+			tr::lng_settings_video_player_auto_fullscreen_about());
+
+		trackSearch(
+			AddButtonWithIcon(
+				inner,
 				tr::lng_settings_online_playback_parameters_title(),
 				st::settingsButtonNoIcon
 			),
@@ -1757,6 +1776,10 @@ void ImportEnhancedSettings() {
 			"video_player_prefer_original",
 			tr::lng_settings_video_player_prefer_original(tr::now),
 			{ tr::lng_settings_video_player_prefer_original_about(tr::now) });
+		addBool(
+			"video_player_auto_fullscreen",
+			tr::lng_settings_video_player_auto_fullscreen(tr::now),
+			{ tr::lng_settings_video_player_auto_fullscreen_about(tr::now) });
 		addButton(
 			u"enhanced/online_playback_parameters"_q,
 			tr::lng_settings_online_playback_parameters_title(tr::now));

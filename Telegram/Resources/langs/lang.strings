@@ -8961,6 +8961,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_net_upload_speed_boost" = "Upload speed boost";
 "lng_settings_net_download_speed_boost" = "Optimize online playback";
 "lng_settings_video_player_prefer_original" = "Play original quality by default in the built-in player";
+"lng_settings_video_player_auto_fullscreen" = "Open videos in full screen";
+"lng_settings_video_player_auto_fullscreen_about" = "Automatically enter full-screen playback when opening a video in the built-in player. You can still double-click the video to switch modes. Applies to the next video you open.";
 "lng_settings_video_player_prefer_original_about" = "Open videos using the original file. You can still change the quality during playback. Applies to the next video you open and may use more data.";
 "lng_settings_online_playback_debug_logs" = "Write online playback debug logs to log.txt";
 "lng_settings_show_message_id" = "Show message ID";

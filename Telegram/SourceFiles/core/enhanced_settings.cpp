@@ -162,6 +162,7 @@ namespace EnhancedSettings {
 				ensureBool(qsl("mpv_streaming_debug_logs"), false);
 				ensureBool(qsl("online_playback_debug_logs"), false);
 			ensureBool(u"video_player_prefer_original"_q, true);
+			ensureBool(u"video_player_auto_fullscreen"_q, false);
 				ensureBool(qsl("show_message_context_show_messages_from"), true);
 			ensureBool(qsl("show_message_context_forward"), true);
 			ensureBool(qsl("show_message_context_repeater"), true);
@@ -773,6 +774,7 @@ namespace EnhancedSettings {
 			settings.insert(qsl("mpv_streaming_debug_logs"), false);
 			settings.insert(qsl("online_playback_debug_logs"), false);
 		settings.insert(u"video_player_prefer_original"_q, true);
+		settings.insert(u"video_player_auto_fullscreen"_q, false);
 			settings.insert(qsl("show_message_context_show_messages_from"), true);
 		settings.insert(qsl("show_message_context_forward"), true);
 		settings.insert(qsl("show_message_context_repeater"), true);
@@ -911,6 +913,9 @@ namespace EnhancedSettings {
 		settings.insert(
 			u"video_player_prefer_original"_q,
 			GetEnhancedBool(u"video_player_prefer_original"_q));
+		settings.insert(
+			u"video_player_auto_fullscreen"_q,
+			GetEnhancedBool(u"video_player_auto_fullscreen"_q));
 			settings.insert(qsl("show_message_context_show_messages_from"), GetEnhancedBool("show_message_context_show_messages_from"));
 		settings.insert(qsl("show_message_context_forward"), GetEnhancedBool("show_message_context_forward"));
 		settings.insert(qsl("show_message_context_repeater"), GetEnhancedBool("show_message_context_repeater"));
