@@ -11,7 +11,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_common.h"
 #include "media/streaming/media_streaming_loader.h"
 #include "media/streaming/media_streaming_mp4_header.h"
-#include "media/streaming/media_streaming_playback_prefetch.h"
 #include "media/streaming/media_streaming_source.h"
 #include "base/bytes.h"
 #include "base/timer.h"
@@ -85,7 +84,6 @@ public:
 	void requestTailPrefetch(int64 bytes);
 	void setSmartStreamingBufferPressure(bool pressure);
 	void setSmartStreamingPlaybackRate(int bytesPerSecond);
-	void setPlaybackPrefetch(std::shared_ptr<PlaybackPrefetchState> state);
 	void notifySmartStreamingSeek();
 
 	// Main thread.
@@ -259,9 +257,6 @@ private:
 	void noteDualKeepRead(int64 offset, int64 span);
 	[[nodiscard]] bool offsetInSeekCriticalParts(int64 offset) const;
 	[[nodiscard]] int topUpSeekCriticalLoads(int requestLimit);
-	[[nodiscard]] int topUpPlaybackLoads(
-		const PlaybackPrefetchPlan &plan,
-		int requestLimit);
 	bool updateSeekPrefetchCriticalProgress();
 	[[nodiscard]] crl::time smartStreamingBackgroundBuffer() const;
 	void updateSmartStreamingBufferPressure();
@@ -375,7 +370,6 @@ private:
 	bool _seekCancelEnabledLastFill = false;
 
 	PriorityQueue _loadingOffsets;
-	std::atomic<std::shared_ptr<PlaybackPrefetchState>> _playbackPrefetch = {};
 	base::flat_set<int64> _seekCancellationOffsets;
 	base::flat_set<int64> _pinnedTailOffsets;
 	int _seekCancelLogQueued = 0;

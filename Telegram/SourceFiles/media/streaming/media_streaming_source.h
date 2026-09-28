@@ -18,7 +18,6 @@ namespace Media::Streaming {
 
 class Reader;
 class TransferDiagnostics;
-class PlaybackPrefetchState;
 
 enum class ReadMode {
 	Required,
@@ -101,8 +100,6 @@ public:
 	virtual void setSmartStreamingBufferPressure(bool) {
 	}
 	virtual void setSmartStreamingPlaybackRate(int) {
-	}
-	virtual void setPlaybackPrefetch(std::shared_ptr<PlaybackPrefetchState>) {
 	}
 	virtual void notifySmartStreamingSeek() {
 	}

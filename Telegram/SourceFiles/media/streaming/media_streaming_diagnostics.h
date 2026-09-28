@@ -50,9 +50,7 @@ public:
 		int64 firstMissing,
 		int missingParts,
 		int criticalPendingParts,
-		int prefetchSlots,
-		int playbackPrefetchParts);
-	void playbackPrefetched();
+		int prefetchSlots);
 	void serverDelay(ServerDelay delay);
 	void speed(SpeedEstimate estimate);
 	[[nodiscard]] QString snapshot(crl::time now);
