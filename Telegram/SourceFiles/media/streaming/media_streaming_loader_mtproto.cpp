@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "media/streaming/media_streaming_debug.h"
 #include "media/streaming/media_streaming_diagnostics.h"
+#include "media/streaming/media_streaming_playback_prefetch.h"
 #include "settings.h"
 #include "storage/cache/storage_cache_types.h"
 #include "storage/streamed_file_downloader.h"
@@ -85,6 +86,12 @@ void LoaderMtproto::setDiagnostics(
 void LoaderMtproto::setStreamingReadRange(int64 offset, int64 amount) {
 	const auto lock = std::lock_guard(_readStallMutex);
 	_readStall.setRead(offset, amount, crl::now());
+}
+
+void LoaderMtproto::setPlaybackPrefetch(
+		std::shared_ptr<PlaybackPrefetchState> state) {
+	const auto lock = std::lock_guard(_readStallMutex);
+	_playbackPrefetch = std::move(state);
 }
 
 void LoaderMtproto::load(int64 offset) {
@@ -226,6 +233,15 @@ int64 LoaderMtproto::takeNextRequestOffset() {
 			kPartSize);
 		if (required && _requested.remove(*required)) {
 			offset = *required;
+		}
+		if (!offset && _playbackPrefetch) {
+			const auto plan = _playbackPrefetch->plan(crl::now());
+			for (auto i = 0; i != plan.count; ++i) {
+				if (_requested.remove(plan.offsets[i])) {
+					offset = plan.offsets[i];
+					break;
+				}
+			}
 		}
 	}
 	if (!offset) {

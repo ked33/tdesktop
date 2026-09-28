@@ -1571,6 +1571,11 @@ void Reader::startStreaming() {
 	refreshLoaderPriority();
 }
 
+void Reader::setPlaybackPrefetch(std::shared_ptr<PlaybackPrefetchState> state) {
+	_playbackPrefetch.store(state, std::memory_order_release);
+	_loader->setPlaybackPrefetch(std::move(state));
+}
+
 void Reader::continueStreamingForSoftSeek() {
 	Expects(_sleeping == nullptr);
 
@@ -2723,6 +2728,17 @@ Reader::FillState Reader::fillFromSlices(
 		putToCache(std::move(result.toCache));
 	}
 	auto checkPriority = true;
+	const auto playbackState = _playbackPrefetch.load(std::memory_order_acquire);
+	const auto playbackPlan = (smartNonPremium
+		&& mode == ReadMode::Required
+		&& !seekCriticalPhase
+		&& !readStalled
+		&& !headerRead
+		&& !serverLimited
+		&& !serverRecovering
+		&& playbackState)
+		? playbackState->plan(now)
+		: PlaybackPrefetchPlan();
 	if (!seekCriticalPhase && !readStalled && !headerRead) {
 		consumePendingTailPrefetch();
 	}
@@ -2793,6 +2809,7 @@ Reader::FillState Reader::fillFromSlices(
 		} else if (smartNonPremium
 			&& (seekCriticalPhase
 				|| (readStalled && !headerRead)
+				|| playbackPlan.count > 0
 				|| activeLoads >= requestsLimit)) {
 			continue;
 		}
@@ -2808,11 +2825,28 @@ Reader::FillState Reader::fillFromSlices(
 	if (seekCriticalPhase && !readStalled) {
 		activeLoads = topUpSeekCriticalLoads(requestsLimit);
 	}
+	if (playbackPlan.count > 0) {
+		activeLoads = topUpPlaybackLoads(playbackPlan, requestsLimit);
+		loading = _loadingOffsets.valuesInRange(0, size());
+		for (const auto part : result.offsetsFromLoader.values()) {
+			if (activeLoads >= requestsLimit) {
+				break;
+			}
+			if (!_slices.hasPart(part)
+				&& !loading.contains(part)
+				&& _loadingOffsets.add(part)) {
+				_loader->load(part);
+				loading.emplace(part);
+				++activeLoads;
+			}
+		}
+	}
 	_diagnostics->readPlan(
 		firstMissing,
 		missingParts,
 		seekCriticalPhase ? int(_seekPrefetchCriticalParts.size()) : 0,
-		smartNonPremium ? std::max(0, requestsLimit - activeLoads) : 0);
+		smartNonPremium ? std::max(0, requestsLimit - activeLoads) : 0,
+		playbackPlan.count);
 	return result.state;
 }
 
@@ -2890,6 +2924,33 @@ int Reader::topUpSeekCriticalLoads(int requestLimit) {
 			.arg(active)
 			.arg(limit)
 			.arg(int(_seekPrefetchCriticalParts.size())));
+	}
+	return active;
+}
+
+int Reader::topUpPlaybackLoads(
+		const PlaybackPrefetchPlan &plan,
+		int requestLimit) {
+	auto loading = _loadingOffsets.valuesInRange(0, size());
+	auto active = int(loading.size());
+	for (auto i = 0; i != plan.count && active < requestLimit; ++i) {
+		const auto part = uint32(plan.offsets[i]);
+		if (_slices.hasPart(part) || loading.contains(part)) {
+			continue;
+		}
+		const auto cacheSlice = _slices.prepareCacheForPart(part);
+		if (cacheSlice) {
+			if (cacheSlice > 0) {
+				readFromCache(cacheSlice);
+			}
+			continue;
+		}
+		if (_loadingOffsets.add(part)) {
+			_loader->load(part);
+			loading.emplace(part);
+			_diagnostics->playbackPrefetched();
+			++active;
+		}
 	}
 	return active;
 }
@@ -2985,8 +3046,15 @@ void Reader::cancelLoadOutsideWindow(
 	auto pinned = 0;
 	auto dualKept = 0;
 	auto urgentKept = 0;
+	const auto playbackState = _playbackPrefetch.load(std::memory_order_acquire);
+	const auto playbackPlan = (preserveSent && !force && playbackState)
+		? playbackState->plan(now)
+		: PlaybackPrefetchPlan();
 	const auto protectDual = preserveSent && !force;
 	const auto cancelOne = [&](int64 offset) {
+		if (playbackPlan.contains(offset)) {
+			return;
+		}
 		if (_pinnedTailOffsets.contains(offset)) {
 			if (!preserveSent) {
 				_loadingOffsets.add(offset);

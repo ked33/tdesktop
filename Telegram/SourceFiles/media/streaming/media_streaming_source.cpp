@@ -132,6 +132,11 @@ public:
 		_reader->setSmartStreamingPlaybackRate(bytesPerSecond);
 	}
 
+	void setPlaybackPrefetch(
+			std::shared_ptr<PlaybackPrefetchState> state) override {
+		_reader->setPlaybackPrefetch(std::move(state));
+	}
+
 	void notifySmartStreamingSeek() override {
 		_reader->notifySmartStreamingSeek();
 	}

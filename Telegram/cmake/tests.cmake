@@ -108,6 +108,21 @@ set_target_properties(test_mpv_index_reload PROPERTIES RUNTIME_OUTPUT_DIRECTORY 
 
 add_dependencies(Telegram test_mpv_index_reload)
 
+add_executable(test_streaming_playback_prefetch)
+init_target(test_streaming_playback_prefetch "(tests)")
+
+target_include_directories(test_streaming_playback_prefetch PRIVATE ${src_loc})
+
+nice_target_sources(test_streaming_playback_prefetch ${src_loc}
+PRIVATE
+    media/streaming/media_streaming_playback_prefetch.h
+    test/test_streaming_playback_prefetch.cpp
+)
+
+set_target_properties(test_streaming_playback_prefetch PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
+add_dependencies(Telegram test_streaming_playback_prefetch)
+
 add_executable(test_streaming_read_stall)
 init_target(test_streaming_read_stall "(tests)")
 

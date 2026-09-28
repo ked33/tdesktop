@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "media/streaming/media_streaming_common.h"
 #include "media/streaming/media_streaming_mp4_header.h"
+#include "media/streaming/media_streaming_playback_prefetch.h"
 #include "media/streaming/media_streaming_source.h"
 #include "media/streaming/media_streaming_utility.h"
 #include "ffmpeg/ffmpeg_utility.h"
@@ -78,6 +79,7 @@ public:
 	void setLoaderPriority(int priority);
 	void setSmartStreamingBufferPressure(bool pressure);
 	void setSmartStreamingPlaybackRate(int bytesPerSecond);
+	void setPlaybackBufferState(PlaybackBufferState state);
 	void notifySmartStreamingSeek();
 
 	[[nodiscard]] int64 size() const;
@@ -93,7 +95,8 @@ private:
 		Context(
 			not_null<FileDelegate*> delegate,
 			not_null<FileSource*> source,
-			not_null<Mp4SeekMapCache*> seekMapCache);
+			not_null<Mp4SeekMapCache*> seekMapCache,
+			not_null<PlaybackPrefetchState*> playbackPrefetch);
 		~Context();
 
 		void start(StartOptions options);
@@ -145,6 +148,7 @@ private:
 			StartOptions options,
 			crl::time position);
 		void prefetchForPacket(const AVPacket &packet);
+		void updatePlaybackPrefetch();
 
 		[[nodiscard]] bool unroll() const;
 		void logError(QLatin1String method);
@@ -181,6 +185,9 @@ private:
 		const not_null<FileDelegate*> _delegate;
 		const not_null<FileSource*> _source;
 		const not_null<Mp4SeekMapCache*> _seekMapCache;
+		const not_null<PlaybackPrefetchState*> _playbackPrefetch;
+		PlaybackPrefetchPolicy _playbackPrefetchPolicy;
+		uint64 _playbackPrefetchRevision = 0;
 
 		base::flat_map<int, std::vector<FFmpeg::Packet>> _queuedPackets;
 		int64 _offset = 0;
@@ -217,6 +224,7 @@ private:
 	std::optional<Context> _context;
 	std::shared_ptr<FileSource> _source;
 	std::unique_ptr<Mp4SeekMapCache> _seekMapCache;
+	std::shared_ptr<PlaybackPrefetchState> _playbackPrefetch;
 	SoftSeekStreamCache _streamCache;
 	std::thread _thread;
 

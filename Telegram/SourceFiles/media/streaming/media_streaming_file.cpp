@@ -41,6 +41,57 @@ constexpr auto kMp4TopLevelAtomHeaderSize = 16;
 constexpr auto kMp4SeekMapMaximumMoovSize = int64(kMaxSingleReadAmount);
 constexpr auto kMp4SeekMapMaximumTopLevelAtoms = 64;
 
+[[nodiscard]] PlaybackPrefetchPlan PlanPlaybackTrack(
+		not_null<AVStream*> stream,
+		const PlaybackTrackBuffer &buffer,
+		double speed,
+		int64 fileSize) {
+	auto result = PlaybackPrefetchPlan();
+	if (!buffer.valid()
+		|| stream->time_base.num <= 0
+		|| stream->time_base.den <= 0) {
+		return result;
+	}
+	const auto till = buffer.position + int64(std::min(
+		double(PlaybackPrefetchPolicy::kTargetBuffer) * speed,
+		double(buffer.duration - buffer.position)));
+	const auto from = std::max(buffer.position, buffer.receivedTill);
+	const auto fromPts = FFmpeg::TimeToPts(from, stream->time_base);
+	const auto tillPts = FFmpeg::TimeToPts(till, stream->time_base);
+	const auto first = av_index_search_timestamp(
+		stream,
+		fromPts,
+		AVSEEK_FLAG_ANY | AVSEEK_FLAG_BACKWARD);
+	if (first < 0) {
+		return result;
+	}
+	const auto count = avformat_index_get_entries_count(stream);
+	if (first >= count) {
+		return result;
+	}
+	constexpr auto kMaximumSamples = 512;
+	const auto limit = first + std::min(count - first, kMaximumSamples);
+	for (auto i = first; i < limit; ++i) {
+		const auto entry = avformat_index_get_entry(stream, i);
+		if (!entry || entry->timestamp == AV_NOPTS_VALUE || entry->size <= 0) {
+			return {};
+		}
+		if (entry->timestamp > tillPts) {
+			break;
+		}
+		if (i == first
+			&& FFmpeg::PtsToTime(entry->timestamp, stream->time_base)
+				< buffer.receivedTill - 1000) {
+			return {};
+		}
+		result.append(entry->pos, entry->size, fileSize);
+		if (result.count == PlaybackPrefetchPlan::kPartLimit) {
+			break;
+		}
+	}
+	return result;
+}
+
 struct DemuxSeekRange {
 	SeekPrefetchRange bytes;
 	crl::time position = 0;
@@ -1194,14 +1245,57 @@ void LogMp4SeekMapFailure(
 File::Context::Context(
 	not_null<FileDelegate*> delegate,
 	not_null<FileSource*> source,
-	not_null<Mp4SeekMapCache*> seekMapCache)
+	not_null<Mp4SeekMapCache*> seekMapCache,
+	not_null<PlaybackPrefetchState*> playbackPrefetch)
 : _delegate(delegate)
 , _source(source)
 , _seekMapCache(seekMapCache)
+, _playbackPrefetch(playbackPrefetch)
 , _size(source->size()) {
 }
 
 File::Context::~Context() = default;
+
+void File::Context::updatePlaybackPrefetch() {
+	if (_playbackPrefetchRevision == _playbackPrefetch->revision()) {
+		return;
+	}
+	const auto snapshot = _playbackPrefetch->snapshot();
+	_playbackPrefetchRevision = snapshot.revision;
+	const auto &buffer = snapshot.buffer;
+	const auto refill = _playbackPrefetchPolicy.update(buffer, crl::now());
+	if (buffer.generation != _trackGeneration
+		|| !_source->smartStreamingEnabled()
+		|| hasPendingSoftSeek()
+		|| !_format
+		|| !IsMp4LikeFormat(_format.get())) {
+		_playbackPrefetch->publish(snapshot.revision, {});
+		return;
+	}
+	const auto planTrack = [&](int index, const PlaybackTrackBuffer &track) {
+		return (index >= 0 && index < int(_format->nb_streams))
+			? PlanPlaybackTrack(
+				_format->streams[index],
+				track,
+				buffer.speed,
+				_size)
+			: PlaybackPrefetchPlan();
+	};
+	const auto audio = refill[0]
+		? planTrack(_streamCache.audioIndex, buffer.audio)
+		: PlaybackPrefetchPlan();
+	const auto video = refill[1]
+		? planTrack(_streamCache.videoIndex, buffer.video)
+		: PlaybackPrefetchPlan();
+	const auto audioFirst = !refill[1]
+		|| (refill[0] && buffer.audio.receivedTill - buffer.audio.position
+			<= buffer.video.receivedTill - buffer.video.position);
+	const auto plan = PlaybackPrefetchPolicy::Merge(
+		audioFirst ? audio : video,
+		audioFirst ? video : audio,
+		_size);
+	_playbackPrefetch->publish(snapshot.revision, plan);
+}
 
 int File::Context::Read(void *opaque, uint8_t *buffer, int bufferSize) {
 	return static_cast<Context*>(opaque)->read(
@@ -1389,6 +1483,7 @@ int File::Context::read(bytes::span buffer) {
 			.arg(qlonglong(_size)));
 	}
 	while (true) {
+		updatePlaybackPrefetch();
 		const auto result = _source->fill(_offset, buffer, &_semaphore);
 		if (result == FileSource::FillState::Success) {
 			break;
@@ -2477,6 +2572,7 @@ void File::Context::readNextPacket() {
 	if (applyPendingSoftSeekIfAny() || unroll()) {
 		return;
 	}
+	updatePlaybackPrefetch();
 	auto result = readPacket();
 	if (unroll() || hasPendingSoftSeek()) {
 		return;
@@ -2616,7 +2712,9 @@ void File::Context::stopStreamingAsync() {
 
 File::File(std::shared_ptr<FileSource> source)
 : _source(std::move(source))
-, _seekMapCache(std::make_unique<Mp4SeekMapCache>()) {
+, _seekMapCache(std::make_unique<Mp4SeekMapCache>())
+, _playbackPrefetch(std::make_shared<PlaybackPrefetchState>()) {
+	_source->setPlaybackPrefetch(_playbackPrefetch);
 }
 
 File::File(std::shared_ptr<Reader> reader)
@@ -2630,7 +2728,11 @@ void File::start(not_null<FileDelegate*> delegate, StartOptions options) {
 	stop(true);
 
 	_source->startStreaming();
-	_context.emplace(delegate, _source.get(), _seekMapCache.get());
+	_context.emplace(
+		delegate,
+		_source.get(),
+		_seekMapCache.get(),
+		_playbackPrefetch.get());
 
 	_thread = std::thread([=, context = &*_context] {
 		crl::toggle_fp_exceptions(true);
@@ -2802,7 +2904,11 @@ void File::resumeSoftSeek(
 		.arg(options.seekable ? 1 : 0)
 		.arg(_streamCache.usable() ? 1 : 0));
 	_source->startStreaming();
-	_context.emplace(delegate, _source.get(), _seekMapCache.get());
+	_context.emplace(
+		delegate,
+		_source.get(),
+		_seekMapCache.get(),
+		_playbackPrefetch.get());
 	_context->setStreamCache(_streamCache);
 	_thread = std::thread([
 		=,
@@ -2839,6 +2945,7 @@ void File::wake() {
 }
 
 void File::stop(bool stillActive) {
+	_playbackPrefetch->update({});
 	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: File stop stillActive=%1 joinable=%2 hasContext=%3.")
 		.arg(stillActive ? 1 : 0)
 		.arg(_thread.joinable() ? 1 : 0)
@@ -2873,6 +2980,10 @@ void File::setSmartStreamingBufferPressure(bool pressure) {
 
 void File::setSmartStreamingPlaybackRate(int bytesPerSecond) {
 	_source->setSmartStreamingPlaybackRate(bytesPerSecond);
+}
+
+void File::setPlaybackBufferState(PlaybackBufferState state) {
+	_playbackPrefetch->update(state);
 }
 
 void File::notifySmartStreamingSeek() {

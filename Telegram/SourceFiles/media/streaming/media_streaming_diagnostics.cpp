@@ -148,6 +148,8 @@ struct TransferState {
 	int missingParts = 0;
 	int criticalPendingParts = 0;
 	int prefetchSlots = 0;
+	int playbackPrefetchParts = 0;
+	int64 playbackPrefetchLoads = 0;
 	ServerDelay server;
 	SpeedEstimate speed = { .unreliable = true };
 	std::optional<DemuxSeekTiming> demuxSeek;
@@ -466,13 +468,19 @@ void TransferDiagnostics::readPlan(
 		int64 firstMissing,
 		int missingParts,
 		int criticalPendingParts,
-		int prefetchSlots) {
+		int prefetchSlots,
+		int playbackPrefetchParts) {
 	_impl->update([&](TransferState &s) {
 		s.firstMissing = firstMissing;
 		s.missingParts = missingParts;
 		s.criticalPendingParts = criticalPendingParts;
 		s.prefetchSlots = prefetchSlots;
+		s.playbackPrefetchParts = playbackPrefetchParts;
 	});
+}
+
+void TransferDiagnostics::playbackPrefetched() {
+	_impl->update([&](TransferState &s) { ++s.playbackPrefetchLoads; });
 }
 
 void TransferDiagnostics::speed(SpeedEstimate estimate) {
@@ -561,7 +569,8 @@ QString TransferDiagnostics::snapshot(crl::time now) {
 			.arg(qlonglong(s.waitingOffset))
 		+ (u"read_missing_offset=%1 read_missing_parts=%2 read_queued=%3 "
 			"read_sent=%4 read_oldest_ms=%5 critical_pending_parts=%6 "
-			"prefetch_slots=%7 retried=%8 "_q
+			"prefetch_slots=%7 retried=%8 "
+			"playback_prefetch_parts=%9 playback_prefetch_loads=%10 "_q
 		).arg(qlonglong(s.waitingSince ? s.firstMissing : -1))
 			.arg(s.waitingSince ? s.missingParts : 0)
 			.arg(s.requestsComplete ? readQueued : -1)
@@ -570,6 +579,8 @@ QString TransferDiagnostics::snapshot(crl::time now) {
 			.arg(s.criticalPendingParts)
 			.arg(s.prefetchSlots)
 			.arg(qlonglong(s.retriedCount))
+			.arg(s.playbackPrefetchParts)
+			.arg(qlonglong(s.playbackPrefetchLoads))
 		+ (u"preload_parts=%1 request_limit=%2 playback_bps=%3 speed_bps=%4 "
 			"latency_ms=%5 jitter_ms=%6 speed_unreliable=%7 "
 			"pressure_requested=%8 pressure_local=%9 pressure_forwarded=%10 "

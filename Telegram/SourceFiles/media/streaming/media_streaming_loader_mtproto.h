@@ -33,6 +33,8 @@ public:
 	[[nodiscard]] int64 size() const override;
 	void setDiagnostics(std::shared_ptr<TransferDiagnostics> diagnostics) override;
 	void setStreamingReadRange(int64 offset, int64 amount) override;
+	void setPlaybackPrefetch(
+		std::shared_ptr<PlaybackPrefetchState> state) override;
 
 	void load(int64 offset) override;
 	void cancel(int64 offset) override;
@@ -109,6 +111,7 @@ private:
 	int _retryLatencyMs = 0;
 	int _retryJitterMs = 0;
 	ReadStallPolicy _readStall;
+	std::shared_ptr<PlaybackPrefetchState> _playbackPrefetch;
 	std::mutex _readStallMutex;
 	base::Timer _statsTimer;
 	rpl::lifetime _lifetime;

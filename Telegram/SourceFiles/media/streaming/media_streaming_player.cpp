@@ -106,6 +106,7 @@ Player::Player(std::shared_ptr<FileSource> source)
 	source->diagnostics(),
 	source->isRemoteLoader()))
 , _startupBufferTimer([=] { checkResumeFromWaitingForData(); })
+, _playbackBufferTimer([=] { updatePlaybackBufferState(); })
 , _remoteLoader(_file->isRemoteLoader())
 , _renderFrameTimer([=] { renderFrameTimerFired(); }) {
 }
@@ -721,6 +722,8 @@ void Player::fail(Error error) {
 }
 
 uint64 Player::startTrackGeneration() {
+	_playbackBufferTimer.cancel();
+	_file->setPlaybackBufferState({});
 	_startupBufferTimer.cancel();
 	_waitingForStartupBuffer = false;
 	_startupBufferStartedAt = 0;
@@ -1114,6 +1117,40 @@ void Player::updateSmartStreamingPlaybackRate() {
 			double(64 * 1024 * 1024)));
 	}
 	_file->setSmartStreamingPlaybackRate(bytesPerSecond);
+	updatePlaybackBufferState();
+}
+
+void Player::updatePlaybackBufferState() {
+	_playbackBufferTimer.cancel();
+	if (_stage != Stage::Started
+		|| _pausedByUser
+		|| _options.loop
+		|| !_video
+		|| _videoFinished
+		|| !_file->smartStreamingEnabled()
+		|| receivedTillEnd()
+		|| _fullInCacheSinceStart.value_or(false)) {
+		_file->setPlaybackBufferState({});
+		return;
+	}
+	const auto track = [](const TrackState &state, bool active) {
+		return active && !FullTrackReceived(state)
+			? PlaybackTrackBuffer{
+				.position = state.position,
+				.receivedTill = state.receivedTill,
+				.duration = state.duration,
+			}
+			: PlaybackTrackBuffer();
+	};
+	_file->setPlaybackBufferState({
+		.generation = _trackGeneration.load(std::memory_order_acquire),
+		.sampledAt = crl::now(),
+		.audio = track(_information.audio.state, _audio && !_audioFinished),
+		.video = track(_information.video.state, !_videoFinished),
+		.speed = _options.speed,
+	});
+	constexpr auto kBufferUpdateInterval = crl::time(250);
+	_playbackBufferTimer.callOnce(kBufferUpdateInterval);
 }
 
 crl::time Player::computeTotalDuration() const {
@@ -1181,6 +1218,7 @@ void Player::stopAudio() {
 		stop();
 	} else if (_audio) {
 		_audioFinished = true;
+		updatePlaybackBufferState();
 		if (_information.audio.state.duration != kTimeUnknown) {
 			// Audio is ready.
 			_audio->stop();
@@ -1310,6 +1348,7 @@ void Player::start() {
 	Expects(_stage == Stage::Ready);
 
 	_stage = Stage::Started;
+	updatePlaybackBufferState();
 	_diagnostics->playable();
 	_file->setSmartStreamingBufferPressure(false);
 	const auto guard = base::make_weak(&_sessionGuard);

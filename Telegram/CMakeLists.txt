@@ -1587,6 +1587,7 @@ PRIVATE
     media/streaming/media_streaming_mpv_metadata.cpp
     media/streaming/media_streaming_mpv_special.cpp
     media/streaming/media_streaming_mpv_special.h
+    media/streaming/media_streaming_playback_prefetch.h
     media/streaming/media_streaming_player.cpp
     media/streaming/media_streaming_player.h
     media/streaming/media_streaming_read_stall.h

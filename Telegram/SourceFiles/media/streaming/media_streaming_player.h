@@ -198,6 +198,7 @@ private:
 	[[nodiscard]] crl::time loadInAdvanceFor() const;
 	[[nodiscard]] crl::time waitingForDataBuffer() const;
 	void updateSmartStreamingPlaybackRate();
+	void updatePlaybackBufferState();
 
 	template <typename Track>
 	int durationByPacket(const Track &track, const FFmpeg::Packet &packet);
@@ -257,6 +258,7 @@ private:
 	bool _startupBufferForSeek = false;
 	crl::time _startupBufferStartedAt = 0;
 	base::Timer _startupBufferTimer;
+	base::Timer _playbackBufferTimer;
 	bool _paused = false;
 	bool _audioFinished = false;
 	bool _videoFinished = false;
