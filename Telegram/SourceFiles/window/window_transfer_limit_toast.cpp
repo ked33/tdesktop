@@ -103,7 +103,7 @@ void TransferLimitToast::show(const MTP::TransferLimitInfo &info) {
 			? tr::lng_transfer_limit_wait(
 				tr::now,
 				lt_seconds,
-				QString::number(info.waitSeconds),
+				tr::marked(QString::number(info.waitSeconds)),
 				tr::marked)
 			: tr::lng_transfer_limit_wait_unknown(tr::now, tr::marked),
 		.attach = RectPart::Top,
