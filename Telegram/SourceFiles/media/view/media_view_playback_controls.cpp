@@ -122,6 +122,7 @@ PlaybackControls::PlaybackControls(
 		}
 	});
 
+	_playbackSlider->setRepaintOnPixelChange(true);
 	_playbackProgress->setValueChangedCallback([=](
 			float64 value,
 			float64 receivedTill) {

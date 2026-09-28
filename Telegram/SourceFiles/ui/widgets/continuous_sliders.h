@@ -10,6 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/animations.h"
 #include "ui/rp_widget.h"
 
+#include <array>
+
 namespace base {
 class Timer;
 } // namespace base
@@ -97,6 +99,9 @@ protected:
 	}
 	QRect getSeekRect() const;
 	virtual QSize getSeekDecreaseSize() const = 0;
+	[[nodiscard]] virtual bool valueChangesPaint(
+		float64 value,
+		float64 receivedTill) const;
 
 private:
 	virtual float64 getOverDuration() const = 0;
@@ -159,6 +164,7 @@ public:
 	};
 
 	MediaSlider(QWidget *parent, const style::MediaSlider &st);
+	void setRepaintOnPixelChange(bool enabled);
 
 	void setAlwaysDisplayMarker(bool alwaysDisplayMarker) {
 		_alwaysDisplayMarker = alwaysDisplayMarker;
@@ -259,10 +265,15 @@ private:
 	QSize getSeekDecreaseSize() const override;
 	float64 getOverDuration() const override;
 	void rebuildDividerExclusion();
+	bool valueChangesPaint(float64 value, float64 receivedTill) const override;
+	[[nodiscard]] std::array<int, 3> paintedValue(
+		float64 value,
+		float64 receivedTill) const;
 
 	const style::MediaSlider &_st;
 	bool _alwaysDisplayMarker = false;
 	bool _paintDisabled = false;
+	bool _repaintOnPixelChange = false;
 
 	std::vector<Divider> _dividers;
 	DividerStyle _dividerStyle = DividerStyle::Marks;

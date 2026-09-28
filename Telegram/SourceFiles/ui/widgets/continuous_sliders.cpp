@@ -64,10 +64,19 @@ void ContinuousSlider::setValue(float64 value) {
 
 void ContinuousSlider::setValue(float64 value, float64 receivedTill) {
 	if (_value != value || _receivedTill != receivedTill) {
+		const auto repaint = valueChangesPaint(value, receivedTill);
 		_value = value;
 		_receivedTill = receivedTill;
-		update();
+		if (repaint) {
+			update();
+		}
 	}
+}
+
+bool ContinuousSlider::valueChangesPaint(
+		float64,
+		float64) const {
+	return true;
 }
 
 void ContinuousSlider::setFadeOpacity(float64 opacity) {
@@ -268,6 +277,52 @@ MediaSlider::MediaSlider(QWidget *parent, const style::MediaSlider &st) : Contin
 , _st(st) {
 }
 
+void MediaSlider::setRepaintOnPixelChange(bool enabled) {
+	_repaintOnPixelChange = enabled;
+}
+
+bool MediaSlider::valueChangesPaint(
+		float64 value,
+		float64 receivedTill) const {
+	if (!_repaintOnPixelChange
+		|| isChanging()
+		|| (_dividerStyle == DividerStyle::Marks && !_dividers.empty())) {
+		return true;
+	}
+	return paintedValue(value, receivedTill)
+		!= paintedValue(getCurrentValue(), getCurrentReceivedTill());
+}
+
+std::array<int, 3> MediaSlider::paintedValue(
+		float64 value,
+		float64 receivedTill) const {
+	const auto horizontal = isHorizontal();
+	if (!horizontal) {
+		value = 1. - value;
+		// receivedTill is not supported for vertical
+		receivedTill = value;
+	}
+	const auto length = horizontal ? width() : height();
+	const auto seekSize = horizontal
+		? _st.seekSize.width()
+		: _st.seekSize.height();
+	const auto mid = _alwaysDisplayMarker
+		? int(base::SafeRound((seekSize / 2.)
+			+ value * (length - seekSize)))
+		: int(base::SafeRound(value * length));
+	const auto till = horizontal
+		? std::max(mid, int(base::SafeRound(receivedTill * length)))
+		: mid;
+	const auto seekRect = getSeekRect();
+	const auto markerFrom = horizontal ? seekRect.x() : seekRect.y();
+	const auto markerLength = horizontal
+		? seekRect.width()
+		: seekRect.height();
+	const auto marker = int(base::SafeRound(
+		markerFrom + value * markerLength)) - (seekSize / 2);
+	return { mid, till, marker };
+}
+
 QSize MediaSlider::getSeekDecreaseSize() const {
 	return _alwaysDisplayMarker ? _st.seekSize : QSize();
 }
@@ -352,35 +407,17 @@ void MediaSlider::paintEvent(QPaintEvent *e) {
 	const auto radius = _st.width / 2;
 	const auto disabled = isDisabled();
 	const auto over = getCurrentOverFactor();
-	const auto seekRect = getSeekRect();
 
 	// invert colors and value for vertical
 	const auto value = horizontal
 		? getCurrentValue()
 		: (1. - getCurrentValue());
 
-	// receivedTill is not supported for vertical
-	const auto receivedTill = horizontal
-		? getCurrentReceivedTill()
-		: value;
-
-	const auto markerFrom = (horizontal ? seekRect.x() : seekRect.y());
-	const auto markerLength = horizontal
-		? seekRect.width()
-		: seekRect.height();
+	const auto [mid, till, position] = paintedValue(
+		getCurrentValue(),
+		getCurrentReceivedTill());
 	const auto from = 0;
 	const auto length = (horizontal ? width() : height());
-	const auto alwaysSeekSize = horizontal
-		? _st.seekSize.width()
-		: _st.seekSize.height();
-	const auto mid = _alwaysDisplayMarker
-		? int(base::SafeRound(from
-			+ (alwaysSeekSize / 2.)
-			+ value * (length - alwaysSeekSize)))
-		: int(base::SafeRound(from + value * length));
-	const auto till = horizontal
-		? std::max(mid, int(base::SafeRound(from + receivedTill * length)))
-		: mid;
 	const auto end = from + length;
 	const auto activeFg = disabled
 		? _st.activeFgDisabled
@@ -510,11 +547,6 @@ void MediaSlider::paintEvent(QPaintEvent *e) {
 		? 0.
 		: (_alwaysDisplayMarker ? 1. : over);
 	if (markerSizeRatio > 0) {
-		const auto exactPosition = markerFrom + value * markerLength;
-		const auto position = int(base::SafeRound(exactPosition))
-			- (horizontal
-				? (_st.seekSize.width() / 2)
-				: (_st.seekSize.height() / 2));
 		const auto seekButton = horizontal
 			? QRect(
 				position,
