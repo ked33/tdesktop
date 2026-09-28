@@ -37,6 +37,22 @@ namespace {
 
 constexpr auto kConfigBecomesOldIn = 2 * 60 * crl::time(1000);
 constexpr auto kConfigBecomesOldForBlockedIn = 8 * crl::time(1000);
+constexpr auto kTransferLimitSampleInterval = crl::time(5000);
+constexpr auto kTransferLimitTraceLimit = 16;
+
+crl::time TransferLimitNextSampleAt = 0;
+
+struct TransferLimitTrace {
+	TransferLimitInfo info;
+	crl::time receivedAt = 0;
+	crl::time scheduledAt = 0;
+	crl::time retryQueuedAt = 0;
+};
+
+[[nodiscard]] bool TransferLimitLogsEnabled() {
+	return GetEnhancedBool("online_playback_debug_logs")
+		|| GetEnhancedBool("mpv_streaming_debug_logs");
+}
 
 using namespace details;
 
@@ -201,6 +217,20 @@ private:
 		const Response &response);
 	bool exportFail(const Error &error, const Response &response);
 	bool onErrorDefault(const Error &error, const Response &response);
+	void startTransferLimitTrace(
+		mtpRequestId requestId,
+		ShiftedDcId shiftedDcId,
+		mtpTypeId method,
+		const TransferLimitInfo &info);
+	void scheduleTransferLimitTrace(
+		mtpRequestId requestId,
+		crl::time sendAt,
+		crl::time appliedWaitMs);
+	void retryTransferLimitTrace(mtpRequestId requestId);
+	void finishTransferLimitTrace(
+		mtpRequestId requestId,
+		const char *result,
+		const QString &error = QString());
 
 	void unpaused();
 
@@ -286,6 +316,8 @@ private:
 	mutable QMutex _dependentRequestsLock;
 
 	std::map<mtpRequestId, int> _requestsDelays;
+	base::flat_map<mtpRequestId, TransferLimitTrace> _transferLimitTraces;
+	uint64 _transferLimitSuppressed = 0;
 
 	std::set<mtpRequestId> _badGuestDcRequests;
 
@@ -624,12 +656,129 @@ void Instance::Private::notifyTransferLimit(
 	}
 	auto validSeconds = false;
 	const auto seconds = match.captured(2).toInt(&validSeconds);
-	_transferLimits.fire_copy({
+	const auto info = TransferLimitInfo{
 		.type = error.type(),
 		.dcId = BareDcId(dc),
 		.waitSeconds = validSeconds ? seconds : -1,
 		.upload = upload,
+	};
+	startTransferLimitTrace(requestId, dc, method, info);
+	_transferLimits.fire_copy(info);
+}
+
+void Instance::Private::startTransferLimitTrace(
+		mtpRequestId requestId,
+		ShiftedDcId shiftedDcId,
+		mtpTypeId method,
+		const TransferLimitInfo &info) {
+	if (!TransferLimitLogsEnabled()) {
+		_transferLimitTraces.clear();
+		_transferLimitSuppressed = 0;
+		return;
+	}
+	const auto now = crl::now();
+	const auto sameTransferDc = ranges::any_of(
+		_transferLimitTraces,
+		[&](const auto &entry) {
+			return entry.second.info.dcId == info.dcId
+				&& entry.second.info.upload == info.upload;
+		});
+	if (now < TransferLimitNextSampleAt
+		|| _transferLimitTraces.size() >= kTransferLimitTraceLimit
+		|| sameTransferDc) {
+		++_transferLimitSuppressed;
+		return;
+	}
+	TransferLimitNextSampleAt = now + kTransferLimitSampleInterval;
+	_transferLimitTraces.emplace(requestId, TransferLimitTrace{
+		.info = info,
+		.receivedAt = now,
 	});
+	LOG(("Transfer limit: received request=%1 dc=%2 shifted_dc=%3 "
+		"direction=%4 method=%5 error=%6 server_wait_ms=%7 "
+		"t_ms=%8 suppressed=%9")
+		.arg(requestId)
+		.arg(info.dcId)
+		.arg(shiftedDcId)
+		.arg(info.upload ? u"upload"_q : u"download"_q)
+		.arg(qulonglong(method))
+		.arg(info.type)
+		.arg(qlonglong(info.waitSeconds < 0
+			? -1
+			: crl::time(info.waitSeconds) * 1000))
+		.arg(qlonglong(now))
+		.arg(qulonglong(base::take(_transferLimitSuppressed))));
+}
+
+void Instance::Private::scheduleTransferLimitTrace(
+		mtpRequestId requestId,
+		crl::time sendAt,
+		crl::time appliedWaitMs) {
+	const auto i = _transferLimitTraces.find(requestId);
+	if (i == _transferLimitTraces.end() || i->second.scheduledAt) {
+		return;
+	}
+	if (!TransferLimitLogsEnabled()) {
+		_transferLimitTraces.clear();
+		return;
+	}
+	auto &trace = i->second;
+	trace.scheduledAt = sendAt;
+	LOG(("Transfer limit: scheduled request=%1 applied_wait_ms=%2 "
+		"due_ms=%3")
+		.arg(requestId)
+		.arg(qlonglong(appliedWaitMs))
+		.arg(qlonglong(sendAt)));
+}
+
+void Instance::Private::retryTransferLimitTrace(mtpRequestId requestId) {
+	const auto i = _transferLimitTraces.find(requestId);
+	if (i == _transferLimitTraces.end() || i->second.retryQueuedAt) {
+		return;
+	}
+	if (!TransferLimitLogsEnabled()) {
+		_transferLimitTraces.clear();
+		return;
+	}
+	auto &trace = i->second;
+	trace.retryQueuedAt = crl::now();
+	LOG(("Transfer limit: retry_queued request=%1 t_ms=%2 "
+		"scheduler_late_ms=%3")
+		.arg(requestId)
+		.arg(qlonglong(trace.retryQueuedAt))
+		.arg(qlonglong(trace.scheduledAt
+			? trace.retryQueuedAt - trace.scheduledAt
+			: -1)));
+}
+
+void Instance::Private::finishTransferLimitTrace(
+		mtpRequestId requestId,
+		const char *result,
+		const QString &error) {
+	const auto i = _transferLimitTraces.find(requestId);
+	if (i == _transferLimitTraces.end()) {
+		return;
+	}
+	const auto trace = i->second;
+	_transferLimitTraces.erase(i);
+	if (!TransferLimitLogsEnabled()) {
+		return;
+	}
+	const auto now = crl::now();
+	LOG(("Transfer limit: result request=%1 outcome=%2 error=%3 "
+		"t_ms=%4 elapsed_ms=%5 after_server_due_ms=%6 "
+		"after_scheduled_due_ms=%7 after_retry_queued_ms=%8")
+		.arg(requestId)
+		.arg(QLatin1String(result))
+		.arg(error.isEmpty() ? u"none"_q : error)
+		.arg(qlonglong(now))
+		.arg(qlonglong(now - trace.receivedAt))
+		.arg(qlonglong(trace.info.waitSeconds < 0
+			? -1
+			: now - trace.receivedAt
+				- crl::time(trace.info.waitSeconds) * 1000))
+		.arg(qlonglong(trace.scheduledAt ? now - trace.scheduledAt : -1))
+		.arg(qlonglong(trace.retryQueuedAt ? now - trace.retryQueuedAt : -1)));
 }
 
 void Instance::Private::requestConfigIfOld() {
@@ -722,6 +871,7 @@ void Instance::Private::ping() {
 
 void Instance::Private::cancel(mtpRequestId requestId) {
 	if (!requestId) return;
+	finishTransferLimitTrace(requestId, "cancelled");
 
 	DEBUG_LOG(("MTP Info: Cancel request %1.").arg(requestId));
 	const auto shiftedDcId = queryRequestByDc(requestId);
@@ -1072,6 +1222,7 @@ void Instance::Private::checkDelayedRequests() {
 		}
 		const auto session = getSession(std::abs(dcWithShift));
 		session->sendPrepared(request);
+		retryTransferLimitTrace(requestId);
 	}
 
 	if (!_delayedRequests.empty()) {
@@ -1128,6 +1279,7 @@ void Instance::Private::registerRequest(
 
 void Instance::Private::unregisterRequest(mtpRequestId requestId) {
 	DEBUG_LOG(("MTP Info: unregistering request %1.").arg(requestId));
+	finishTransferLimitTrace(requestId, "removed");
 
 	_requestsDelays.erase(requestId);
 
@@ -1257,6 +1409,7 @@ void Instance::Private::processCallback(const Response &response) {
 						"Error parse failed.")));
 		} else {
 			const auto guard = QPointer<Instance>(_instance);
+			finishTransferLimitTrace(requestId, "rpc_result");
 			if (handler.done && !handler.done(response) && guard) {
 				handleError(Error::Local(
 					"RESPONSE_PARSE_FAILED",
@@ -1295,6 +1448,7 @@ bool Instance::Private::rpcErrorOccured(
 		const FailHandler &onFail,
 		const Error &error) { // return true if need to clean request data
 	const auto guard = QPointer<Instance>(_instance);
+	finishTransferLimitTrace(response.requestId, "error", error.type());
 	notifyTransferLimit(response.requestId, error);
 	if (!guard) {
 		return false;
@@ -1632,6 +1786,7 @@ bool Instance::Private::onErrorDefault(
 			}
 		}
 		_delayedRequests.insert(it, std::make_pair(requestId, sendAt));
+		scheduleTransferLimitTrace(requestId, sendAt, appliedWaitMs + 10);
 
 		checkDelayedRequests();
 
@@ -1935,6 +2090,11 @@ void Instance::Private::clearGlobalHandlers() {
 }
 
 void Instance::Private::prepareToDestroy() {
+	while (!_transferLimitTraces.empty()) {
+		finishTransferLimitTrace(
+			_transferLimitTraces.begin()->first,
+			"session_closed");
+	}
 	// It accesses Instance in destructor, so it should be destroyed first.
 	_configLoader.reset();
 

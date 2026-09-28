@@ -1569,7 +1569,7 @@ Stream File::Context::initStream(
 		StartOptions options,
 		int preferredIndex) {
 	auto result = Stream();
-	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream enter type=%1 hwAllow=%2 sequentialOpen=%3 streamCount=%4 preferred=%5.")
+	VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: initStream enter type=%1 hwAllow=%2 sequentialOpen=%3 streamCount=%4 preferred=%5.")
 		.arg(int(type))
 		.arg(options.hwAllow ? 1 : 0)
 		.arg(options.sequentialOpen ? 1 : 0)
@@ -1590,7 +1590,7 @@ Stream File::Context::initStream(
 			0);
 	}
 	result.index = index;
-	VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream best stream type=%1 index=%2.")
+	VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: initStream best stream type=%1 index=%2.")
 		.arg(int(type))
 		.arg(index));
 	if (index < 0) {
@@ -1603,7 +1603,7 @@ Stream File::Context::initStream(
 			// ignore cover streams
 			return Stream();
 		}
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream video codecId=%1 hwAllow=%2 width=%3 height=%4.")
+		VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: initStream video codecId=%1 hwAllow=%2 width=%3 height=%4.")
 			.arg(int(info->codecpar ? info->codecpar->codec_id : AV_CODEC_ID_NONE))
 			.arg(options.hwAllow ? 1 : 0)
 			.arg(info->codecpar ? info->codecpar->width : 0)
@@ -1613,10 +1613,9 @@ Stream File::Context::initStream(
 			.hwAllowed = options.hwAllow,
 			.videoMaxArea = kMaxFrameArea,
 		});
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream video codec ready=%1 index=%2.")
-			.arg(result.codec ? 1 : 0)
-			.arg(index));
 		if (!result.codec) {
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream codec failed "
+				"type=%1 index=%2.").arg(int(type)).arg(index));
 			return result;
 		}
 		result.rotation = FFmpeg::ReadRotationFromMetadata(info);
@@ -1628,17 +1627,16 @@ Stream File::Context::initStream(
 		}
 	} else if (type == AVMEDIA_TYPE_AUDIO) {
 		result.frequency = info->codecpar->sample_rate;
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream audio codecId=%1 frequency=%2.")
+		VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: initStream audio codecId=%1 frequency=%2.")
 			.arg(int(info->codecpar ? info->codecpar->codec_id : AV_CODEC_ID_NONE))
 			.arg(result.frequency));
 		if (!result.frequency) {
 			return result;
 		}
 		result.codec = FFmpeg::MakeCodecPointer({ .stream = info });
-		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream audio codec ready=%1 index=%2.")
-			.arg(result.codec ? 1 : 0)
-			.arg(index));
 		if (!result.codec) {
+			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream codec failed "
+				"type=%1 index=%2.").arg(int(type)).arg(index));
 			return result;
 		}
 	}

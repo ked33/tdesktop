@@ -64,6 +64,7 @@ constexpr auto kSmartSeekUrgentHighBitrateMaximum = int64(8) * 1024 * 1024;
 constexpr auto kSmartCancelLogMinInterval = crl::time(1000);
 // Sparse Smart diagnostics: state transitions + at most one snapshot / interval.
 constexpr auto kSmartCatchupLogMinInterval = 2 * crl::time(1000);
+constexpr auto kSmartCatchupSnapshotInterval = crl::time(5000);
 // After seek grace, require this much sustained low speed before Throttle
 // (Smart non-Premium never uses Throttle; this guards other boost levels).
 constexpr auto kSmartThrottleConfirmSamples = 3;
@@ -1237,7 +1238,7 @@ Reader::Reader(
 				_smartBufferTargetLoggedMs.store(
 					target,
 					std::memory_order_relaxed);
-				VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Smart stream "
+				VIDEO_PLAYBACK_VERBOSE_LOG(("Video Playback: Smart stream "
 					"metrics throughput=%1 latency=%2 jitter=%3 "
 					"playback=%4 bufferMs=%5.")
 					.arg(throughput)
@@ -2600,15 +2601,16 @@ Reader::FillState Reader::fillFromSlices(
 			.arg(seekPrefetchParts)
 			.arg(seekLocalRecovery ? 1 : 0));
 	}
-	// Sparse catch-up snapshot: transitions or ≥2s while still catching up.
+	// Playback snapshots cover changes between these sampled state reports.
 	if (smartNonPremium) {
 		const auto catchUp = underPlayback || bufferPressure;
-		const auto due = (catchUp != _smartCatchupLogged)
-			|| (catchUp
-				&& (now >= _smartCatchupLogLastTime
-					+ kSmartCatchupLogMinInterval)
-				&& (preloadParts != _smartCatchupLogPreload
-					|| requestsLimit != _smartCatchupLogRequests));
+		const auto changed = (catchUp != _smartCatchupLogged)
+			|| (catchUp && (preloadParts != _smartCatchupLogPreload
+				|| requestsLimit != _smartCatchupLogRequests));
+		const auto due = changed
+			&& (!_smartCatchupLogLastTime
+				|| now >= _smartCatchupLogLastTime
+					+ kSmartCatchupSnapshotInterval);
 		if (due) {
 			_smartCatchupLogged = catchUp;
 			_smartCatchupLogLastTime = now;
