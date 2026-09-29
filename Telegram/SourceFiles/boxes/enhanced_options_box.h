@@ -90,6 +90,7 @@ private:
 	std::array<Ui::FlatLabel*, kNumericFieldCount> _defaultLabels = {};
 	Ui::Checkbox *_seekCancel = nullptr;
 	Ui::Checkbox *_tailPrefetch = nullptr;
+	Ui::Checkbox *_adaptivePacing = nullptr;
 	int _radioHeight = 0;
 	int _editingProfile = 0;
 	bool _revertingProfile = false;

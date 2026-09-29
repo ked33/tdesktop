@@ -2671,6 +2671,12 @@ Reader::FillState Reader::fillFromSlices(
 			.arg(serverRequests)
 			.arg(serverState.penalty));
 	}
+	if (smartNonPremium
+		&& profile.smartAdaptivePacing
+		&& bufferPressure
+		&& !headerRead) {
+		preloadParts = std::min(preloadParts, std::max(1, requestsLimit / 2));
+	}
 	_diagnostics->policy(preloadParts, requestsLimit, smartPlaybackRate);
 	auto result = _slices.fill(
 		offset,

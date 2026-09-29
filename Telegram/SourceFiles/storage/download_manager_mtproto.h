@@ -94,6 +94,7 @@ public:
 		not_null<Task*> task,
 		bool pressure);
 	void setSmartStreamingActive(not_null<Task*> task, bool active);
+	void setSmartStreamingReadWaiting(not_null<Task*> task, bool waiting);
 	void setSmartStreamingPlaybackRate(
 		not_null<Task*> task,
 		int bytesPerSecond);
@@ -144,12 +145,14 @@ private:
 		int playbackBytesPerSecond = 0;
 		int pacingBytesPerSecond = 0;
 		bool active = false;
+		bool readWaiting = false;
 		crl::time pressureSince = 0;
 		crl::time seekUntil = 0;
 		bool bufferPressure = false;
 	};
 	struct SmartDemandSummary {
 		bool streaming = false;
+		bool readWaiting = false;
 		int playbackBytesPerSecond = 0;
 		int pacingBytesPerSecond = 0;
 		crl::time pressureSince = 0;

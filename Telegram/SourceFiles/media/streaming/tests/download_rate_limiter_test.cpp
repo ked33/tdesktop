@@ -126,6 +126,119 @@ void TestLongIdleAndIndependentServers() {
 	Require(first.delay(kPart, 1000000000) == 128000, "long idle cannot exceed capacity");
 }
 
+void TestCatchUpTargets() {
+	using Limiter = Storage::DownloadRateLimiter;
+	Require(Limiter::Target(0, 0, true) == 1536 * 1024, "header catch-up");
+	Require(Limiter::Target(1222440, 0, true) == 4584150, "log 12 catch-up");
+	Require(Limiter::Target(1222440, 2048, true) == 2 * 1024 * 1024,
+		"catch-up respects manual ceiling");
+	Require(Limiter::Target(4 * 1024 * 1024, 0, true) == 8 * 1024 * 1024,
+		"catch-up rate is bounded");
+	Require(Limiter::Target(8 * 1024 * 1024, 0, true) == 10 * 1024 * 1024,
+		"high normal rate is not reduced or boosted");
+	Require(Limiter::Target(std::numeric_limits<int>::max(), 0, true)
+		== 64 * 1024 * 1024, "catch-up target cannot overflow");
+}
+
+void TestCatchUpWindowAndTaper() {
+	auto limiter = Storage::DownloadRateLimiter();
+	constexpr auto base = 512 * 1024;
+	constexpr auto peak = 3 * base;
+	limiter.configure(base, 2 * kPart, 0);
+	Require(limiter.rate() == base && !limiter.catchingUp(), "switch off");
+	limiter.configure(base, 2 * kPart, 0, peak, true);
+	Require(limiter.rate() == peak && limiter.catchingUp(), "catch-up starts");
+	for (auto now = 1; now != 8000; ++now) {
+		limiter.configure(base, 2 * kPart, now, peak, true);
+	}
+	limiter.configure(base, 2 * kPart, 8000, peak, true);
+	Require(limiter.rate() == base, "repeated seeks cannot extend window");
+	limiter.configure(base, 2 * kPart, 29999, peak, true);
+	Require(limiter.rate() == base, "catch-up cooldown");
+	limiter.configure(base, 2 * kPart, 30000, peak, true);
+	Require(limiter.rate() == peak, "catch-up may resume after cooldown");
+	limiter.configure(base, 2 * kPart, 30500, peak, false);
+	Require(limiter.rate() == peak, "short buffer changes do not flap rate");
+	limiter.configure(base, 2 * kPart, 31000, peak, false);
+	Require(limiter.rate() == peak * 3 / 4, "buffer recovery tapers rate");
+	limiter.configure(base, 2 * kPart, 34000, peak, false);
+	Require(limiter.rate() == base, "taper returns to steady rate");
+	limiter.configure(base, 2 * kPart, 35000, peak, true);
+	Require(limiter.rate() == peak, "pressure can resume within same window");
+	limiter.configure(base, 2 * kPart, 38000, peak, true);
+	Require(limiter.rate() == base, "resumed pressure preserves deadline");
+	limiter.configure(base, 0, 60000, peak, true);
+	Require(limiter.rate() == 0 && limiter.delay(kPart, 60000) == 0,
+		"zero burst takes precedence over catch-up");
+}
+
+void TestCatchUpByteBudget() {
+	auto limiter = Storage::DownloadRateLimiter();
+	constexpr auto base = 4 * 1024 * 1024;
+	constexpr auto peak = 8 * 1024 * 1024;
+	auto boostedBytes = 0;
+	for (auto now = 0; now != 8000; ++now) {
+		limiter.configure(base, 32 * kPart, now, peak, true);
+		while (!limiter.delay(kPart, now)) {
+			if (limiter.catchingUp()) {
+				boostedBytes += kPart;
+			}
+			limiter.consume(kPart, now);
+			limiter.configure(base, 32 * kPart, now, peak, true);
+		}
+	}
+	Require(boostedBytes == 16 * 1024 * 1024, "catch-up byte budget");
+	Require(limiter.rate() == base, "exhausted budget ends boost");
+	limiter.configure(base, 32 * kPart, 29999, peak, true);
+	Require(limiter.rate() == base, "exhausted budget cannot refill on seek");
+}
+
+void TestCatchUpPreservesCredit() {
+	auto limiter = Storage::DownloadRateLimiter();
+	constexpr auto base = 512 * 1024;
+	constexpr auto peak = 3 * base;
+	limiter.configure(base, 2 * kPart, 0);
+	limiter.consume(kPart, 0);
+	limiter.consume(kPart, 0);
+	for (auto i = 0; i != 100; ++i) {
+		limiter.configure(base, 2 * kPart, 0, peak, true);
+		limiter.configure(base, 2 * kPart, 0, peak, false);
+	}
+	Require(limiter.delay(kPart, 0) == 84,
+		"pressure and seek transitions cannot refill burst credit");
+	limiter.configure(base, 2 * kPart, 0, base, true);
+	Require(limiter.rate() == base && limiter.delay(kPart, 0) == 250,
+		"lower ceiling applies immediately without refilling credit");
+}
+
+void TestCatchUpServerLimits() {
+	auto limiter = Storage::DownloadRateLimiter();
+	constexpr auto base = 512 * 1024;
+	constexpr auto peak = 3 * base;
+	limiter.configure(base, 2 * kPart, 0, peak, true);
+	limiter.penalize(3000, 63000);
+	Require(limiter.rate() == base * 3 / 4,
+		"penalty is based on steady rate, not boosted rate");
+	Require(limiter.delay(kPart, 0) == 3334, "server wait survives catch-up");
+	limiter.configure(base, 2 * kPart, 3000, peak, true);
+	Require(!limiter.catchingUp(), "no catch-up during server recovery");
+	Require(limiter.delay(kPart, 3000) == 334, "no free credit after wait");
+	limiter.suspend(5000, 65000);
+	limiter.configure(base, 2 * kPart, 64000, peak, true);
+	Require(limiter.rate() == base * 3 / 4, "extended server recovery holds");
+	limiter.configure(base, 2 * kPart, 65000, peak, true);
+	Require(limiter.rate() <= limiter.ceiling(), "recovery ceiling wins");
+	auto recoveredBoost = false;
+	for (auto now = 95000; now <= 365000; now += 30000) {
+		limiter.configure(base, 2 * kPart, now, peak, true);
+		Require(limiter.rate() <= limiter.ceiling(), "boost never exceeds ceiling");
+		recoveredBoost = recoveredBoost || limiter.catchingUp();
+	}
+	Require(recoveredBoost, "server recovery does not disable catch-up forever");
+	limiter.configure(1024, 2 * kPart, 365000, 1024, true);
+	Require(limiter.rate() == 1024, "low manual ceiling cannot be boosted");
+}
+
 void TestSharedBudget() {
 	for (const auto playback : {310925, 911470, 1750348, 2816045}) {
 		auto limiter = Storage::DownloadRateLimiter();
@@ -156,6 +269,11 @@ int main() {
 	TestBurstAndSeek();
 	TestWaitAndRecovery();
 	TestLongIdleAndIndependentServers();
+	TestCatchUpTargets();
+	TestCatchUpWindowAndTaper();
+	TestCatchUpByteBudget();
+	TestCatchUpPreservesCredit();
+	TestCatchUpServerLimits();
 	TestSharedBudget();
-	std::cout << "PASS: targets, disable, burst, seek, wait, recovery, idle, shared/DC budgets\n";
+	std::cout << "PASS: targets, disable, burst, seek, wait, recovery, idle, catch-up, shared/DC budgets\n";
 }

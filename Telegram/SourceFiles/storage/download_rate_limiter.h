@@ -7,37 +7,66 @@ namespace Storage {
 
 class DownloadRateLimiter final {
 public:
-	void configure(int target, int burstBytes, std::int64_t now);
+	void configure(
+		int target,
+		int burstBytes,
+		std::int64_t now,
+		int catchUpTarget = 0,
+		bool catchUpRequested = false);
 	void consume(int bytes, std::int64_t now);
 	void suspend(std::int64_t until, std::int64_t recoverAt);
 	void penalize(std::int64_t until, std::int64_t recoverAt);
 	[[nodiscard]] std::int64_t delay(int bytes, std::int64_t now);
 	[[nodiscard]] int rate() const { return _rate; }
 	[[nodiscard]] int ceiling() const { return _ceiling; }
-	[[nodiscard]] static int Target(int playback, int maximumKiB);
+	[[nodiscard]] bool catchingUp() const { return _rate > _steadyRate; }
+	[[nodiscard]] static int Target(
+		int playback,
+		int maximumKiB,
+		bool catchUp = false);
 
 private:
+	static constexpr auto kCatchUpDuration = 8000;
+	static constexpr auto kCatchUpInterval = 30000;
+	static constexpr auto kCatchUpBytes = 16 * 1024 * 1024;
+	static constexpr auto kCatchUpMaximumRate = 8 * 1024 * 1024;
+	static constexpr auto kCatchUpStepDuration = 1000;
+
 	void refill(std::int64_t now);
 
 	int _rate = 0;
+	int _steadyRate = 0;
+	int _catchUpRate = 0;
+	int _catchUpRemaining = 0;
 	int _capacity = 0;
 	int _ceiling = 0;
 	std::int64_t _credit = 0;
 	std::int64_t _updated = 0;
 	std::int64_t _recoverAt = 0;
+	std::int64_t _catchUpUntil = 0;
+	std::int64_t _nextCatchUpAt = 0;
+	std::int64_t _catchUpStepAt = 0;
 
 };
 
-inline int DownloadRateLimiter::Target(int playback, int maximumKiB) {
+inline int DownloadRateLimiter::Target(
+		int playback,
+		int maximumKiB,
+		bool catchUp) {
 	const auto automatic = (playback > 0)
 		? std::clamp<std::int64_t>(
 			std::int64_t(playback) * 5 / 4,
 			128 * 1024,
 			64 * 1024 * 1024)
 		: 512 * 1024;
+	const auto target = catchUp
+		? std::min(automatic * 3, std::max(
+			automatic,
+			std::int64_t(kCatchUpMaximumRate)))
+		: automatic;
 	return int((maximumKiB > 0)
-		? std::min(automatic, std::int64_t(maximumKiB) * 1024)
-		: automatic);
+		? std::min(target, std::int64_t(maximumKiB) * 1024)
+		: target);
 }
 
 inline void DownloadRateLimiter::refill(std::int64_t now) {
@@ -57,7 +86,9 @@ inline void DownloadRateLimiter::refill(std::int64_t now) {
 inline void DownloadRateLimiter::configure(
 		int target,
 		int burstBytes,
-		std::int64_t now) {
+		std::int64_t now,
+		int catchUpTarget,
+		bool catchUpRequested) {
 	if (burstBytes <= 0) {
 		*this = DownloadRateLimiter();
 		return;
@@ -70,7 +101,42 @@ inline void DownloadRateLimiter::configure(
 		_recoverAt = now + 30000;
 	}
 	const auto initialized = (_rate > 0);
-	_rate = std::max(1, _ceiling ? std::min(target, _ceiling) : target);
+	_steadyRate = std::max(1, _ceiling ? std::min(target, _ceiling) : target);
+	const auto maximum = std::max(_steadyRate, _ceiling
+		? std::min(catchUpTarget, _ceiling)
+		: catchUpTarget);
+	if (now >= _catchUpUntil
+		|| _catchUpRemaining <= 0
+		|| maximum <= _steadyRate) {
+		_catchUpUntil = 0;
+		_catchUpRate = 0;
+	}
+	if (catchUpRequested
+		&& maximum > _steadyRate
+		&& now >= _nextCatchUpAt) {
+		_catchUpUntil = now + kCatchUpDuration;
+		_nextCatchUpAt = now + kCatchUpInterval;
+		_catchUpRemaining = kCatchUpBytes;
+		_catchUpRate = maximum;
+		_catchUpStepAt = now + kCatchUpStepDuration;
+	}
+	if (_catchUpUntil > now) {
+		if (catchUpRequested) {
+			_catchUpRate = maximum;
+			_catchUpStepAt = now + kCatchUpStepDuration;
+		} else if (now >= _catchUpStepAt) {
+			const auto steps = std::min<std::int64_t>(
+				(now - _catchUpStepAt) / kCatchUpStepDuration + 1,
+				kCatchUpDuration / kCatchUpStepDuration);
+			for (auto i = 0; i != steps; ++i) {
+				_catchUpRate = std::max(_steadyRate, _catchUpRate * 3 / 4);
+			}
+			_catchUpStepAt = now + kCatchUpStepDuration;
+		}
+		_rate = std::clamp(_catchUpRate, _steadyRate, maximum);
+	} else {
+		_rate = _steadyRate;
+	}
 	_capacity = std::max(128 * 1024, burstBytes);
 	_credit = initialized
 		? std::min(_credit, std::int64_t(_capacity) * 1000)
@@ -97,6 +163,9 @@ inline void DownloadRateLimiter::consume(int bytes, std::int64_t now) {
 	}
 	refill(now);
 	_credit -= std::int64_t(bytes) * 1000;
+	if (catchingUp()) {
+		_catchUpRemaining = std::max(0, _catchUpRemaining - bytes);
+	}
 }
 
 inline void DownloadRateLimiter::penalize(
@@ -105,7 +174,7 @@ inline void DownloadRateLimiter::penalize(
 	if (!_rate) {
 		return;
 	}
-	_ceiling = std::max(16 * 1024, _rate * 3 / 4);
+	_ceiling = std::max(16 * 1024, std::min(_rate, _steadyRate) * 3 / 4);
 	_rate = std::min(_rate, _ceiling);
 	suspend(until, recoverAt);
 }
@@ -117,8 +186,12 @@ inline void DownloadRateLimiter::suspend(
 		return;
 	}
 	_credit = 0;
+	_catchUpUntil = 0;
+	_catchUpRate = 0;
+	_rate = std::min(_rate, _steadyRate);
 	_updated = std::max(_updated, until);
 	_recoverAt = std::max(_recoverAt, recoverAt);
+	_nextCatchUpAt = std::max(_nextCatchUpAt, recoverAt);
 }
 
 } // namespace Storage

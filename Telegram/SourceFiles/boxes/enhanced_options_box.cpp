@@ -283,21 +283,22 @@ void DownloadBoostProfilesBox::prepare() {
 		Ui::AddSkip(container, st::onlinePlaybackProfilesItemSkip);
 	};
 	const auto addCheck = [&](
+			not_null<Ui::VerticalLayout*> container,
 			Ui::Checkbox *&store,
 			const QString &title,
 			const QString &about) {
-		store = _content->add(object_ptr<Ui::Checkbox>(
-			_content,
+		store = container->add(object_ptr<Ui::Checkbox>(
+			container,
 			title,
 			false,
 			st::defaultBoxCheckbox));
 		store->setAllowTextLines();
-		Ui::AddSkip(_content, st::onlinePlaybackProfilesTitleSkip);
-		_content->add(object_ptr<Ui::FlatLabel>(
-			_content,
+		Ui::AddSkip(container, st::onlinePlaybackProfilesTitleSkip);
+		container->add(object_ptr<Ui::FlatLabel>(
+			container,
 			about,
 			st::onlinePlaybackProfilesAbout));
-		Ui::AddSkip(_content, st::onlinePlaybackProfilesItemSkip);
+		Ui::AddSkip(container, st::onlinePlaybackProfilesItemSkip);
 	};
 	Ui::AddSubsectionTitle(
 		_content,
@@ -338,10 +339,12 @@ void DownloadBoostProfilesBox::prepare() {
 		tr::lng_online_playback_profile_waiting_buffer_ms(tr::now),
 		tr::lng_online_playback_profile_waiting_buffer_ms_about(tr::now));
 	addCheck(
+		_content,
 		_seekCancel,
 		tr::lng_online_playback_profile_seek_cancel_enabled(tr::now),
 		tr::lng_online_playback_profile_seek_cancel_enabled_about(tr::now));
 	addCheck(
+		_content,
 		_tailPrefetch,
 		tr::lng_online_playback_profile_tail_prefetch_enabled(tr::now),
 		tr::lng_online_playback_profile_tail_prefetch_enabled_about(tr::now));
@@ -450,6 +453,11 @@ void DownloadBoostProfilesBox::prepare() {
 		23,
 		tr::lng_online_playback_profile_smart_download_burst(tr::now),
 		tr::lng_online_playback_profile_smart_download_burst_about(tr::now));
+	addCheck(
+		smartContent,
+		_adaptivePacing,
+		tr::lng_online_playback_profile_adaptive_pacing(tr::now),
+		tr::lng_online_playback_profile_adaptive_pacing_about(tr::now));
 
 	loadProfile(_editingProfile);
 	showChildren();
@@ -534,6 +542,9 @@ void DownloadBoostProfilesBox::loadProfile(int profile) {
 		Ui::Checkbox::NotifyAboutChange::DontNotify);
 	_tailPrefetch->setChecked(
 		value.tailPrefetchParts > 0,
+		Ui::Checkbox::NotifyAboutChange::DontNotify);
+	_adaptivePacing->setChecked(
+		value.smartAdaptivePacing,
 		Ui::Checkbox::NotifyAboutChange::DontNotify);
 	_smartSection->toggle(profile == 6, anim::type::instant);
 }
@@ -636,6 +647,7 @@ bool DownloadBoostProfilesBox::saveCurrentProfile() {
 		*current[i] = number;
 	}
 	value.seekCancelEnabled = _seekCancel->checked();
+	value.smartAdaptivePacing = _adaptivePacing->checked();
 	if (value.maxWaitedParts < value.startWaitedParts) {
 		return showError(
 			8,

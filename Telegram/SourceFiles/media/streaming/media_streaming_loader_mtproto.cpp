@@ -85,6 +85,15 @@ void LoaderMtproto::setDiagnostics(
 void LoaderMtproto::setStreamingReadRange(int64 offset, int64 amount) {
 	const auto lock = std::lock_guard(_readStallMutex);
 	_readStall.setRead(offset, amount, crl::now());
+	const auto waiting = (offset >= 0 && amount > 0);
+	if (_smartReadWaiting.exchange(waiting, std::memory_order_acq_rel)
+			!= waiting) {
+		crl::on_main(this, [=] {
+			_owner->setSmartStreamingReadWaiting(
+				this,
+				_smartReadWaiting.load(std::memory_order_acquire));
+		});
+	}
 }
 
 void LoaderMtproto::load(int64 offset) {

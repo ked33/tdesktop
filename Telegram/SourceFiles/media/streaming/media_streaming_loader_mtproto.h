@@ -95,6 +95,7 @@ private:
 	std::atomic<int> _smartPlaybackRate = 0;
 	std::atomic<bool> _smartBufferPressure = false;
 	std::atomic<bool> _smartActive = false;
+	std::atomic<bool> _smartReadWaiting = false;
 	std::atomic<uint64> _smartPlaybackRateGeneration = 0;
 	std::atomic<uint64> _smartBufferPressureGeneration = 0;
 

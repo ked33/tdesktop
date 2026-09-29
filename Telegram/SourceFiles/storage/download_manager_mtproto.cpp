@@ -230,11 +230,12 @@ auto DownloadManagerMtproto::smartDemandSummary(MTP::DcId dcId) const
 -> SmartDemandSummary {
 	auto result = SmartDemandSummary();
 	for (const auto &[task, demand] : _smartStreamingDemands) {
-		(void)task;
 		if (demand.dcId != dcId || !demand.active) {
 			continue;
 		}
 		result.streaming = true;
+		result.readWaiting = result.readWaiting
+			|| (demand.readWaiting && task->readyToRequest());
 		result.pacingBytesPerSecond = int(std::min(
 			int64(result.pacingBytesPerSecond) + demand.pacingBytesPerSecond,
 			int64(std::numeric_limits<int>::max())));
@@ -267,6 +268,20 @@ void DownloadManagerMtproto::setSmartStreamingActive(
 	demand.active = active;
 }
 
+void DownloadManagerMtproto::setSmartStreamingReadWaiting(
+		not_null<Task*> task,
+		bool waiting) {
+	if (!smartNonPremiumEnabled() || !SmartProfile().smartAdaptivePacing) {
+		return;
+	}
+	auto &demand = _smartStreamingDemands[task];
+	demand.dcId = task->dcId();
+	if (demand.readWaiting != waiting) {
+		demand.readWaiting = waiting;
+		scheduleDownloadCheck(1);
+	}
+}
+
 void DownloadManagerMtproto::setSmartStreamingBufferPressure(
 		not_null<Task*> task,
 		bool pressure) {
@@ -279,6 +294,9 @@ void DownloadManagerMtproto::setSmartStreamingBufferPressure(
 	demand.bufferPressure = pressure;
 	demand.pressureSince = pressure ? now : 0;
 	if (smartNonPremiumEnabled()) {
+		if (SmartProfile().smartAdaptivePacing) {
+			scheduleDownloadCheck(1);
+		}
 		evaluateSmartRequestLimit(demand.dcId, now);
 	}
 }
@@ -699,12 +717,19 @@ crl::time DownloadManagerMtproto::downloadRateDelay(
 	auto &state = smartRequestState(dcId, now);
 	const auto &profile = SmartProfile();
 	auto &limiter = state.rateLimiter;
+	const auto catchUp = profile.smartAdaptivePacing
+		&& (demand.bufferPressure || demand.readWaiting);
 	limiter.configure(
 		DownloadRateLimiter::Target(
 			demand.pacingBytesPerSecond,
 			profile.smartDownloadMaxKiBps),
 		profile.smartDownloadBurstParts * kDownloadPartSize,
-		now);
+		now,
+		profile.smartAdaptivePacing ? DownloadRateLimiter::Target(
+			demand.pacingBytesPerSecond,
+			profile.smartDownloadMaxKiBps,
+			true) : 0,
+		catchUp);
 	const auto delay = crl::time(limiter.delay(kDownloadPartSize, now));
 	if (delay > 0) {
 		state.pacedAt = now;
@@ -714,13 +739,18 @@ crl::time DownloadManagerMtproto::downloadRateDelay(
 		&& (!state.rateLogAt || now >= state.rateLogAt + kSmartRateLogInterval)) {
 		state.rateLogAt = now;
 		LOG(("Video Playback: download pacing dc=%1 rateBps=%2 "
-			"ceilingBps=%3 burstParts=%4 delayMs=%5 playbackBps=%6.")
+			"ceilingBps=%3 burstParts=%4 delayMs=%5 playbackBps=%6 "
+			"adaptive=%7 catchUp=%8 pressure=%9 readWaiting=%10.")
 			.arg(dcId)
 			.arg(limiter.rate())
 			.arg(limiter.ceiling())
 			.arg(profile.smartDownloadBurstParts)
 			.arg(delay)
-			.arg(demand.playbackBytesPerSecond));
+			.arg(demand.playbackBytesPerSecond)
+			.arg(profile.smartAdaptivePacing)
+			.arg(limiter.catchingUp())
+			.arg(demand.bufferPressure)
+			.arg(demand.readWaiting));
 	}
 	return delay;
 }
