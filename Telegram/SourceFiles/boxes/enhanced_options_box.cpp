@@ -33,8 +33,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 namespace {
+
+constexpr auto kDownloadRateFieldIndex = 22;
 
 [[nodiscard]] QString PixelRangeLabel(int minimum, int maximum) {
 	return u"%1-%2 px"_q.arg(minimum).arg(maximum);
@@ -439,7 +442,7 @@ void DownloadBoostProfilesBox::prepare() {
 		tr::lng_online_playback_profile_smart_capacity_floor_about(tr::now));
 	addField(
 		smartContent,
-		22,
+		kDownloadRateFieldIndex,
 		tr::lng_online_playback_profile_smart_download_rate(tr::now),
 		tr::lng_online_playback_profile_smart_download_rate_about(tr::now));
 	addField(
@@ -515,11 +518,16 @@ void DownloadBoostProfilesBox::loadProfile(int profile) {
 	const auto defaults = NumericFieldValues(
 		Media::Streaming::DefaultBoostProfiles()[profile]);
 	for (auto i = 0; i != kNumericFieldCount; ++i) {
-		_fields[i]->setText(QString::number(values[i]));
+		const auto text = [&](int number) {
+			return (i == kDownloadRateFieldIndex)
+				? QString::number(number * 1024. / 1'000'000., 'g', 12)
+				: QString::number(number);
+		};
+		_fields[i]->setText(text(values[i]));
 		_defaultLabels[i]->setText(tr::lng_online_playback_profile_default(
 			tr::now,
 			lt_value,
-			QString::number(defaults[i])));
+			text(defaults[i])));
 	}
 	_seekCancel->setChecked(
 		value.seekCancelEnabled,
@@ -556,7 +564,7 @@ bool DownloadBoostProfilesBox::saveCurrentProfile() {
 		std::pair{1, 32},
 		std::pair{1, 32},
 		std::pair{0, 65536},
-		std::pair{1, 32},
+		std::pair{0, 32},
 	};
 	const auto current = std::array<int*, kNumericFieldCount>{
 		&value.requestsLimit,
@@ -601,7 +609,24 @@ bool DownloadBoostProfilesBox::saveCurrentProfile() {
 	}
 	for (auto i = 0; i != kNumericFieldCount; ++i) {
 		auto ok = false;
-		const auto number = _fields[i]->getLastText().trimmed().toInt(&ok);
+		const auto text = _fields[i]->getLastText().trimmed();
+		if (i == kDownloadRateFieldIndex) {
+			const auto rate = text.toDouble(&ok);
+			const auto maximum = ranges[i].second * 1024. / 1'000'000.;
+			if (!ok
+				|| !std::isfinite(rate)
+				|| rate < 0.
+				|| (rate > 0. && rate < 1024. / 1'000'000.)
+				|| rate > maximum) {
+				return showError(
+					i,
+					-1,
+					tr::lng_online_playback_profile_invalid_rate(tr::now));
+			}
+			*current[i] = int(std::llround(rate * 1'000'000.) / 1024);
+			continue;
+		}
+		const auto number = text.toInt(&ok);
 		if (!ok || number < ranges[i].first || number > ranges[i].second) {
 			return showError(
 				i,

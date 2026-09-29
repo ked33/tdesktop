@@ -58,6 +58,10 @@ inline void DownloadRateLimiter::configure(
 		int target,
 		int burstBytes,
 		std::int64_t now) {
+	if (burstBytes <= 0) {
+		*this = DownloadRateLimiter();
+		return;
+	}
 	refill(now);
 	if (_ceiling && now >= _recoverAt) {
 		_ceiling = std::min(
@@ -88,6 +92,9 @@ inline std::int64_t DownloadRateLimiter::delay(
 }
 
 inline void DownloadRateLimiter::consume(int bytes, std::int64_t now) {
+	if (!_rate) {
+		return;
+	}
 	refill(now);
 	_credit -= std::int64_t(bytes) * 1000;
 }
@@ -106,6 +113,9 @@ inline void DownloadRateLimiter::penalize(
 inline void DownloadRateLimiter::suspend(
 		std::int64_t until,
 		std::int64_t recoverAt) {
+	if (!_rate) {
+		return;
+	}
 	_credit = 0;
 	_updated = std::max(_updated, until);
 	_recoverAt = std::max(_recoverAt, recoverAt);

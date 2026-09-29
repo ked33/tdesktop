@@ -375,7 +375,7 @@ BoostProfiles LoadBoostProfiles() {
 			object,
 			"smartDownloadBurstParts",
 			defaults.smartDownloadBurstParts,
-			1,
+			0,
 			32);
 		profile.maxWaitedParts = std::max(profile.maxWaitedParts, profile.startWaitedParts);
 		profile.maxSessions = std::max(profile.maxSessions, profile.startSessions);

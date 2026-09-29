@@ -29,6 +29,34 @@ void TestTarget() {
 		"overflow safe target");
 }
 
+void TestDisabled() {
+	auto limiter = Storage::DownloadRateLimiter();
+	const auto target = Storage::DownloadRateLimiter::Target(1750348, 1);
+	limiter.configure(target, 0, 0);
+	Require(limiter.rate() == 0, "zero burst disables manual rate ceiling");
+	for (auto i = 0; i != 10000; ++i) {
+		limiter.consume(kPart, 0);
+		Require(limiter.delay(kPart, 0) == 0, "disabled budget cannot exhaust");
+	}
+	limiter.penalize(3000, 63000);
+	limiter.suspend(5000, 65000);
+	Require(limiter.ceiling() == 0, "disabled limiter ignores pacing penalty");
+	Require(limiter.delay(kPart, 0) == 0, "disabled limiter adds no delay");
+	limiter.configure(target, kPart, 0);
+	Require(limiter.delay(kPart, 0) == 0, "reenabled budget starts full");
+	limiter.consume(kPart, 0);
+	Require(limiter.delay(kPart, 0) == 128000, "reenabled manual ceiling");
+	limiter.penalize(3000, 63000);
+	limiter.configure(target, 0, 1);
+	Require(limiter.rate() == 0, "disable an active limiter");
+	Require(limiter.ceiling() == 0, "disable clears pacing penalty");
+	Require(limiter.delay(kPart, 1) == 0, "disable clears pending pacing wait");
+	limiter.configure(512 * 1024, 2 * kPart, 1);
+	limiter.consume(kPart, 1);
+	limiter.consume(kPart, 1);
+	Require(limiter.delay(kPart, 1) == 250, "reenabled budget has no old debt");
+}
+
 void TestBurstAndSeek() {
 	auto limiter = Storage::DownloadRateLimiter();
 	constexpr auto rate = 512 * 1024;
@@ -124,9 +152,10 @@ void TestSharedBudget() {
 
 int main() {
 	TestTarget();
+	TestDisabled();
 	TestBurstAndSeek();
 	TestWaitAndRecovery();
 	TestLongIdleAndIndependentServers();
 	TestSharedBudget();
-	std::cout << "PASS: targets, burst, seek, wait, recovery, idle, shared/DC budgets\n";
+	std::cout << "PASS: targets, disable, burst, seek, wait, recovery, idle, shared/DC budgets\n";
 }
