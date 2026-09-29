@@ -2077,8 +2077,6 @@ PRIVATE
     ui/chat/choose_send_as.h
     ui/chat/choose_theme_controller.cpp
     ui/chat/choose_theme_controller.h
-    ui/chat/sponsored_message_bar.cpp
-    ui/chat/sponsored_message_bar.h
     ui/controls/compose_ai_button_factory.cpp
     ui/controls/compose_ai_button_factory.h
     ui/controls/custom_emoji_toast_icon.cpp

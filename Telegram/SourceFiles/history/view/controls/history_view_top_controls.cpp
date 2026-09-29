@@ -41,8 +41,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/chat/group_call_bar.h"
 #include "ui/chat/pinned_bar.h"
 #include "ui/chat/requests_bar.h"
-#include "ui/chat/sponsored_message_bar.h"
-#include "ui/wrap/slide_wrap.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/elastic_scroll.h"
 #include "ui/widgets/popup_menu.h"
@@ -90,7 +88,6 @@ TopControls::TopControls(
 , _monoforumPeerId(descriptor.monoforumPeerId)
 , _scroll(descriptor.scroll)
 , _list(descriptor.list)
-, _keyboardReservedHeight(std::move(descriptor.keyboardReservedHeight))
 , _showAtStart(std::move(descriptor.showAtStart))
 , _showAtPosition(std::move(descriptor.showAtPosition))
 , _preparePinnedClickContext(std::move(descriptor.preparePinnedClickContext))
@@ -101,12 +98,6 @@ TopControls::TopControls(
 	setupTranslateBar();
 	rebuildModeSensitiveBars();
 	requestSponsoredMessageBar();
-	rpl::merge(
-		_list->heightValue() | rpl::to_empty,
-		_scroll->heightValue() | rpl::to_empty
-	) | rpl::on_next([=] {
-		checkSponsoredMessageBar();
-	}, _wrap->lifetime());
 	updateLayout();
 
 	_moveWithTopDelta = std::move(descriptor.moveWithTopDelta);
@@ -176,9 +167,6 @@ void TopControls::setAnimatingMode(bool enabled) {
 
 void TopControls::finishAnimating() {
 	checkSponsoredMessageBar();
-	if (_sponsoredMessageBar) {
-		_sponsoredMessageBar->finishAnimating();
-	}
 	if (_groupCallBar) {
 		_groupCallBar->finishAnimating();
 	}
@@ -615,115 +603,28 @@ void TopControls::setupPeerBars() {
 	}
 }
 
-bool TopControls::checkSponsoredMessageBarVisibility() const {
-	const auto reserved = _keyboardReservedHeight
-		? _keyboardReservedHeight()
-		: 0;
-	return (_list->height() - reserved > _scroll->height());
-}
-
 void TopControls::requestSponsoredMessageBar() {
 	if (!_history->session().sponsoredMessages().isTopBarFor(_history)) {
 		return;
 	}
-	const auto checkState = [=] {
-		using State = Data::SponsoredMessages::State;
-		if (_history->session().sponsoredMessages().state(_history)
-			!= State::AppendToTopBar) {
-			return;
-		}
-		createSponsoredMessageBar();
-		if (checkSponsoredMessageBarVisibility()) {
-			_sponsoredMessageBar->toggle(true, anim::type::normal);
-		} else {
-			auto &lifetime = _sponsoredMessageBar->lifetime();
-			const auto heightLifetime = lifetime.make_state<rpl::lifetime>();
-			_list->heightValue(
-			) | rpl::on_next([=] {
-				if (_sponsoredMessageBar->toggled()) {
-					heightLifetime->destroy();
-				} else if (checkSponsoredMessageBarVisibility()) {
-					_sponsoredMessageBar->toggle(true, anim::type::normal);
-					heightLifetime->destroy();
-				}
-			}, *heightLifetime);
-		}
-	};
 	const auto history = _history;
 	_history->session().sponsoredMessages().request(
 		_history,
 		crl::guard(_wrap.get(), [=] {
 			if (history == _history) {
-				checkState();
+				checkSponsoredMessageBar();
 			}
 		}));
 }
 
 void TopControls::checkSponsoredMessageBar() {
 	using State = Data::SponsoredMessages::State;
-	if (!_history->session().sponsoredMessages().isTopBarFor(_history)) {
+	auto &sponsored = _history->session().sponsoredMessages();
+	if (!sponsored.isTopBarFor(_history)
+		|| (sponsored.state(_history) != State::AppendToTopBar)) {
 		return;
 	}
-	if (_history->session().sponsoredMessages().state(_history)
-		!= State::AppendToTopBar) {
-		return;
-	}
-	if (checkSponsoredMessageBarVisibility()) {
-		createSponsoredMessageBar();
-		_sponsoredMessageBar->toggle(true, anim::type::instant);
-	}
-}
-
-void TopControls::createSponsoredMessageBar() {
-	if (_sponsoredMessageBar) {
-		return;
-	}
-	_sponsoredMessageBar = base::make_unique_q<Ui::SlideWrap<Ui::RpWidget>>(
-		_topBars.get(),
-		object_ptr<Ui::RpWidget>(_topBars.get()));
-
-	_sponsoredMessageBar->entity()->resizeToWidth(_width);
-	const auto maybeFullId = _history->session().sponsoredMessages().fillTopBar(
-		_history,
-		_sponsoredMessageBar->entity());
-	_history->session().sponsoredMessages().itemRemoved(
-		maybeFullId
-	) | rpl::on_next([this] {
-		_sponsoredMessageBar->toggle(false, anim::type::normal);
-		_sponsoredMessageBar->shownValue() | rpl::filter(
-			!rpl::mappers::_1
-		) | rpl::on_next([this] {
-			_sponsoredMessageBar = nullptr;
-		}, _sponsoredMessageBar->lifetime());
-	}, _sponsoredMessageBar->lifetime());
-
-	if (maybeFullId) {
-		const auto viewLifetime
-			= _sponsoredMessageBar->lifetime().make_state<rpl::lifetime>();
-		rpl::combine(
-			_sponsoredMessageBar->entity()->heightValue(),
-			_sponsoredMessageBar->heightValue()
-		) | rpl::filter(
-			rpl::mappers::_1 == rpl::mappers::_2
-		) | rpl::on_next([=] {
-			_history->session().sponsoredMessages().view(maybeFullId);
-			viewLifetime->destroy();
-		}, *viewLifetime);
-	}
-
-	_sponsoredMessageBarHeight = 0;
-	_sponsoredMessageBar->heightValue(
-	) | rpl::on_next([=](int height) {
-		if (height == _sponsoredMessageBarHeight) {
-			return;
-		}
-		const auto was = this->height();
-		_sponsoredMessageBarHeight = height;
-		updateLayout();
-		applyHeightChangeWithTopMoved(was, this->height());
-	}, _sponsoredMessageBar->lifetime());
-	_sponsoredMessageBar->toggle(false, anim::type::instant);
-	updateZOrder();
+	sponsored.view(sponsored.topBarId(_history));
 }
 
 void TopControls::setupPinnedTracker() {
@@ -1157,11 +1058,6 @@ void TopControls::updateLayout() {
 		pinnedBar->resizeToWidth(_width);
 		top += _pinnedBarHeight;
 	}
-	if (_sponsoredMessageBar) {
-		_sponsoredMessageBar->move(0, top);
-		_sponsoredMessageBar->resizeToWidth(_width);
-		top += _sponsoredMessageBarHeight;
-	}
 	if (_topicReopenBar) {
 		_topicReopenBar->bar().move(0, top);
 		top += _topicReopenBarHeight;
@@ -1207,9 +1103,6 @@ void TopControls::updateZOrder() {
 	}
 	if (_topicReopenBar) {
 		_topicReopenBar->bar().raise();
-	}
-	if (_sponsoredMessageBar) {
-		_sponsoredMessageBar->raise();
 	}
 	if (pinnedBar) {
 		pinnedBar->raise();

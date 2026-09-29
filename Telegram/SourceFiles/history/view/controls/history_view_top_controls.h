@@ -30,8 +30,6 @@ class SessionController;
 } // namespace Window
 
 namespace Ui {
-template <typename Widget>
-class SlideWrap;
 class GroupCallBar;
 class PinnedBar;
 class RequestsBar;
@@ -58,7 +56,6 @@ struct TopControlsDescriptor {
 	PeerId monoforumPeerId = 0;
 	Ui::ElasticScroll *scroll = nullptr;
 	ListWidget *list = nullptr;
-	Fn<int()> keyboardReservedHeight;
 	Fn<void(int)> moveWithTopDelta;
 	Fn<void()> relayout;
 	Fn<void(int)> relayoutWithScrollTopDelta;
@@ -105,8 +102,6 @@ private:
 	void setupPeerBars();
 	void requestSponsoredMessageBar();
 	void checkSponsoredMessageBar();
-	[[nodiscard]] bool checkSponsoredMessageBarVisibility() const;
-	void createSponsoredMessageBar();
 	void setupPinnedTracker();
 	void rebuildModeSensitiveBars();
 	void checkPinnedBarState();
@@ -129,7 +124,6 @@ private:
 	PeerId _monoforumPeerId = 0;
 	const not_null<Ui::ElasticScroll*> _scroll;
 	const not_null<ListWidget*> _list;
-	Fn<int()> _keyboardReservedHeight;
 	Fn<void(int)> _moveWithTopDelta;
 	Fn<void()> _relayout;
 	Fn<void(int)> _relayoutWithScrollTopDelta;
@@ -145,7 +139,6 @@ private:
 	std::unique_ptr<PinnedTracker> _pinnedTracker;
 	std::unique_ptr<Ui::PinnedBar> _pinnedBar;
 	std::unique_ptr<Ui::PinnedBar> _hidingPinnedBar;
-	base::unique_qptr<Ui::SlideWrap<Ui::RpWidget>> _sponsoredMessageBar;
 	std::unique_ptr<Ui::PinnedBar> _repliesRootView;
 	std::unique_ptr<TopicReopenBar> _topicReopenBar;
 	std::unique_ptr<PaysStatus> _paysStatus;
@@ -158,7 +151,6 @@ private:
 	int _requestsBarHeight = 0;
 	int _translateBarHeight = 0;
 	int _pinnedBarHeight = 0;
-	int _sponsoredMessageBarHeight = 0;
 	int _repliesRootViewHeight = 0;
 	int _topicReopenBarHeight = 0;
 	int _paysStatusHeight = 0;

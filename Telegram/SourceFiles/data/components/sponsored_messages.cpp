@@ -23,7 +23,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element.h"
 #include "lang/lang_keys.h"
 #include "main/main_session.h"
-#include "ui/chat/sponsored_message_bar.h"
 #include "ui/text/text_utilities.h" // tr::rich.
 
 namespace Data {
@@ -513,25 +512,12 @@ SponsoredForVideo SponsoredMessages::prepareForVideo(
 	};
 }
 
-FullMsgId SponsoredMessages::fillTopBar(
-		not_null<History*> history,
-		not_null<Ui::RpWidget*> widget) {
+FullMsgId SponsoredMessages::topBarId(not_null<History*> history) const {
 	const auto it = _data.find(history);
-	if (it != end(_data)) {
-		const auto &list = it->second;
-		if (!list.entries.empty()) {
-			const auto &entry = list.entries.front();
-			const auto fullId = entry.itemFullId;
-			Ui::FillSponsoredMessageBar(
-				widget,
-				_session,
-				fullId,
-				entry.sponsored.from,
-				entry.sponsored.textWithEntities);
-			return fullId;
-		}
+	if (it == end(_data) || it->second.entries.empty()) {
+		return {};
 	}
-	return {};
+	return it->second.entries.front().itemFullId;
 }
 
 rpl::producer<> SponsoredMessages::itemRemoved(const FullMsgId &fullId) {

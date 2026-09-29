@@ -22,10 +22,6 @@ namespace Main {
 class Session;
 } // namespace Main
 
-namespace Ui {
-class RpWidget;
-} // namespace Ui
-
 namespace Data {
 
 class MediaPreload;
@@ -154,9 +150,7 @@ public:
 		const QByteArray &randomId,
 		bool isMedia,
 		bool isFullscreen);
-	[[nodiscard]] FullMsgId fillTopBar(
-		not_null<History*> history,
-		not_null<Ui::RpWidget*> widget);
+	[[nodiscard]] FullMsgId topBarId(not_null<History*> history) const;
 	[[nodiscard]] rpl::producer<> itemRemoved(const FullMsgId &);
 
 	[[nodiscard]] AppendResult append(not_null<History*> history);

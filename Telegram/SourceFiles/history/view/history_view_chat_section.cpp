@@ -600,11 +600,6 @@ ChatWidget::ChatWidget(
 			.monoforumPeerId = _monoforumPeerId,
 			.scroll = _scroll.get(),
 			.list = _inner.data(),
-			.keyboardReservedHeight = [=] {
-				return (_kbScroll && !_kbScroll->isHidden())
-					? _kbScroll->height()
-					: 0;
-			},
 			.moveWithTopDelta = [=](int delta) {
 				setGeometryWithTopMoved(geometry(), delta);
 			},
