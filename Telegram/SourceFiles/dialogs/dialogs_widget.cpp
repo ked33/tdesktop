@@ -37,6 +37,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/chat_filters_tabs_strip.h"
 #include "ui/widgets/elastic_scroll.h"
 #include "ui/widgets/fields/input_field.h"
+#include "ui/widgets/tooltip.h"
 #include "ui/wrap/fade_wrap.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/wrap/vertical_layout.h"
@@ -414,6 +415,7 @@ Widget::Widget(
 })
 , _searchForNarrowLayout(_searchControls, st::dialogsSearchForNarrowFilters)
 , _search(_searchControls, st::dialogsFilter, tr::lng_dlg_filter())
+, _searchDialogFilter(_search, st::dialogsSearchDialogFilter)
 , _chooseFromUser(
 	_searchControls,
 	object_ptr<Ui::IconButton>(this, st::dialogsSearchFrom))
@@ -702,6 +704,25 @@ Widget::Widget(
 	_chooseFromUser->entity()->setClickedCallback([=] { showSearchFrom(); });
 	_chooseFromUser->entity()->setAccessibleName(
 		tr::lng_search_messages_from(tr::now));
+	_searchDialogFilter->setClickedCallback([] {
+		EnhancedSettings::SetSearchDialogFilterEnabled(
+			!EnhancedSettings::SearchDialogFilterEnabled());
+	});
+	Ui::InstallTooltip(_searchDialogFilter.data(), [] {
+		return tr::lng_settings_search_dialog_filter(tr::now);
+	});
+	tr::lng_settings_search_dialog_filter(
+	) | rpl::on_next([=](const QString &text) {
+		_searchDialogFilter->setAccessibleName(text);
+	}, _searchDialogFilter->lifetime());
+	rpl::single(rpl::empty) | rpl::then(
+		EnhancedSettings::SearchDialogFilterChanges()
+	) | rpl::on_next([=] {
+		const auto icon = EnhancedSettings::SearchDialogFilterEnabled()
+			? &st::dialogsSearchDialogFilterActive
+			: nullptr;
+		_searchDialogFilter->setIconOverride(icon, icon);
+	}, _searchDialogFilter->lifetime());
 	rpl::single(rpl::empty) | rpl::then(
 		session().domain().local().localPasscodeChanged()
 	) | rpl::on_next([=] {
@@ -3676,7 +3697,7 @@ bool Widget::searchForTopicsRequired(const QString &query) const {
 }
 
 void Widget::updateRecentSearchDraft() {
-	if (_searchState.inChat || _searchState.query.trimmed().isEmpty()) {
+	if (searchInPeer() || _searchState.query.trimmed().isEmpty()) {
 		commitRecentSearchDraft();
 	} else {
 		_recentSearchDraft = Data::NormalizeRecentSearchQuery(
@@ -4986,8 +5007,8 @@ void Widget::updateSearchFromVisibility(bool fast) {
 		fast ? anim::type::instant : anim::type::normal);
 	if (_subsectionTopBar) {
 		_subsectionTopBar->searchEnableChooseFromUser(true, visible);
-	} else if (changed) {
-		auto additional = QMargins();
+	} else if (changed || fast) {
+		auto additional = QMargins(_searchDialogFilter->width(), 0, 0, 0);
 		if (visible) {
 			additional.setRight(_chooseFromUser->width());
 		}

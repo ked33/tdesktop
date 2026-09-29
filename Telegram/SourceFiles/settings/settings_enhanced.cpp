@@ -860,6 +860,10 @@ void ImportEnhancedSettings() {
 			),
 			u"enhanced/search_dialog_filter"_q)->toggleOn(
 				rpl::single(EnhancedSettings::SearchDialogFilterEnabled())
+				| rpl::then(EnhancedSettings::SearchDialogFilterChanges()
+					| rpl::map([] {
+						return EnhancedSettings::SearchDialogFilterEnabled();
+					}))
 		)->toggledChanges(
 		) | rpl::on_next([](bool toggled) {
 			EnhancedSettings::SetSearchDialogFilterEnabled(toggled);

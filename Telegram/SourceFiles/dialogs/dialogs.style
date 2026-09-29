@@ -313,6 +313,12 @@ dialogsSearchFrom: IconButton(dialogsCalendar) {
 	icon: icon {{ "dialogs/dialogs_search_from", dialogsMenuIconFg }};
 	iconOver: icon {{ "dialogs/dialogs_search_from", dialogsMenuIconFgOver }};
 }
+dialogsSearchDialogFilter: IconButton(dialogsCalendar) {
+	icon: icon {{ "menu/tag_filter-23x22", dialogsMenuIconFg }};
+	iconOver: icon {{ "menu/tag_filter-23x22", dialogsMenuIconFgOver }};
+	iconPosition: point(5px, 6px);
+}
+dialogsSearchDialogFilterActive: icon {{ "menu/tag_filter-23x22", windowActiveTextFg }};
 
 dialogsFilter: InputField(defaultInputField) {
 	textBg: filterInputInactiveBg;
