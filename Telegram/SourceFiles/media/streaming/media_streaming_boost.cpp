@@ -77,6 +77,8 @@ void WriteProfile(QJsonObject &object, const BoostProfile &profile) {
 	object.insert("smartInitialRequestLimit", profile.smartInitialRequestLimit);
 	object.insert("smartMinimumRequestLimit", profile.smartMinimumRequestLimit);
 	object.insert("smartMaximumRequestLimit", profile.smartMaximumRequestLimit);
+	object.insert("smartDownloadMaxKiBps", profile.smartDownloadMaxKiBps);
+	object.insert("smartDownloadBurstParts", profile.smartDownloadBurstParts);
 	object.insert(
 		"smartCapacityMinimumRequestLimit",
 		profile.smartCapacityMinimumRequestLimit);
@@ -363,6 +365,18 @@ BoostProfiles LoadBoostProfiles() {
 			defaults.smartCapacityMinimumRequestLimit,
 			1,
 			32);
+		profile.smartDownloadMaxKiBps = ReadInt(
+			object,
+			"smartDownloadMaxKiBps",
+			defaults.smartDownloadMaxKiBps,
+			0,
+			65536);
+		profile.smartDownloadBurstParts = ReadInt(
+			object,
+			"smartDownloadBurstParts",
+			defaults.smartDownloadBurstParts,
+			1,
+			32);
 		profile.maxWaitedParts = std::max(profile.maxWaitedParts, profile.startWaitedParts);
 		profile.maxSessions = std::max(profile.maxSessions, profile.startSessions);
 		profile.mpvCacheBackMb = std::min(
@@ -455,6 +469,8 @@ void LogOnlinePlaybackProfile() {
 			profile.smartMaximumRequestLimit),
 		u"smartCapacityMinimumRequestLimit=%1"_q.arg(
 			profile.smartCapacityMinimumRequestLimit),
+		u"smartDownloadMaxKiBps=%1"_q.arg(profile.smartDownloadMaxKiBps),
+		u"smartDownloadBurstParts=%1"_q.arg(profile.smartDownloadBurstParts),
 	};
 	LOG(("Online playback profile: level=%1 (%2); %3").arg(
 		level).arg(

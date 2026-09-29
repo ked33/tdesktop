@@ -50,6 +50,7 @@ public:
 	[[nodiscard]] ServerDelay serverDelayState() const override;
 	[[nodiscard]] bool premiumSession() const override;
 	void setSmartStreamingBufferPressure(bool pressure) override;
+	void setSmartStreamingActive(bool active) override;
 	void setSmartStreamingPlaybackRate(int bytesPerSecond) override;
 	void notifySmartStreamingSeek() override;
 	[[nodiscard]] int smartStreamingRequestLimit() const override;
@@ -93,6 +94,7 @@ private:
 		Storage::kNonPremiumInitialRequestLimit;
 	std::atomic<int> _smartPlaybackRate = 0;
 	std::atomic<bool> _smartBufferPressure = false;
+	std::atomic<bool> _smartActive = false;
 	std::atomic<uint64> _smartPlaybackRateGeneration = 0;
 	std::atomic<uint64> _smartBufferPressureGeneration = 0;
 

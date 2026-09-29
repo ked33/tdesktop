@@ -437,6 +437,16 @@ void DownloadBoostProfilesBox::prepare() {
 		21,
 		tr::lng_online_playback_profile_smart_capacity_floor(tr::now),
 		tr::lng_online_playback_profile_smart_capacity_floor_about(tr::now));
+	addField(
+		smartContent,
+		22,
+		tr::lng_online_playback_profile_smart_download_rate(tr::now),
+		tr::lng_online_playback_profile_smart_download_rate_about(tr::now));
+	addField(
+		smartContent,
+		23,
+		tr::lng_online_playback_profile_smart_download_burst(tr::now),
+		tr::lng_online_playback_profile_smart_download_burst_about(tr::now));
 
 	loadProfile(_editingProfile);
 	showChildren();
@@ -494,6 +504,8 @@ auto DownloadBoostProfilesBox::NumericFieldValues(
 		value.smartMinimumRequestLimit,
 		value.smartMaximumRequestLimit,
 		value.smartCapacityMinimumRequestLimit,
+		value.smartDownloadMaxKiBps,
+		value.smartDownloadBurstParts,
 	};
 }
 
@@ -543,6 +555,8 @@ bool DownloadBoostProfilesBox::saveCurrentProfile() {
 		std::pair{1, 32},
 		std::pair{1, 32},
 		std::pair{1, 32},
+		std::pair{0, 65536},
+		std::pair{1, 32},
 	};
 	const auto current = std::array<int*, kNumericFieldCount>{
 		&value.requestsLimit,
@@ -567,6 +581,8 @@ bool DownloadBoostProfilesBox::saveCurrentProfile() {
 		&value.smartMinimumRequestLimit,
 		&value.smartMaximumRequestLimit,
 		&value.smartCapacityMinimumRequestLimit,
+		&value.smartDownloadMaxKiBps,
+		&value.smartDownloadBurstParts,
 	};
 	const auto showError = [&](
 			int primary,

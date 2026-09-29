@@ -1962,6 +1962,7 @@ PRIVATE
     storage/details/storage_settings_scheme.h
     storage/download_manager_mtproto.cpp
     storage/download_manager_mtproto.h
+    storage/download_rate_limiter.h
     storage/file_download.cpp
     storage/file_download.h
     storage/file_download_mtproto.cpp

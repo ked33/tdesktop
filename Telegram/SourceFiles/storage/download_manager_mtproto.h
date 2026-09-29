@@ -7,9 +7,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "base/flat_set.h"
 #include "base/timer.h"
 #include "base/weak_ptr.h"
 #include "data/data_file_origin.h"
+#include "storage/download_rate_limiter.h"
 #include "storage/storage_non_premium_delay.h"
 
 #include <optional>
@@ -44,6 +46,9 @@ public:
 
 	void enqueue(not_null<Task*> task, int priority);
 	void remove(not_null<Task*> task);
+	void deferRequest(not_null<Task*> task);
+	void forgetDeferredRequests(not_null<Task*> task);
+	void removeStreamingDemand(not_null<Task*> task);
 
 	void notifyTaskFinished() {
 		_taskFinished.fire({});
@@ -60,6 +65,7 @@ public:
 		crl::time timeAtRequestStart);
 	void checkSendNextAfterSuccess(MTP::DcId dcId);
 	[[nodiscard]] int chooseSessionIndex(MTP::DcId dcId) const;
+	[[nodiscard]] bool sessionHasCapacity(MTP::DcId dcId, int index) const;
 	[[nodiscard]] std::optional<int> chooseAlternativeSessionIndex(
 		MTP::DcId dcId,
 		int currentIndex) const;
@@ -87,6 +93,7 @@ public:
 	void setSmartStreamingBufferPressure(
 		not_null<Task*> task,
 		bool pressure);
+	void setSmartStreamingActive(not_null<Task*> task, bool active);
 	void setSmartStreamingPlaybackRate(
 		not_null<Task*> task,
 		int bytesPerSecond);
@@ -135,17 +142,24 @@ private:
 	struct SmartStreamingDemand {
 		MTP::DcId dcId = 0;
 		int playbackBytesPerSecond = 0;
+		int pacingBytesPerSecond = 0;
+		bool active = false;
 		crl::time pressureSince = 0;
 		crl::time seekUntil = 0;
 		bool bufferPressure = false;
 	};
 	struct SmartDemandSummary {
+		bool streaming = false;
 		int playbackBytesPerSecond = 0;
+		int pacingBytesPerSecond = 0;
 		crl::time pressureSince = 0;
 		crl::time seekUntil = 0;
 		bool bufferPressure = false;
 	};
 	struct SmartRequestState {
+		DownloadRateLimiter rateLimiter;
+		crl::time pacedAt = 0;
+		crl::time rateLogAt = 0;
 		int target = kNonPremiumInitialRequestLimit;
 		crl::time created = 0;
 		crl::time lastChange = 0;
@@ -198,6 +212,8 @@ private:
 		NonPremiumRequestLimitReason reason,
 		crl::time now);
 	void applySmartServerLimit(MTP::DcId dcId, crl::time now);
+	void scheduleDownloadCheck(crl::time delay);
+	[[nodiscard]] crl::time downloadRateDelay(MTP::DcId dcId, crl::time now);
 
 	const not_null<ApiWrap*> _api;
 
@@ -215,12 +231,14 @@ private:
 		_smartStreamingDemands;
 	base::flat_map<MTP::DcId, SmartRequestState> _smartRequestStates;
 	base::Timer _nonPremiumDelayTimer;
+	base::Timer _downloadRateTimer;
 	base::Timer _resetGenerationTimer;
 
 	base::flat_map<MTP::DcId, crl::time> _killSessionsWhen;
 	base::Timer _killSessionsTimer;
 
 	base::flat_map<MTP::DcId, Queue> _queues;
+	base::flat_map<MTP::DcId, base::flat_set<not_null<Task*>>> _deferredTasks;
 	rpl::lifetime _lifetime;
 
 };
@@ -376,6 +394,7 @@ private:
 	const Data::FileOrigin _origin;
 
 	base::flat_map<mtpRequestId, RequestData> _sentRequests;
+	base::flat_map<int64, RequestData> _deferredRequests;
 	base::flat_map<int64, mtpRequestId> _requestByOffset;
 
 	MTP::DcId _cdnDcId = 0;

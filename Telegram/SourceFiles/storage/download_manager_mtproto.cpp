@@ -34,6 +34,7 @@ constexpr auto kResetDownloadPrioritiesTimeout = crl::time(200);
 constexpr auto kBadRequestDurationThreshold = 8 * crl::time(1000);
 constexpr auto kNonPremiumDelayCoalesceTolerance = crl::time(1500);
 constexpr auto kSmartSampleBusyDuration = 5 * crl::time(1000);
+constexpr auto kSmartRateLogInterval = 5 * crl::time(1000);
 constexpr auto kSmartSampleMaximumRequests = 64;
 constexpr auto kSmartMeasurementMaxAge = 2 * 60 * crl::time(1000);
 constexpr auto kSmartLimitChangeCooldown = 30 * crl::time(1000);
@@ -190,6 +191,7 @@ DownloadManagerMtproto::DcBalanceData::DcBalanceData()
 DownloadManagerMtproto::DownloadManagerMtproto(not_null<ApiWrap*> api)
 : _api(api)
 , _nonPremiumDelayTimer([=] { checkNonPremiumDelayState(); })
+, _downloadRateTimer([=] { checkSendNext(); })
 , _resetGenerationTimer([=] { resetGeneration(); })
 , _killSessionsTimer([=] { killSessions(); }) {
 	_api->instance().restartsByTimeout(
@@ -229,9 +231,13 @@ auto DownloadManagerMtproto::smartDemandSummary(MTP::DcId dcId) const
 	auto result = SmartDemandSummary();
 	for (const auto &[task, demand] : _smartStreamingDemands) {
 		(void)task;
-		if (demand.dcId != dcId) {
+		if (demand.dcId != dcId || !demand.active) {
 			continue;
 		}
+		result.streaming = true;
+		result.pacingBytesPerSecond = int(std::min(
+			int64(result.pacingBytesPerSecond) + demand.pacingBytesPerSecond,
+			int64(std::numeric_limits<int>::max())));
 		const auto playback = int64(result.playbackBytesPerSecond)
 			+ demand.playbackBytesPerSecond;
 		result.playbackBytesPerSecond = int(std::min(
@@ -248,6 +254,17 @@ auto DownloadManagerMtproto::smartDemandSummary(MTP::DcId dcId) const
 		}
 	}
 	return result;
+}
+
+void DownloadManagerMtproto::setSmartStreamingActive(
+		not_null<Task*> task,
+		bool active) {
+	auto &demand = _smartStreamingDemands[task];
+	demand.dcId = task->dcId();
+	if (demand.active != active) {
+		scheduleDownloadCheck(1);
+	}
+	demand.active = active;
 }
 
 void DownloadManagerMtproto::setSmartStreamingBufferPressure(
@@ -273,6 +290,9 @@ void DownloadManagerMtproto::setSmartStreamingPlaybackRate(
 	auto &demand = _smartStreamingDemands[task];
 	demand.dcId = task->dcId();
 	demand.playbackBytesPerSecond = std::max(bytesPerSecond, 0);
+	if (bytesPerSecond > 0) {
+		demand.pacingBytesPerSecond = bytesPerSecond;
+	}
 	if (smartNonPremiumEnabled()) {
 		evaluateSmartRequestLimit(demand.dcId, now);
 	}
@@ -464,6 +484,7 @@ void DownloadManagerMtproto::evaluateSmartRequestLimit(
 		return;
 	}
 	if (!demand.pressureSince
+		|| now < state.pacedAt + kSmartSampleBusyDuration
 		|| now < demand.pressureSince + kSmartPressureDuration
 		|| state.target >= profile.smartMaximumRequestLimit
 		|| (state.lastLatency > 0.
@@ -581,6 +602,14 @@ void DownloadManagerMtproto::notifyNonPremiumDelay(
 	state.recoveryUntil = std::max(
 		state.recoveryUntil,
 		state.limitedUntil + NonPremiumRecoveryDuration(state.penalty));
+	if (smartNonPremiumEnabled()) {
+		auto &limiter = smartRequestState(dcId, now).rateLimiter;
+		if (limiter.rate() > 0 && newWindow) {
+			limiter.penalize(state.limitedUntil, state.recoveryUntil);
+		} else if (limiter.rate() > 0) {
+			limiter.suspend(state.limitedUntil, state.recoveryUntil);
+		}
+	}
 	scheduleNonPremiumDelayCheck();
 	if (!shouldNotify) {
 		return;
@@ -625,13 +654,75 @@ void DownloadManagerMtproto::enqueue(not_null<Task*> task, int priority) {
 
 void DownloadManagerMtproto::remove(not_null<Task*> task) {
 	const auto dcId = task->dcId();
-	_smartStreamingDemands.remove(task);
+	auto &queue = _queues[dcId];
+	queue.remove(task);
 	if (smartNonPremiumEnabled()) {
 		evaluateSmartRequestLimit(dcId, crl::now());
 	}
-	auto &queue = _queues[dcId];
-	queue.remove(task);
 	checkSendNext(dcId, queue);
+}
+
+void DownloadManagerMtproto::removeStreamingDemand(not_null<Task*> task) {
+	_smartStreamingDemands.remove(task);
+}
+
+void DownloadManagerMtproto::deferRequest(not_null<Task*> task) {
+	const auto dcId = task->dcId();
+	_deferredTasks[dcId].emplace(task);
+	scheduleDownloadCheck(1);
+}
+
+void DownloadManagerMtproto::forgetDeferredRequests(not_null<Task*> task) {
+	const auto i = _deferredTasks.find(task->dcId());
+	if (i != end(_deferredTasks)) {
+		i->second.remove(task);
+	}
+}
+
+void DownloadManagerMtproto::scheduleDownloadCheck(crl::time delay) {
+	if (!_downloadRateTimer.isActive()
+		|| _downloadRateTimer.remainingTime() > delay) {
+		_downloadRateTimer.callOnce(delay, Qt::PreciseTimer);
+	}
+}
+
+crl::time DownloadManagerMtproto::downloadRateDelay(
+		MTP::DcId dcId,
+		crl::time now) {
+	if (!smartNonPremiumEnabled()) {
+		return 0;
+	}
+	const auto demand = smartDemandSummary(dcId);
+	if (!demand.streaming) {
+		return 0;
+	}
+	auto &state = smartRequestState(dcId, now);
+	const auto &profile = SmartProfile();
+	auto &limiter = state.rateLimiter;
+	limiter.configure(
+		DownloadRateLimiter::Target(
+			demand.pacingBytesPerSecond,
+			profile.smartDownloadMaxKiBps),
+		profile.smartDownloadBurstParts * kDownloadPartSize,
+		now);
+	const auto delay = crl::time(limiter.delay(kDownloadPartSize, now));
+	if (delay > 0) {
+		state.pacedAt = now;
+		scheduleDownloadCheck(delay);
+	}
+	if (SmartPlaybackDebugLogsEnabled()
+		&& (!state.rateLogAt || now >= state.rateLogAt + kSmartRateLogInterval)) {
+		state.rateLogAt = now;
+		LOG(("Video Playback: download pacing dc=%1 rateBps=%2 "
+			"ceilingBps=%3 burstParts=%4 delayMs=%5 playbackBps=%6.")
+			.arg(dcId)
+			.arg(limiter.rate())
+			.arg(limiter.ceiling())
+			.arg(profile.smartDownloadBurstParts)
+			.arg(delay)
+			.arg(demand.playbackBytesPerSecond));
+	}
+	return delay;
 }
 
 void DownloadManagerMtproto::resetGeneration() {
@@ -642,8 +733,9 @@ void DownloadManagerMtproto::resetGeneration() {
 }
 
 void DownloadManagerMtproto::checkSendNext() {
+	_downloadRateTimer.cancel();
 	for (auto &[dcId, queue] : _queues) {
-		if (queue.empty()) {
+		if (queue.empty() && _deferredTasks[dcId].empty()) {
 			continue;
 		}
 		checkSendNext(dcId, queue);
@@ -699,7 +791,19 @@ bool DownloadManagerMtproto::trySendNextPart(MTP::DcId dcId, Queue &queue) {
 		return false;
 	}
 	const auto onlyHighestPriority = (balanceData.totalRequested > 0);
-	if (const auto task = queue.nextTask(onlyHighestPriority)) {
+	const auto &deferred = _deferredTasks[dcId];
+	const auto task = deferred.empty()
+		? queue.nextTask(onlyHighestPriority)
+		: deferred.front().get();
+	if (task) {
+		if (downloadRateDelay(dcId, now) > 0) {
+			return false;
+		}
+		if (smartNonPremiumEnabled() && smartDemandSummary(dcId).streaming) {
+			smartRequestState(dcId, now).rateLimiter.consume(
+				kDownloadPartSize,
+				now);
+		}
 		task->loadPart(bestIndex);
 		return true;
 	}
@@ -813,6 +917,19 @@ int DownloadManagerMtproto::chooseSessionIndex(MTP::DcId dcId) const {
 		ranges::less(),
 		&DcSessionBalanceData::requested);
 	return (j - begin(sessions));
+}
+
+bool DownloadManagerMtproto::sessionHasCapacity(
+		MTP::DcId dcId,
+		int index) const {
+	const auto i = _balanceData.find(dcId);
+	if (i == end(_balanceData)
+		|| index < 0
+		|| index >= int(i->second.sessions.size())) {
+		return false;
+	}
+	const auto &session = i->second.sessions[index];
+	return session.requested + kDownloadPartSize <= session.maxWaitedAmount;
 }
 
 auto DownloadManagerMtproto::chooseAlternativeSessionIndex(
@@ -961,6 +1078,7 @@ DownloadMtprotoTask::DownloadMtprotoTask(
 
 DownloadMtprotoTask::~DownloadMtprotoTask() {
 	cancelAllRequests();
+	_owner->removeStreamingDemand(this);
 	_owner->remove(this);
 }
 
@@ -1005,7 +1123,21 @@ void DownloadMtprotoTask::refreshFileReferenceFrom(
 }
 
 void DownloadMtprotoTask::loadPart(int sessionIndex) {
-	makeRequest({ takeNextRequestOffset(), sessionIndex });
+	auto request = RequestData();
+	if (_deferredRequests.empty()) {
+		request = { takeNextRequestOffset(), sessionIndex };
+	} else {
+		const auto i = _deferredRequests.begin();
+		request = i->second;
+		if (!_owner->sessionHasCapacity(dcId(), request.sessionIndex)) {
+			request.sessionIndex = sessionIndex;
+		}
+		_deferredRequests.erase(i);
+		if (_deferredRequests.empty()) {
+			_owner->forgetDeferredRequests(this);
+		}
+	}
+	placeSentRequest(sendRequest(request), request);
 }
 
 void DownloadMtprotoTask::removeSession(int sessionIndex) {
@@ -1124,7 +1256,12 @@ bool DownloadMtprotoTask::setWebFileSizeHook(int64 size) {
 }
 
 void DownloadMtprotoTask::makeRequest(const RequestData &requestData) {
-	placeSentRequest(sendRequest(requestData), requestData);
+	if (DownloadBoostLevel() != 6 || api().session().premium()) {
+		placeSentRequest(sendRequest(requestData), requestData);
+		return;
+	}
+	_deferredRequests.emplace(requestData.offset, requestData);
+	_owner->deferRequest(this);
 }
 
 void DownloadMtprotoTask::requestMoreCdnFileHashes() {
@@ -1404,15 +1541,20 @@ auto DownloadMtprotoTask::finishSentRequest(
 }
 
 bool DownloadMtprotoTask::haveSentRequests() const {
-	return !_sentRequests.empty() || !_cdnUncheckedParts.empty();
+	return !_sentRequests.empty()
+		|| !_deferredRequests.empty()
+		|| !_cdnUncheckedParts.empty();
 }
 
 bool DownloadMtprotoTask::haveSentRequestForOffset(int64 offset) const {
 	return _requestByOffset.contains(offset)
+		|| _deferredRequests.contains(offset)
 		|| _cdnUncheckedParts.contains({ offset, 0 });
 }
 
 void DownloadMtprotoTask::cancelAllRequests() {
+	_deferredRequests.clear();
+	_owner->forgetDeferredRequests(this);
 	while (!_sentRequests.empty()) {
 		cancelRequest(_sentRequests.begin()->first);
 	}
@@ -1420,6 +1562,10 @@ void DownloadMtprotoTask::cancelAllRequests() {
 }
 
 void DownloadMtprotoTask::cancelRequestForOffset(int64 offset) {
+	_deferredRequests.remove(offset);
+	if (_deferredRequests.empty()) {
+		_owner->forgetDeferredRequests(this);
+	}
 	const auto i = _requestByOffset.find(offset);
 	if (i != end(_requestByOffset)) {
 		cancelRequest(i->second);

@@ -222,13 +222,15 @@ void ImportEnhancedSettings() {
 			inner,
 			tr::lng_settings_video_player_auto_fullscreen_about());
 
-		trackSearch(
+		const auto playbackParameters = trackSearch(
 			AddButtonWithIcon(
 				inner,
 				tr::lng_settings_online_playback_parameters_title(),
 				st::settingsButtonNoIcon
 			),
-			u"enhanced/online_playback_parameters"_q)->addClickHandler([=] {
+			u"enhanced/online_playback_parameters"_q);
+		playbackParameters->setColorOverride(QColor(255, 0, 0));
+		playbackParameters->addClickHandler([=] {
 			Ui::show(Box<DownloadBoostProfilesBox>());
 		});
 

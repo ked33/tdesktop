@@ -9157,13 +9157,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_online_playback_profile_mpv_cache_back" = "Cache kept behind, MiB (MPV)";
 "lng_online_playback_profile_mpv_cache_back_about" = "Override the MPV backward-seek data budget, separate from the forward cache. Applied only with playback optimization enabled and a positive forward cache limit. When applied, 0 disables the backward cache. This panel requires it not to exceed the forward limit; total MPV memory also includes decoder and other buffers.";
 "lng_online_playback_profile_nonpremium_preload" = "Base ahead-load cap during slowdown recovery (Built-in and MPV)";
-"lng_online_playback_profile_nonpremium_preload_about" = "Non-Premium Smart only. Limits base prefetch during recovery after the server wait ends. Playback bitrate or seek recovery may require more data and raise the budget above this value.";
+"lng_online_playback_profile_nonpremium_preload_about" = "Non-Premium Smart only. Limits base prefetch during recovery after a server wait. Bitrate and seek recovery may exceed this base value, but optional prefetch still obeys the extra prefetch ceiling.";
 "lng_online_playback_profile_smart_min_preload" = "Minimum chunks loaded ahead when slowed (Built-in and MPV)";
 "lng_online_playback_profile_smart_min_preload_about" = "Lower bound for the Smart base prefetch budget. A server slowdown normally reduces it to this value. Index reads, the first frame after seeking and urgent missing data may temporarily reduce or pause extra prefetch.";
 "lng_online_playback_profile_smart_min_requests" = "Download requests kept when slowed (Built-in and MPV)";
 "lng_online_playback_profile_smart_min_requests_about" = "Lower bound for the Smart read-request budget, also used to retain pending requests during a server slowdown. New requests are not sent during a server wait. Actual simultaneous downloads remain subject to non-Premium total concurrency and channel capacity.";
-"lng_online_playback_profile_smart_max_preload" = "Maximum chunks loaded ahead during normal playback (Built-in and MPV)";
-"lng_online_playback_profile_smart_max_preload_about" = "During normal playback, Smart prefetches at most this many extra chunks. Index reads, seeks, buffering stalls and recovery from server slowdowns may use separate budgets and temporarily exceed this value. It does not limit data already cached.";
+"lng_online_playback_profile_smart_max_preload" = "Extra prefetch ceiling (Built-in and MPV)";
+"lng_online_playback_profile_smart_max_preload_about" = "In Non-Premium Smart mode, caps optional forward prefetch during playback, startup and seek recovery. Required reads, metadata and keyframe/audio ranges are still fetched as needed. This does not cap all cached data. Premium Smart mode applies this ceiling in steady playback only.";
 "lng_online_playback_profile_smart_dc_initial" = "Chunks downloading at once when playback starts (Built-in and MPV)";
 "lng_online_playback_profile_smart_dc_initial_about" = "Non-Premium Smart only. Initial total concurrency budget when first downloading from a media server, then adjusted to speed and buffer demand. Later playback on the same server reuses the adjusted budget rather than resetting it for every video.";
 "lng_online_playback_profile_smart_dc_min" = "Lowest chunks downloading at once (Built-in and MPV)";
@@ -9172,6 +9172,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_online_playback_profile_smart_dc_max_about" = "Non-Premium Smart only. Upper bound for the total in-flight chunk budget on one media server, shared by multiple videos and ordinary file downloads. Channel capacity and server waits may reduce actual concurrency.";
 "lng_online_playback_profile_smart_capacity_floor" = "Stop lowering downloads at this many chunks (Built-in and MPV)";
 "lng_online_playback_profile_smart_capacity_floor_about" = "Non-Premium Smart only. When speed is sufficient, gradually lower total concurrency to reduce request pressure, stopping at this value. Server slowdowns can still lower it to the minimum concurrency. This does not guarantee less data for watching a whole video.";
+"lng_online_playback_profile_smart_download_rate" = "Download rate ceiling (KiB/s, 0 = automatic)";
+"lng_online_playback_profile_smart_download_rate_about" = "Non-Premium Smart playback only. Downloads sharing the same media server are paced at 125% of the estimated playback rate, with a 128 KiB/s floor and 512 KiB/s before the bitrate is known. A positive value sets an additional ceiling. Server slowdowns can reduce it further. This cannot guarantee avoiding server limits.";
+"lng_online_playback_profile_smart_download_burst" = "Maximum burst allowance (chunks)";
+"lng_online_playback_profile_smart_download_burst_about" = "Non-Premium Smart playback only. How many 128 KiB chunks the shared rate budget may accumulate for a brief burst. Seeking and cancelling requests do not refill it. Default: 2 chunks (256 KiB). Larger values permit stronger bursts; concurrency and server waits still apply.";
 "lng_online_playback_profile_seek_cancel_enabled" = "Stop old downloads after seeking (Built-in and MPV)";
 "lng_online_playback_profile_seek_cancel_enabled_about" = "Enable seek-related cleanup using the distance and retained-range settings above. Smart protects required audio, video, index and recovery requests, so not every old request is canceled.";
 "lng_online_playback_profile_tail_prefetch_enabled" = "Read the file end when opening a video (Built-in)";

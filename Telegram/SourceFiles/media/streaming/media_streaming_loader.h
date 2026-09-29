@@ -65,6 +65,8 @@ public:
 	}
 	virtual void setSmartStreamingBufferPressure(bool) {
 	}
+	virtual void setSmartStreamingActive(bool) {
+	}
 	virtual void setSmartStreamingPlaybackRate(int) {
 	}
 	virtual void notifySmartStreamingSeek() {

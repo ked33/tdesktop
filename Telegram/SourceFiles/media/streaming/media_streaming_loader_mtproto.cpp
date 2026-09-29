@@ -112,10 +112,17 @@ void LoaderMtproto::load(int64 offset) {
 }
 
 void LoaderMtproto::addToQueueWithPriority() {
+	_owner->setSmartStreamingActive(
+		this,
+		_smartActive.load(std::memory_order_acquire));
+	_owner->setSmartStreamingPlaybackRate(
+		this,
+		_smartPlaybackRate.load(std::memory_order_acquire));
 	addToQueue(_priority);
 }
 
 void LoaderMtproto::stop() {
+	setSmartStreamingActive(false);
 	crl::on_main(this, [=] {
 		_smartBufferPressureGeneration.fetch_add(
 			1,
@@ -134,6 +141,7 @@ void LoaderMtproto::stop() {
 		_requested.clear();
 		clearStats();
 		removeFromQueue();
+		_owner->removeStreamingDemand(this);
 	});
 }
 
@@ -316,6 +324,17 @@ ServerDelay LoaderMtproto::serverDelayState() const {
 
 bool LoaderMtproto::premiumSession() const {
 	return api().session().premium();
+}
+
+void LoaderMtproto::setSmartStreamingActive(bool active) {
+	if (_smartActive.exchange(active, std::memory_order_acq_rel) == active) {
+		return;
+	}
+	crl::on_main(this, [=] {
+		_owner->setSmartStreamingActive(
+			this,
+			_smartActive.load(std::memory_order_acquire));
+	});
 }
 
 void LoaderMtproto::setSmartStreamingBufferPressure(bool pressure) {

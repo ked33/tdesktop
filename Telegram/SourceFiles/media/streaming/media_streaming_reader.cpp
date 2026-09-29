@@ -1568,6 +1568,7 @@ void Reader::notifySmartStreamingSeek() {
 void Reader::startStreaming() {
 	_seekCancelGeneration.fetch_add(1, std::memory_order_release);
 	_streamingActive.store(true, std::memory_order_release);
+	_loader->setSmartStreamingActive(true);
 	refreshLoaderPriority();
 }
 
@@ -1626,6 +1627,7 @@ void Reader::stopStreaming(bool stillActive) {
 	}
 	if (!stillActive) {
 		_streamingActive.store(false, std::memory_order_release);
+		_loader->setSmartStreamingActive(false);
 		setSmartStreamingBufferPressure(false);
 		_loader->setSmartStreamingPlaybackRate(0);
 		_seekCancelLogQueued = 0;
@@ -2255,7 +2257,7 @@ void Reader::publishSeekPrefetch(SeekPrefetchRequest request) {
 				recoveryBuffer,
 				prefetchDuration));
 		amount = std::clamp(
-			std::max(amount, target),
+			target,
 			kSmartSeekPrefetchMinimum,
 			prefetchMaximum);
 		urgentAmount = std::clamp(
@@ -2263,7 +2265,11 @@ void Reader::publishSeekPrefetch(SeekPrefetchRequest request) {
 			kSmartSeekUrgentMinimum,
 			urgentMaximum);
 	}
-	amount = std::min(amount, size() - offset);
+	amount = std::min({
+		amount,
+		int64(BoostProfileFor(6).smartMaximumPreload) * kPartSize,
+		size() - offset,
+	});
 	auto criticalRanges = std::array<
 		SeekPrefetchRange,
 		SeekPrefetchRequest::kCriticalRangeLimit>();
@@ -2512,6 +2518,9 @@ Reader::FillState Reader::fillFromSlices(
 		&& _streamReadStalled.load(std::memory_order_acquire);
 	if (readStalled) {
 		preloadParts = std::min(preloadParts, preloadMinimum);
+	}
+	if (smartNonPremium) {
+		preloadParts = std::min(preloadParts, profile.smartMaximumPreload);
 	}
 	// Grow the active seek keep-window with steady preload so cancelOutside
 	// does not kill next-slice catch-up after urgent is done.

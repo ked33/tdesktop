@@ -38,6 +38,8 @@ struct BoostProfile {
 	int smartMinimumRequestLimit = 2;
 	int smartMaximumRequestLimit = 10;
 	int smartCapacityMinimumRequestLimit = 4;
+	int smartDownloadMaxKiBps = 0;
+	int smartDownloadBurstParts = 2;
 };
 
 using BoostProfiles = std::array<BoostProfile, 7>;
