@@ -723,7 +723,7 @@ crl::time DownloadManagerMtproto::downloadRateDelay(
 		DownloadRateLimiter::Target(
 			demand.pacingBytesPerSecond,
 			profile.smartDownloadMaxKiBps),
-		profile.smartDownloadBurstParts * kDownloadPartSize,
+		std::int64_t(profile.smartDownloadBurstParts) * kDownloadPartSize,
 		now,
 		profile.smartAdaptivePacing ? DownloadRateLimiter::Target(
 			demand.pacingBytesPerSecond,

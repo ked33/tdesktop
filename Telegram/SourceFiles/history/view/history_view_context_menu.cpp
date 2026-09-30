@@ -2090,7 +2090,8 @@ bool AddPinMessageAction(
 			not_null<Ui::PopupMenu*> menu,
 			const ContextMenuRequest &request,
 			not_null<ListWidget*> list) {
-		if (!GetEnhancedBool("show_message_context_pin")) {
+		if (!GetEnhancedBool("show_message_context_pin")
+			|| !request.showSpecialMpv) {
 			return false;
 		}
 		const auto context = list->elementContext();

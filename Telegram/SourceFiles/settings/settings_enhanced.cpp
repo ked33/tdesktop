@@ -15,6 +15,7 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #include "settings/settings_builder.h"
 #include "settings/settings_common.h"
 #include <ui/vertical_list.h>
+#include "ui/wrap/padding_wrap.h"
 #include "ui/wrap/vertical_layout.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/widgets/buttons.h"
@@ -124,23 +125,38 @@ void ImportEnhancedSettings() {
 	void Enhanced::SetupEnhancedBackup(
 			not_null<Ui::VerticalLayout *> container) {
 		AddSkip(container);
-		trackSearch(
-			AddButtonWithIcon(
-				container,
+		const auto row = container->add(object_ptr<Ui::FixedHeightWidget>(
+			container));
+		const auto &st = st::settingsButtonNoIcon;
+		const auto exportButton = trackSearch(
+			Ui::CreateChild<Button>(
+				row,
 				tr::lng_settings_enhanced_export(),
-				st::settingsButtonNoIcon),
-			u"enhanced/export"_q)->addClickHandler([] {
+				st),
+			u"enhanced/export"_q);
+		const auto importButton = trackSearch(
+			Ui::CreateChild<Button>(
+				row,
+				tr::lng_settings_enhanced_import(),
+				st),
+			u"enhanced/import"_q);
+		exportButton->addClickHandler([] {
 			ExportEnhancedSettings();
 		});
-		trackSearch(
-			AddButtonWithIcon(
-				container,
-				tr::lng_settings_enhanced_import(),
-				st::settingsButtonNoIcon),
-			u"enhanced/import"_q)->addClickHandler([] {
+		importButton->addClickHandler([] {
 			ImportEnhancedSettings();
 		});
-		AddDividerText(container, tr::lng_settings_enhanced_backup_about());
+		rpl::combine(
+			row->widthValue(),
+			exportButton->heightValue()
+		) | rpl::on_next([=](int width, int height) {
+			if (row->height() != height) {
+				row->resize(width, height);
+			}
+			const auto half = width / 2;
+			exportButton->setGeometry(0, 0, half, height);
+			importButton->setGeometry(half, 0, width - half, height);
+		}, row->lifetime());
 	}
 
 	void Enhanced::SetupEnhancedNetwork(not_null<Ui::VerticalLayout *> container) {
@@ -274,7 +290,7 @@ void ImportEnhancedSettings() {
 				st::settingsButtonNoIcon
 			),
 			u"enhanced/flood_premium_wait_override_ms"_q);
-		floodPremiumWaitButton->setColorOverride(QColor(255, 0, 0));
+
 		floodPremiumWaitButton->events(
 		) | rpl::on_next([=](not_null<QEvent*> e) {
 			if (e->type() == QEvent::UpdateLater) {
@@ -1082,7 +1098,7 @@ void ImportEnhancedSettings() {
 				tr::lng_context_add_factcheck(tr::now),
 				"show_message_context_factcheck");
 			addMessageContextToggle(
-				tr::lng_context_pin_msg(tr::now),
+				tr::lng_settings_show_message_context_pin(tr::now),
 				"show_message_context_pin");
 			addMessageContextToggle(
 				tr::lng_context_delete_msg(tr::now),
@@ -1763,12 +1779,10 @@ void ImportEnhancedSettings() {
 
 		addButton(
 			u"enhanced/export"_q,
-			tr::lng_settings_enhanced_export(tr::now),
-			{ tr::lng_settings_enhanced_backup_about(tr::now) });
+			tr::lng_settings_enhanced_export(tr::now));
 		addButton(
 			u"enhanced/import"_q,
-			tr::lng_settings_enhanced_import(tr::now),
-			{ tr::lng_settings_enhanced_backup_about(tr::now) });
+			tr::lng_settings_enhanced_import(tr::now));
 		addButton(
 			u"enhanced/section_network"_q,
 			tr::lng_settings_network(tr::now));
@@ -1788,7 +1802,36 @@ void ImportEnhancedSettings() {
 			{ tr::lng_settings_video_player_auto_fullscreen_about(tr::now) });
 		addButton(
 			u"enhanced/online_playback_parameters"_q,
-			tr::lng_settings_online_playback_parameters_title(tr::now));
+			tr::lng_settings_online_playback_parameters_title(tr::now),
+			{
+				tr::lng_online_playback_profile_requests_limit(tr::now),
+				tr::lng_online_playback_profile_preload_parts(tr::now),
+				tr::lng_online_playback_profile_tail_prefetch_parts(tr::now),
+				tr::lng_online_playback_profile_seek_jump_parts(tr::now),
+				tr::lng_online_playback_profile_seek_guard_parts(tr::now),
+				tr::lng_online_playback_profile_load_ahead_ms(tr::now),
+				tr::lng_online_playback_profile_waiting_buffer_ms(tr::now),
+				tr::lng_online_playback_profile_seek_cancel_enabled(tr::now),
+				tr::lng_online_playback_profile_tail_prefetch_enabled(tr::now),
+				tr::lng_online_playback_profile_start_waited_parts(tr::now),
+				tr::lng_online_playback_profile_max_waited_parts(tr::now),
+				tr::lng_online_playback_profile_start_sessions(tr::now),
+				tr::lng_online_playback_profile_max_sessions(tr::now),
+				tr::lng_online_playback_profile_mpv_tail_prefetch(tr::now),
+				tr::lng_online_playback_profile_mpv_cache_max(tr::now),
+				tr::lng_online_playback_profile_mpv_cache_back(tr::now),
+				tr::lng_online_playback_profile_nonpremium_preload(tr::now),
+				tr::lng_online_playback_profile_smart_min_preload(tr::now),
+				tr::lng_online_playback_profile_smart_min_requests(tr::now),
+				tr::lng_online_playback_profile_smart_max_preload(tr::now),
+				tr::lng_online_playback_profile_smart_dc_initial(tr::now),
+				tr::lng_online_playback_profile_smart_dc_min(tr::now),
+				tr::lng_online_playback_profile_smart_dc_max(tr::now),
+				tr::lng_online_playback_profile_smart_capacity_floor(tr::now),
+				tr::lng_online_playback_profile_smart_download_rate(tr::now),
+				tr::lng_online_playback_profile_smart_download_burst(tr::now),
+				tr::lng_online_playback_profile_adaptive_pacing(tr::now),
+			});
 		addBool(
 			"online_playback_debug_logs",
 			tr::lng_settings_online_playback_debug_logs(tr::now));
@@ -1975,7 +2018,7 @@ void ImportEnhancedSettings() {
 			tr::lng_context_add_factcheck(tr::now));
 		addBool(
 			"show_message_context_pin",
-			tr::lng_context_pin_msg(tr::now));
+			tr::lng_settings_show_message_context_pin(tr::now));
 		addBool(
 			"show_message_context_delete",
 			tr::lng_context_delete_msg(tr::now));

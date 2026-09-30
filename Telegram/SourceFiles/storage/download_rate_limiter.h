@@ -9,7 +9,7 @@ class DownloadRateLimiter final {
 public:
 	void configure(
 		int target,
-		int burstBytes,
+		std::int64_t burstBytes,
 		std::int64_t now,
 		int catchUpTarget = 0,
 		bool catchUpRequested = false);
@@ -38,7 +38,7 @@ private:
 	int _steadyRate = 0;
 	int _catchUpRate = 0;
 	int _catchUpRemaining = 0;
-	int _capacity = 0;
+	std::int64_t _capacity = 0;
 	int _ceiling = 0;
 	std::int64_t _credit = 0;
 	std::int64_t _updated = 0;
@@ -85,7 +85,7 @@ inline void DownloadRateLimiter::refill(std::int64_t now) {
 
 inline void DownloadRateLimiter::configure(
 		int target,
-		int burstBytes,
+		std::int64_t burstBytes,
 		std::int64_t now,
 		int catchUpTarget,
 		bool catchUpRequested) {
@@ -137,10 +137,10 @@ inline void DownloadRateLimiter::configure(
 	} else {
 		_rate = _steadyRate;
 	}
-	_capacity = std::max(128 * 1024, burstBytes);
+	_capacity = std::max(std::int64_t(128 * 1024), std::int64_t(burstBytes));
 	_credit = initialized
-		? std::min(_credit, std::int64_t(_capacity) * 1000)
-		: std::int64_t(_capacity) * 1000;
+		? std::min(_credit, _capacity * 1000)
+		: _capacity * 1000;
 }
 
 inline std::int64_t DownloadRateLimiter::delay(

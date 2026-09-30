@@ -3343,7 +3343,9 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			const auto pinItem = (item->canPin() && item->isPinned())
 				? item
 				: groupLeaderOrSelf(item);
-			if (pinItem->canPin() && GetEnhancedBool("show_message_context_pin")) {
+			if (pinItem->canPin()
+				&& showSpecialMpv
+				&& GetEnhancedBool("show_message_context_pin")) {
 				const auto isPinned = pinItem->isPinned();
 				const auto pinItemId = pinItem->fullId();
 				_menu->addAction(isPinned ? tr::lng_context_unpin_msg(tr::now) : tr::lng_context_pin_msg(tr::now), crl::guard(controller, [=] {
@@ -3660,7 +3662,8 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 	};
 
 	const auto addUnpinSelectedAction = [&] {
-		if (!GetEnhancedBool("show_message_context_pin")) {
+		if (!showSpecialMpv
+			|| !GetEnhancedBool("show_message_context_pin")) {
 			return;
 		}
 		auto ids = Window::MessagesToUnpin(session, getSelectedItems());

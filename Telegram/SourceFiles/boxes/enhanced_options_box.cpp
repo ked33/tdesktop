@@ -575,7 +575,7 @@ bool DownloadBoostProfilesBox::saveCurrentProfile() {
 		std::pair{1, 32},
 		std::pair{1, 32},
 		std::pair{0, 65536},
-		std::pair{0, 32},
+		std::pair{0, 50000},
 	};
 	const auto current = std::array<int*, kNumericFieldCount>{
 		&value.requestsLimit,

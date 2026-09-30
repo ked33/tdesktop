@@ -377,7 +377,7 @@ BoostProfiles LoadBoostProfiles() {
 			"smartDownloadBurstParts",
 			defaults.smartDownloadBurstParts,
 			0,
-			32);
+			50000);
 		profile.smartAdaptivePacing = ReadBool(
 			object,
 			"smartAdaptivePacing",

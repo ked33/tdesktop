@@ -47,7 +47,34 @@ struct SearchResultItem {
 	for (const auto &keyword : entry.keywords) {
 		combined += ' ' + keyword;
 	}
-	return TextUtilities::PrepareSearchWords(combined);
+	auto terms = TextUtilities::PrepareSearchWords(combined);
+	const auto addFragments = [&](const QString &text) {
+		const auto clean = TextUtilities::RemoveAccents(
+			text.trimmed().toLower());
+		for (const auto &word : TextUtilities::PrepareSearchWords(clean)) {
+			auto hasHan = false;
+			for (const auto ch : word) {
+				if (ch.script() == QChar::Script_Han) {
+					hasHan = true;
+					break;
+				}
+			}
+			if (!hasHan || word.size() < 2) {
+				continue;
+			}
+			for (auto length = 2; length <= word.size(); ++length) {
+				for (auto start = 0; start + length <= word.size(); ++start) {
+					terms.push_back(word.mid(start, length));
+				}
+			}
+		}
+	};
+	addFragments(entry.title);
+	for (const auto &keyword : entry.keywords) {
+		addFragments(keyword);
+	}
+	terms.removeDuplicates();
+	return terms;
 }
 
 [[nodiscard]] int CalculateDepth(
