@@ -333,9 +333,9 @@ windowArchiveToast: Toast(defaultToast) {
 }
 
 transferLimitToastLabel: FlatLabel(defaultFlatLabel) {
-	style: defaultMultilineToast.style;
+	style: defaultTextStyle;
 	textFg: toastFg;
-	palette: defaultMultilineToast.palette;
+	palette: defaultToastPalette;
 }
 
 windowFeeItem: Menu(defaultMenu) {
