@@ -128,13 +128,13 @@ void ImportEnhancedSettings() {
 		const auto row = container->add(object_ptr<Ui::FixedHeightWidget>(
 			container));
 		const auto &st = st::settingsButtonNoIcon;
-		const auto exportButton = trackSearch(
+		const auto exportButton = trackSearch<Button>(
 			Ui::CreateChild<Button>(
 				row,
 				tr::lng_settings_enhanced_export(),
 				st),
 			u"enhanced/export"_q);
-		const auto importButton = trackSearch(
+		const auto importButton = trackSearch<Button>(
 			Ui::CreateChild<Button>(
 				row,
 				tr::lng_settings_enhanced_import(),
