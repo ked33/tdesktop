@@ -227,13 +227,11 @@ void TransferLimitToast::updateCountdown() {
 		return;
 	}
 	const auto seconds = TransferLimitRemainingSeconds(info.retryAt, now);
-	const auto text = tr::bold(tr::lng_transfer_limit_download(tr::now))
-		.append('\n')
-		.append(tr::lng_transfer_limit_countdown(
-			tr::now,
-			lt_seconds,
-			tr::marked(QString::number(qlonglong(seconds))),
-			tr::marked));
+	const auto text = tr::lng_transfer_limit_countdown(
+		tr::now,
+		lt_seconds,
+		tr::marked(QString::number(qlonglong(seconds))),
+		tr::marked);
 	const auto toast = _countdownToast.get();
 	if (!toast
 		|| !_countdownLabel

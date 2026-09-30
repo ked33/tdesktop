@@ -3,7 +3,7 @@
     "lng_transfer_limit_upload": "上传暂时受限",
     "lng_transfer_limit_wait": "服务端要求等待 {seconds} 秒后重试；重试后仍可能要求继续等待。",
     "lng_transfer_limit_wait_unknown": "服务端暂时限制了传输，请稍后重试。",
-    "lng_transfer_limit_countdown": "当前最长等待还剩 {seconds} 秒。到期重试，仍可能再次受限。",
+    "lng_transfer_limit_countdown": "服务端限制中 ({seconds}s)",
     "lng_settings_download_limit_toast_mode": "下载限制提示模式",
     "lng_settings_download_limit_toast_fixed": "固定显示 4 秒",
     "lng_settings_download_limit_toast_countdown": "倒计时常显",

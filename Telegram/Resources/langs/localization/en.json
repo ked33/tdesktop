@@ -3,7 +3,7 @@
     "lng_transfer_limit_upload": "Upload temporarily limited",
     "lng_transfer_limit_wait": "The server asks you to wait {seconds} seconds before retrying. It may require another wait after the retry.",
     "lng_transfer_limit_wait_unknown": "The server is temporarily limiting this transfer. Please try again later.",
-    "lng_transfer_limit_countdown": "Longest current wait: {seconds} seconds. Retrying may result in another wait.",
+    "lng_transfer_limit_countdown": "Server limit ({seconds}s)",
     "lng_settings_download_limit_toast_mode": "Download limit notification mode",
     "lng_settings_download_limit_toast_fixed": "Show for 4 seconds",
     "lng_settings_download_limit_toast_countdown": "Keep showing the countdown",
