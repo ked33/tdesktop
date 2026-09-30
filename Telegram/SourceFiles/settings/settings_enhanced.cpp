@@ -1796,6 +1796,7 @@ void ImportEnhancedSettings() {
 				tr::lng_online_playback_profile_smart_capacity_floor(tr::now),
 				tr::lng_online_playback_profile_smart_download_rate(tr::now),
 				tr::lng_online_playback_profile_smart_download_burst(tr::now),
+				tr::lng_online_playback_profile_manual_pacing(tr::now),
 				tr::lng_online_playback_profile_adaptive_pacing(tr::now),
 			});
 		addBool(

@@ -29,6 +29,65 @@ void TestTarget() {
 		"overflow safe target");
 }
 
+void TestManualTargetsAndBudget() {
+	using Limiter = Storage::DownloadRateLimiter;
+	constexpr auto maximumKiB = 3906;
+	constexpr auto target = maximumKiB * 1024;
+	for (const auto playback : { 0, 1, 310925, 1750348, 8 * 1024 * 1024 }) {
+		Require(Limiter::Target(playback, maximumKiB, false, true) == target,
+			"manual target ignores video bitrate");
+		Require(Limiter::Target(playback, maximumKiB, true, true) == target,
+			"manual target cannot be boosted");
+		Require(Limiter::Target(playback, 0, false, true)
+			== Limiter::Target(playback, 0), "invalid manual target falls back");
+		auto limiter = Limiter();
+		auto sent = std::int64_t(0);
+		for (auto now = 0; now <= 60000; ++now) {
+			const auto rate = Limiter::Target(playback, maximumKiB, false, true);
+			limiter.configure(rate, 2 * kPart, now, rate, true);
+			while (!limiter.delay(kPart, now)) {
+				limiter.consume(kPart, now);
+				sent += kPart;
+			}
+			Require(sent * 1000 <= std::int64_t(2 * kPart) * 1000
+				+ std::int64_t(target) * now, "manual sustained rate stays bounded");
+			Require(!limiter.catchingUp(), "manual mode has no catch-up phase");
+		}
+		Require(sent >= std::int64_t(target) * 60,
+			"pending downloads reach manual target even for low bitrate video");
+		limiter.penalize(63000, 123000);
+		limiter.configure(target, 2 * kPart, 60000);
+		Require(limiter.rate() == target * 3 / 4,
+			"server penalty overrides manual target");
+		Require(limiter.delay(kPart, 60000) > 3000,
+			"manual mode preserves server wait and empty budget");
+		limiter.configure(target, 0, 60000, target, true);
+		Require(limiter.rate() == 0 && limiter.delay(kPart, 60000) == 0,
+			"zero burst disables manual target as well");
+	}
+	Require(Limiter::Target(0, 1, false, true) == 1024,
+		"manual target can be below automatic minimum");
+	Require(Limiter::Target(0, std::numeric_limits<int>::max(), false, true)
+		== 64 * 1024 * 1024, "manual target multiplication cannot overflow");
+}
+
+void TestLargeBurst() {
+	auto limiter = Storage::DownloadRateLimiter();
+	constexpr auto capacity = std::int64_t(50000) * kPart;
+	limiter.configure(kPart, capacity, 0);
+	for (auto i = 0; i != 50000; ++i) {
+		Require(limiter.delay(kPart, 0) == 0, "large burst has no overflow");
+		limiter.consume(kPart, 0);
+	}
+	Require(limiter.delay(kPart, 0) == 1000, "large burst still exhausts");
+	limiter.configure(kPart, capacity, 1000000000);
+	for (auto i = 0; i != 50000; ++i) {
+		limiter.consume(kPart, 1000000000);
+	}
+	Require(limiter.delay(kPart, 1000000000) == 1000,
+		"long idle refills only the configured large burst");
+}
+
 void TestDisabled() {
 	auto limiter = Storage::DownloadRateLimiter();
 	const auto target = Storage::DownloadRateLimiter::Target(1750348, 1);
@@ -265,6 +324,8 @@ void TestSharedBudget() {
 
 int main() {
 	TestTarget();
+	TestManualTargetsAndBudget();
+	TestLargeBurst();
 	TestDisabled();
 	TestBurstAndSeek();
 	TestWaitAndRecovery();
@@ -275,5 +336,5 @@ int main() {
 	TestCatchUpPreservesCredit();
 	TestCatchUpServerLimits();
 	TestSharedBudget();
-	std::cout << "PASS: targets, disable, burst, seek, wait, recovery, idle, catch-up, shared/DC budgets\n";
+	std::cout << "PASS: targets, manual throughput, disable, large burst, seek, wait, recovery, idle, catch-up, shared/DC budgets\n";
 }

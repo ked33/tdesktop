@@ -75,6 +75,8 @@ private:
 	static constexpr auto kNumericFieldCount = 24;
 
 	void loadProfile(int profile);
+	void updateControlStates();
+	void setFieldEnabled(int index, bool enabled);
 	bool saveCurrentProfile();
 	bool save();
 	void reset();
@@ -88,12 +90,19 @@ private:
 	Ui::SlideWrap<Ui::VerticalLayout> *_smartSection = nullptr;
 	std::array<Ui::InputField*, kNumericFieldCount> _fields = {};
 	std::array<Ui::FlatLabel*, kNumericFieldCount> _defaultLabels = {};
+	std::array<Ui::FlatLabel*, kNumericFieldCount> _fieldTitles = {};
+	std::array<Ui::FlatLabel*, kNumericFieldCount> _fieldAbout = {};
+	Ui::FlatLabel *_pacingStatus = nullptr;
+	Ui::FlatLabel *_manualAbout = nullptr;
+	Ui::FlatLabel *_adaptiveAbout = nullptr;
 	Ui::Checkbox *_seekCancel = nullptr;
 	Ui::Checkbox *_tailPrefetch = nullptr;
 	Ui::Checkbox *_adaptivePacing = nullptr;
+	Ui::Checkbox *_manualPacing = nullptr;
 	int _radioHeight = 0;
 	int _editingProfile = 0;
 	bool _revertingProfile = false;
+	bool _loadingProfile = false;
 
 };
 

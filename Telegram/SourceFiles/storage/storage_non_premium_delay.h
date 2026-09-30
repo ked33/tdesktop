@@ -26,6 +26,7 @@ enum class NonPremiumRequestLimitReason {
 	ProbeNoGain,
 	HighLatency,
 	ServerLimit,
+	ManualRateTarget,
 };
 
 struct NonPremiumDelayState {

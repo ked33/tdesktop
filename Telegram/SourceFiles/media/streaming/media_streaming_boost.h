@@ -41,6 +41,18 @@ struct BoostProfile {
 	int smartDownloadMaxKiBps = 0;
 	int smartDownloadBurstParts = 2;
 	bool smartAdaptivePacing = false;
+	bool smartManualPacing = false;
+
+	[[nodiscard]] bool manualPacingEnabled() const {
+		return smartDownloadBurstParts > 0
+			&& smartManualPacing
+			&& smartDownloadMaxKiBps > 0;
+	}
+	[[nodiscard]] bool adaptivePacingEnabled() const {
+		return smartDownloadBurstParts > 0
+			&& !manualPacingEnabled()
+			&& smartAdaptivePacing;
+	}
 };
 
 using BoostProfiles = std::array<BoostProfile, 7>;

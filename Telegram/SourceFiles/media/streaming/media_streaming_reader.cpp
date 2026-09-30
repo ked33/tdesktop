@@ -2672,7 +2672,7 @@ Reader::FillState Reader::fillFromSlices(
 			.arg(serverState.penalty));
 	}
 	if (smartNonPremium
-		&& profile.smartAdaptivePacing
+		&& profile.adaptivePacingEnabled()
 		&& bufferPressure
 		&& !headerRead) {
 		preloadParts = std::min(preloadParts, std::max(1, requestsLimit / 2));

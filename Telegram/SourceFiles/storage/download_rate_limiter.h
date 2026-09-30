@@ -23,7 +23,8 @@ public:
 	[[nodiscard]] static int Target(
 		int playback,
 		int maximumKiB,
-		bool catchUp = false);
+		bool catchUp = false,
+		bool manual = false);
 
 private:
 	static constexpr auto kCatchUpDuration = 8000;
@@ -52,7 +53,11 @@ private:
 inline int DownloadRateLimiter::Target(
 		int playback,
 		int maximumKiB,
-		bool catchUp) {
+		bool catchUp,
+		bool manual) {
+	if (manual && maximumKiB > 0) {
+		return std::min(maximumKiB, 65536) * 1024;
+	}
 	const auto automatic = (playback > 0)
 		? std::clamp<std::int64_t>(
 			std::int64_t(playback) * 5 / 4,

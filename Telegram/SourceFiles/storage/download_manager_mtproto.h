@@ -152,6 +152,7 @@ private:
 	};
 	struct SmartDemandSummary {
 		bool streaming = false;
+		bool readyRequests = false;
 		bool readWaiting = false;
 		int playbackBytesPerSecond = 0;
 		int pacingBytesPerSecond = 0;
@@ -162,6 +163,7 @@ private:
 	struct SmartRequestState {
 		DownloadRateLimiter rateLimiter;
 		crl::time pacedAt = 0;
+		crl::time belowManualTargetSince = 0;
 		crl::time rateLogAt = 0;
 		int target = kNonPremiumInitialRequestLimit;
 		crl::time created = 0;

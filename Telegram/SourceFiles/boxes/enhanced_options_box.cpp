@@ -29,6 +29,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/shortcuts.h"
 #include "settings/settings_enhanced.h"
 
+#include <QGraphicsOpacityEffect>
 #include <QKeySequence>
 
 #include <algorithm>
@@ -38,6 +39,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace {
 
 constexpr auto kDownloadRateFieldIndex = 22;
+constexpr auto kDownloadBurstFieldIndex = 23;
 
 [[nodiscard]] QString PixelRangeLabel(int minimum, int maximum) {
 	return u"%1-%2 px"_q.arg(minimum).arg(maximum);
@@ -240,12 +242,12 @@ void DownloadBoostProfilesBox::prepare() {
 			int index,
 			const QString &title,
 			const QString &about) {
-		container->add(object_ptr<Ui::FlatLabel>(
+		_fieldTitles[index] = container->add(object_ptr<Ui::FlatLabel>(
 			container,
 			title,
 			st::onlinePlaybackProfilesTitle));
 		Ui::AddSkip(container, st::onlinePlaybackProfilesTitleSkip);
-		container->add(object_ptr<Ui::FlatLabel>(
+		_fieldAbout[index] = container->add(object_ptr<Ui::FlatLabel>(
 			container,
 			about,
 			st::onlinePlaybackProfilesAbout));
@@ -294,15 +296,20 @@ void DownloadBoostProfilesBox::prepare() {
 			st::defaultBoxCheckbox));
 		store->setAllowTextLines();
 		Ui::AddSkip(container, st::onlinePlaybackProfilesTitleSkip);
-		container->add(object_ptr<Ui::FlatLabel>(
+		const auto label = container->add(object_ptr<Ui::FlatLabel>(
 			container,
 			about,
 			st::onlinePlaybackProfilesAbout));
 		Ui::AddSkip(container, st::onlinePlaybackProfilesItemSkip);
+		return label;
 	};
-	Ui::AddSubsectionTitle(
-		_content,
-		tr::lng_online_playback_group_playback_reader());
+	const auto addGroup = [&](
+			not_null<Ui::VerticalLayout*> container,
+			rpl::producer<QString> title) {
+		Ui::AddDivider(container);
+		Ui::AddSubsectionTitle(container, std::move(title));
+	};
+	addGroup(_content, tr::lng_online_playback_group_playback_reader());
 	addField(
 		_content,
 		0,
@@ -315,9 +322,31 @@ void DownloadBoostProfilesBox::prepare() {
 		tr::lng_online_playback_profile_preload_parts_about(tr::now));
 	addField(
 		_content,
+		5,
+		tr::lng_online_playback_profile_load_ahead_ms(tr::now),
+		tr::lng_online_playback_profile_load_ahead_ms_about(tr::now));
+	addField(
+		_content,
+		6,
+		tr::lng_online_playback_profile_waiting_buffer_ms(tr::now),
+		tr::lng_online_playback_profile_waiting_buffer_ms_about(tr::now));
+	addGroup(_content, tr::lng_online_playback_group_tail());
+	addCheck(
+		_content,
+		_tailPrefetch,
+		tr::lng_online_playback_profile_tail_prefetch_enabled(tr::now),
+		tr::lng_online_playback_profile_tail_prefetch_enabled_about(tr::now));
+	addField(
+		_content,
 		2,
 		tr::lng_online_playback_profile_tail_prefetch_parts(tr::now),
 		tr::lng_online_playback_profile_tail_prefetch_parts_about(tr::now));
+	addGroup(_content, tr::lng_online_playback_group_seek());
+	addCheck(
+		_content,
+		_seekCancel,
+		tr::lng_online_playback_profile_seek_cancel_enabled(tr::now),
+		tr::lng_online_playback_profile_seek_cancel_enabled_about(tr::now));
 	addField(
 		_content,
 		3,
@@ -328,41 +357,7 @@ void DownloadBoostProfilesBox::prepare() {
 		4,
 		tr::lng_online_playback_profile_seek_guard_parts(tr::now),
 		tr::lng_online_playback_profile_seek_guard_parts_about(tr::now));
-	addField(
-		_content,
-		5,
-		tr::lng_online_playback_profile_load_ahead_ms(tr::now),
-		tr::lng_online_playback_profile_load_ahead_ms_about(tr::now));
-	addField(
-		_content,
-		6,
-		tr::lng_online_playback_profile_waiting_buffer_ms(tr::now),
-		tr::lng_online_playback_profile_waiting_buffer_ms_about(tr::now));
-	addCheck(
-		_content,
-		_seekCancel,
-		tr::lng_online_playback_profile_seek_cancel_enabled(tr::now),
-		tr::lng_online_playback_profile_seek_cancel_enabled_about(tr::now));
-	addCheck(
-		_content,
-		_tailPrefetch,
-		tr::lng_online_playback_profile_tail_prefetch_enabled(tr::now),
-		tr::lng_online_playback_profile_tail_prefetch_enabled_about(tr::now));
-
-	Ui::AddSkip(_content, st::onlinePlaybackProfilesSectionSkip);
-	Ui::AddSubsectionTitle(
-		_content,
-		tr::lng_online_playback_group_download_mpv());
-	addField(
-		_content,
-		7,
-		tr::lng_online_playback_profile_start_waited_parts(tr::now),
-		tr::lng_online_playback_profile_start_waited_parts_about(tr::now));
-	addField(
-		_content,
-		8,
-		tr::lng_online_playback_profile_max_waited_parts(tr::now),
-		tr::lng_online_playback_profile_max_waited_parts_about(tr::now));
+	addGroup(_content, tr::lng_online_playback_group_download_mpv());
 	addField(
 		_content,
 		9,
@@ -373,6 +368,17 @@ void DownloadBoostProfilesBox::prepare() {
 		10,
 		tr::lng_online_playback_profile_max_sessions(tr::now),
 		tr::lng_online_playback_profile_max_sessions_about(tr::now));
+	addField(
+		_content,
+		7,
+		tr::lng_online_playback_profile_start_waited_parts(tr::now),
+		tr::lng_online_playback_profile_start_waited_parts_about(tr::now));
+	addField(
+		_content,
+		8,
+		tr::lng_online_playback_profile_max_waited_parts(tr::now),
+		tr::lng_online_playback_profile_max_waited_parts_about(tr::now));
+	addGroup(_content, tr::lng_online_playback_group_mpv());
 	addField(
 		_content,
 		11,
@@ -388,7 +394,6 @@ void DownloadBoostProfilesBox::prepare() {
 		13,
 		tr::lng_online_playback_profile_mpv_cache_back(tr::now),
 		tr::lng_online_playback_profile_mpv_cache_back_about(tr::now));
-
 	_smartSection = _content->add(
 		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
 			_content,
@@ -403,6 +408,33 @@ void DownloadBoostProfilesBox::prepare() {
 		tr::lng_settings_online_playback_smart_desc(tr::now),
 		st::onlinePlaybackProfilesAbout));
 	Ui::AddSkip(smartContent, st::onlinePlaybackProfilesItemSkip);
+	addGroup(smartContent, tr::lng_online_playback_group_rate());
+	addField(
+		smartContent,
+		kDownloadBurstFieldIndex,
+		tr::lng_online_playback_profile_smart_download_burst(tr::now),
+		tr::lng_online_playback_profile_smart_download_burst_about(tr::now));
+	_manualAbout = addCheck(
+		smartContent,
+		_manualPacing,
+		tr::lng_online_playback_profile_manual_pacing(tr::now),
+		tr::lng_online_playback_profile_manual_pacing_about(tr::now));
+	_pacingStatus = smartContent->add(object_ptr<Ui::FlatLabel>(
+		smartContent,
+		QString(),
+		st::onlinePlaybackProfilesAbout));
+	Ui::AddSkip(smartContent, st::onlinePlaybackProfilesItemSkip);
+	addField(
+		smartContent,
+		kDownloadRateFieldIndex,
+		tr::lng_online_playback_profile_smart_download_rate(tr::now),
+		tr::lng_online_playback_profile_smart_download_rate_about(tr::now));
+	_adaptiveAbout = addCheck(
+		smartContent,
+		_adaptivePacing,
+		tr::lng_online_playback_profile_adaptive_pacing(tr::now),
+		tr::lng_online_playback_profile_adaptive_pacing_about(tr::now));
+	addGroup(smartContent, tr::lng_online_playback_group_smart_preload());
 	addField(
 		smartContent,
 		14,
@@ -415,14 +447,15 @@ void DownloadBoostProfilesBox::prepare() {
 		tr::lng_online_playback_profile_smart_min_preload_about(tr::now));
 	addField(
 		smartContent,
-		16,
-		tr::lng_online_playback_profile_smart_min_requests(tr::now),
-		tr::lng_online_playback_profile_smart_min_requests_about(tr::now));
-	addField(
-		smartContent,
 		17,
 		tr::lng_online_playback_profile_smart_max_preload(tr::now),
 		tr::lng_online_playback_profile_smart_max_preload_about(tr::now));
+	addField(
+		smartContent,
+		16,
+		tr::lng_online_playback_profile_smart_min_requests(tr::now),
+		tr::lng_online_playback_profile_smart_min_requests_about(tr::now));
+	addGroup(smartContent, tr::lng_online_playback_group_smart_concurrency());
 	addField(
 		smartContent,
 		18,
@@ -443,21 +476,20 @@ void DownloadBoostProfilesBox::prepare() {
 		21,
 		tr::lng_online_playback_profile_smart_capacity_floor(tr::now),
 		tr::lng_online_playback_profile_smart_capacity_floor_about(tr::now));
-	addField(
-		smartContent,
+
+	for (const auto index : {
 		kDownloadRateFieldIndex,
-		tr::lng_online_playback_profile_smart_download_rate(tr::now),
-		tr::lng_online_playback_profile_smart_download_rate_about(tr::now));
-	addField(
-		smartContent,
-		23,
-		tr::lng_online_playback_profile_smart_download_burst(tr::now),
-		tr::lng_online_playback_profile_smart_download_burst_about(tr::now));
-	addCheck(
-		smartContent,
-		_adaptivePacing,
-		tr::lng_online_playback_profile_adaptive_pacing(tr::now),
-		tr::lng_online_playback_profile_adaptive_pacing_about(tr::now));
+		kDownloadBurstFieldIndex,
+	}) {
+		_fields[index]->changes() | rpl::on_next([=] {
+			updateControlStates();
+		}, lifetime());
+	}
+	for (const auto checkbox : { _manualPacing, _seekCancel }) {
+		checkbox->checkedChanges() | rpl::on_next([=] {
+			updateControlStates();
+		}, lifetime());
+	}
 
 	loadProfile(_editingProfile);
 	showChildren();
@@ -521,6 +553,7 @@ auto DownloadBoostProfilesBox::NumericFieldValues(
 }
 
 void DownloadBoostProfilesBox::loadProfile(int profile) {
+	_loadingProfile = true;
 	const auto &value = _profiles[profile];
 	const auto values = NumericFieldValues(value);
 	const auto defaults = NumericFieldValues(
@@ -531,6 +564,7 @@ void DownloadBoostProfilesBox::loadProfile(int profile) {
 				? QString::number(number * 1024. / 1'000'000., 'g', 12)
 				: QString::number(number);
 		};
+		_fields[i]->hideError();
 		_fields[i]->setText(text(values[i]));
 		_defaultLabels[i]->setText(tr::lng_online_playback_profile_default(
 			tr::now,
@@ -546,11 +580,70 @@ void DownloadBoostProfilesBox::loadProfile(int profile) {
 	_adaptivePacing->setChecked(
 		value.smartAdaptivePacing,
 		Ui::Checkbox::NotifyAboutChange::DontNotify);
+	_manualPacing->setChecked(
+		value.smartManualPacing,
+		Ui::Checkbox::NotifyAboutChange::DontNotify);
 	_smartSection->toggle(profile == 6, anim::type::instant);
+	_loadingProfile = false;
+	updateControlStates();
+}
+
+void DownloadBoostProfilesBox::setFieldEnabled(int index, bool enabled) {
+	const auto opacity = enabled ? 1. : st::defaultBoxCheckbox.disabledOpacity;
+	_fields[index]->setDisabled(!enabled);
+	_fieldTitles[index]->setOpacity(opacity);
+	_fieldAbout[index]->setOpacity(opacity);
+	_defaultLabels[index]->setOpacity(opacity);
+	auto effect = qobject_cast<QGraphicsOpacityEffect*>(
+		_fields[index]->graphicsEffect());
+	if (!effect && !enabled) {
+		effect = new QGraphicsOpacityEffect(_fields[index]);
+		_fields[index]->setGraphicsEffect(effect);
+	}
+	if (effect) {
+		effect->setOpacity(opacity);
+		effect->setEnabled(!enabled);
+	}
+	if (!enabled) {
+		_fields[index]->hideError();
+	}
+}
+
+void DownloadBoostProfilesBox::updateControlStates() {
+	if (_loadingProfile) {
+		return;
+	}
+	auto valid = false;
+	const auto burst = _fields[kDownloadBurstFieldIndex]->getLastText()
+		.trimmed().toInt(&valid);
+	const auto enabled = valid && burst > 0 && burst <= 50000;
+	const auto manual = _manualPacing->checked();
+	setFieldEnabled(kDownloadRateFieldIndex, enabled);
+	setFieldEnabled(3, _seekCancel->checked());
+	setFieldEnabled(4, _seekCancel->checked());
+	_manualPacing->setDisabled(!enabled);
+	_manualPacing->setEnabled(enabled);
+	_manualAbout->setOpacity(
+		enabled ? 1. : st::defaultBoxCheckbox.disabledOpacity);
+	_adaptivePacing->setDisabled(!enabled || manual);
+	_adaptivePacing->setEnabled(enabled && !manual);
+	_adaptiveAbout->setOpacity(
+		(enabled && !manual) ? 1. : st::defaultBoxCheckbox.disabledOpacity);
+	const auto rate = _fields[kDownloadRateFieldIndex]->getLastText()
+		.trimmed().toDouble();
+	_pacingStatus->setText(!enabled
+		? tr::lng_online_playback_pacing_disabled(tr::now)
+		: manual
+		? ((std::isfinite(rate)
+			&& rate >= 1024. / 1'000'000.
+			&& rate <= 65536. * 1024. / 1'000'000.)
+			? tr::lng_online_playback_pacing_manual(tr::now)
+			: tr::lng_online_playback_error_manual_rate(tr::now))
+		: tr::lng_online_playback_pacing_automatic(tr::now));
 }
 
 bool DownloadBoostProfilesBox::saveCurrentProfile() {
-	auto &value = _profiles[_editingProfile];
+	auto value = _profiles[_editingProfile];
 	const auto ranges = std::array<std::pair<int, int>, kNumericFieldCount>{
 		std::pair{1, 32},
 		std::pair{1, 64},
@@ -619,6 +712,9 @@ bool DownloadBoostProfilesBox::saveCurrentProfile() {
 		field->hideError();
 	}
 	for (auto i = 0; i != kNumericFieldCount; ++i) {
+		if (_editingProfile != 6 && i >= 14) {
+			continue;
+		}
 		auto ok = false;
 		const auto text = _fields[i]->getLastText().trimmed();
 		if (i == kDownloadRateFieldIndex) {
@@ -629,6 +725,9 @@ bool DownloadBoostProfilesBox::saveCurrentProfile() {
 				|| rate < 0.
 				|| (rate > 0. && rate < 1024. / 1'000'000.)
 				|| rate > maximum) {
+				if (!_fields[i]->isEnabled()) {
+					continue;
+				}
 				return showError(
 					i,
 					-1,
@@ -639,6 +738,9 @@ bool DownloadBoostProfilesBox::saveCurrentProfile() {
 		}
 		const auto number = text.toInt(&ok);
 		if (!ok || number < ranges[i].first || number > ranges[i].second) {
+			if (!_fields[i]->isEnabled()) {
+				continue;
+			}
 			return showError(
 				i,
 				-1,
@@ -648,6 +750,16 @@ bool DownloadBoostProfilesBox::saveCurrentProfile() {
 	}
 	value.seekCancelEnabled = _seekCancel->checked();
 	value.smartAdaptivePacing = _adaptivePacing->checked();
+	value.smartManualPacing = _manualPacing->checked();
+	if (_editingProfile == 6
+		&& value.smartDownloadBurstParts > 0
+		&& value.smartManualPacing
+		&& value.smartDownloadMaxKiBps == 0) {
+		return showError(
+			kDownloadRateFieldIndex,
+			-1,
+			tr::lng_online_playback_error_manual_rate(tr::now));
+	}
 	if (value.maxWaitedParts < value.startWaitedParts) {
 		return showError(
 			8,
@@ -713,6 +825,7 @@ bool DownloadBoostProfilesBox::saveCurrentProfile() {
 	if (!_tailPrefetch->checked()) {
 		value.tailPrefetchParts = 0;
 	}
+	_profiles[_editingProfile] = value;
 	return true;
 }
 
