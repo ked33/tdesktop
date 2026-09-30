@@ -24,7 +24,8 @@ public:
 		int playback,
 		int maximumKiB,
 		bool catchUp = false,
-		bool manual = false);
+		bool manual = false,
+		int targetPercent = 125);
 
 private:
 	static constexpr auto kCatchUpDuration = 8000;
@@ -54,13 +55,14 @@ inline int DownloadRateLimiter::Target(
 		int playback,
 		int maximumKiB,
 		bool catchUp,
-		bool manual) {
+		bool manual,
+		int targetPercent) {
 	if (manual && maximumKiB > 0) {
 		return std::min(maximumKiB, 65536) * 1024;
 	}
 	const auto automatic = (playback > 0)
 		? std::clamp<std::int64_t>(
-			std::int64_t(playback) * 5 / 4,
+			std::int64_t(playback) * std::clamp(targetPercent, 100, 1000) / 100,
 			128 * 1024,
 			64 * 1024 * 1024)
 		: 512 * 1024;

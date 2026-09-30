@@ -146,17 +146,18 @@ void ImportEnhancedSettings() {
 		importButton->addClickHandler([] {
 			ImportEnhancedSettings();
 		});
-		rpl::combine(
-			row->widthValue(),
-			exportButton->heightValue()
-		) | rpl::on_next([=](int width, int height) {
-			if (row->height() != height) {
-				row->resize(width, height);
-			}
+		row->widthValue() | rpl::on_next([=](int width) {
 			const auto half = width / 2;
-			exportButton->setGeometry(0, 0, half, height);
-			importButton->setGeometry(half, 0, width - half, height);
+			exportButton->resizeToWidth(half);
+			importButton->resizeToWidth(width - half);
+			exportButton->moveToLeft(0, 0, width);
+			importButton->moveToLeft(half, 0, width);
+			row->resize(width, std::max(
+				exportButton->height(),
+				importButton->height()));
 		}, row->lifetime());
+		exportButton->show();
+		importButton->show();
 	}
 
 	void Enhanced::SetupEnhancedNetwork(not_null<Ui::VerticalLayout *> container) {
@@ -1797,6 +1798,7 @@ void ImportEnhancedSettings() {
 				tr::lng_online_playback_profile_smart_download_rate(tr::now),
 				tr::lng_online_playback_profile_smart_download_burst(tr::now),
 				tr::lng_online_playback_profile_manual_pacing(tr::now),
+				tr::lng_online_playback_profile_target_percent(tr::now),
 				tr::lng_online_playback_profile_adaptive_pacing(tr::now),
 			});
 		addBool(

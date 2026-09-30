@@ -748,13 +748,16 @@ crl::time DownloadManagerMtproto::downloadRateDelay(
 			demand.pacingBytesPerSecond,
 			profile.smartDownloadMaxKiBps,
 			false,
-			profile.manualPacingEnabled()),
+			profile.manualPacingEnabled(),
+			profile.smartDownloadTargetPercent),
 		std::int64_t(profile.smartDownloadBurstParts) * kDownloadPartSize,
 		now,
 		adaptive ? DownloadRateLimiter::Target(
 			demand.pacingBytesPerSecond,
 			profile.smartDownloadMaxKiBps,
-			true) : 0,
+			true,
+			false,
+			profile.smartDownloadTargetPercent) : 0,
 		catchUp);
 	const auto delay = crl::time(limiter.delay(kDownloadPartSize, now));
 	if (delay > 0) {
@@ -766,7 +769,8 @@ crl::time DownloadManagerMtproto::downloadRateDelay(
 		state.rateLogAt = now;
 		LOG(("Video Playback: download pacing dc=%1 rateBps=%2 "
 			"ceilingBps=%3 burstParts=%4 delayMs=%5 playbackBps=%6 "
-			"adaptive=%7 catchUp=%8 pressure=%9 readWaiting=%10 manual=%11.")
+			"adaptive=%7 catchUp=%8 pressure=%9 readWaiting=%10 "
+			"manual=%11 targetPercent=%12.")
 			.arg(dcId)
 			.arg(limiter.rate())
 			.arg(limiter.ceiling())
@@ -777,7 +781,8 @@ crl::time DownloadManagerMtproto::downloadRateDelay(
 			.arg(limiter.catchingUp())
 			.arg(demand.bufferPressure)
 			.arg(demand.readWaiting)
-			.arg(profile.manualPacingEnabled()));
+			.arg(profile.manualPacingEnabled())
+			.arg(profile.smartDownloadTargetPercent));
 	}
 	return delay;
 }

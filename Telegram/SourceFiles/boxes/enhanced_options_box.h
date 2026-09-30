@@ -72,7 +72,7 @@ protected:
 	void resizeEvent(QResizeEvent *e) override;
 
 private:
-	static constexpr auto kNumericFieldCount = 24;
+	static constexpr auto kNumericFieldCount = 25;
 
 	void loadProfile(int profile);
 	void updateControlStates();

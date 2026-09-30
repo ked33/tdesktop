@@ -79,6 +79,7 @@ void WriteProfile(QJsonObject &object, const BoostProfile &profile) {
 	object.insert("smartMaximumRequestLimit", profile.smartMaximumRequestLimit);
 	object.insert("smartDownloadMaxKiBps", profile.smartDownloadMaxKiBps);
 	object.insert("smartDownloadBurstParts", profile.smartDownloadBurstParts);
+	object.insert("smartDownloadTargetPercent", profile.smartDownloadTargetPercent);
 	object.insert("smartAdaptivePacing", profile.smartAdaptivePacing);
 	object.insert("smartManualPacing", profile.smartManualPacing);
 	object.insert(
@@ -379,6 +380,12 @@ BoostProfiles LoadBoostProfiles() {
 			defaults.smartDownloadBurstParts,
 			0,
 			50000);
+		profile.smartDownloadTargetPercent = ReadInt(
+			object,
+			"smartDownloadTargetPercent",
+			defaults.smartDownloadTargetPercent,
+			100,
+			1000);
 		profile.smartManualPacing = ReadBool(
 			object,
 			"smartManualPacing",
@@ -483,6 +490,7 @@ void LogOnlinePlaybackProfile() {
 		u"smartDownloadBurstParts=%1"_q.arg(profile.smartDownloadBurstParts),
 		u"smartAdaptivePacing=%1"_q.arg(profile.smartAdaptivePacing),
 		u"smartManualPacing=%1"_q.arg(profile.smartManualPacing),
+		u"smartDownloadTargetPercent=%1"_q.arg(profile.smartDownloadTargetPercent),
 	};
 	LOG(("Online playback profile: level=%1 (%2); %3").arg(
 		level).arg(

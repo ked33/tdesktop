@@ -40,6 +40,7 @@ namespace {
 
 constexpr auto kDownloadRateFieldIndex = 22;
 constexpr auto kDownloadBurstFieldIndex = 23;
+constexpr auto kDownloadTargetPercentFieldIndex = 24;
 
 [[nodiscard]] QString PixelRangeLabel(int minimum, int maximum) {
 	return u"%1-%2 px"_q.arg(minimum).arg(maximum);
@@ -429,6 +430,11 @@ void DownloadBoostProfilesBox::prepare() {
 		kDownloadRateFieldIndex,
 		tr::lng_online_playback_profile_smart_download_rate(tr::now),
 		tr::lng_online_playback_profile_smart_download_rate_about(tr::now));
+	addField(
+		smartContent,
+		kDownloadTargetPercentFieldIndex,
+		tr::lng_online_playback_profile_target_percent(tr::now),
+		tr::lng_online_playback_profile_target_percent_about(tr::now));
 	_adaptiveAbout = addCheck(
 		smartContent,
 		_adaptivePacing,
@@ -549,6 +555,7 @@ auto DownloadBoostProfilesBox::NumericFieldValues(
 		value.smartCapacityMinimumRequestLimit,
 		value.smartDownloadMaxKiBps,
 		value.smartDownloadBurstParts,
+		value.smartDownloadTargetPercent,
 	};
 }
 
@@ -619,6 +626,7 @@ void DownloadBoostProfilesBox::updateControlStates() {
 	const auto enabled = valid && burst > 0 && burst <= 50000;
 	const auto manual = _manualPacing->checked();
 	setFieldEnabled(kDownloadRateFieldIndex, enabled);
+	setFieldEnabled(kDownloadTargetPercentFieldIndex, enabled && !manual);
 	setFieldEnabled(3, _seekCancel->checked());
 	setFieldEnabled(4, _seekCancel->checked());
 	_manualPacing->setDisabled(!enabled);
@@ -669,6 +677,7 @@ bool DownloadBoostProfilesBox::saveCurrentProfile() {
 		std::pair{1, 32},
 		std::pair{0, 65536},
 		std::pair{0, 50000},
+		std::pair{100, 1000},
 	};
 	const auto current = std::array<int*, kNumericFieldCount>{
 		&value.requestsLimit,
@@ -695,6 +704,7 @@ bool DownloadBoostProfilesBox::saveCurrentProfile() {
 		&value.smartCapacityMinimumRequestLimit,
 		&value.smartDownloadMaxKiBps,
 		&value.smartDownloadBurstParts,
+		&value.smartDownloadTargetPercent,
 	};
 	const auto showError = [&](
 			int primary,
@@ -744,7 +754,9 @@ bool DownloadBoostProfilesBox::saveCurrentProfile() {
 			return showError(
 				i,
 				-1,
-				tr::lng_online_playback_profile_invalid_integer(tr::now));
+				(i == kDownloadTargetPercentFieldIndex)
+					? tr::lng_online_playback_profile_invalid_percent(tr::now)
+					: tr::lng_online_playback_profile_invalid_integer(tr::now));
 		}
 		*current[i] = number;
 	}

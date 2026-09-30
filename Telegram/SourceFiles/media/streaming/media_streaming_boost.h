@@ -40,6 +40,7 @@ struct BoostProfile {
 	int smartCapacityMinimumRequestLimit = 4;
 	int smartDownloadMaxKiBps = 0;
 	int smartDownloadBurstParts = 2;
+	int smartDownloadTargetPercent = 125;
 	bool smartAdaptivePacing = false;
 	bool smartManualPacing = false;
 

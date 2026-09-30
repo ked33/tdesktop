@@ -29,6 +29,56 @@ void TestTarget() {
 		"overflow safe target");
 }
 
+void TestAutomaticTargetPercent() {
+	using Limiter = Storage::DownloadRateLimiter;
+	constexpr auto playback = 1023070;
+	Require(Limiter::Target(playback, 0, false, false, 125) == 1278837,
+		"125 percent preserves log 13 target");
+	Require(Limiter::Target(playback, 0, false, false, 100) == playback,
+		"100 percent targets playback consumption");
+	Require(Limiter::Target(playback, 0, false, false, 200) == 2046140,
+		"200 percent doubles playback consumption");
+	Require(Limiter::Target(playback, 0, false, false, 500) == 5115350,
+		"500 percent is five times playback consumption");
+	Require(Limiter::Target(playback, 2929, false, false, 500) == 2999296,
+		"three MB ceiling still caps higher automatic multiplier");
+	Require(Limiter::Target(playback, 0, true, false, 200) == 6138420,
+		"catch-up uses the configured normal target");
+	Require(Limiter::Target(playback, 0, true, false, 500) == 8 * 1024 * 1024,
+		"higher automatic multiplier cannot bypass catch-up maximum");
+	Require(Limiter::Target(playback, 2929, true, false, 500) == 2999296,
+		"catch-up also respects the user ceiling");
+	Require(Limiter::Target(playback, 0, false, false, 0) == playback,
+		"invalid percentage is bounded at the minimum");
+	Require(Limiter::Target(playback, 0, false, false, 1001) == playback * 10,
+		"invalid percentage is bounded at the maximum");
+	Require(Limiter::Target(std::numeric_limits<int>::max(), 0,
+		false, false, 1000) == 64 * 1024 * 1024,
+		"large bitrate and percentage cannot overflow");
+	for (const auto percent : { 100, 125, 200, 500, 1000 }) {
+		Require(Limiter::Target(0, 0, false, false, percent) == 512 * 1024,
+			"unknown bitrate fallback does not scale");
+		Require(Limiter::Target(1, 0, false, false, percent) == kPart,
+			"automatic floor is preserved");
+		Require(Limiter::Target(playback, 1, false, false, percent) == 1024,
+			"low user ceiling wins over the automatic target");
+		Require(Limiter::Target(playback, 3906, false, true, percent)
+			== 3906 * 1024, "manual mode ignores automatic percentage");
+		auto limiter = Limiter();
+		const auto rate = Limiter::Target(playback, 0, false, false, percent);
+		limiter.configure(rate, 2 * kPart, 0);
+		limiter.penalize(3000, 63000);
+		limiter.configure(rate, 2 * kPart, 3000);
+		Require(limiter.rate() == rate * 3 / 4,
+			"configured automatic percentage obeys server backoff");
+		Require(limiter.delay(kPart, 3000) > 0,
+			"server backoff leaves no free burst");
+		limiter.configure(rate, 0, 3000);
+		Require(limiter.rate() == 0 && limiter.delay(kPart, 3000) == 0,
+			"zero burst disables configured automatic targets");
+	}
+}
+
 void TestManualTargetsAndBudget() {
 	using Limiter = Storage::DownloadRateLimiter;
 	constexpr auto maximumKiB = 3906;
@@ -324,6 +374,7 @@ void TestSharedBudget() {
 
 int main() {
 	TestTarget();
+	TestAutomaticTargetPercent();
 	TestManualTargetsAndBudget();
 	TestLargeBurst();
 	TestDisabled();
@@ -336,5 +387,5 @@ int main() {
 	TestCatchUpPreservesCredit();
 	TestCatchUpServerLimits();
 	TestSharedBudget();
-	std::cout << "PASS: targets, manual throughput, disable, large burst, seek, wait, recovery, idle, catch-up, shared/DC budgets\n";
+	std::cout << "PASS: targets, automatic percentages, manual throughput, disable, large burst, seek, wait, recovery, idle, catch-up, shared/DC budgets\n";
 }
