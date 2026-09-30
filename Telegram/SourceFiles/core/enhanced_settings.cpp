@@ -36,6 +36,11 @@ namespace EnhancedSettings {
 
 		constexpr auto kWriteJsonTimeout = crl::time(5000);
 
+		rpl::event_stream<bool> &DownloadLimitToastsEvents() {
+			static auto events = rpl::event_stream<bool>();
+			return events;
+		}
+
 		rpl::event_stream<bool> &SearchIncludePornEvents() {
 			static auto events = rpl::event_stream<bool>();
 			return events;
@@ -155,6 +160,7 @@ namespace EnhancedSettings {
 					qsl("show_message_context_stream_in_mpv_special"));
 				ensureBool(qsl("mpv_streaming_debug_logs"), false);
 				ensureBool(qsl("online_playback_debug_logs"), false);
+			ensureBool(u"download_limit_toasts"_q, true);
 			ensureBool(u"video_player_prefer_original"_q, true);
 			ensureBool(u"video_player_auto_fullscreen"_q, false);
 				ensureBool(qsl("show_message_context_show_messages_from"), true);
@@ -334,6 +340,23 @@ namespace EnhancedSettings {
 		std::unique_ptr<Manager> Data;
 
 	} // namespace
+
+	bool DownloadLimitToastsEnabled() {
+		return gEnhancedOptions.value(u"download_limit_toasts"_q, true).toBool();
+	}
+
+	rpl::producer<bool> DownloadLimitToastsChanges() {
+		return DownloadLimitToastsEvents().events();
+	}
+
+	void SetDownloadLimitToastsEnabled(bool enabled) {
+		if (DownloadLimitToastsEnabled() == enabled) {
+			return;
+		}
+		SetEnhancedValue(u"download_limit_toasts"_q, enabled);
+		Write();
+		DownloadLimitToastsEvents().fire_copy(enabled);
+	}
 
 	bool SearchIncludePorn() {
 		return gEnhancedOptions.value(u"search_include_porn"_q, true).toBool();
@@ -766,6 +789,7 @@ namespace EnhancedSettings {
 			settings.insert(qsl("show_message_context_stream_in_mpv"), true);
 			settings.insert(qsl("mpv_streaming_debug_logs"), false);
 			settings.insert(qsl("online_playback_debug_logs"), false);
+		settings.insert(u"download_limit_toasts"_q, true);
 		settings.insert(u"video_player_prefer_original"_q, true);
 		settings.insert(u"video_player_auto_fullscreen"_q, false);
 			settings.insert(qsl("show_message_context_show_messages_from"), true);
@@ -901,6 +925,9 @@ namespace EnhancedSettings {
 			settings.insert(qsl("show_message_context_stream_in_mpv"), GetEnhancedBool("show_message_context_stream_in_mpv"));
 			settings.insert(qsl("mpv_streaming_debug_logs"), GetEnhancedBool("mpv_streaming_debug_logs"));
 			settings.insert(qsl("online_playback_debug_logs"), GetEnhancedBool("online_playback_debug_logs"));
+		settings.insert(
+			u"download_limit_toasts"_q,
+			DownloadLimitToastsEnabled());
 		settings.insert(
 			u"video_player_prefer_original"_q,
 			GetEnhancedBool(u"video_player_prefer_original"_q));

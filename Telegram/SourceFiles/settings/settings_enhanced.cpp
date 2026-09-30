@@ -254,6 +254,20 @@ void ImportEnhancedSettings() {
 		trackSearch(
 			AddButtonWithIcon(
 				inner,
+				tr::lng_settings_download_limit_toasts(),
+				st::settingsButtonNoIcon),
+			u"enhanced/download_limit_toasts"_q)->toggleOn(
+			rpl::single(EnhancedSettings::DownloadLimitToastsEnabled())
+				| rpl::then(EnhancedSettings::DownloadLimitToastsChanges())
+		)->toggledChanges(
+		) | rpl::on_next([](bool toggled) {
+			EnhancedSettings::SetDownloadLimitToastsEnabled(toggled);
+		}, container->lifetime());
+		AddDividerText(inner, tr::lng_settings_download_limit_toasts_about());
+
+		trackSearch(
+			AddButtonWithIcon(
+				inner,
 				tr::lng_settings_online_playback_debug_logs(),
 				st::settingsButtonNoIcon
 			),
@@ -1801,6 +1815,10 @@ void ImportEnhancedSettings() {
 				tr::lng_online_playback_profile_target_percent(tr::now),
 				tr::lng_online_playback_profile_adaptive_pacing(tr::now),
 			});
+		addBool(
+			"download_limit_toasts",
+			tr::lng_settings_download_limit_toasts(tr::now),
+			{ tr::lng_settings_download_limit_toasts_about(tr::now) });
 		addBool(
 			"online_playback_debug_logs",
 			tr::lng_settings_online_playback_debug_logs(tr::now));

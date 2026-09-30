@@ -3,6 +3,8 @@
     "lng_transfer_limit_upload": "Upload temporarily limited",
     "lng_transfer_limit_wait": "The server asks you to wait {seconds} seconds before retrying. It may require another wait after the retry.",
     "lng_transfer_limit_wait_unknown": "The server is temporarily limiting this transfer. Please try again later.",
+    "lng_settings_download_limit_toasts": "Show server download limit notifications",
+    "lng_settings_download_limit_toasts_about": "Show server limit popups for image, video and other downloads, including playback in the built-in player and MPV. Turning this off hides these popups without changing server waits, retries or debug log settings. Takes effect immediately.",
     "lng_intro_about2": "Welcome to the 64Gram Desktop app.\nIt's fast and secure.",
 
     "lng_mediaview_flip_horizontal": "Flip Horizontally",

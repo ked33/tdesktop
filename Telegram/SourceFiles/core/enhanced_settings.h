@@ -35,6 +35,9 @@ namespace EnhancedSettings {
 
 	[[nodiscard]] int MessageEmojiSize();
 	[[nodiscard]] int MessageStickerSize();
+	[[nodiscard]] bool DownloadLimitToastsEnabled();
+	[[nodiscard]] rpl::producer<bool> DownloadLimitToastsChanges();
+	void SetDownloadLimitToastsEnabled(bool enabled);
 	[[nodiscard]] bool SearchIncludePorn();
 	[[nodiscard]] rpl::producer<bool> SearchIncludePornChanges();
 	void SetSearchIncludePorn(bool enabled);

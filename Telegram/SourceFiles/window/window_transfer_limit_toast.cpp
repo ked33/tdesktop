@@ -2,6 +2,7 @@
 
 #include "chat_helpers/compose/compose_show.h"
 #include "core/application.h"
+#include "core/enhanced_settings.h"
 #include "lang/lang_keys.h"
 #include "main/main_session.h"
 #include "media/view/media_view_overlay_widget.h"
@@ -45,6 +46,14 @@ TransferLimitToast::~TransferLimitToast() {
 }
 
 void TransferLimitToast::start() {
+	EnhancedSettings::DownloadLimitToastsChanges(
+	) | rpl::on_next([=](bool enabled) {
+		if (!enabled && !_last.upload) {
+			if (const auto toast = _toast.get()) {
+				toast->hide();
+			}
+		}
+	}, _lifetime);
 	_session->mtp().transferLimits(
 	) | rpl::on_next([=](const MTP::TransferLimitInfo &info) {
 		crl::on_main(this, [=] { show(info); });
@@ -78,7 +87,8 @@ std::shared_ptr<ChatHelpers::Show> TransferLimitToast::resolveShow() const {
 }
 
 void TransferLimitToast::show(const MTP::TransferLimitInfo &info) {
-	if (info.repeated) {
+	if (info.repeated
+		|| (!info.upload && !EnhancedSettings::DownloadLimitToastsEnabled())) {
 		return;
 	}
 	const auto now = crl::now();
