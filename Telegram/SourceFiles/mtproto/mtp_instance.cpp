@@ -1730,7 +1730,6 @@ bool Instance::Private::onErrorDefault(
 
 		auto secs = 1;
 		auto serverWaitSeconds = 0;
-		auto overrideWaitMs = -1;
 		auto nonPremiumDelay = false;
 		if (code < 0 || code >= 500) {
 			auto body = mtpTypeId(0);
@@ -1763,19 +1762,7 @@ bool Instance::Private::onErrorDefault(
 		} else if (m3.hasMatch()) {
 			secs = m3.captured(1).toInt();
 		}
-		auto appliedWaitMs = secs * 1000;
-		if (nonPremiumDelay) {
-			const auto overrideValue = GetEnhancedString(
-				u"flood_premium_wait_override_ms"_q).trimmed();
-			if (!overrideValue.isEmpty()) {
-				auto ok = false;
-				const auto parsed = overrideValue.toInt(&ok);
-				if (ok) {
-					overrideWaitMs = std::max(parsed, 0);
-					appliedWaitMs = overrideWaitMs;
-				}
-			}
-		}
+		const auto appliedWaitMs = secs * 1000;
 		auto sendAt = crl::now() + appliedWaitMs + 10;
 		auto it = _delayedRequests.begin(), e = _delayedRequests.end();
 		for (; it != e; ++it) {
@@ -1795,7 +1782,6 @@ bool Instance::Private::onErrorDefault(
 				requestId,
 				{
 					.serverWaitSeconds = serverWaitSeconds,
-					.overrideWaitMs = overrideWaitMs,
 					.appliedWaitMs = appliedWaitMs + 10,
 				},
 			});

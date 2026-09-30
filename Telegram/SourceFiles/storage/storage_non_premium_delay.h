@@ -17,7 +17,6 @@ inline constexpr auto kNonPremiumRecoveryMaxDuration = 120 * crl::time(1000);
 
 struct NonPremiumDelayInfo {
 	int serverWaitSeconds = 0;
-	int overrideWaitMs = -1;
 	int appliedWaitMs = 0;
 };
 

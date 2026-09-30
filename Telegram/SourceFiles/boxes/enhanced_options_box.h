@@ -170,26 +170,6 @@ private:
 
 };
 
-class FloodPremiumWaitBox : public Ui::BoxContent {
-public:
-	FloodPremiumWaitBox(QWidget *parent);
-
-	static QString DelayLabel(const QString &value);
-
-protected:
-	void prepare() override;
-
-	void setInnerFocus() override;
-
-	void resizeEvent(QResizeEvent *e) override;
-
-private:
-	void save();
-
-	object_ptr<Ui::InputField> _delay = { nullptr };
-
-};
-
 class SearchPornConcurrencyBox final : public Ui::BoxContent {
 public:
 	explicit SearchPornConcurrencyBox(QWidget *parent);

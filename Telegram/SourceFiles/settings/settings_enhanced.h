@@ -53,7 +53,6 @@ namespace Settings {
 			rpl::event_stream<QString> _ChatSwitchShortcutChanged;
 			rpl::event_stream<QString> _CodeBlockBgColorChanged;
 			rpl::event_stream<QString> _CustomChatShortcutsChanged;
-			rpl::event_stream<QString> _FloodPremiumWaitChanged;
 			rpl::event_stream<QString> _GlobalSearchShortcutChanged;
 			rpl::event_stream<QString> _JumpToDialogShortcutChanged;
 			rpl::event_stream<QString> _MpvPathChanged;

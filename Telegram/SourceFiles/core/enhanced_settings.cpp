@@ -201,7 +201,7 @@ namespace EnhancedSettings {
 				qsl("net_download_speed_boost_profiles"),
 				Media::Streaming::SerializeBoostProfiles(
 					Media::Streaming::DefaultBoostProfiles()));
-			ensureString(qsl("flood_premium_wait_override_ms"), QString());
+			gEnhancedOptions.remove(qsl("flood_premium_wait_override_ms"));
 			ensureString(qsl("quick_copy_targets"), qsl("-1002615379741,Saved Messages"));
 			ensureString(qsl("shortcut_selected_forward"), QString());
 			ensureString(qsl("shortcut_selected_forward_no_quote"), QString());
@@ -799,7 +799,6 @@ namespace EnhancedSettings {
 		settings.insert(qsl("hide_stories"), false);
 		settings.insert(qsl("screenshot_mode"), false);
 		settings.insert(qsl("mpv_path"), "");
-		settings.insert(qsl("flood_premium_wait_override_ms"), "");
 		settings.insert(qsl("quick_copy_targets"), "-1002615379741,Saved Messages");
 		settings.insert(qsl("shortcut_selected_forward"), "");
 		settings.insert(qsl("shortcut_selected_forward_no_quote"), "");
@@ -958,9 +957,6 @@ namespace EnhancedSettings {
 		settings.insert(qsl("hide_stories"), GetEnhancedBool("hide_stories"));
 		settings.insert(qsl("screenshot_mode"), GetEnhancedBool("screenshot_mode"));
 		settings.insert(qsl("mpv_path"), GetEnhancedString("mpv_path"));
-		settings.insert(
-			qsl("flood_premium_wait_override_ms"),
-			GetEnhancedString("flood_premium_wait_override_ms"));
 		settings.insert(
 			qsl("quick_copy_targets"),
 			GetEnhancedString("quick_copy_targets"));

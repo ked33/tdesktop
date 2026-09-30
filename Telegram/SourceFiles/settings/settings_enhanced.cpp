@@ -271,36 +271,6 @@ void ImportEnhancedSettings() {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
-		const auto currentFloodPremiumWaitLabel = [] {
-			return FloodPremiumWaitBox::DelayLabel(
-				GetEnhancedString("flood_premium_wait_override_ms"));
-		};
-		auto floodPremiumWaitValue = rpl::single(
-			currentFloodPremiumWaitLabel()
-		) | rpl::then(
-			_FloodPremiumWaitChanged.events()
-		) | rpl::map([=] {
-			return currentFloodPremiumWaitLabel();
-		});
-		auto floodPremiumWaitButton = trackSearch(
-			AddButtonWithLabel(
-				inner,
-				tr::lng_settings_flood_premium_wait_title(),
-				std::move(floodPremiumWaitValue),
-				st::settingsButtonNoIcon
-			),
-			u"enhanced/flood_premium_wait_override_ms"_q);
-
-		floodPremiumWaitButton->events(
-		) | rpl::on_next([=](not_null<QEvent*> e) {
-			if (e->type() == QEvent::UpdateLater) {
-				_FloodPremiumWaitChanged.fire({});
-			}
-		}, container->lifetime());
-		floodPremiumWaitButton->addClickHandler([=] {
-			Ui::show(Box<FloodPremiumWaitBox>());
-		});
-
 		AddSkip(container);
 	}
 
@@ -1831,9 +1801,6 @@ void ImportEnhancedSettings() {
 		addBool(
 			"online_playback_debug_logs",
 			tr::lng_settings_online_playback_debug_logs(tr::now));
-		addButton(
-			u"enhanced/flood_premium_wait_override_ms"_q,
-			tr::lng_settings_flood_premium_wait_title(tr::now));
 
 		addButton(
 			u"enhanced/section_messages"_q,
