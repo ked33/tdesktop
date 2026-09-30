@@ -55,7 +55,7 @@ public:
 	void speed(SpeedEstimate estimate);
 	[[nodiscard]] QString snapshot(crl::time now);
 	void report(const char *reason);
-	void bridgeOpened(uint64 documentId, bool special);
+	void bridgeOpened(uint64 documentId);
 
 private:
 	friend class BridgeRequestDiagnostics;
@@ -99,7 +99,6 @@ class BridgeRequestDiagnostics final {
 public:
 	BridgeRequestDiagnostics(
 		std::shared_ptr<TransferDiagnostics> transfer,
-		bool special,
 		int64 offset,
 		int64 length);
 	~BridgeRequestDiagnostics();

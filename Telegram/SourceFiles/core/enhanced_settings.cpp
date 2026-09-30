@@ -142,12 +142,6 @@ namespace EnhancedSettings {
 					gEnhancedOptions.insert(key, value);
 				}
 			};
-			const auto migrateBool = [](const QString &from, const QString &to) {
-				if (!gEnhancedOptions.contains(to) && gEnhancedOptions.contains(from)) {
-					gEnhancedOptions.insert(to, gEnhancedOptions.value(from).toBool());
-				}
-				gEnhancedOptions.remove(from);
-			};
 
 			ensureBool(qsl("show_message_context_read_info"), true);
 			ensureBool(qsl("show_message_context_details"), true);
@@ -155,10 +149,10 @@ namespace EnhancedSettings {
 				ensureBool(qsl("show_message_context_add_task"), true);
 				ensureBool(qsl("show_message_context_copy_link"), true);
 				ensureBool(qsl("show_message_context_stream_in_mpv"), true);
-				migrateBool(
-					qsl("show_message_context_stream_in_mpv_offset_aware"),
+				gEnhancedOptions.remove(
+					qsl("show_message_context_stream_in_mpv_offset_aware"));
+				gEnhancedOptions.remove(
 					qsl("show_message_context_stream_in_mpv_special"));
-				ensureBool(qsl("show_message_context_stream_in_mpv_special"), true);
 				ensureBool(qsl("mpv_streaming_debug_logs"), false);
 				ensureBool(qsl("online_playback_debug_logs"), false);
 			ensureBool(u"video_player_prefer_original"_q, true);
@@ -770,7 +764,6 @@ namespace EnhancedSettings {
 			settings.insert(qsl("show_message_context_add_task"), true);
 			settings.insert(qsl("show_message_context_copy_link"), true);
 			settings.insert(qsl("show_message_context_stream_in_mpv"), true);
-			settings.insert(qsl("show_message_context_stream_in_mpv_special"), true);
 			settings.insert(qsl("mpv_streaming_debug_logs"), false);
 			settings.insert(qsl("online_playback_debug_logs"), false);
 		settings.insert(u"video_player_prefer_original"_q, true);
@@ -907,7 +900,6 @@ namespace EnhancedSettings {
 			settings.insert(qsl("show_message_context_add_task"), GetEnhancedBool("show_message_context_add_task"));
 			settings.insert(qsl("show_message_context_copy_link"), GetEnhancedBool("show_message_context_copy_link"));
 			settings.insert(qsl("show_message_context_stream_in_mpv"), GetEnhancedBool("show_message_context_stream_in_mpv"));
-			settings.insert(qsl("show_message_context_stream_in_mpv_special"), GetEnhancedBool("show_message_context_stream_in_mpv_special"));
 			settings.insert(qsl("mpv_streaming_debug_logs"), GetEnhancedBool("mpv_streaming_debug_logs"));
 			settings.insert(qsl("online_playback_debug_logs"), GetEnhancedBool("online_playback_debug_logs"));
 		settings.insert(

@@ -150,8 +150,7 @@ void AddVideoPlaybackActions(
 	HistoryItem *item,
 	DocumentData *document,
 	not_null<Window::SessionController*> controller,
-	bool afterCopyLink = false,
-	bool showSpecialMpv = false);
+	bool afterCopyLink = false);
 [[nodiscard]] QString ContextMenuActionLabel(const QString &text);
 [[nodiscard]] bool ContextMenuCopyShortcut(const QString &text);
 void ApplyContextMenuShortcut(

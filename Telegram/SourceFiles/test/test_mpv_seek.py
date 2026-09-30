@@ -141,11 +141,10 @@ def fixtures(ffmpeg: str, output: Path) -> list[tuple[Path, int, bool]]:
 
 def production_options() -> tuple[str, str]:
     directory = Path(__file__).resolve().parents[1] / "media" / "streaming"
-    for name in ("media_streaming_mpv.cpp", "media_streaming_mpv_special.cpp"):
-        text = (directory / name).read_text(encoding="utf-8")
-        body = text.split("QStringList LaunchArguments(", 1)[1].split("\n}", 1)[0]
-        if "PlaybackDemuxerOptions(LooksLikeMp4Stream(document))" not in body:
-            raise AssertionError(f"Inspect the launch options in {name}")
+    text = (directory / "media_streaming_mpv.cpp").read_text(encoding="utf-8")
+    body = text.split("QStringList LaunchArguments(", 1)[1].split("\n}", 1)[0]
+    if "PlaybackDemuxerOptions(LooksLikeMp4Stream(document))" not in body:
+        raise AssertionError("Inspect the launch options in media_streaming_mpv.cpp")
     text = (directory / "media_streaming_mpv_index.cpp").read_text(encoding="utf-8")
     body = text.split("QString PlaybackDemuxerOptions(", 1)[1].split("\n}", 1)[0]
     options = re.findall(r'u"(ignore_editlist=[^"]+)"_q', body)

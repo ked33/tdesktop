@@ -2531,8 +2531,7 @@ void AddMessageActions(
 		item,
 		document,
 		list->controller(),
-		(menu->actions().size() > before),
-		request.showSpecialMpv);
+		(menu->actions().size() > before));
 	AddMsgsFromUserAction(menu, request, list);
 	AddForwardAction(menu, request, list);
 	AddRepeaterAction(menu, request, list);
@@ -3205,19 +3204,9 @@ void AddMessageDetailsAction(
 			HistoryItem *item,
 			DocumentData *document,
 			not_null<Window::SessionController*> controller,
-			bool afterCopyLink,
-			bool showSpecialMpv) {
-		const auto canOpenInMpv = ::Media::Streaming::Mpv::CanOpenVideoMessageInMpv(
-			item,
-			document);
-		if (!canOpenInMpv) {
-			return;
-		}
-		const auto showStreaming = GetEnhancedBool("show_message_context_stream_in_mpv");
-		const auto showStreamingSpecial = GetEnhancedBool(
-			"show_message_context_stream_in_mpv_special");
-		const auto showSpecialNow = showStreamingSpecial && showSpecialMpv;
-		if (!showStreaming && !showSpecialNow) {
+			bool afterCopyLink) {
+		if (!::Media::Streaming::Mpv::CanOpenVideoMessageInMpv(item, document)
+			|| !GetEnhancedBool("show_message_context_stream_in_mpv")) {
 			return;
 		}
 		const auto itemId = item->fullId();
@@ -3225,10 +3214,9 @@ void AddMessageDetailsAction(
 		const auto insertIndex = std::min<int>(
 			afterCopyLink ? 1 : 0,
 			int(menu->actions().size()));
-		auto offset = 0;
 		const auto addAction = [&](const QString &text, auto handler) {
 			const auto action = menu->insertAction(
-				insertIndex + offset,
+				insertIndex,
 				base::make_unique_q<Ui::Menu::Action>(
 					menu->menu(),
 					menu->st().menu,
@@ -3246,41 +3234,22 @@ void AddMessageDetailsAction(
 						}),
 					&st::menuIconLink,
 					&st::menuIconLink));
-			++offset;
 			return action;
 		};
-		if (showStreaming && canOpenInMpv) {
-			ApplyContextMenuShortcut(menu, addAction(
-				tr::lng_context_stream_in_mpv(tr::now),
-				[=](HistoryItem *resolvedItem, DocumentData *resolvedDocument) {
-					const auto result = ::Media::Streaming::Mpv::OpenVideoMessageInMpv(
-						resolvedItem,
-						resolvedDocument);
-					if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
-						controller->showToast(
-							tr::lng_context_stream_in_mpv_not_found(tr::now));
-					} else if (result == ::Media::Streaming::Mpv::OpenResult::Failed) {
-						controller->showToast(
-							tr::lng_context_stream_in_mpv_failed(tr::now));
-					}
-				}), Qt::Key_V);
-		}
-		if (showSpecialNow && canOpenInMpv) {
-			addAction(
-				tr::lng_context_stream_in_mpv_special(tr::now),
-				[=](HistoryItem *resolvedItem, DocumentData *resolvedDocument) {
-					const auto result = ::Media::Streaming::Mpv::OpenVideoMessageInMpvSpecial(
-						resolvedItem,
-						resolvedDocument);
-					if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
-						controller->showToast(
-							tr::lng_context_stream_in_mpv_not_found(tr::now));
-					} else if (result == ::Media::Streaming::Mpv::OpenResult::Failed) {
-						controller->showToast(
-							tr::lng_context_stream_in_mpv_special_failed(tr::now));
-					}
-				});
-		}
+		ApplyContextMenuShortcut(menu, addAction(
+			tr::lng_context_stream_in_mpv(tr::now),
+			[=](HistoryItem *resolvedItem, DocumentData *resolvedDocument) {
+				const auto result = ::Media::Streaming::Mpv::OpenVideoMessageInMpv(
+					resolvedItem,
+					resolvedDocument);
+				if (result == ::Media::Streaming::Mpv::OpenResult::PlayerNotFound) {
+					controller->showToast(
+						tr::lng_context_stream_in_mpv_not_found(tr::now));
+				} else if (result == ::Media::Streaming::Mpv::OpenResult::Failed) {
+					controller->showToast(
+						tr::lng_context_stream_in_mpv_failed(tr::now));
+				}
+			}), Qt::Key_V);
 	}
 
 	void CopyPostLink(

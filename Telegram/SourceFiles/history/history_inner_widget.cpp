@@ -3800,8 +3800,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 					&& item
 					&& item->hasDirectLink() && !IsAnchoredEphemeral(item)
 					&& isUponSelected != 2
-					&& isUponSelected != -2),
-				showSpecialMpv);
+					&& isUponSelected != -2));
 			if (isUponSelected > 1) {
 				if (GetEnhancedBool("show_message_context_forward")
 					&& selectedState.count > 0
@@ -4316,8 +4315,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				(item
 					&& item->hasDirectLink() && !IsAnchoredEphemeral(item)
 					&& isUponSelected != 2
-					&& isUponSelected != -2),
-				showSpecialMpv);
+					&& isUponSelected != -2));
 			if (sponsored) {
 				const auto hasAbout = ranges::any_of(
 					_menu->actions(),

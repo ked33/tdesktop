@@ -7,8 +7,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/streaming/media_streaming_mpv.h"
 
-#include "media/streaming/media_streaming_mpv_special.h"
-
 #include "base/bytes.h"
 #include "base/platform/base_platform_info.h"
 #include "base/timer.h"
@@ -29,24 +27,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings.h"
 
 #include <QtCore/QFileInfo>
-#include <QtCore/QCoreApplication>
-#include <QtCore/QLibrary>
-#include <QtCore/QMetaObject>
 #include <QtCore/QObject>
-#include <QtCore/QPointer>
 #include <QtCore/QProcess>
 #include <QtCore/QProcessEnvironment>
 #include <QtCore/QStringList>
 #include <QtCore/QStandardPaths>
-#include <QtCore/QTimer>
 #include <QtCore/QUuid>
 #include <QtCore/QUrl>
 #include <QtCore/QUrlQuery>
-#include <QtGui/QCloseEvent>
 #include <QtNetwork/QHostAddress>
 #include <QtNetwork/QTcpServer>
 #include <QtNetwork/QTcpSocket>
-#include <QtWidgets/QWidget>
 
 #include <algorithm>
 #include <atomic>
@@ -105,18 +96,6 @@ constexpr auto kMpvLoaderPriority = 2;
 	}
 	constexpr auto kPart = int64(128 * 1024);
 	return profile.mpvTailPrefetchParts * kPart;
-}
-
-[[nodiscard]] QString MpvLogString(const char *value) {
-	return value ? QString::fromUtf8(value) : QString();
-}
-
-[[nodiscard]] QString MpvLogLine(const char *value) {
-	auto result = MpvLogString(value);
-	while (result.endsWith('\n') || result.endsWith('\r')) {
-		result.chop(1);
-	}
-	return result;
 }
 
 [[nodiscard]] int DownloadBoostLevel() {
@@ -674,7 +653,7 @@ public:
 			document,
 			origin,
 			std::move(reader));
-		entry->diagnostics->bridgeOpened(document->id, false);
+		entry->diagnostics->bridgeOpened(document->id);
 		entry->mime = document->mimeString().isEmpty()
 			? QStringLiteral("application/octet-stream")
 			: document->mimeString();
@@ -877,7 +856,6 @@ private:
 			}
 			auto diagnostics = BridgeRequestDiagnostics(
 				entry->diagnostics,
-				false,
 				range.range.from,
 				range.range.length);
 			if (entry->mp4Layout.load() == 0
@@ -1295,12 +1273,6 @@ OpenResult OpenVideoMessageInMpv(
 		origin,
 		program,
 		std::move(reader));
-}
-
-OpenResult OpenVideoMessageInMpvSpecial(
-		HistoryItem *item,
-		DocumentData *document) {
-	return MpvSpecial::OpenVideoMessageInMpvSpecial(item, document);
 }
 
 #undef MPV_STREAMING_LOG

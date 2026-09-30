@@ -610,13 +610,13 @@ void TransferDiagnostics::report(const char *reason) {
 	}
 }
 
-void TransferDiagnostics::bridgeOpened(uint64 documentId, bool special) {
+void TransferDiagnostics::bridgeOpened(uint64 documentId) {
 	_impl->bridgePlayId.store(id(), std::memory_order_relaxed);
 	VIDEO_PLAYBACK_DEBUG_LOG((u"Video Playback: bridge_open play_id=%1 "
 		"doc=%2 backend=%3 %4"_q)
 		.arg(qulonglong(id()))
 		.arg(qulonglong(documentId))
-		.arg(special ? u"mpv-special"_q : u"mpv"_q)
+		.arg(u"mpv"_q)
 		.arg(snapshot(crl::now())));
 }
 
@@ -1000,12 +1000,10 @@ void PlaybackDiagnostics::finish(const char *reason) {
 struct BridgeRequestDiagnostics::Impl {
 	Impl(
 		std::shared_ptr<TransferDiagnostics> transfer,
-		bool special,
 		int64 offset,
 		int64 length)
 	: root(std::move(transfer))
 	, reader(root)
-	, special(special)
 	, offset(offset)
 	, length(length) {
 	}
@@ -1017,7 +1015,6 @@ struct BridgeRequestDiagnostics::Impl {
 
 	const std::shared_ptr<TransferDiagnostics> root;
 	std::shared_ptr<TransferDiagnostics> reader;
-	const bool special = false;
 	const int64 offset = 0;
 	const int64 length = 0;
 	const crl::time startedAt = crl::now();
@@ -1041,11 +1038,10 @@ struct BridgeRequestDiagnostics::Impl {
 
 BridgeRequestDiagnostics::BridgeRequestDiagnostics(
 	std::shared_ptr<TransferDiagnostics> transfer,
-	bool special,
 	int64 offset,
 	int64 length)
 : _impl(CaptureEnabled()
-	? std::make_unique<Impl>(std::move(transfer), special, offset, length)
+	? std::make_unique<Impl>(std::move(transfer), offset, length)
 	: nullptr) {
 }
 
@@ -1097,7 +1093,7 @@ void BridgeRequestDiagnostics::report(bool completed) {
 			"window_max_first_chunk_ms=%18 smart_gen=%19 completed=%20"_q
 		).arg(qulonglong(r.root->id()))
 			.arg(qulonglong(r.reader->id()))
-			.arg(r.special ? u"mpv-special"_q : u"mpv"_q)
+			.arg(u"mpv"_q)
 			.arg(qulonglong(r.generation))
 			.arg(qlonglong(r.offset))
 			.arg(qlonglong(r.length))

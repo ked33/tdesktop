@@ -1030,12 +1030,8 @@ void ImportEnhancedSettings() {
 				"show_message_context_copy_link");
 	#ifdef Q_OS_WIN
 			addMessageContextToggle(
-				tr::lng_context_stream_in_mpv_special(tr::now),
-				"show_message_context_stream_in_mpv_special");
-			addMessageContextToggle(
 				tr::lng_context_stream_in_mpv(tr::now),
 				"show_message_context_stream_in_mpv");
-			AddDividerText(inner, tr::lng_settings_mpv_special_desc());
 			addMessageContextToggle(
 				tr::lng_settings_mpv_debug_logs(tr::now),
 				"mpv_streaming_debug_logs");
@@ -1977,10 +1973,6 @@ void ImportEnhancedSettings() {
 			"show_message_context_copy_link",
 			tr::lng_context_copy_message_link(tr::now));
 #ifdef Q_OS_WIN
-		addBool(
-			"show_message_context_stream_in_mpv_special",
-			tr::lng_context_stream_in_mpv_special(tr::now),
-			{ tr::lng_settings_mpv_special_desc(tr::now) });
 		addBool(
 			"show_message_context_stream_in_mpv",
 			tr::lng_context_stream_in_mpv(tr::now));
