@@ -35,6 +35,7 @@ struct TransferLimitInfo {
 	mtpRequestId requestId = 0;
 	DcId dcId = 0;
 	int waitSeconds = -1;
+	crl::time retryAt = 0;
 	bool upload = false;
 	bool repeated = false;
 	bool logDetails = false;

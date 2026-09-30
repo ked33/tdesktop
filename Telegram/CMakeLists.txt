@@ -2205,6 +2205,7 @@ PRIVATE
     window/window_setup_email.cpp
     window/window_setup_email.h
     window/window_top_bar_wrap.h
+    window/window_transfer_limit_countdown.h
     window/window_transfer_limit_toast.cpp
     window/window_transfer_limit_toast.h
     window/window_unlock_passcode_box.cpp

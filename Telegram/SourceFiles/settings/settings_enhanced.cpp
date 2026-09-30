@@ -27,6 +27,7 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #include "boxes/enhanced_options_box.h"
 #include "boxes/about_box.h"
 #include "ui/boxes/confirm_box.h"
+#include "ui/boxes/single_choice_box.h"
 #include "platform/platform_specific.h"
 #include "window/window_session_controller.h"
 #include "lang/lang_keys.h"
@@ -47,6 +48,9 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #include "styles/style_settings.h"
 #include "apiwrap.h"
 #include "api/api_blocked_peers.h"
+#include "rpl/combine.h"
+
+#include <QtWidgets/QGraphicsOpacityEffect>
 
 namespace Settings {
 namespace {
@@ -264,6 +268,62 @@ void ImportEnhancedSettings() {
 			EnhancedSettings::SetDownloadLimitToastsEnabled(toggled);
 		}, container->lifetime());
 		AddDividerText(inner, tr::lng_settings_download_limit_toasts_about());
+
+		const auto toastMode = trackSearch(AddButtonWithLabel(
+			inner,
+			tr::lng_settings_download_limit_toast_mode(),
+			rpl::combine(
+				rpl::single(EnhancedSettings::DownloadLimitToastsMode())
+					| rpl::then(EnhancedSettings::DownloadLimitToastModeChanges()),
+				tr::lng_settings_download_limit_toast_fixed(),
+				tr::lng_settings_download_limit_toast_countdown(),
+				[](EnhancedSettings::DownloadLimitToastMode mode,
+						const QString &fixed,
+						const QString &countdown) {
+					return (mode
+						== EnhancedSettings::DownloadLimitToastMode::Countdown)
+						? countdown
+						: fixed;
+				}),
+			st::settingsButtonNoIcon),
+			u"enhanced/download_limit_toast_mode"_q);
+		const auto toastModeOpacity = new QGraphicsOpacityEffect(toastMode);
+		toastMode->setGraphicsEffect(toastModeOpacity);
+		rpl::single(EnhancedSettings::DownloadLimitToastsEnabled())
+			| rpl::then(EnhancedSettings::DownloadLimitToastsChanges())
+			| rpl::on_next([=](bool enabled) {
+				toastMode->setDisabled(!enabled);
+				toastModeOpacity->setOpacity(enabled ? 1. : 0.5);
+			}, toastMode->lifetime());
+		toastMode->addClickHandler([] {
+			if (!EnhancedSettings::DownloadLimitToastsEnabled()) {
+				return;
+			}
+			Ui::show(Box([](not_null<Ui::GenericBox*> box) {
+				using Mode = EnhancedSettings::DownloadLimitToastMode;
+				const auto options = std::vector<QString>{
+					tr::lng_settings_download_limit_toast_fixed(tr::now),
+					tr::lng_settings_download_limit_toast_countdown(tr::now),
+				};
+				SingleChoiceBox(box, {
+					.title = tr::lng_settings_download_limit_toast_mode(),
+					.options = options,
+					.initialSelection = int(
+						EnhancedSettings::DownloadLimitToastsMode()),
+					.callback = [](int index) {
+						EnhancedSettings::SetDownloadLimitToastsMode(
+							index == 1 ? Mode::Countdown : Mode::Fixed);
+					},
+				});
+				EnhancedSettings::DownloadLimitToastsChanges(
+				) | rpl::on_next([=](bool enabled) {
+					if (!enabled) {
+						box->closeBox();
+					}
+				}, box->lifetime());
+			}));
+		});
+		AddDividerText(inner, tr::lng_settings_download_limit_toast_mode_about());
 
 		trackSearch(
 			AddButtonWithIcon(
@@ -1819,6 +1879,14 @@ void ImportEnhancedSettings() {
 			"download_limit_toasts",
 			tr::lng_settings_download_limit_toasts(tr::now),
 			{ tr::lng_settings_download_limit_toasts_about(tr::now) });
+		addButton(
+			u"enhanced/download_limit_toast_mode"_q,
+			tr::lng_settings_download_limit_toast_mode(tr::now),
+			{
+				tr::lng_settings_download_limit_toast_fixed(tr::now),
+				tr::lng_settings_download_limit_toast_countdown(tr::now),
+				tr::lng_settings_download_limit_toast_mode_about(tr::now),
+			});
 		addBool(
 			"online_playback_debug_logs",
 			tr::lng_settings_online_playback_debug_logs(tr::now));

@@ -8636,6 +8636,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_transfer_limit_upload" = "Upload temporarily limited";
 "lng_transfer_limit_wait" = "The server asks you to wait {seconds} seconds before retrying. It may require another wait after the retry.";
 "lng_transfer_limit_wait_unknown" = "The server is temporarily limiting this transfer. Please try again later.";
+"lng_transfer_limit_countdown" = "Longest current wait: {seconds} seconds. Retrying may result in another wait.";
 
 "lng_limit_download_title" = "Download speed limited";
 "lng_limit_download_subscribe" = "Subscribe to {link} to increase download speed {increase}.";
@@ -8964,6 +8965,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_video_player_prefer_original_about" = "Open videos using the original file. You can still change the quality during playback. Applies to the next video you open and may use more data.";
 "lng_settings_online_playback_debug_logs" = "Write online playback debug logs to log.txt";
 "lng_settings_download_limit_toasts" = "Show server download limit notifications";
+"lng_settings_download_limit_toast_mode" = "Download limit notification mode";
+"lng_settings_download_limit_toast_fixed" = "Show for 4 seconds";
+"lng_settings_download_limit_toast_countdown" = "Keep showing the countdown";
+"lng_settings_download_limit_toast_mode_about" = "Fixed mode closes after 4 seconds. Countdown mode updates every second until the current wait ends. Concurrent downloads show the longest wait; another server limit starts a new countdown. Without a server wait time, the popup lasts 4 seconds. Reaching zero allows a retry, but does not guarantee recovery.";
 "lng_settings_download_limit_toasts_about" = "Show server limit popups for image, video and other downloads, including playback in the built-in player and MPV. Turning this off hides these popups without changing server waits, retries or debug log settings. Takes effect immediately.";
 "lng_settings_show_message_id" = "Show message ID";
 "lng_settings_label_channel_user" = "Label channel-as-sender messages";

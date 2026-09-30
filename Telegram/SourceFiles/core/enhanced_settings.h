@@ -33,8 +33,17 @@ namespace EnhancedSettings {
 	inline constexpr auto kHashtagAutocompleteLimitDefault = 1000;
 	inline constexpr auto kHashtagAutocompleteLimitMaximum = 5000;
 
+	enum class DownloadLimitToastMode {
+		Fixed = 0,
+		Countdown = 1,
+	};
+
 	[[nodiscard]] int MessageEmojiSize();
 	[[nodiscard]] int MessageStickerSize();
+	[[nodiscard]] DownloadLimitToastMode DownloadLimitToastsMode();
+	[[nodiscard]] auto DownloadLimitToastModeChanges()
+		-> rpl::producer<DownloadLimitToastMode>;
+	void SetDownloadLimitToastsMode(DownloadLimitToastMode mode);
 	[[nodiscard]] bool DownloadLimitToastsEnabled();
 	[[nodiscard]] rpl::producer<bool> DownloadLimitToastsChanges();
 	void SetDownloadLimitToastsEnabled(bool enabled);

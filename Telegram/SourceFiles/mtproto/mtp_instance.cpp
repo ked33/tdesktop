@@ -663,6 +663,7 @@ void Instance::Private::notifyTransferLimit(
 		.requestId = requestId,
 		.dcId = BareDcId(dc),
 		.waitSeconds = validSeconds ? seconds : -1,
+		.retryAt = validSeconds ? crl::now() + crl::time(seconds) * 1000 : 0,
 		.upload = upload,
 		.repeated = !_transferLimitRequests.emplace(requestId).second,
 	};

@@ -41,6 +41,11 @@ namespace EnhancedSettings {
 			return events;
 		}
 
+		rpl::event_stream<DownloadLimitToastMode> &DownloadLimitToastModeEvents() {
+			static auto events = rpl::event_stream<DownloadLimitToastMode>();
+			return events;
+		}
+
 		rpl::event_stream<bool> &SearchIncludePornEvents() {
 			static auto events = rpl::event_stream<bool>();
 			return events;
@@ -161,6 +166,7 @@ namespace EnhancedSettings {
 				ensureBool(qsl("mpv_streaming_debug_logs"), false);
 				ensureBool(qsl("online_playback_debug_logs"), false);
 			ensureBool(u"download_limit_toasts"_q, true);
+			ensureInt(u"download_limit_toast_mode"_q, 0);
 			ensureBool(u"video_player_prefer_original"_q, true);
 			ensureBool(u"video_player_auto_fullscreen"_q, false);
 				ensureBool(qsl("show_message_context_show_messages_from"), true);
@@ -340,6 +346,28 @@ namespace EnhancedSettings {
 		std::unique_ptr<Manager> Data;
 
 	} // namespace
+
+	DownloadLimitToastMode DownloadLimitToastsMode() {
+		return (GetEnhancedInt(u"download_limit_toast_mode"_q) == 1)
+			? DownloadLimitToastMode::Countdown
+			: DownloadLimitToastMode::Fixed;
+	}
+
+	rpl::producer<DownloadLimitToastMode> DownloadLimitToastModeChanges() {
+		return DownloadLimitToastModeEvents().events();
+	}
+
+	void SetDownloadLimitToastsMode(DownloadLimitToastMode mode) {
+		mode = (mode == DownloadLimitToastMode::Countdown)
+			? mode
+			: DownloadLimitToastMode::Fixed;
+		if (DownloadLimitToastsMode() == mode) {
+			return;
+		}
+		SetEnhancedValue(u"download_limit_toast_mode"_q, int(mode));
+		Write();
+		DownloadLimitToastModeEvents().fire_copy(mode);
+	}
 
 	bool DownloadLimitToastsEnabled() {
 		return gEnhancedOptions.value(u"download_limit_toasts"_q, true).toBool();
@@ -790,6 +818,7 @@ namespace EnhancedSettings {
 			settings.insert(qsl("mpv_streaming_debug_logs"), false);
 			settings.insert(qsl("online_playback_debug_logs"), false);
 		settings.insert(u"download_limit_toasts"_q, true);
+		settings.insert(u"download_limit_toast_mode"_q, 0);
 		settings.insert(u"video_player_prefer_original"_q, true);
 		settings.insert(u"video_player_auto_fullscreen"_q, false);
 			settings.insert(qsl("show_message_context_show_messages_from"), true);
@@ -928,6 +957,9 @@ namespace EnhancedSettings {
 		settings.insert(
 			u"download_limit_toasts"_q,
 			DownloadLimitToastsEnabled());
+		settings.insert(
+			u"download_limit_toast_mode"_q,
+			int(DownloadLimitToastsMode()));
 		settings.insert(
 			u"video_player_prefer_original"_q,
 			GetEnhancedBool(u"video_player_prefer_original"_q));
