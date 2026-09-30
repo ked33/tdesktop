@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "media/streaming/media_streaming_boost.h"
 #include "mtproto/facade.h"
+#include "mtproto/mtp_instance.h"
 #include "mtproto/mtproto_auth_key.h"
 #include "mtproto/mtproto_response.h"
 #include "settings.h"
@@ -1529,7 +1530,7 @@ void DownloadMtprotoTask::placeSentRequest(
 		mtpRequestId requestId,
 		const RequestData &requestData) {
 	if (_sentRequests.empty()) {
-		subscribeToNonPremiumLimit();
+		subscribeToTransferLimits();
 	}
 
 	const auto amount = _owner->changeRequestedAmount(
@@ -1547,10 +1548,16 @@ void DownloadMtprotoTask::placeSentRequest(
 	Ensures(ok1 && ok2);
 }
 
-void DownloadMtprotoTask::subscribeToNonPremiumLimit() {
-	if (_nonPremiumLimitSubscription) {
+void DownloadMtprotoTask::subscribeToTransferLimits() {
+	if (_transferLimitSubscription) {
 		return;
 	}
+	_owner->api().instance().transferLimits(
+	) | rpl::on_next([=](const MTP::TransferLimitInfo &info) {
+		if (info.logDetails && !info.upload) {
+			logTransferLimitSource(info);
+		}
+	}, _transferLimitSubscription);
 	_owner->api().instance().nonPremiumDelayedRequests(
 	) | rpl::on_next([=](const auto &data) {
 		if (_sentRequests.contains(data.first)) {
@@ -1565,7 +1572,79 @@ void DownloadMtprotoTask::subscribeToNonPremiumLimit() {
 				}
 			}
 		}
-	}, _nonPremiumLimitSubscription);
+	}, _transferLimitSubscription);
+}
+
+void DownloadMtprotoTask::logTransferLimitSource(
+		const MTP::TransferLimitInfo &info) const {
+	const auto i = _sentRequests.find(info.requestId);
+	if (i == _sentRequests.end()) {
+		return;
+	}
+	const auto resource = v::match(_location.data, [](
+			const StorageFileLocation &location) {
+		using Type = StorageFileLocation::Type;
+		switch (location.type()) {
+		case Type::Legacy: return u"legacy"_q;
+		case Type::Encrypted: return u"encrypted"_q;
+		case Type::Document:
+			return location.isDocumentThumbnail()
+				? u"document_thumbnail"_q
+				: u"document"_q;
+		case Type::Secure: return u"secure"_q;
+		case Type::Takeout: return u"takeout"_q;
+		case Type::Photo: return u"photo"_q;
+		case Type::PeerPhoto: return u"avatar"_q;
+		case Type::StickerSetThumb: return u"sticker_set_thumbnail"_q;
+		case Type::GroupCallStream: return u"group_call_stream"_q;
+		}
+		Unexpected("StorageFileLocation type.");
+	}, [](const WebFileLocation &) {
+		return u"web_file"_q;
+	}, [](const GeoPointLocation &) {
+		return u"map_thumbnail"_q;
+	}, [](const AudioAlbumThumbLocation &) {
+		return u"audio_album_thumbnail"_q;
+	});
+	const auto origin = v::match(_origin.data, [](v::null_t) {
+		return u"unspecified"_q;
+	}, [](const Data::FileOriginMessage &) {
+		return u"message"_q;
+	}, [](const Data::FileOriginUserPhoto &) {
+		return u"user_photo"_q;
+	}, [](const Data::FileOriginFullUser &) {
+		return u"user_profile"_q;
+	}, [](const Data::FileOriginPeerPhoto &) {
+		return u"peer_photo"_q;
+	}, [](const Data::FileOriginStickerSet &) {
+		return u"sticker_set"_q;
+	}, [](const Data::FileOriginSavedGifs &) {
+		return u"saved_gifs"_q;
+	}, [](const Data::FileOriginWallpaper &) {
+		return u"wallpaper"_q;
+	}, [](const Data::FileOriginTheme &) {
+		return u"theme"_q;
+	}, [](const Data::FileOriginRingtones &) {
+		return u"ringtones"_q;
+	}, [](const Data::FileOriginPremiumPreviews &) {
+		return u"premium_previews"_q;
+	}, [](const Data::FileOriginWebPage &) {
+		return u"web_page"_q;
+	}, [](const Data::FileOriginCloudDraft &) {
+		return u"cloud_draft"_q;
+	}, [](const Data::FileOriginStory &) {
+		return u"story"_q;
+	});
+	LOG(("Transfer limit source: request=%1 dc=%2 source=%3 resource=%4 "
+		"origin=%5 object=%6 offset=%7 request_age_ms=%8")
+		.arg(info.requestId)
+		.arg(info.dcId)
+		.arg(downloadSource())
+		.arg(resource)
+		.arg(origin)
+		.arg(qulonglong(objectId()))
+		.arg(qlonglong(i->second.offset))
+		.arg(qlonglong(crl::now() - i->second.sent)));
 }
 
 auto DownloadMtprotoTask::finishSentRequest(
@@ -1587,7 +1666,7 @@ auto DownloadMtprotoTask::finishSentRequest(
 	const auto ok = _requestByOffset.remove(result.offset);
 
 	if (_sentRequests.empty()) {
-		_nonPremiumLimitSubscription.destroy();
+		_transferLimitSubscription.destroy();
 	}
 
 	if (reason == FinishRequestReason::Success) {

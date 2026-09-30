@@ -199,6 +199,10 @@ void VideoPreload::cancelOnFail() {
 	done({});
 }
 
+QString VideoPreload::downloadSource() const {
+	return u"video_preload"_q;
+}
+
 bool VideoPreload::setWebFileSizeHook(int64 size) {
 	_failed = true;
 	cancelAllRequests();

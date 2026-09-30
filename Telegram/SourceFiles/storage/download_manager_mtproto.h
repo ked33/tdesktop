@@ -21,6 +21,7 @@ class ApiWrap;
 
 namespace MTP {
 class Error;
+struct TransferLimitInfo;
 } // namespace MTP
 
 namespace Storage {
@@ -337,6 +338,7 @@ private:
 	virtual bool feedPart(int64 offset, const QByteArray &bytes) = 0;
 	virtual bool setWebFileSizeHook(int64 size);
 	virtual void cancelOnFail() = 0;
+	[[nodiscard]] virtual QString downloadSource() const = 0;
 
 	void cancelRequest(mtpRequestId requestId);
 	void makeRequest(const RequestData &requestData);
@@ -389,7 +391,8 @@ private:
 		int64 offset,
 		bytes::const_span buffer);
 
-	void subscribeToNonPremiumLimit();
+	void subscribeToTransferLimits();
+	void logTransferLimitSource(const MTP::TransferLimitInfo &info) const;
 
 	const not_null<DownloadManagerMtproto*> _owner;
 	const MTP::DcId _dcId = 0;
@@ -410,7 +413,7 @@ private:
 	base::flat_map<RequestData, QByteArray> _cdnUncheckedParts;
 	mtpRequestId _cdnHashesRequestId = 0;
 
-	rpl::lifetime _nonPremiumLimitSubscription;
+	rpl::lifetime _transferLimitSubscription;
 
 };
 

@@ -77,6 +77,13 @@ int64 LoaderMtproto::size() const {
 	return _size;
 }
 
+QString LoaderMtproto::downloadSource() const {
+	return u"streaming stream=%1 active=%2 attached_downloader=%3"_q
+		.arg(qulonglong(_diagnostics ? _diagnostics->id() : 0))
+		.arg(_smartActive.load(std::memory_order_relaxed))
+		.arg(_downloader != nullptr);
+}
+
 void LoaderMtproto::setDiagnostics(
 		std::shared_ptr<TransferDiagnostics> diagnostics) {
 	_diagnostics = std::move(diagnostics);

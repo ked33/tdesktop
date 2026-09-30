@@ -72,6 +72,7 @@ private:
 	int64 takeNextRequestOffset() override;
 	bool feedPart(int64 offset, const QByteArray &bytes) override;
 	void cancelOnFail() override;
+	QString downloadSource() const override;
 
 	void cancelForOffset(int64 offset);
 	void addToQueueWithPriority();

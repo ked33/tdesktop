@@ -1,7 +1,7 @@
 {
     "lng_transfer_limit_download": "在线播放或下载暂时受限",
     "lng_transfer_limit_upload": "上传暂时受限",
-    "lng_transfer_limit_wait": "服务端要求等待 {seconds} 秒后重试。",
+    "lng_transfer_limit_wait": "服务端要求等待 {seconds} 秒后重试；重试后仍可能要求继续等待。",
     "lng_transfer_limit_wait_unknown": "服务端暂时限制了传输，请稍后重试。",
     "lng_intro_about2": "欢迎使用 64Gram Desktop。\n它快速且安全。",
     "lng_settings_enable_d3d11": "界面使用 Direct3D 11",

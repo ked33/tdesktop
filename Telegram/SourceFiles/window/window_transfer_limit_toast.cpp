@@ -78,6 +78,9 @@ std::shared_ptr<ChatHelpers::Show> TransferLimitToast::resolveShow() const {
 }
 
 void TransferLimitToast::show(const MTP::TransferLimitInfo &info) {
+	if (info.repeated) {
+		return;
+	}
 	const auto now = crl::now();
 	if (_toast
 		&& now - _lastShown < kTransferLimitToastCoalesce
@@ -109,11 +112,13 @@ void TransferLimitToast::show(const MTP::TransferLimitInfo &info) {
 		.attach = RectPart::Top,
 		.duration = kTransferLimitToastDuration,
 	});
-	LOG(("Transfer limit toast: direction=%1 error=%2 wait_seconds=%3 dc=%4")
+	LOG(("Transfer limit toast: direction=%1 error=%2 wait_seconds=%3 "
+		"dc=%4 request=%5")
 		.arg(info.upload ? u"upload"_q : u"download"_q)
 		.arg(info.type)
 		.arg(info.waitSeconds)
-		.arg(info.dcId));
+		.arg(info.dcId)
+		.arg(info.requestId));
 }
 
 } // namespace

@@ -68,6 +68,7 @@ private:
 	int64 takeNextRequestOffset() override;
 	bool feedPart(int64 offset, const QByteArray &bytes) override;
 	void cancelOnFail() override;
+	QString downloadSource() const override;
 	bool setWebFileSizeHook(int64 size) override;
 
 	const not_null<DocumentData*> _video;

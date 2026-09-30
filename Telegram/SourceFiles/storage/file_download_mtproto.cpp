@@ -167,6 +167,10 @@ void mtpFileLoader::cancelOnFail() {
 	cancel(FailureReason::OtherFailure);
 }
 
+QString mtpFileLoader::downloadSource() const {
+	return autoLoading() ? u"automatic_file"_q : u"file"_q;
+}
+
 bool mtpFileLoader::setWebFileSizeHook(int64 size) {
 	if (!_fullSize || _fullSize == size) {
 		_fullSize = _loadSize = size;

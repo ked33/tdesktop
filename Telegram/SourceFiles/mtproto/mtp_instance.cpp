@@ -31,6 +31,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <algorithm>
 #include <array>
+#include <limits>
 
 namespace MTP {
 namespace {
@@ -217,7 +218,7 @@ private:
 		const Response &response);
 	bool exportFail(const Error &error, const Response &response);
 	bool onErrorDefault(const Error &error, const Response &response);
-	void startTransferLimitTrace(
+	[[nodiscard]] bool startTransferLimitTrace(
 		mtpRequestId requestId,
 		ShiftedDcId shiftedDcId,
 		mtpTypeId method,
@@ -317,6 +318,7 @@ private:
 
 	std::map<mtpRequestId, int> _requestsDelays;
 	base::flat_map<mtpRequestId, TransferLimitTrace> _transferLimitTraces;
+	base::flat_set<mtpRequestId> _transferLimitRequests;
 	uint64 _transferLimitSuppressed = 0;
 
 	std::set<mtpRequestId> _badGuestDcRequests;
@@ -656,17 +658,19 @@ void Instance::Private::notifyTransferLimit(
 	}
 	auto validSeconds = false;
 	const auto seconds = match.captured(2).toInt(&validSeconds);
-	const auto info = TransferLimitInfo{
+	auto info = TransferLimitInfo{
 		.type = error.type(),
+		.requestId = requestId,
 		.dcId = BareDcId(dc),
 		.waitSeconds = validSeconds ? seconds : -1,
 		.upload = upload,
+		.repeated = !_transferLimitRequests.emplace(requestId).second,
 	};
-	startTransferLimitTrace(requestId, dc, method, info);
+	info.logDetails = startTransferLimitTrace(requestId, dc, method, info);
 	_transferLimits.fire_copy(info);
 }
 
-void Instance::Private::startTransferLimitTrace(
+bool Instance::Private::startTransferLimitTrace(
 		mtpRequestId requestId,
 		ShiftedDcId shiftedDcId,
 		mtpTypeId method,
@@ -674,7 +678,7 @@ void Instance::Private::startTransferLimitTrace(
 	if (!TransferLimitLogsEnabled()) {
 		_transferLimitTraces.clear();
 		_transferLimitSuppressed = 0;
-		return;
+		return false;
 	}
 	const auto now = crl::now();
 	const auto sameTransferDc = ranges::any_of(
@@ -687,7 +691,7 @@ void Instance::Private::startTransferLimitTrace(
 		|| _transferLimitTraces.size() >= kTransferLimitTraceLimit
 		|| sameTransferDc) {
 		++_transferLimitSuppressed;
-		return;
+		return false;
 	}
 	TransferLimitNextSampleAt = now + kTransferLimitSampleInterval;
 	_transferLimitTraces.emplace(requestId, TransferLimitTrace{
@@ -696,7 +700,7 @@ void Instance::Private::startTransferLimitTrace(
 	});
 	LOG(("Transfer limit: received request=%1 dc=%2 shifted_dc=%3 "
 		"direction=%4 method=%5 error=%6 server_wait_ms=%7 "
-		"t_ms=%8 suppressed=%9")
+		"t_ms=%8 suppressed=%9 repeated=%10")
 		.arg(requestId)
 		.arg(info.dcId)
 		.arg(shiftedDcId)
@@ -707,7 +711,9 @@ void Instance::Private::startTransferLimitTrace(
 			? -1
 			: crl::time(info.waitSeconds) * 1000))
 		.arg(qlonglong(now))
-		.arg(qulonglong(base::take(_transferLimitSuppressed))));
+		.arg(qulonglong(base::take(_transferLimitSuppressed)))
+		.arg(info.repeated));
+	return true;
 }
 
 void Instance::Private::scheduleTransferLimitTrace(
@@ -1226,7 +1232,11 @@ void Instance::Private::checkDelayedRequests() {
 	}
 
 	if (!_delayedRequests.empty()) {
-		_checkDelayedTimer.callOnce(_delayedRequests.front().second - now);
+		const auto delay = std::clamp(
+			_delayedRequests.front().second - crl::now(),
+			crl::time(0),
+			crl::time(std::numeric_limits<int>::max()));
+		_checkDelayedTimer.callOnce(delay, Qt::PreciseTimer);
 	}
 }
 
@@ -1280,6 +1290,7 @@ void Instance::Private::registerRequest(
 void Instance::Private::unregisterRequest(mtpRequestId requestId) {
 	DEBUG_LOG(("MTP Info: unregistering request %1.").arg(requestId));
 	finishTransferLimitTrace(requestId, "removed");
+	_transferLimitRequests.remove(requestId);
 
 	_requestsDelays.erase(requestId);
 
@@ -2076,6 +2087,7 @@ void Instance::Private::clearGlobalHandlers() {
 }
 
 void Instance::Private::prepareToDestroy() {
+	_transferLimitRequests.clear();
 	while (!_transferLimitTraces.empty()) {
 		finishTransferLimitTrace(
 			_transferLimitTraces.begin()->first,

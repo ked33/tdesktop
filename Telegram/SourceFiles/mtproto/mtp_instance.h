@@ -32,9 +32,12 @@ enum class Environment : uchar;
 
 struct TransferLimitInfo {
 	QString type;
+	mtpRequestId requestId = 0;
 	DcId dcId = 0;
 	int waitSeconds = -1;
 	bool upload = false;
+	bool repeated = false;
+	bool logDetails = false;
 };
 
 class Instance : public QObject {
