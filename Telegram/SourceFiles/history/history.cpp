@@ -2775,11 +2775,16 @@ not_null<HistoryItem*> History::addNewInTheMiddle(
 	const auto it = block->messages.insert(
 		block->messages.begin() + itemIndex,
 		item->createView(_delegateMixin->delegate()));
-	(*it)->attachToBlock(block.get(), itemIndex);
+	// WHY: attachToBlock recounts through nextInBlocks() immediately.
+	// A later neighbor still storing this index then reads itself
+	// back from the block, so a hidden-item walk never finishes.
 	if (itemIndex + 1 < block->messages.size()) {
 		for (auto i = itemIndex + 1, l = int(block->messages.size()); i != l; ++i) {
 			block->messages[i]->setIndexInBlock(i);
 		}
+	}
+	(*it)->attachToBlock(block.get(), itemIndex);
+	if (itemIndex + 1 < block->messages.size()) {
 		block->messages[itemIndex + 1]->previousInBlocksChanged();
 	} else if (blockIndex + 1 < blocks.size() && !blocks[blockIndex + 1]->messages.empty()) {
 		blocks[blockIndex + 1]->messages.front()->previousInBlocksChanged();
