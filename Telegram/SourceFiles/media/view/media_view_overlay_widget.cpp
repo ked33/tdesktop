@@ -232,6 +232,8 @@ constexpr auto kPinchZoomStep = 0.25;
 constexpr auto kOverlayLoaderPriority = 2;
 constexpr auto kSeekTimeMs = 5 * crl::time(1000);
 constexpr auto kArrowHoldTimeoutMs = crl::time(350);
+constexpr auto kMediaViewerBrightnessMin = 10;
+constexpr auto kMediaViewerBrightnessMax = 200;
 constexpr auto kSeekTimeMsLong = 10 * crl::time(1000);
 constexpr auto kFrameStepFallbackFps = 30.;
 constexpr auto kFrameStepThrottleMs = crl::time(150);
@@ -819,6 +821,8 @@ OverlayWidget::OverlayWidget()
 			e->ignore();
 			close();
 			return base::EventFilterResult::Cancel;
+		} else if (type == QEvent::WindowDeactivate) {
+			cancelPlaybackHolds();
 		} else if (type == QEvent::ThemeChange && Platform::IsLinux()) {
 			_window->setWindowIcon(Window::CreateIcon(_session));
 		} else if (type == QEvent::ContextMenu) {
@@ -1621,6 +1625,10 @@ bool OverlayWidget::opaqueContentShown() const {
 }
 
 void OverlayWidget::clearStreaming(bool savePosition) {
+	cancelPlaybackHolds();
+	_speedBoostAnimation.stop();
+	_speedBoostTicker.stop();
+	updateSpeedBoost();
 	if (_streamed && _document) {
 		VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: Overlay clearStreaming doc=%1 savePosition=%2 ready=%3 active=%4 failed=%5 finished=%6.")
 			.arg(qulonglong(_document->id))
@@ -7103,18 +7111,9 @@ void OverlayWidget::startSpeedBoost() {
 	_speedBoostActive = true;
 	_speedBoostSavedSpeed = _streamed->instance.speed();
 	_speedBoostSpeed = 2.0;
-	_speedBoostPhase = 0.;
-	_speedBoostLastFrame = crl::now();
 	_streamed->instance.setSpeed(_speedBoostSpeed);
 	_speedBoostHoldTimer.cancel();
-
-	updateSpeedBoostRect();
-	_speedBoostAnimation.start(
-		[=] { updateSpeedBoost(); },
-		0.,
-		1.,
-		st::mediaviewSpeedBoostShowing);
-	_speedBoostTicker.start();
+	toggleSpeedBoostIndicator(true);
 }
 
 void OverlayWidget::stopSpeedBoost() {
@@ -7127,11 +7126,41 @@ void OverlayWidget::stopSpeedBoost() {
 	if (_streamed) {
 		_streamed->instance.setSpeed(_speedBoostSavedSpeed);
 	}
+	toggleSpeedBoostIndicator(_arrowHoldSpeedActive);
+}
+
+void OverlayWidget::stopArrowHold() {
+	_arrowHoldTimer.cancel();
+	_arrowHoldPressed = false;
+	_arrowHoldKey = 0;
+	if (base::take(_arrowHoldSpeedActive)) {
+		playbackControlsSpeedChanged(1.);
+		toggleSpeedBoostIndicator(_speedBoostActive);
+	}
+}
+
+void OverlayWidget::cancelPlaybackHolds() {
+	stopSpeedBoost();
+	stopArrowHold();
+	_speedBoostHoldTimer.cancel();
+	_speedBoostFromMouse = false;
+}
+
+void OverlayWidget::toggleSpeedBoostIndicator(bool shown) {
+	if (shown) {
+		_speedBoostPhase = 0.;
+		_speedBoostLastFrame = crl::now();
+		updateSpeedBoostRect();
+	}
 	_speedBoostAnimation.start(
 		[=] { updateSpeedBoost(); },
-		1.,
-		0.,
-		st::mediaviewSpeedBoostHiding);
+		_speedBoostAnimation.value(shown ? 0. : 1.),
+		shown ? 1. : 0.,
+		shown
+			? st::mediaviewSpeedBoostShowing
+			: st::mediaviewSpeedBoostHiding);
+	updateSpeedBoost();
+	_speedBoostTicker.start();
 }
 
 void OverlayWidget::updateSpeedBoostRect() {
@@ -7168,7 +7197,7 @@ void OverlayWidget::paintSpeedBoostContent(
 		QRect outer,
 		QRect clip) {
 	const auto opacity = _speedBoostAnimation.value(
-		_speedBoostActive ? 1. : 0.);
+		(_speedBoostActive || _arrowHoldSpeedActive) ? 1. : 0.);
 	if (opacity <= 0.) {
 		return;
 	}
@@ -7189,7 +7218,7 @@ void OverlayWidget::paintSpeedBoostContent(
 	const auto font = st::mediaviewSpeedBoostFont;
 	const auto padding = st::mediaviewSpeedBoostPadding;
 	const auto text
-		= QString::fromUtf8("%1\xC3\x97").arg(_speedBoostSpeed, 0, 'f', 1);
+		= u"%1\u00d7"_q.arg(_speedBoostDisplaySpeed, 0, 'f', 1);
 	const auto arrowWidth = st::mediaviewSpeedBoostArrowWidth;
 	const auto arrowHeight = st::mediaviewSpeedBoostArrowHeight;
 	const auto arrowGap = st::mediaviewSpeedBoostArrowGap;
@@ -7218,7 +7247,7 @@ void OverlayWidget::paintSpeedBoostContent(
 		0.016,
 		(now - _speedBoostLastFrame) / 1000.);
 	_speedBoostLastFrame = now;
-	_speedBoostPhase += dt * 1.5 * std::min(_speedBoostSpeed, 4.);
+	_speedBoostPhase += dt * 1.5 * std::min(_speedBoostDisplaySpeed, 4.);
 
 	auto hq = PainterHighQualityEnabler(p);
 	auto stroker = QPainterPathStroker();
@@ -7249,10 +7278,15 @@ void OverlayWidget::paintSpeedBoostContent(
 }
 
 bool OverlayWidget::isSpeedBoostShown() const {
-	return _speedBoostActive || _speedBoostAnimation.animating();
+	return _speedBoostActive
+		|| _arrowHoldSpeedActive
+		|| _speedBoostAnimation.animating();
 }
 
 void OverlayWidget::updateSpeedBoost() {
+	if ((_speedBoostActive || _arrowHoldSpeedActive) && _streamed) {
+		_speedBoostDisplaySpeed = _streamed->instance.speed();
+	}
 	update(_speedBoostRect);
 }
 
@@ -7260,7 +7294,10 @@ float64 OverlayWidget::mediaViewerBrightnessFactor() const {
 	if (!GetEnhancedBool("media_viewer_wheel_control_enabled")) {
 		return 1.;
 	}
-	const auto percent = std::clamp(_mediaViewerBrightness, 10, 100);
+	const auto percent = std::clamp(
+		_mediaViewerBrightness,
+		kMediaViewerBrightnessMin,
+		kMediaViewerBrightnessMax);
 	return percent / 100.;
 }
 
@@ -7275,8 +7312,8 @@ void OverlayWidget::resetMediaViewerAdjustments() {
 void OverlayWidget::adjustMediaViewerBrightness(int deltaPercent) {
 	const auto next = std::clamp(
 		_mediaViewerBrightness + deltaPercent,
-		10,
-		100);
+		kMediaViewerBrightnessMin,
+		kMediaViewerBrightnessMax);
 	if (next != _mediaViewerBrightness) {
 		_mediaViewerBrightness = next;
 		update();
@@ -7662,14 +7699,10 @@ void OverlayWidget::handleKeyPress(not_null<QKeyEvent*> e) {
 			return true;
 		}
 		if (_arrowHoldPressed) {
-			_arrowHoldTimer.cancel();
 			if (_arrowHoldSpeedActive) {
 				activateControls();
-				playbackControlsSpeedChanged(1.);
 			}
-			_arrowHoldPressed = false;
-			_arrowHoldSpeedActive = false;
-			_arrowHoldKey = 0;
+			stopArrowHold();
 		}
 		_arrowHoldPressed = true;
 		_arrowHoldSpeedActive = false;
@@ -7868,17 +7901,12 @@ void OverlayWidget::handleKeyRelease(not_null<QKeyEvent*> e) {
 	if (!_arrowHoldPressed || _arrowHoldKey != key) {
 		return;
 	}
-	_arrowHoldTimer.cancel();
-	_arrowHoldPressed = false;
-	_arrowHoldKey = 0;
-	if (_arrowHoldSpeedActive) {
-		_arrowHoldSpeedActive = false;
-		activateControls();
-		playbackControlsSpeedChanged(1.);
-		return;
-	}
+	const auto wasHolding = _arrowHoldSpeedActive;
+	stopArrowHold();
 	activateControls();
-	seekRelativeTime((key == Qt::Key_Left) ? -kSeekTimeMs : kSeekTimeMs);
+	if (!wasHolding) {
+		seekRelativeTime((key == Qt::Key_Left) ? -kSeekTimeMs : kSeekTimeMs);
+	}
 }
 
 void OverlayWidget::handleArrowHoldTimeout() {
@@ -7894,6 +7922,7 @@ void OverlayWidget::handleArrowHoldTimeout() {
 	playbackControlsSpeedChanged((key == Qt::Key_Left)
 		? Media::kSpeedMin
 		: 2.);
+	toggleSpeedBoostIndicator(true);
 }
 
 void OverlayWidget::handleWheelEvent(not_null<QWheelEvent*> e) {

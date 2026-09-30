@@ -16,9 +16,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/view/media_view_video_stream.h"
 #include "platform/platform_overlay_widget.h"
 #include "base/debug_log.h"
-#include "styles/style_media_view.h"
 
 #include <rhi/qrhi.h>
+#include <cstddef>
+
+#include "styles/style_media_view.h"
 
 namespace Media::View {
 namespace {
@@ -41,9 +43,11 @@ struct ContentUniforms {
 	float shadowBottomSkipOpacityFullFade[4];
 	float roundRect[4];
 	float roundRadius;
-	float _pad1[3];
+	float contentBrightness;
+	float _pad1[2];
 };
 static_assert(sizeof(ContentUniforms) == 80);
+static_assert(offsetof(ContentUniforms, contentBrightness) == 68);
 
 struct TransparentContentUniforms {
 	float viewport[2];
@@ -54,9 +58,11 @@ struct TransparentContentUniforms {
 	float transparentBg[4];
 	float transparentFg[4];
 	float transparentSize;
-	float _pad1[3];
+	float contentBrightness;
+	float _pad1[2];
 };
 static_assert(sizeof(TransparentContentUniforms) == 96);
+static_assert(offsetof(TransparentContentUniforms, contentBrightness) == 84);
 
 struct RoundedCornersUniforms {
 	float viewport[2];
@@ -954,6 +960,7 @@ void OverlayWidget::RendererRhi::drawContentQuad(
 		const auto c_bg = st::mediaviewTransparentBg->c;
 		const auto c_fg = st::mediaviewTransparentFg->c;
 		TransparentContentUniforms uniforms{};
+		uniforms.contentBrightness = float(_owner->mediaViewerBrightnessFactor());
 		uniforms.viewport[0] = vw;
 		uniforms.viewport[1] = vh;
 		uniforms.flipY = NdcFlipY(_rhi);
@@ -979,6 +986,7 @@ void OverlayWidget::RendererRhi::drawContentQuad(
 			&uniforms);
 	} else {
 		ContentUniforms uniforms{};
+		uniforms.contentBrightness = float(_owner->mediaViewerBrightnessFactor());
 		uniforms.viewport[0] = vw;
 		uniforms.viewport[1] = vh;
 		uniforms.flipY = NdcFlipY(_rhi);
@@ -1291,6 +1299,7 @@ void OverlayWidget::RendererRhi::paintTransformedVideoFrame(
 	const auto vw = _viewport.width() * _factor;
 	const auto vh = _viewport.height() * _factor;
 	ContentUniforms uniforms{};
+	uniforms.contentBrightness = float(_owner->mediaViewerBrightnessFactor());
 	uniforms.viewport[0] = vw;
 	uniforms.viewport[1] = vh;
 	uniforms.flipY = NdcFlipY(_rhi);

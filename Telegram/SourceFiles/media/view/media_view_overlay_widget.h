@@ -579,6 +579,9 @@ private:
 
 	void startSpeedBoost();
 	void stopSpeedBoost();
+	void stopArrowHold();
+	void cancelPlaybackHolds();
+	void toggleSpeedBoostIndicator(bool shown);
 	void updateSpeedBoostRect();
 	void paintSpeedBoostContent(Painter &p, QRect outer, QRect clip);
 	[[nodiscard]] bool isSpeedBoostShown() const;
@@ -894,6 +897,7 @@ private:
 	bool _speedBoostFromMouse = false;
 	float64 _speedBoostSavedSpeed = 1.;
 	float64 _speedBoostSpeed = 2.;
+	float64 _speedBoostDisplaySpeed = 2.;
 	float64 _speedBoostDragAccum = 0.;
 	QRect _speedBoostRect;
 	Ui::Animations::Simple _speedBoostAnimation;

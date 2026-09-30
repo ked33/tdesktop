@@ -37,7 +37,7 @@ private:
 		Qt::Orientations flip,
 		const QRectF &sourceRect = QRectF());
 	void paintControlsFade(QRect content, const ContentGeometry &geometry);
-	void applyMediaViewerBrightness(QRect content);
+	[[nodiscard]] QImage applyMediaViewerBrightness(const QImage &image);
 	void paintRadialLoading(
 		QRect inner,
 		bool radial,
@@ -79,6 +79,9 @@ private:
 	QRect _clipOuter;
 
 	QImage _overControlImage;
+	QImage _brightnessCache;
+	qint64 _brightnessCacheKey = 0;
+	float64 _brightnessCacheFactor = 1.;
 
 	QImage _topShadowCache;
 	QColor _topShadowColor;

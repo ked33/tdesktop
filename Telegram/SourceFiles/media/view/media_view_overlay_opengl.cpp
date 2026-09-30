@@ -72,7 +72,7 @@ uniform vec4 shadowBottomSkipOpacityFullFade;
 uniform float contentBrightness;
 )",
 		.body = R"(
-	result.rgb *= contentBrightness;
+	result.rgb = clamp(result.rgb * contentBrightness, vec3(0.0), vec3(result.a));
 )",
 	};
 }
@@ -229,8 +229,8 @@ void OverlayWidget::RendererGL::init(QOpenGLFunctions &f) {
 		_texturedVertexShader,
 		FragmentShader({
 			FragmentSampleARGB32Texture(),
-			FragmentPlaceOnTransparentBackground(),
 			FragmentAdjustBrightness(),
+			FragmentPlaceOnTransparentBackground(),
 			FragmentApplyControlsFade()
 		}));
 

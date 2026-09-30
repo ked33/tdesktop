@@ -16,6 +16,7 @@ layout(std140, binding = 0) uniform Params {
 	vec4 shadowBottomSkipOpacityFullFade;
 	vec4 roundRect;
 	float roundRadius;
+	float contentBrightness;
 };
 
 float roundedCorner(vec2 fragCoord) {
@@ -42,6 +43,7 @@ void main() {
 		1.164 * y - 0.392 * u - 0.813 * v,
 		1.164 * y + 2.017 * u,
 		1.0);
+	result.rgb = clamp(result.rgb * contentBrightness, vec3(0.0), vec3(result.a));
 
 	float topHeight = shadowTopRect.w;
 	float bottomHeight = shadowBottomSkipOpacityFullFade.x;

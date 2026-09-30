@@ -12,6 +12,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/view/media_view_pip.h"
 #include "media/view/media_view_video_stream.h"
 #include "platform/platform_overlay_widget.h"
+
+#include <array>
+
 #include "styles/style_media_view.h"
 
 namespace Media::View {
@@ -131,8 +134,12 @@ void OverlayWidget::RendererSW::paintTransformedVideoFrame(
 	const auto sourceRect = _owner->_stories
 		? StoryCropRect(QSizeF(image.size()), geometry.rect.size())
 		: QRectF();
-	paintTransformedImage(image, rect, rotation, geometry.flip, sourceRect);
-	applyMediaViewerBrightness(rect);
+	paintTransformedImage(
+		applyMediaViewerBrightness(image),
+		rect,
+		rotation,
+		geometry.flip,
+		sourceRect);
 	paintControlsFade(rect, geometry);
 }
 
@@ -155,22 +162,49 @@ void OverlayWidget::RendererSW::paintTransformedStaticContent(
 		const auto sourceRect = _owner->_stories
 			? StoryCropRect(QSizeF(image.size()), geometry.rect.size())
 			: QRectF();
-		paintTransformedImage(image, rect, rotation, geometry.flip, sourceRect);
-		applyMediaViewerBrightness(rect);
+		paintTransformedImage(
+			applyMediaViewerBrightness(image),
+			rect,
+			rotation,
+			geometry.flip,
+			sourceRect);
 	}
 	paintControlsFade(rect, geometry);
 }
 
-void OverlayWidget::RendererSW::applyMediaViewerBrightness(QRect content) {
+QImage OverlayWidget::RendererSW::applyMediaViewerBrightness(
+		const QImage &image) {
 	const auto factor = _owner->mediaViewerBrightnessFactor();
-	if (factor >= 1.) {
-		return;
+	if (factor == 1. || image.isNull()) {
+		_brightnessCache = QImage();
+		_brightnessCacheKey = 0;
+		return image;
 	}
-	const auto v = int(std::clamp(255. * factor, 0., 255.));
-	const auto saved = _p->compositionMode();
-	_p->setCompositionMode(QPainter::CompositionMode_Multiply);
-	_p->fillRect(content, QColor(v, v, v));
-	_p->setCompositionMode(saved);
+	if (_brightnessCacheKey == image.cacheKey()
+		&& _brightnessCacheFactor == factor) {
+		return _brightnessCache;
+	}
+	_brightnessCacheKey = image.cacheKey();
+	_brightnessCacheFactor = factor;
+	_brightnessCache = image.convertToFormat(
+		QImage::Format_ARGB32_Premultiplied);
+	auto values = std::array<int, 256>();
+	for (auto i = 0; i != int(values.size()); ++i) {
+		values[i] = std::min(qRound(i * factor), 255);
+	}
+	for (auto y = 0; y != _brightnessCache.height(); ++y) {
+		const auto pixels = reinterpret_cast<QRgb*>(_brightnessCache.scanLine(y));
+		for (auto x = 0; x != _brightnessCache.width(); ++x) {
+			const auto pixel = pixels[x];
+			const auto alpha = qAlpha(pixel);
+			pixels[x] = qRgba(
+				std::min(values[qRed(pixel)], alpha),
+				std::min(values[qGreen(pixel)], alpha),
+				std::min(values[qBlue(pixel)], alpha),
+				alpha);
+		}
+	}
+	return _brightnessCache;
 }
 
 void OverlayWidget::RendererSW::paintControlsFade(
