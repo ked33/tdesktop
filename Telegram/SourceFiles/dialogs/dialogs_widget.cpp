@@ -109,6 +109,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/abstract_box.h"
 
 #include <QtCore/QMimeData>
+#include <QtCore/QRegularExpression>
 #include <QtGui/QTextBlock>
 #include <QtWidgets/QScrollBar>
 #include <QtWidgets/QTextEdit>
@@ -119,6 +120,17 @@ namespace {
 constexpr auto kSearchPerPage = 50;
 constexpr auto kStoriesExpandDuration = crl::time(200);
 constexpr auto kSearchRequestDelay = crl::time(900);
+
+[[nodiscard]] QString PrepareMessageSearchQuery(QString query) {
+	if (!EnhancedSettings::SearchChineseKeywordsEnabled()
+		|| query.contains('"')) {
+		return query;
+	}
+	static const auto kChineseWords = QRegularExpression(
+		uR"((?<!\S)(\p{Han}+)(?!\S))"_q,
+		QRegularExpression::UseUnicodePropertiesOption);
+	return query.replace(kChineseWords, u"\"\\1\""_q);
+}
 
 base::options::toggle OptionForumHideChatsList({
 	.id = kOptionForumHideChatsList,
@@ -416,6 +428,7 @@ Widget::Widget(
 , _searchForNarrowLayout(_searchControls, st::dialogsSearchForNarrowFilters)
 , _search(_searchControls, st::dialogsFilter, tr::lng_dlg_filter())
 , _searchDialogFilter(_search, st::dialogsSearchDialogFilter)
+, _searchChineseKeywords(_search, st::dialogsSearchChineseKeywords)
 , _chooseFromUser(
 	_searchControls,
 	object_ptr<Ui::IconButton>(this, st::dialogsSearchFrom))
@@ -470,6 +483,15 @@ Widget::Widget(
 	}, lifetime());
 	EnhancedSettings::SearchDialogFilterChanges(
 	) | rpl::on_next([=] {
+		if (_inner->state() == WidgetState::Filtered) {
+			searchRequested(SearchRequestDelay::Instant);
+		}
+	}, lifetime());
+	EnhancedSettings::SearchChineseKeywordsChanges(
+	) | rpl::on_next([=] {
+		_searchTimer.cancel();
+		clearSearchCache(false);
+		_migratedProcess.cache.clear();
 		if (_inner->state() == WidgetState::Filtered) {
 			searchRequested(SearchRequestDelay::Instant);
 		}
@@ -723,6 +745,25 @@ Widget::Widget(
 			: nullptr;
 		_searchDialogFilter->setIconOverride(icon, icon);
 	}, _searchDialogFilter->lifetime());
+	_searchChineseKeywords->setClickedCallback([] {
+		EnhancedSettings::SetSearchChineseKeywordsEnabled(
+			!EnhancedSettings::SearchChineseKeywordsEnabled());
+	});
+	Ui::InstallTooltip(_searchChineseKeywords.data(), [] {
+		return tr::lng_search_chinese_keywords(tr::now);
+	});
+	tr::lng_search_chinese_keywords(
+	) | rpl::on_next([=](const QString &text) {
+		_searchChineseKeywords->setAccessibleName(text);
+	}, _searchChineseKeywords->lifetime());
+	rpl::single(EnhancedSettings::SearchChineseKeywordsEnabled()) | rpl::then(
+		EnhancedSettings::SearchChineseKeywordsChanges()
+	) | rpl::on_next([=](bool enabled) {
+		const auto icon = enabled
+			? &st::dialogsSearchChineseKeywordsActive
+			: nullptr;
+		_searchChineseKeywords->setIconOverride(icon, icon);
+	}, _searchChineseKeywords->lifetime());
 	rpl::single(rpl::empty) | rpl::then(
 		session().domain().local().localPasscodeChanged()
 	) | rpl::on_next([=] {
@@ -3483,7 +3524,7 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 								? Flag()
 								: Flag::f_saved_reaction)),
 						inPeer->input(),
-						MTP_string(_searchQuery),
+						MTP_string(PrepareMessageSearchQuery(_searchQuery)),
 						(fromPeer ? fromPeer->input() : MTP_inputPeerEmpty()),
 						(savedPeer ? savedPeer->input() : MTP_inputPeerEmpty()),
 						MTP_vector_from_range(
@@ -3606,7 +3647,7 @@ void Widget::updatePornSearch() {
 		return;
 	}
 	const auto request = Api::PornSearchRequest{
-		.query = query,
+		.query = PrepareMessageSearchQuery(query),
 		.filter = (_searchState.filter == ChatTypeFilter::Groups)
 			? Api::PornSearchFilter::Groups
 			: (_searchState.filter == ChatTypeFilter::Channels)
@@ -3858,7 +3899,7 @@ void Widget::searchMore() {
 								? Flag()
 								: Flag::f_saved_reaction)),
 						peer->input(),
-						MTP_string(_searchQuery),
+						MTP_string(PrepareMessageSearchQuery(_searchQuery)),
 						(fromPeer ? fromPeer->input() : MTP_inputPeerEmpty()),
 						(savedPeer
 							? savedPeer->input()
@@ -3915,7 +3956,7 @@ void Widget::searchMore() {
 				MTPmessages_Search(
 					flags,
 					_searchInMigrated->peer->input(),
-					MTP_string(_searchQuery),
+					MTP_string(PrepareMessageSearchQuery(_searchQuery)),
 					(_searchQueryFrom
 						? _searchQueryFrom->input()
 						: MTP_inputPeerEmpty()),
@@ -4028,7 +4069,7 @@ void Widget::requestMessages(bool fromStart) {
 			MTP_flags(flags),
 			MTP_int(folderId),
 			(community ? community->inputChannel() : MTPInputChannel()),
-			MTP_string(_searchQuery),
+			MTP_string(PrepareMessageSearchQuery(_searchQuery)),
 			MTP_inputMessagesFilterEmpty(),
 			MTP_int(0), // min_date
 			MTP_int(0), // max_date
@@ -5008,7 +5049,11 @@ void Widget::updateSearchFromVisibility(bool fast) {
 	if (_subsectionTopBar) {
 		_subsectionTopBar->searchEnableChooseFromUser(true, visible);
 	} else if (changed || fast) {
-		auto additional = QMargins(_searchDialogFilter->width(), 0, 0, 0);
+		auto additional = QMargins(
+			_searchDialogFilter->width() + _searchChineseKeywords->width(),
+			0,
+			0,
+			0);
 		if (visible) {
 			additional.setRight(_chooseFromUser->width());
 		}
@@ -5056,6 +5101,8 @@ void Widget::updateControlsGeometry() {
 		filterTop,
 		filterWidth,
 		_search->height());
+	_searchDialogFilter->moveToLeft(0, 0);
+	_searchChineseKeywords->moveToLeft(_searchDialogFilter->width(), 0);
 
 	auto mainMenuLeft = anim::interpolate(
 		st::dialogsFilterPadding.x(),

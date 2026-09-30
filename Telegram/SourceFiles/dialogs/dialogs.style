@@ -314,11 +314,17 @@ dialogsSearchFrom: IconButton(dialogsCalendar) {
 	iconOver: icon {{ "dialogs/dialogs_search_from", dialogsMenuIconFgOver }};
 }
 dialogsSearchDialogFilter: IconButton(dialogsCalendar) {
-	icon: icon {{ "menu/tag_filter-23x22", dialogsMenuIconFg }};
-	iconOver: icon {{ "menu/tag_filter-23x22", dialogsMenuIconFgOver }};
-	iconPosition: point(5px, 6px);
+	icon: icon {{ "menu/tag_filter-11x13", dialogsMenuIconFg }};
+	iconOver: icon {{ "menu/tag_filter-11x13", dialogsMenuIconFgOver }};
+	iconPosition: point(-1px, -1px);
 }
-dialogsSearchDialogFilterActive: icon {{ "menu/tag_filter-23x22", windowActiveTextFg }};
+dialogsSearchDialogFilterActive: icon {{ "menu/tag_filter-11x13", windowActiveTextFg }};
+
+dialogsSearchChineseKeywords: IconButton(dialogsSearchDialogFilter) {
+	icon: icon {{ "dialogs/dialogs_chinese_search-11x11", dialogsMenuIconFg }};
+	iconOver: icon {{ "dialogs/dialogs_chinese_search-11x11", dialogsMenuIconFgOver }};
+}
+dialogsSearchChineseKeywordsActive: icon {{ "dialogs/dialogs_chinese_search-11x11", windowActiveTextFg }};
 
 dialogsFilter: InputField(defaultInputField) {
 	textBg: filterInputInactiveBg;

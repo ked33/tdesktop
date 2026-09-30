@@ -74,6 +74,7 @@
     "lng_settings_search_main_and_archive": "Include main list and archived chats in global search",
     "lng_settings_search_include_porn": "Include messages from channels and groups marked porn in global search",
     "lng_settings_search_dialog_filter": "Filter chats from global search",
+    "lng_search_chinese_keywords": "Optimize Chinese keyword search",
     "lng_settings_search_dialog_filter_placeholder": "-1002615379741,-1001887545270",
     "lng_settings_search_dialog_filter_disabled": "Disabled",
     "lng_settings_search_porn_concurrency": "Supplemental search concurrency",

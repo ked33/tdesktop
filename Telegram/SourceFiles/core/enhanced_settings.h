@@ -56,6 +56,9 @@ namespace EnhancedSettings {
 	[[nodiscard]] bool SearchDialogFilterContains(PeerId peer);
 	void SetSearchDialogFilterEnabled(bool enabled);
 	void SetSearchDialogFilterIds(const QString &value);
+	[[nodiscard]] bool SearchChineseKeywordsEnabled();
+	[[nodiscard]] rpl::producer<bool> SearchChineseKeywordsChanges();
+	void SetSearchChineseKeywordsEnabled(bool enabled);
 	[[nodiscard]] bool MultipleChatWindows();
 	[[nodiscard]] int SearchPornConcurrency();
 	[[nodiscard]] rpl::producer<int> SearchPornConcurrencyChanges();

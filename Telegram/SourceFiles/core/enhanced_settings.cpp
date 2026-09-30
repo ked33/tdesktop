@@ -56,6 +56,11 @@ namespace EnhancedSettings {
 			return events;
 		}
 
+		rpl::event_stream<bool> &SearchChineseKeywordsEvents() {
+			static auto events = rpl::event_stream<bool>();
+			return events;
+		}
+
 		struct SearchDialogFilterCache {
 			bool enabled = false;
 			QString text;
@@ -194,6 +199,7 @@ namespace EnhancedSettings {
 			ensureBool(qsl("search_main_and_archive"), true);
 			ensureBool(u"search_include_porn"_q, true);
 			ensureBool(u"search_dialog_filter"_q, false);
+			ensureBool(u"search_chinese_keywords"_q, true);
 			ensureBool(u"message_folding_enabled"_q, true);
 			ensureString(u"message_folding_keywords"_q, QString());
 			ensureString(u"message_folding_user_ids"_q, QString());
@@ -407,6 +413,27 @@ namespace EnhancedSettings {
 		SetEnhancedValue(u"search_include_porn"_q, enabled);
 		Write();
 		SearchIncludePornEvents().fire_copy(enabled);
+	}
+
+	bool SearchChineseKeywordsEnabled() {
+		return gEnhancedOptions.value(
+			u"search_chinese_keywords"_q,
+			true).toBool();
+	}
+
+	rpl::producer<bool> SearchChineseKeywordsChanges() {
+		return SearchChineseKeywordsEvents().events();
+	}
+
+	void SetSearchChineseKeywordsEnabled(bool enabled) {
+		if (SearchChineseKeywordsEnabled() == enabled) {
+			return;
+		}
+		SetEnhancedValue(u"search_chinese_keywords"_q, enabled);
+		if (!WriteNow()) {
+			Write();
+		}
+		SearchChineseKeywordsEvents().fire_copy(enabled);
 	}
 
 	bool SearchDialogFilterEnabled() {
@@ -793,6 +820,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("search_main_and_archive"), true);
 		settings.insert(u"search_include_porn"_q, true);
 		settings.insert(u"search_dialog_filter"_q, false);
+		settings.insert(u"search_chinese_keywords"_q, true);
 		settings.insert(u"message_folding_enabled"_q, true);
 		settings.insert(u"message_folding_keywords"_q, QString());
 		settings.insert(u"message_folding_user_ids"_q, QString());
@@ -922,6 +950,9 @@ namespace EnhancedSettings {
 		settings.insert(qsl("search_main_and_archive"), GetEnhancedBool("search_main_and_archive"));
 		settings.insert(u"search_include_porn"_q, SearchIncludePorn());
 		settings.insert(u"search_dialog_filter"_q, SearchDialogFilterEnabled());
+		settings.insert(
+			u"search_chinese_keywords"_q,
+			SearchChineseKeywordsEnabled());
 		settings.insert(
 			u"message_folding_enabled"_q,
 			gEnhancedOptions.value(u"message_folding_enabled"_q, true).toBool());
@@ -1230,6 +1261,7 @@ namespace EnhancedSettings {
 			return false;
 		}
 		const auto backup = gEnhancedOptions;
+		const auto chineseSearchBefore = SearchChineseKeywordsEnabled();
 		const auto requests = cNetRequestsCount();
 		const auto uploadSessions = cNetUploadSessionsCount();
 		const auto uploadInterval = cNetUploadRequestInterval();
@@ -1246,6 +1278,10 @@ namespace EnhancedSettings {
 			return false;
 		}
 		MessageFolding::Reload();
+		if (chineseSearchBefore != SearchChineseKeywordsEnabled()) {
+			SearchChineseKeywordsEvents().fire_copy(
+				SearchChineseKeywordsEnabled());
+		}
 		return true;
 	}
 

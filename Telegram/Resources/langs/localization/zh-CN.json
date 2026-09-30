@@ -83,6 +83,7 @@
     "lng_settings_search_main_and_archive": "全局搜索同时包含主列表和已归档对话",
     "lng_settings_search_include_porn": "全局搜索包含被标记 porn 的频道和群组消息",
     "lng_settings_search_dialog_filter": "全局搜索对话过滤",
+    "lng_search_chinese_keywords": "中文关键词搜索优化",
     "lng_settings_search_dialog_filter_placeholder": "-1002615379741,-1001887545270",
     "lng_settings_search_dialog_filter_disabled": "已禁用",
     "lng_settings_search_porn_concurrency": "补充搜索并发数",
