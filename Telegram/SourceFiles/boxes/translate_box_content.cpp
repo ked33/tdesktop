@@ -26,6 +26,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_chat_helpers.h"
 #include "styles/style_layers.h"
 
+#include <crl/crl_on_main.h>
+
 namespace Ui {
 
 TranslateShowButton::TranslateShowButton(not_null<RpWidget*> parent)
@@ -225,12 +227,12 @@ void TranslateBoxContent(
 		loading->show(anim::type::instant);
 		translated->hide(anim::type::instant);
 		setCopyText({});
-		(*request)(id, [=](TranslateBoxContentResult result) {
+		(*request)(id, crl::guard(box, [=](TranslateBoxContentResult result) {
 			if (state->requestId != requestId) {
 				return;
 			}
 			showText(std::move(result));
-		});
+		}));
 	};
 	std::move(to) | rpl::on_next(send, box->lifetime());
 

@@ -63,10 +63,7 @@ BaseTranslator::Result GoogleAppTranslator::translateImpl(const QString& query, 
             .data(queryText);
     }
 
-    QNetworkReply* reply = http.request();
-
-    QByteArray data = reply->readAll();
-    reply->deleteLater();
+    const auto data = http.request();
 
 	QJsonDocument doc = QJsonDocument::fromJson(QString::fromUtf8(data).toUtf8());
 	QJsonObject obj = doc.object();

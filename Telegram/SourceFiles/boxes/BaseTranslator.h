@@ -79,30 +79,29 @@ protected:
             return *this;
         }
 
-        QNetworkReply* request() {
-            QEventLoop loop;
+        QByteArray request() {
+            auto manager = QNetworkAccessManager();
+            auto loop = QEventLoop();
 
-            QNetworkReply* reply;
             if (isPost) {
                 netRequest.setHeader(QNetworkRequest::ContentTypeHeader, mediaType);
-                reply = manager->post(netRequest, postData);
-            } else {
-                reply = manager->get(netRequest);
             }
+            const auto reply = isPost
+                ? manager.post(netRequest, postData)
+                : manager.get(netRequest);
 
             QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-            loop.exec();
+            if (!reply->isFinished()) {
+                loop.exec();
+            }
 
-            return reply;
+            return reply->readAll();
         }
 
     private:
-	    explicit Http(const QString& url) : netRequest(QUrl(url)), isPost(false)
-	    {
-            manager = new QNetworkAccessManager();
+	    explicit Http(const QString& url) : netRequest(QUrl(url)), isPost(false) {
 	    }
 
-	    QNetworkAccessManager* manager;
 	    QNetworkRequest netRequest;
 	    QByteArray postData;
 	    QString mediaType;

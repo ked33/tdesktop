@@ -3090,7 +3090,7 @@ void FillContextMenuItems(
 									? MsgId()
 									: item->fullId().msg,
 								translate,
-								list->hasCopyRestriction(view->data())));
+								list->hasCopyRestriction(item)));
 						}
 					},
 					&st::menuIconTranslate), Qt::Key_T);
