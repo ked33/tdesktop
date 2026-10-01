@@ -1,4 +1,6 @@
 #include "GoogleAppTranslator.h"
+#include "logs.h"
+#include <QJsonParseError>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMessageAuthenticationCode>
@@ -63,21 +65,47 @@ BaseTranslator::Result GoogleAppTranslator::translateImpl(const QString& query, 
             .data(queryText);
     }
 
-    const auto data = http.request();
+    const auto response = http.request();
+    if (response.error != QNetworkReply::NoError
+        && response.error < QNetworkReply::ContentAccessDenied) {
+        return { true, "Network request failed" };
+    }
+    if (response.error != QNetworkReply::NoError && response.status < 400) {
+        LOG(("Translation Error: Google content/protocol error %1.")
+            .arg(int(response.error)));
+        return { true, "Content or protocol error" };
+    }
+    if (response.status >= 400) {
+        LOG(("Translation Error: Google HTTP status %1.").arg(response.status));
+    }
 
-	QJsonDocument doc = QJsonDocument::fromJson(QString::fromUtf8(data).toUtf8());
-	QJsonObject obj = doc.object();
-
-	if (obj.contains("translation")) {
-		return Result{ .translation = obj["translation"].toString(), .sourceLanguage = obj["sourceLanguage"].toString() };
-	}
-
-	if (obj.contains("error")) {
-		QJsonObject errorObj = obj["error"].toObject();
-		return { true, errorObj["message"].toString() };
-	}
-
-    return { true, "Unexpected response" };
+    auto parseError = QJsonParseError();
+    const auto doc = QJsonDocument::fromJson(response.body, &parseError);
+    if (parseError.error != QJsonParseError::NoError) {
+        LOG(("Translation Error: Google invalid JSON: %1 (offset %2).")
+            .arg(parseError.errorString()).arg(parseError.offset));
+        return { true, "Invalid JSON response" };
+    }
+    if (!doc.isObject()) {
+        LOG(("Translation Error: Google response is not an object."));
+        return { true, "Unexpected response type" };
+    }
+    const auto obj = doc.object();
+    if (obj.contains("error")) {
+        const auto error = obj["error"].toObject();
+        LOG(("Translation Error: Google API error code %1.")
+            .arg(error["code"].toInt()));
+        return { true, error["message"].toString() };
+    }
+    const auto translation = obj["translation"];
+    if (!translation.isString() || translation.toString().isEmpty()) {
+        LOG(("Translation Error: Google translation is missing, invalid or empty."));
+        return { true, "Missing or empty translation" };
+    }
+    return Result{
+        .translation = translation.toString(),
+        .sourceLanguage = obj["sourceLanguage"].toString(),
+    };
 }
 
 QString GoogleAppTranslator::sign(const QString& str) {

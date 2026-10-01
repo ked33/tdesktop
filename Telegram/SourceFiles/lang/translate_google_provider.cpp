@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/translate_cache.h"
 #include "lang/translate_protect.h"
 #include "main/main_session.h"
+#include "logs.h"
 #include "settings.h"
 
 namespace Ui {
@@ -41,6 +42,7 @@ public:
 			LanguageId to,
 			Fn<void(TranslateProviderResult)> done) override {
 		if (request.text.text.isEmpty()) {
+			LOG(("Translation Error: Google input is empty."));
 			done(TranslateProviderResult{
 				.error = TranslateProviderError::Unknown,
 			});

@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "lang/translate_url_provider.h"
 
+#include "logs.h"
 #include "spellcheck/platform/platform_language.h"
 #include "ui/text/text_html_tags.h"
 
@@ -190,6 +191,7 @@ public:
 			LanguageId to,
 			Fn<void(TranslateProviderResult)> done) override {
 		if (request.text.text.isEmpty()) {
+			LOG(("Translation Error: Custom provider input is empty."));
 			done(TranslateProviderResult{
 				.error = TranslateProviderError::Unknown,
 			});
@@ -211,6 +213,7 @@ public:
 			QString::fromLatin1(QUrl::toPercentEncoding(toCode)));
 		const auto requestUrl = QUrl(url);
 		if (!requestUrl.isValid()) {
+			LOG(("Translation Error: Custom provider URL is invalid."));
 			done(TranslateProviderResult{
 				.error = TranslateProviderError::Unknown,
 			});
@@ -221,6 +224,12 @@ public:
 		QObject::connect(reply, &QNetworkReply::finished, [=] {
 			auto result = TranslateProviderResult();
 			if (reply->error() != QNetworkReply::NoError) {
+				const auto status = reply->attribute(
+					QNetworkRequest::HttpStatusCodeAttribute).toInt();
+				if (reply->error() >= QNetworkReply::ContentAccessDenied) {
+					LOG(("Translation Error: Custom provider HTTP %1, content/protocol error %2.")
+						.arg(status).arg(int(reply->error())));
+				}
 				result.error = TranslateProviderError::Unknown;
 			} else {
 				const auto body = reply->readAll();

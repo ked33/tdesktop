@@ -79,7 +79,13 @@ protected:
             return *this;
         }
 
-        QByteArray request() {
+        struct Response {
+            QByteArray body;
+            QNetworkReply::NetworkError error;
+            int status;
+        };
+
+        Response request() {
             auto manager = QNetworkAccessManager();
             auto loop = QEventLoop();
 
@@ -95,7 +101,11 @@ protected:
                 loop.exec();
             }
 
-            return reply->readAll();
+            return {
+                reply->readAll(),
+                reply->error(),
+                reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),
+            };
         }
 
     private:

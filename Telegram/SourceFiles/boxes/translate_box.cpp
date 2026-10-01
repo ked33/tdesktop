@@ -26,6 +26,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "iv/iv_rich_page.h"
 #include "lang/lang_instance.h"
 #include "lang/lang_keys.h"
+#include "logs.h"
 #include "main/main_session.h"
 #include "mtproto/sender.h"
 #include "spellcheck/platform/platform_language.h"
@@ -377,6 +378,9 @@ void SetupRichArticleBody(
 			loading->hide(anim::type::instant);
 			setCopyText(Iv::FlattenRichPageToSimpleText(*result));
 		} else {
+			if (result) {
+				LOG(("Translation Error: Rich message rendering is unsupported."));
+			}
 			showError();
 		}
 	};
@@ -398,10 +402,19 @@ void SetupRichArticleBody(
 		).done([=](const MTPmessages_TranslatedRichMessage &result) {
 			state->requestId = 0;
 			const auto &list = result.data().vresult().v;
-			showResult(list.isEmpty()
+			const auto page = list.isEmpty()
 				? nullptr
-				: Iv::ParseRichPage(session, list.front()));
-		}).fail([=](const MTP::Error &) {
+				: Iv::ParseRichPage(session, list.front());
+			if (!page) {
+				LOG(("Translation Error: Rich message result is missing or invalid."));
+			}
+			showResult(page);
+		}).fail([=](const MTP::Error &error) {
+			if (error.code() > 0
+				|| error.type() == u"CLIENT_RESPONSE_PARSE_FAILED"_q) {
+				LOG(("Translation Error: Rich message RPC %1 (%2).")
+					.arg(error.type()).arg(error.code()));
+			}
 			state->requestId = 0;
 			showResult(nullptr);
 		}).send();

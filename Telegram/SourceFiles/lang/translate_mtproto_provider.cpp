@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_text_entities.h"
 #include "data/data_peer.h"
 #include "data/data_session.h"
+#include "logs.h"
 #include "main/main_session.h"
 #include "mtproto/sender.h"
 
@@ -63,6 +64,10 @@ public:
 		};
 		const auto doneFromList = [=, session = _session](
 				const QVector<MTPTextWithEntities> &list) {
+			if (list.size() < int(requests.size())) {
+				LOG(("Translation Error: Telegram returned %1 results for %2 requests.")
+					.arg(list.size()).arg(requests.size()));
+			}
 			for (auto i = 0; i != int(requests.size()); ++i) {
 				doneOne(
 					i,
@@ -89,6 +94,7 @@ public:
 		if (allWithIds) {
 			const auto peer = _session->data().peerLoaded(firstPeer);
 			if (!peer) {
+				LOG(("Translation Error: Telegram peer is not loaded."));
 				failAll();
 				return;
 			}
@@ -106,7 +112,12 @@ public:
 				MTPstring()
 			)).done([=](const MTPmessages_TranslatedText &result) {
 				doneFromList(result.data().vresult().v);
-			}).fail([=](const MTP::Error &) {
+			}).fail([=](const MTP::Error &error) {
+				if (error.code() > 0
+					|| error.type() == u"CLIENT_RESPONSE_PARSE_FAILED"_q) {
+					LOG(("Translation Error: Telegram RPC %1 (%2).")
+						.arg(error.type()).arg(error.code()));
+				}
 				failAll();
 			}).send();
 			return;
@@ -145,7 +156,12 @@ public:
 			MTPstring()
 		)).done([=](const MTPmessages_TranslatedText &result) {
 			doneFromList(result.data().vresult().v);
-		}).fail([=](const MTP::Error &) {
+		}).fail([=](const MTP::Error &error) {
+			if (error.code() > 0
+				|| error.type() == u"CLIENT_RESPONSE_PARSE_FAILED"_q) {
+				LOG(("Translation Error: Telegram RPC %1 (%2).")
+					.arg(error.type()).arg(error.code()));
+			}
 			failAll();
 		}).send();
 	}
