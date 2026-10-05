@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "core/file_location.h"
 #include "storage/storage_account.h"
+#include "storage/download_diagnostics.h"
 #include "storage/file_download_mtproto.h"
 #include "storage/file_download_web.h"
 #include "platform/platform_file_utilities.h"
@@ -157,6 +158,10 @@ void FileLoader::finishWithBytes(const QByteArray &data) {
 		Platform::File::PostprocessDownloaded(
 			QFileInfo(_file).absoluteFilePath());
 	}
+	if (_loadTrace) {
+		_loadTrace->bytes = currentOffset();
+		_loadTrace->finish(Storage::DownloadTrace::Stage::Complete);
+	}
 	const auto session = _session;
 	_updates.fire_done();
 	session->notifyDownloaderTaskFinished();
@@ -214,6 +219,11 @@ void FileLoader::increaseLoadSize(int64 size, bool autoLoading) {
 }
 
 void FileLoader::notifyAboutProgress() {
+	if (_loadTrace && currentOffset() > _loadTrace->bytes) {
+		_loadTrace->bytes = currentOffset();
+		_loadTrace->progressAt = crl::now();
+		_loadTrace->setStage(Storage::DownloadTrace::Stage::Receiving);
+	}
 	_updates.fire({});
 }
 
@@ -222,6 +232,11 @@ void FileLoader::localLoaded(
 		const QByteArray &imageFormat,
 		const QImage &imageData) {
 	_localLoading = nullptr;
+	if (_loadTrace) {
+		_loadTrace->progressAt = crl::now();
+		_loadTrace->cacheMs = _loadTrace->progressAt - _loadTrace->created;
+		_loadTrace->setStage(Storage::DownloadTrace::Stage::Queued);
+	}
 	if (result.data.isEmpty()) {
 		_localStatus = LocalStatus::NotFound;
 		start();
@@ -247,7 +262,16 @@ void FileLoader::localLoaded(
 		: result.data);
 }
 
+std::shared_ptr<Storage::DownloadTrace> FileLoader::createDownloadTrace() {
+	return _session->downloader().diagnostics().create();
+}
+
 void FileLoader::start() {
+	if (!_finished && !_loadTrace) {
+		_loadTrace = createDownloadTrace();
+		_loadTrace->cacheTag = _cacheTag;
+		_loadTrace->automatic = _autoLoading;
+	}
 	if (_finished || tryLoadLocal()) {
 		return;
 	} else if (_fromCloud == LoadFromLocalOnly) {
@@ -256,6 +280,7 @@ void FileLoader::start() {
 	}
 
 	if (checkForOpen()) {
+		_loadTrace->setStage(Storage::DownloadTrace::Stage::Queued);
 		startLoading();
 	}
 }
@@ -275,11 +300,14 @@ bool FileLoader::checkForOpen() {
 }
 
 void FileLoader::loadLocal(const Storage::Cache::Key &key) {
+	const auto trace = _loadTrace;
+	trace->setStage(Storage::DownloadTrace::Stage::CacheLookup);
 	const auto readImage = (_locationType != AudioFileLocation);
 	auto done = [=, guard = _localLoading.make_guard()](
 			QByteArray &&value,
 			QImage &&image,
 			QByteArray &&format) mutable {
+		trace->setStage(Storage::DownloadTrace::Stage::CacheDelivery);
 		crl::on_main(std::move(guard), [
 			=,
 			value = std::move(value),
@@ -294,11 +322,14 @@ void FileLoader::loadLocal(const Storage::Cache::Key &key) {
 	};
 	_session->data().cache().get(key, [=, callback = std::move(done)](
 			QByteArray &&value) mutable {
+		trace->setStage(Storage::DownloadTrace::Stage::CacheDecodeQueued);
 		if (readImage && !value.startsWith("partial:")) {
 			crl::async([
+				trace,
 				value = std::move(value),
 				done = std::move(callback)
 			]() mutable {
+				trace->setStage(Storage::DownloadTrace::Stage::CacheDecode);
 				auto read = Images::Read({ .content = value });
 				if (!read.image.isNull()) {
 					done(
@@ -345,6 +376,14 @@ void FileLoader::cancel() {
 }
 
 void FileLoader::cancel(FailureReason fail) {
+	if (_loadTrace) {
+		if (_loadTrace->error.isEmpty()) {
+			_loadTrace->setError(u"file_failure_%1"_q.arg(int(fail)));
+		}
+		_loadTrace->finish((fail == FailureReason::NoFailure)
+			? Storage::DownloadTrace::Stage::Cancelled
+			: Storage::DownloadTrace::Stage::Failed);
+	}
 	const auto started = (currentOffset() > 0);
 
 	cancelHook();
@@ -478,6 +517,10 @@ bool FileLoader::finalizeResult() {
 						: ("partial:" + _data)),
 					_cacheTag));
 		}
+	}
+	if (_loadTrace) {
+		_loadTrace->bytes = currentOffset();
+		_loadTrace->finish(Storage::DownloadTrace::Stage::Complete);
 	}
 	const auto session = _session;
 	_updates.fire_done();

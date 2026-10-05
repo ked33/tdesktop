@@ -56,6 +56,7 @@ public:
 	uint64 objId() const override;
 
 private:
+	std::shared_ptr<Storage::DownloadTrace> createDownloadTrace() override;
 	Storage::Cache::Key cacheKey() const override;
 	std::optional<MediaKey> fileLocationKey() const override;
 	void startLoading() override;

@@ -183,6 +183,85 @@ void DownloadManagerMtproto::Queue::removeSession(int index) {
 	}
 }
 
+QString DownloadManagerMtproto::Queue::diagnosticSnapshot(crl::time now) const {
+	const auto top = _tasks.empty() ? 0 : _tasks.front().priority;
+	auto ready = 0;
+	auto topReady = 0;
+	for (const auto &entry : _tasks) {
+		if (entry.task->readyToRequest()) {
+			++ready;
+			if (entry.priority == top) {
+				++topReady;
+			}
+		}
+	}
+	return u"tasks=%1 ready=%2 top_priority=%3 top_ready=%4 head={%5}"_q
+		.arg(_tasks.size()).arg(ready).arg(top).arg(topReady)
+		.arg(_tasks.empty()
+			? QString()
+			: _tasks.front().task->diagnosticSnapshot(now));
+}
+
+QString DownloadManagerMtproto::diagnosticSnapshot(int dcId) const {
+	const auto now = crl::now();
+	const auto balance = _balanceData.find(dcId);
+	const auto queue = _queues.find(dcId);
+	const auto deferred = _deferredTasks.find(dcId);
+	const auto delay = nonPremiumDelayState(dcId);
+	const auto requested = (balance == _balanceData.end())
+		? 0
+		: balance->second.totalRequested;
+	auto capacity = 0;
+	auto slots = 0;
+	if (balance != _balanceData.end()) {
+		for (const auto &session : balance->second.sessions) {
+			capacity += std::max(0, session.maxWaitedAmount - session.requested);
+			slots += (session.requested + kDownloadPartSize <= session.maxWaitedAmount);
+		}
+	}
+	auto limit = -1;
+	if (smartNonPremiumEnabled()) {
+		limit = nonPremiumRequestLimit(dcId);
+		if (delay.recoveryUntil > now) {
+			const auto &profile = SmartProfile();
+			limit = std::min(limit, NonPremiumRequestLimit(
+				delay,
+				now,
+				profile.smartInitialRequestLimit,
+				profile.smartMinimumRequestLimit,
+				profile.smartMaximumRequestLimit));
+		}
+	}
+	const auto reason = (now < delay.limitedUntil)
+		? "server_wait"
+		: (limit >= 0 && requested + kDownloadPartSize > limit * kDownloadPartSize)
+		? "smart_limit"
+		: !slots
+		? "session_capacity"
+		: (deferred != _deferredTasks.end() && !deferred->second.empty())
+		? "deferred_pending"
+		: (queue == _queues.end())
+		? "no_ready_task"
+		: !queue->second.nextTask(requested > 0)
+		? (queue->second.nextTask(false) ? "priority" : "no_ready_task")
+		: "sendable";
+	return u"requested_bytes=%1 free_bytes=%2 deferred_tasks=%3 "
+		"limit_wait_ms=%4 recovery_ms=%5 smart_limit=%6 %7 "
+		"gate=%8 rate_timer_ms=%9"_q
+		.arg(requested).arg(capacity)
+		.arg(deferred == _deferredTasks.end() ? 0 : deferred->second.size())
+		.arg(qlonglong(std::max(delay.limitedUntil - now, crl::time(0))))
+		.arg(qlonglong(std::max(delay.recoveryUntil - now, crl::time(0))))
+		.arg(limit)
+		.arg(queue == _queues.end()
+			? u"tasks=0"_q
+			: queue->second.diagnosticSnapshot(now))
+		.arg(reason)
+		.arg(qlonglong(_downloadRateTimer.isActive()
+			? _downloadRateTimer.remainingTime()
+			: -1));
+}
+
 DownloadManagerMtproto::DcSessionBalanceData::DcSessionBalanceData()
 : maxWaitedAmount(StartWaitedInSession()) {
 }
@@ -193,6 +272,7 @@ DownloadManagerMtproto::DcBalanceData::DcBalanceData()
 
 DownloadManagerMtproto::DownloadManagerMtproto(not_null<ApiWrap*> api)
 : _api(api)
+, _diagnostics([=](int dc) { return diagnosticSnapshot(dc); })
 , _nonPremiumDelayTimer([=] { checkNonPremiumDelayState(); })
 , _downloadRateTimer([=] { checkSendNext(); })
 , _resetGenerationTimer([=] { resetGeneration(); })
@@ -1140,9 +1220,60 @@ DownloadMtprotoTask::DownloadMtprotoTask(
 }
 
 DownloadMtprotoTask::~DownloadMtprotoTask() {
+	if (_downloadTrace) {
+		_downloadTrace->finish(DownloadTrace::Stage::Cancelled);
+	}
 	cancelAllRequests();
 	_owner->removeStreamingDemand(this);
 	_owner->remove(this);
+}
+
+std::shared_ptr<DownloadTrace> DownloadMtprotoTask::downloadTrace() {
+	if (!_downloadTrace) {
+		_downloadTrace = _owner->diagnostics().create();
+		_downloadTrace->dc = dcId();
+		_downloadTrace->streaming = downloadSource().startsWith(u"streaming"_q);
+		if (const auto location = std::get_if<StorageFileLocation>(&_location.data)) {
+			using Type = StorageFileLocation::Type;
+			switch (location->type()) {
+			case Type::Photo: _downloadTrace->kind = u"photo"_q; break;
+			case Type::PeerPhoto: _downloadTrace->kind = u"avatar"_q; break;
+			case Type::Document:
+				_downloadTrace->kind = location->isDocumentThumbnail()
+					? u"document_thumbnail"_q
+					: u"document"_q;
+				break;
+			case Type::StickerSetThumb:
+				_downloadTrace->kind = u"sticker_set_thumbnail"_q;
+				break;
+			default: break;
+			}
+		}
+	}
+	return _downloadTrace;
+}
+
+QString DownloadMtprotoTask::diagnosticSnapshot(crl::time now) const {
+	return _downloadTrace ? _downloadTrace->snapshot(now) : u"untracked"_q;
+}
+
+void DownloadMtprotoTask::updateDownloadTrace() {
+	if (!_downloadTrace) {
+		return;
+	}
+	_downloadTrace->pending = int(_sentRequests.size());
+	_downloadTrace->deferred = int(_deferredRequests.size());
+	_downloadTrace->oldestSent = 0;
+	_downloadTrace->referenceAt = 0;
+	for (const auto &[id, request] : _sentRequests) {
+		if (!_downloadTrace->oldestSent || request.sent < _downloadTrace->oldestSent) {
+			_downloadTrace->oldestSent = request.sent;
+		}
+		if (request.referenceAt && (!_downloadTrace->referenceAt
+			|| request.referenceAt < _downloadTrace->referenceAt)) {
+			_downloadTrace->referenceAt = request.referenceAt;
+		}
+	}
 }
 
 MTP::DcId DownloadMtprotoTask::dcId() const {
@@ -1171,6 +1302,10 @@ void DownloadMtprotoTask::refreshFileReferenceFrom(
 	if (const auto v = std::get_if<StorageFileLocation>(&_location.data)) {
 		v->refreshFileReference(updates);
 		if (v->fileReference() == current) {
+			if (_downloadTrace) {
+				_downloadTrace->setError(u"reference_unchanged"_q);
+				_downloadTrace->finish(DownloadTrace::Stage::Failed);
+			}
 			cancelOnFail();
 			return;
 		}
@@ -1179,6 +1314,13 @@ void DownloadMtprotoTask::refreshFileReferenceFrom(
 		return;
 	}
 	if (_sentRequests.contains(requestId)) {
+		if (_downloadTrace) {
+			++_downloadTrace->refreshed;
+			if (_downloadTrace->referenceAt) {
+				_downloadTrace->referenceMs = crl::now() - _downloadTrace->referenceAt;
+			}
+			_downloadTrace->setStage(DownloadTrace::Stage::Queued);
+		}
 		makeRequest(finishSentRequest(
 			requestId,
 			FinishRequestReason::Redirect));
@@ -1324,6 +1466,7 @@ void DownloadMtprotoTask::makeRequest(const RequestData &requestData) {
 		return;
 	}
 	_deferredRequests.emplace(requestData.offset, requestData);
+	updateDownloadTrace();
 	_owner->deferRequest(this);
 }
 
@@ -1507,6 +1650,7 @@ void DownloadMtprotoTask::getCdnFileHashesDone(
 			const auto goodBytes = std::move(i->second);
 			const auto weak = base::make_weak(this);
 			i = _cdnUncheckedParts.erase(i);
+			recordReceivedPart(goodBytes.size());
 			if (!feedPart(goodOffset, goodBytes) || !weak) {
 				return;
 			}
@@ -1544,6 +1688,17 @@ void DownloadMtprotoTask::placeSentRequest(
 
 	i->second.requestedInSession = amount;
 	i->second.sent = crl::now();
+	i->second.referenceAt = 0;
+	const auto trace = downloadTrace();
+	++trace->sent;
+	if (!trace->firstSent) {
+		trace->firstSent = i->second.sent;
+	}
+	trace->requestId = requestId;
+	if (!trace->received) {
+		trace->setStage(DownloadTrace::Stage::Request);
+	}
+	updateDownloadTrace();
 
 	Ensures(ok1 && ok2);
 }
@@ -1552,6 +1707,16 @@ void DownloadMtprotoTask::subscribeToTransferLimits() {
 	if (_transferLimitSubscription) {
 		return;
 	}
+	_owner->api().instance().requestRetries(
+	) | rpl::on_next([=](const MTP::RequestRetryInfo &info) {
+		if (_sentRequests.contains(info.requestId) && _downloadTrace) {
+			++_downloadTrace->retries;
+			_downloadTrace->requestId = info.requestId;
+			_downloadTrace->retryAt = info.retryAt;
+			_downloadTrace->setError(info.type);
+			_downloadTrace->setStage(DownloadTrace::Stage::Retry);
+		}
+	}, _transferLimitSubscription);
 	_owner->api().instance().transferLimits(
 	) | rpl::on_next([=](const MTP::TransferLimitInfo &info) {
 		if (info.logDetails && !info.upload) {
@@ -1663,6 +1828,7 @@ auto DownloadMtprotoTask::finishSentRequest(
 		result.sessionIndex,
 		-Storage::kDownloadPartSize);
 	_sentRequests.erase(it);
+	updateDownloadTrace();
 	const auto ok = _requestByOffset.remove(result.offset);
 
 	if (_sentRequests.empty()) {
@@ -1695,6 +1861,7 @@ bool DownloadMtprotoTask::haveSentRequestForOffset(int64 offset) const {
 
 void DownloadMtprotoTask::cancelAllRequests() {
 	_deferredRequests.clear();
+	updateDownloadTrace();
 	_owner->forgetDeferredRequests(this);
 	while (!_sentRequests.empty()) {
 		cancelRequest(_sentRequests.begin()->first);
@@ -1704,6 +1871,7 @@ void DownloadMtprotoTask::cancelAllRequests() {
 
 void DownloadMtprotoTask::cancelRequestForOffset(int64 offset) {
 	_deferredRequests.remove(offset);
+	updateDownloadTrace();
 	if (_deferredRequests.empty()) {
 		_owner->forgetDeferredRequests(this);
 	}
@@ -1797,17 +1965,43 @@ void DownloadMtprotoTask::cancelRequest(mtpRequestId requestId) {
 }
 
 void DownloadMtprotoTask::addToQueue(int priority) {
+	const auto trace = downloadTrace();
+	trace->priority = priority;
+	if (trace->stage.load(std::memory_order_relaxed) == DownloadTrace::Stage::Idle) {
+		trace->progressAt = crl::now();
+		_owner->diagnostics().watch(trace);
+	}
+	if (_sentRequests.empty()) {
+		trace->setStage(DownloadTrace::Stage::Queued);
+	}
 	_owner->enqueue(this, priority);
 }
 
 void DownloadMtprotoTask::removeFromQueue() {
+	if (_downloadTrace) {
+		_downloadTrace->setStage(DownloadTrace::Stage::Idle);
+	}
 	_owner->remove(this);
 }
 
 void DownloadMtprotoTask::partLoaded(
 		int64 offset,
 		const QByteArray &bytes) {
+	recordReceivedPart(bytes.size());
 	feedPart(offset, bytes);
+}
+
+void DownloadMtprotoTask::recordReceivedPart(int64 size) {
+	if (_downloadTrace) {
+		_downloadTrace->bytes += size;
+		++_downloadTrace->received;
+		_downloadTrace->progressAt = crl::now();
+		if (!_downloadTrace->firstReceived) {
+			_downloadTrace->firstReceived = _downloadTrace->progressAt;
+		}
+		_downloadTrace->retryAt = 0;
+		_downloadTrace->setStage(DownloadTrace::Stage::Receiving);
+	}
 }
 
 bool DownloadMtprotoTask::normalPartFailed(
@@ -1815,6 +2009,10 @@ bool DownloadMtprotoTask::normalPartFailed(
 		const MTP::Error &error,
 		mtpRequestId requestId) {
 	const auto i = _sentRequests.find(requestId);
+	if (_downloadTrace) {
+		_downloadTrace->setError(error.type());
+		_downloadTrace->requestId = requestId;
+	}
 	if (i != end(_sentRequests)) {
 		i->second.readRetrySuppressed = true;
 	}
@@ -1823,6 +2021,14 @@ bool DownloadMtprotoTask::normalPartFailed(
 	}
 	if (error.code() == 400
 		&& error.type().startsWith(u"FILE_REFERENCE_"_q)) {
+		if (i != end(_sentRequests)) {
+			i->second.referenceAt = crl::now();
+		}
+		if (_downloadTrace) {
+			++_downloadTrace->references;
+			_downloadTrace->setStage(DownloadTrace::Stage::Reference);
+			updateDownloadTrace();
+		}
 		api().refreshFileReference(
 			_origin,
 			this,
@@ -1836,8 +2042,15 @@ bool DownloadMtprotoTask::normalPartFailed(
 bool DownloadMtprotoTask::partFailed(
 		const MTP::Error &error,
 		mtpRequestId requestId) {
+	if (_downloadTrace) {
+		_downloadTrace->setError(error.type());
+		_downloadTrace->requestId = requestId;
+	}
 	if (MTP::IsDefaultHandledError(error)) {
 		return false;
+	}
+	if (_downloadTrace) {
+		_downloadTrace->finish(DownloadTrace::Stage::Failed);
 	}
 	cancelOnFail();
 	return true;

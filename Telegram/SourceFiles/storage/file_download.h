@@ -21,6 +21,7 @@ class Session;
 } // namespace Main
 
 namespace Storage {
+struct DownloadTrace;
 namespace Cache {
 struct Key;
 } // namespace Cache
@@ -140,6 +141,8 @@ protected:
 		Loaded,
 	};
 
+	virtual std::shared_ptr<Storage::DownloadTrace> createDownloadTrace();
+
 	void readImage() const;
 
 	bool checkForOpen();
@@ -161,6 +164,7 @@ protected:
 	bool finalizeResult();
 	[[nodiscard]] QByteArray readLoadedPartBack(int64 offset, int size);
 
+	std::shared_ptr<Storage::DownloadTrace> _loadTrace;
 	const not_null<Main::Session*> _session;
 
 	bool _autoLoading = false;

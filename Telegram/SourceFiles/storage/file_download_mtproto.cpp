@@ -184,6 +184,10 @@ bool mtpFileLoader::setWebFileSizeHook(int64 size) {
 	return false;
 }
 
+std::shared_ptr<Storage::DownloadTrace> mtpFileLoader::createDownloadTrace() {
+	return DownloadMtprotoTask::downloadTrace();
+}
+
 void mtpFileLoader::startLoading() {
 	addToQueue();
 }

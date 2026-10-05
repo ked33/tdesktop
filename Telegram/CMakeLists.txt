@@ -1960,6 +1960,8 @@ PRIVATE
     storage/details/storage_file_utilities.h
     storage/details/storage_settings_scheme.cpp
     storage/details/storage_settings_scheme.h
+    storage/download_diagnostics.cpp
+    storage/download_diagnostics.h
     storage/download_manager_mtproto.cpp
     storage/download_manager_mtproto.h
     storage/download_rate_limiter.h

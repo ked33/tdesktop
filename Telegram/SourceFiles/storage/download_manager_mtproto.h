@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer.h"
 #include "base/weak_ptr.h"
 #include "data/data_file_origin.h"
+#include "storage/download_diagnostics.h"
 #include "storage/download_rate_limiter.h"
 #include "storage/storage_non_premium_delay.h"
 
@@ -43,6 +44,10 @@ public:
 
 	[[nodiscard]] ApiWrap &api() const {
 		return *_api;
+	}
+
+	[[nodiscard]] DownloadDiagnostics &diagnostics() {
+		return _diagnostics;
 	}
 
 	void enqueue(not_null<Task*> task, int priority);
@@ -115,6 +120,7 @@ private:
 		[[nodiscard]] bool empty() const;
 		[[nodiscard]] Task *nextTask(bool onlyHighestPriority) const;
 		void removeSession(int index);
+		[[nodiscard]] QString diagnosticSnapshot(crl::time now) const;
 
 	private:
 		struct Enqueued {
@@ -186,6 +192,7 @@ private:
 		bool probeActive = false;
 	};
 
+	[[nodiscard]] QString diagnosticSnapshot(int dcId) const;
 	void checkSendNext();
 	void checkSendNext(MTP::DcId dcId, Queue &queue);
 	bool trySendNextPart(MTP::DcId dcId, Queue &queue);
@@ -222,6 +229,7 @@ private:
 	[[nodiscard]] crl::time downloadRateDelay(MTP::DcId dcId, crl::time now);
 
 	const not_null<ApiWrap*> _api;
+	DownloadDiagnostics _diagnostics;
 
 	rpl::event_stream<> _taskFinished;
 	rpl::event_stream<std::pair<DocumentId, NonPremiumDelayInfo>>
@@ -269,6 +277,8 @@ public:
 		const Location &location);
 	virtual ~DownloadMtprotoTask();
 
+	[[nodiscard]] std::shared_ptr<DownloadTrace> downloadTrace();
+	[[nodiscard]] QString diagnosticSnapshot(crl::time now) const;
 	[[nodiscard]] MTP::DcId dcId() const;
 	[[nodiscard]] Data::FileOrigin fileOrigin() const;
 	[[nodiscard]] uint64 objectId() const;
@@ -311,6 +321,7 @@ private:
 		int requestedInSession = 0;
 		crl::time sent = 0;
 		bool readRetrySuppressed = false;
+		crl::time referenceAt = 0;
 
 		inline bool operator<(const RequestData &other) const {
 			return offset < other.offset;
@@ -391,9 +402,12 @@ private:
 		int64 offset,
 		bytes::const_span buffer);
 
+	void updateDownloadTrace();
+	void recordReceivedPart(int64 size);
 	void subscribeToTransferLimits();
 	void logTransferLimitSource(const MTP::TransferLimitInfo &info) const;
 
+	std::shared_ptr<DownloadTrace> _downloadTrace;
 	const not_null<DownloadManagerMtproto*> _owner;
 	const MTP::DcId _dcId = 0;
 
