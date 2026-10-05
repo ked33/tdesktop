@@ -53,6 +53,7 @@ jobs:
           DOC_PATH="$GITHUB_WORKSPACE/$TBUILD_REL/$REPO_NAME/docs/building-win.md"
           {
             find "$PREPARE_ROOT" -type f -print0 | sort -z | xargs -0 sha256sum
+            sha256sum "$GITHUB_WORKSPACE/$TBUILD_REL/$REPO_NAME/Telegram/build/qt_version.py"
             if [ -f "$DOC_PATH" ]; then
               sha256sum "$DOC_PATH"
             fi
@@ -78,10 +79,9 @@ jobs:
             !${{ env.LibrariesPath }}\[qQ]t[_-]*
             ${{ env.LibrariesPath }}\cache_keys\*
             !${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
-          key: win64-libs-release-${{ env.CACHE_KEY }}
+          key: win64-avrea-libs-release-${{ env.CACHE_KEY }}
           restore-keys: |
-            win64-libs-release-
-            win64-libs-${{ env.CACHE_KEY }}
+            win64-avrea-libs-release-
 
       - name: Restore Qt cache
         id: cache_qt
@@ -93,9 +93,9 @@ jobs:
             !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*.pdb
             !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*d.lib
             !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*d.prl
-          key: win64-qt-6.11.2-${{ env.CACHE_KEY }}
+          key: win64-avrea-qt-release-6.11.2-${{ env.CACHE_KEY }}
           restore-keys: |
-            win64-qt-6.11.2-
+            win64-avrea-qt-release-6.11.2-
 
       # GitHub-hosted (windows-2022): puts sccache.exe on PATH and uses
       # the ghac backend. On Avrea that PATH wrap makes meson treat
@@ -120,6 +120,7 @@ jobs:
           rem (Yurigram + docs/building-win.md). On windows-2022 the
           rem unpinned VsDevCmd line below is enough if that image is VS 2022.
           call "%VSINSTALLPATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 -vcvars_ver=14.44
+          if errorlevel 1 exit /b %errorlevel%
           rem call "%VSINSTALLPATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
           echo Platform=x64>>"%GITHUB_ENV%"
           for /f "delims=" %%i in ('set') do @echo %%i>>"%GITHUB_ENV%"
@@ -134,6 +135,18 @@ jobs:
             /Fo:"%RUNNER_TEMP%\test_porn_search.obj"
           if errorlevel 1 exit /b %errorlevel%
           "%RUNNER_TEMP%\test_porn_search.exe"
+          exit /b %errorlevel%
+
+      - name: Check message folding matching and ID validation
+        shell: cmd
+        run: |
+          cl /nologo /std:c++20 /EHsc /W4 /WX /utf-8 ^
+            /I"%TBUILD%\%REPO_NAME%\Telegram\SourceFiles" ^
+            "%TBUILD%\%REPO_NAME%\Telegram\SourceFiles\test\test_message_folding.cpp" ^
+            /Fe:"%RUNNER_TEMP%\test_message_folding.exe" ^
+            /Fo:"%RUNNER_TEMP%\test_message_folding.obj"
+          if errorlevel 1 exit /b %errorlevel%
+          "%RUNNER_TEMP%\test_message_folding.exe"
           exit /b %errorlevel%
 
       - name: NuGet sources
