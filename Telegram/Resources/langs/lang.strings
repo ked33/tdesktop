@@ -9343,9 +9343,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_selected_action_done" = "全部操作已成功完成";
 "lng_selected_action_partial" = "操作结束，存在失败；详细原因已写入 log.txt";
 "lng_selected_action_skipped" = "操作结束，部分消息已跳过或保留";
-"lng_selected_action_progress" = "选中 {count} 条 · 已处理 {ready} / 已排入 {total} 条次";
+"lng_selected_action_progress" = "选中 {amount} 条 · 已处理 {ready} / 已排入 {total} 条次";
 "lng_selected_action_batches" = "已完成批次：{ready} / {total}";
-"lng_selected_action_results" = "成功 {count} · 失败 {failed} · 跳过/保留 {skipped}";
+"lng_selected_action_results" = "成功 {amount} · 失败 {failed} · 跳过/保留 {skipped}";
 "lng_selected_action_forward" = "正在转发消息";
 "lng_selected_action_copy" = "正在复制消息";
 "lng_selected_action_delete" = "正在删除消息";

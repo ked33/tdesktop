@@ -363,14 +363,14 @@ void SelectedAction::render() {
 		}
 	}
 	text.append(u"\n\n"_q).append(tr::lng_selected_action_progress(
-		tr::now, lt_count, QString::number(_selected),
+		tr::now, lt_amount, QString::number(_selected),
 		lt_ready, QString::number(_success + _failed),
 		lt_total, QString::number(total)));
 	text.append(u"\n"_q).append(tr::lng_selected_action_batches(
 		tr::now, lt_ready, QString::number(completed),
 		lt_total, QString::number(batches)));
 	text.append(u"\n\n"_q).append(tr::lng_selected_action_results(
-		tr::now, lt_count, QString::number(_success),
+		tr::now, lt_amount, QString::number(_success),
 		lt_failed, QString::number(_failed),
 		lt_skipped, QString::number(_skipped)));
 	if (_finished) {
