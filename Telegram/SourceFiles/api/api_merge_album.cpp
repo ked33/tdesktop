@@ -1979,7 +1979,7 @@ MergeAlbumCleanup CleanupMergedSources(
 		session->data().sendHistoryChangeNotifications();
 	}
 	if (progress) {
-		progress->skip(result.kept, u"No permission to delete source"_q);
+		progress->keepSources(result.kept);
 	}
 	result.deleted = int(deleteIds.size());
 	return result;

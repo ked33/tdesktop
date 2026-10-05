@@ -58,6 +58,7 @@ public:
 		int count,
 		QString details = QString());
 	void skip(int count, const QString &reason);
+	void keepSources(int count);
 	void finish();
 	void afterRequests(Fn<void()> callback);
 	void cancel();
@@ -93,6 +94,7 @@ private:
 	int _success = 0;
 	int _failed = 0;
 	int _skipped = 0;
+	int _kept = 0;
 	bool _sealed = false;
 	bool _finished = false;
 	Fn<void()> _afterRequests;

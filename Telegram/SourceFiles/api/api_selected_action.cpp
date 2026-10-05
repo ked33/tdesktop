@@ -265,6 +265,16 @@ void SelectedAction::skip(int count, const QString &reason) {
 	refresh();
 }
 
+void SelectedAction::keepSources(int count) {
+	if (!count) {
+		return;
+	}
+	_kept += count;
+	LOG(("SelectedAction: operation=%1 kept=%2 "
+		"reason=No permission to delete source").arg(_id).arg(count));
+	refresh();
+}
+
 bool SelectedAction::failed() const {
 	return _failed != 0;
 }
@@ -294,6 +304,10 @@ void SelectedAction::tryFinish() {
 		return;
 	}
 	_finished = true;
+	LOG(("SelectedAction: operation=%1 title=%2 finished "
+		"success=%3 failed=%4 skipped=%5 kept=%6 resultDuration=%7")
+		.arg(_id).arg(_title).arg(_success).arg(_failed)
+		.arg(_skipped).arg(_kept).arg(kResultDuration));
 	refresh();
 	const auto keep = shared_from_this();
 	base::call_delayed(kResultDuration, [keep] { keep->cancel(); });
@@ -338,9 +352,16 @@ void SelectedAction::render() {
 	auto text = Ui::Text::Bold(_title);
 	text.append(u"\n\n"_q);
 	if (_finished) {
-		text.append(_failed ? tr::lng_selected_action_partial(tr::now)
+		const auto status = _failed ? tr::lng_selected_action_partial(tr::now)
 			: _skipped ? tr::lng_selected_action_skipped(tr::now)
-			: tr::lng_selected_action_done(tr::now));
+			: tr::lng_selected_action_done(tr::now);
+		text.append(tr::bold(status));
+		if (_kept) {
+			text.append(u"\n"_q).append(tr::lng_selected_action_sources_kept(
+				tr::now,
+				lt_amount,
+				QString::number(_kept)));
+		}
 	} else {
 		text.append(_current >= 0 ? _batches[_current].stage
 			: tr::lng_selected_action_preparing(tr::now));
@@ -372,7 +393,7 @@ void SelectedAction::render() {
 	text.append(u"\n\n"_q).append(tr::lng_selected_action_results(
 		tr::now, lt_amount, QString::number(_success),
 		lt_failed, QString::number(_failed),
-		lt_skipped, QString::number(_skipped)));
+		lt_skipped, QString::number(_skipped + _kept)));
 	if (_finished) {
 		auto details = QStringList();
 		for (const auto &batch : _batches) {
