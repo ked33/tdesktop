@@ -79,8 +79,15 @@ public:
 		}
 	}
 
-	void update(uint64 id, TextWithEntities text) {
+	void update(uint64 id, TextWithEntities text, bool finished) {
 		_entries[id] = std::move(text);
+		if (finished) {
+			if (const auto toast = _toast.get()) {
+				toast->hide();
+			}
+			_toast = nullptr;
+			_content = nullptr;
+		}
 		render();
 	}
 
@@ -427,7 +434,7 @@ void SelectedAction::render() {
 			text.append(QString(2, QChar(10))).append(details.join(QChar(10)));
 		}
 	}
-	_display->update(_id, std::move(text));
+	_display->update(_id, std::move(text), _finished);
 }
 
 SelectedActionBatch::SelectedActionBatch(SelectedActionPtr owner, int id)
