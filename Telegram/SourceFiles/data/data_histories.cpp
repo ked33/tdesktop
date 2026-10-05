@@ -806,7 +806,11 @@ void Histories::deleteMessages(
 		not_null<History*> history,
 		const QVector<MTPint> &ids,
 		bool revoke,
-		std::shared_ptr<Api::SelectedAction> progress) {
+		std::shared_ptr<Api::SelectedAction> progress,
+		QString progressStage) {
+	const auto stage = progressStage.isEmpty()
+		? tr::lng_selected_action_delete(tr::now)
+		: std::move(progressStage);
 	if (ids.isEmpty()) {
 		return;
 	}
@@ -820,7 +824,7 @@ void Histories::deleteMessages(
 				.arg(history->peer->id.value).arg(loggedIds.join(',')));
 		}
 		const auto tracked = Api::TrackSelectedAction(progress,
-			tr::lng_selected_action_delete(tr::now), int(chunk.size()),
+			stage, int(chunk.size()),
 			Api::SelectedActionPeer(history->peer));
 		if (tracked) {
 			tracked->start();
@@ -1016,7 +1020,11 @@ void Histories::deleteMessagesByDates(
 void Histories::deleteMessages(
 		const MessageIdsList &ids,
 		bool revoke,
-		std::shared_ptr<Api::SelectedAction> progress) {
+		std::shared_ptr<Api::SelectedAction> progress,
+		QString progressStage) {
+	const auto stage = progressStage.isEmpty()
+		? tr::lng_selected_action_delete(tr::now)
+		: std::move(progressStage);
 	auto remove = std::vector<not_null<HistoryItem*>>();
 	remove.reserve(ids.size());
 	base::flat_map<not_null<History*>, QVector<MTPint>> idsByPeer;
@@ -1046,7 +1054,7 @@ void Histories::deleteMessages(
 				} else {
 					scheduled.removeSending(item);
 					if (const auto local = Api::TrackSelectedAction(progress,
-							tr::lng_selected_action_delete(tr::now), 1)) {
+							stage, 1)) {
 						local->done();
 					}
 				}
@@ -1060,7 +1068,7 @@ void Histories::deleteMessages(
 				} else {
 					_owner->shortcutMessages().removeSending(item);
 					if (const auto local = Api::TrackSelectedAction(progress,
-							tr::lng_selected_action_delete(tr::now), 1)) {
+							stage, 1)) {
 						local->done();
 					}
 				}
@@ -1070,7 +1078,7 @@ void Histories::deleteMessages(
 				if (item->isSending() || item->hasFailed()) {
 					welcome.removeSending(item);
 					if (const auto local = Api::TrackSelectedAction(progress,
-							tr::lng_selected_action_delete(tr::now), 1)) {
+							stage, 1)) {
 						local->done();
 					}
 				} else {
@@ -1085,7 +1093,7 @@ void Histories::deleteMessages(
 			if (item->isRegular()) {
 				idsByPeer[history].push_back(MTP_int(itemId.msg));
 			} else if (const auto local = Api::TrackSelectedAction(progress,
-					tr::lng_selected_action_delete(tr::now), 1)) {
+					stage, 1)) {
 				local->done();
 			}
 		} else if (progress) {
@@ -1094,11 +1102,16 @@ void Histories::deleteMessages(
 	}
 
 	for (const auto &[history, ids] : idsByPeer) {
-		history->owner().histories().deleteMessages(history, ids, revoke, progress);
+		history->owner().histories().deleteMessages(
+			history,
+			ids,
+			revoke,
+			progress,
+			stage);
 	}
 	for (const auto &[peer, ids] : scheduledIdsByPeer) {
 		const auto tracked = Api::TrackSelectedAction(progress,
-			tr::lng_selected_action_delete(tr::now), int(ids.size()),
+			stage, int(ids.size()),
 			Api::SelectedActionPeer(peer));
 		if (tracked) {
 			tracked->start();
@@ -1119,7 +1132,7 @@ void Histories::deleteMessages(
 	}
 	for (const auto &[shortcutId, ids] : quickIdsByShortcut) {
 		const auto tracked = Api::TrackSelectedAction(progress,
-			tr::lng_selected_action_delete(tr::now), int(ids.size()),
+			stage, int(ids.size()),
 			QString::number(shortcutId));
 		if (tracked) {
 			tracked->start();

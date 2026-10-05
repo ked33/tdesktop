@@ -3785,20 +3785,7 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 				Api::SendMergedAlbums(
 					action,
 					items,
-					[=](Api::MergeAlbumResult sendResult) {
-						if (!sendResult.sentMedia
-							&& sendResult.error == u"CHAT_FORWARDS_RESTRICTED"_q
-							&& action.history != items.front()->history()) {
-							LOG(("MergeAlbum: fallback copy-then-merge dest=%1"
-							).arg(action.history->peer->id.value));
-							Api::CopyThenMergeAlbums(
-								action,
-								items,
-								finish);
-							return;
-						}
-						finish(std::move(sendResult));
-					},
+					finish,
 					true);
 			}
 			if (show->valid()) {

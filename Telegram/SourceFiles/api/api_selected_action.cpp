@@ -279,6 +279,13 @@ bool SelectedAction::failed() const {
 	return _failed != 0;
 }
 
+void SelectedAction::keepTemporaryCopies(int count) {
+	_temporaryKept += count;
+	LOG(("SelectedAction: operation=%1 temporaryCopiesKept=%2")
+		.arg(_id).arg(count));
+	refresh();
+}
+
 void SelectedAction::afterRequests(Fn<void()> callback) {
 	_afterRequests = std::move(callback);
 }
@@ -305,9 +312,10 @@ void SelectedAction::tryFinish() {
 	}
 	_finished = true;
 	LOG(("SelectedAction: operation=%1 title=%2 finished "
-		"success=%3 failed=%4 skipped=%5 kept=%6 resultDuration=%7")
+		"success=%3 failed=%4 skipped=%5 kept=%6 resultDuration=%7 "
+		"temporaryCopiesKept=%8")
 		.arg(_id).arg(_title).arg(_success).arg(_failed)
-		.arg(_skipped).arg(_kept).arg(kResultDuration));
+		.arg(_skipped).arg(_kept).arg(kResultDuration).arg(_temporaryKept));
 	refresh();
 	const auto keep = shared_from_this();
 	base::call_delayed(kResultDuration, [keep] { keep->cancel(); });
@@ -342,7 +350,9 @@ void SelectedAction::render() {
 	auto total = 0;
 	auto batches = 0;
 	auto completed = 0;
+	auto fallbacks = 0;
 	for (const auto &batch : _batches) {
+		fallbacks += batch.fallback ? 1 : 0;
 		total += batch.count;
 		if (batch.count) {
 			++batches;
@@ -394,6 +404,18 @@ void SelectedAction::render() {
 		tr::now, lt_amount, QString::number(_success),
 		lt_failed, QString::number(_failed),
 		lt_skipped, QString::number(_skipped + _kept)));
+	if (fallbacks) {
+		text.append(u"\n"_q).append(tr::lng_selected_action_fallback_batches(
+			tr::now,
+			lt_amount,
+			QString::number(fallbacks)));
+	}
+	if (_temporaryKept) {
+		text.append(u"\n"_q).append(tr::lng_selected_action_temporary_kept(
+			tr::now,
+			lt_amount,
+			QString::number(_temporaryKept)));
+	}
 	if (_finished) {
 		auto details = QStringList();
 		for (const auto &batch : _batches) {
@@ -415,6 +437,27 @@ SelectedActionBatch::SelectedActionBatch(SelectedActionPtr owner, int id)
 
 void SelectedActionBatch::start() {
 	_owner->start(_id);
+}
+
+void SelectedActionBatch::setStage(QString stage) {
+	if (_finished) {
+		return;
+	}
+	_lifetime.destroy();
+	_errorCode = 0;
+	_errorDetails.clear();
+	auto &batch = _owner->_batches[_id];
+	batch.stage = std::move(stage);
+	batch.retryAt = 0;
+	start();
+}
+
+void SelectedActionBatch::beginFallback(QString stage) {
+	if (_finished) {
+		return;
+	}
+	_owner->_batches[_id].fallback = true;
+	setStage(std::move(stage));
 }
 
 void SelectedActionBatch::done() {

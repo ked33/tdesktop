@@ -9355,3 +9355,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_selected_action_links" = "正在补写来源链接";
 
 "lng_selected_action_wait" = "服务端要求等待：{seconds} 秒后重试";
+"lng_selected_action_merge_group" = "{peer}\n相册分组：{ready} / {total}";
+"lng_selected_action_fallback_prepare" = "直接合并受阻，已启动兜底处理";
+"lng_selected_action_fallback_copy" = "兜底：正在复制本组消息（{ready} / {total}）";
+"lng_selected_action_fallback_copy_failed" = "兜底：本组消息未能全部复制，原消息已保留";
+"lng_selected_action_fallback_merge" = "兜底：正在重新合并本组消息";
+"lng_selected_action_fallback_cleanup" = "兜底：合并成功，正在清理临时消息";
+"lng_selected_action_fallback_batches" = "已触发兜底：{amount} 个批次";
+"lng_selected_action_temporary_kept" = "兜底未完成，目标对话保留了 {amount} 条临时复制消息";

@@ -28,6 +28,8 @@ class SelectedActionBatch final {
 public:
 	SelectedActionBatch(SelectedActionPtr owner, int id);
 	void start();
+	void setStage(QString stage);
+	void beginFallback(QString stage);
 	void done();
 	void fail(const MTP::Error &error);
 	void fail(const QString &error);
@@ -59,6 +61,7 @@ public:
 		QString details = QString());
 	void skip(int count, const QString &reason);
 	void keepSources(int count);
+	void keepTemporaryCopies(int count);
 	void finish();
 	void afterRequests(Fn<void()> callback);
 	void cancel();
@@ -71,6 +74,7 @@ private:
 		QString details;
 		int count = 0;
 		bool finished = false;
+		bool fallback = false;
 		crl::time retryAt = 0;
 	};
 	SelectedAction(
@@ -95,6 +99,7 @@ private:
 	int _failed = 0;
 	int _skipped = 0;
 	int _kept = 0;
+	int _temporaryKept = 0;
 	bool _sealed = false;
 	bool _finished = false;
 	Fn<void()> _afterRequests;

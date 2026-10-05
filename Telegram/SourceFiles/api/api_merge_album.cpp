@@ -18,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/random.h"
 #include "base/unixtime.h"
 #include "data/business/data_shortcut_messages.h"
+#include "data/components/scheduled_messages.h"
 #include "data/data_channel.h"
 #include "data/data_chat.h"
 #include "data/data_document.h"
@@ -34,6 +35,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item_helpers.h"
 #include "main/main_session.h"
 #include "mtproto/mtproto_config.h"
+#include "mtproto/mtproto_response.h"
 #include "ui/chat/attach/attach_prepare.h"
 #include "ui/text/text_entity.h"
 #include "ui/text/text_utilities.h"
@@ -43,6 +45,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QStringList>
 
 #include <algorithm>
+#include <optional>
 
 namespace Api {
 namespace {
@@ -72,6 +75,18 @@ struct MergeRefreshItem {
 	Data::FileOrigin origin;
 	QByteArray usedFileReference;
 };
+
+struct MergeFallbackResult {
+	std::vector<MTPInputMedia> media;
+	MessageIdsList copies;
+	std::optional<MTP::Error> error;
+};
+
+void CopyMergeGroup(
+	SendAction action,
+	MessageIdsList sources,
+	QString details,
+	Fn<void(MergeFallbackResult)> done);
 
 [[nodiscard]] QByteArray MediaFileReference(const MergeAlbumMedia &media) {
 	if (media.photo) {
@@ -942,6 +957,7 @@ void SendMergeGroup(
 		SendAction action,
 		std::vector<MergeAlbumMedia> items,
 		TextWithEntities caption,
+		QString details,
 		Fn<void(QString)> done) {
 	Expects(!items.empty());
 
@@ -1027,14 +1043,23 @@ void SendMergeGroup(
 
 	const auto tracked = TrackSelectedAction(action.progress,
 		tr::lng_selected_action_merge(tr::now), int(items.size()),
-		SelectedActionPeer(peer));
+		details);
 	if (tracked) {
 		tracked->start();
 	}
 
+	struct FallbackState {
+		bool attempted = false;
+		MergeFallbackResult result;
+	};
+	const auto fallback = std::make_shared<FallbackState>();
 	const auto failRequest = [=](const MTP::Error &error, bool refreshed) {
 		if (tracked) {
 			tracked->fail(error);
+		}
+		if (action.progress && !fallback->result.copies.empty()) {
+			action.progress->keepTemporaryCopies(
+				int(fallback->result.copies.size()));
 		}
 		LOG(("MergeAlbum: fail dest=%1 method=%2 count=%3 error=%4 refreshed=%5"
 		).arg(peer->id.value
@@ -1043,7 +1068,19 @@ void SendMergeGroup(
 		).arg(error.type()
 		).arg(refreshed ? 1 : 0));
 		for (const auto &item : requests) {
-			api->sendMessageFail(error, peer, item.randomId, item.localId);
+			if (tracked && fallback->attempted) {
+				session->data().unregisterMessageRandomId(item.randomId);
+				if (const auto local = session->data().message(item.localId)) {
+					local->sendFailed();
+					if (error.type() == u"TOPIC_CLOSED"_q) {
+						if (const auto topic = local->topic()) {
+							topic->setClosed(true);
+						}
+					}
+				}
+			} else {
+				api->sendMessageFail(error, peer, item.randomId, item.localId);
+			}
 		}
 		if (done) {
 			done(error.type());
@@ -1068,6 +1105,20 @@ void SendMergeGroup(
 			-> void {
 		const auto sendAs = action.options.sendAs;
 		const auto finishOk = [=] {
+			if (fallback->attempted) {
+				LOG(("MergeAlbum: fallback merged dest=%1 count=%2 cleanup=%3")
+					.arg(peer->id.value).arg(requests.size())
+					.arg(fallback->result.copies.size()));
+				session->data().histories().deleteMessages(
+					fallback->result.copies,
+					true,
+					action.progress,
+					tr::lng_selected_action_fallback_cleanup(tr::now));
+				if (tracked) {
+					tracked->setStage(
+						tr::lng_selected_action_fallback_cleanup(tr::now));
+				}
+			}
 			if (tracked) {
 				tracked->done();
 			}
@@ -1083,10 +1134,57 @@ void SendMergeGroup(
 		const auto retryOrFail = [=](
 				const MTP::Error &error,
 				const MTP::Response &response) {
-			if (refreshed
+			if (fallback->attempted
+				|| refreshed
 				|| (error.code() != 400)
 				|| !error.type().startsWith(u"FILE_REFERENCE_"_q)
 				|| refreshItems.empty()) {
+				const auto recoverable = (error.code() == 400)
+					&& (error.type() == u"CHAT_FORWARDS_RESTRICTED"_q
+						|| error.type().startsWith(u"FILE_REFERENCE_"_q));
+				if (recoverable && !fallback->attempted) {
+					fallback->attempted = true;
+					if (tracked) {
+						tracked->beginFallback(
+							tr::lng_selected_action_fallback_prepare(tr::now));
+						tracked->retry(error);
+					}
+					auto sources = MessageIdsList();
+					for (const auto &request : requests) {
+						sources.push_back(request.media.sourceId);
+					}
+					LOG(("MergeAlbum: fallback start dest=%1 count=%2 error=%3 context=%4")
+						.arg(peer->id.value).arg(sources.size())
+						.arg(error.type()).arg(details));
+					CopyMergeGroup(
+						action,
+						std::move(sources),
+						details,
+						[=](MergeFallbackResult result) {
+						fallback->result = std::move(result);
+						if (fallback->result.error
+							|| fallback->result.media.size() != requests.size()) {
+							if (tracked) {
+								tracked->setStage(
+									tr::lng_selected_action_fallback_copy_failed(tr::now));
+							}
+							const auto error = fallback->result.error.value_or(
+								MTP::Error::Local(
+									u"MERGE_FALLBACK_COPY_FAILED"_q,
+									u"COPIED_MEDIA_COUNT_MISMATCH"_q));
+							failRequest(error, refreshed);
+							return;
+						}
+						if (tracked) {
+							tracked->setStage(
+								tr::lng_selected_action_fallback_merge(tr::now));
+						}
+						LOG(("MergeAlbum: fallback retry dest=%1 count=%2")
+							.arg(peer->id.value).arg(requests.size()));
+						repeatRequest(repeatRequest, true);
+					});
+					return;
+				}
 				failRequest(error, refreshed);
 				return;
 			}
@@ -1109,18 +1207,16 @@ void SendMergeGroup(
 						LOG(("MergeAlbum: file_reference result dest=%1 changed=%2"
 						).arg(peer->id.value
 						).arg(*changed ? 1 : 0));
-						if (*changed) {
-							repeatRequest(repeatRequest, true);
-						} else {
-							failRequest(error, true);
-						}
+						repeatRequest(repeatRequest, true);
 					}
 				});
 			}
 		};
 		if (!multi) {
 			const auto &item = requests.front();
-			const auto inputMedia = PrepareMergeInputMedia(
+			const auto inputMedia = fallback->attempted
+				? fallback->result.media.front()
+				: PrepareMergeInputMedia(
 				item.media,
 				action.options.mediaSpoiler);
 			const auto entities = EntitiesToMTP(
@@ -1204,7 +1300,8 @@ void SendMergeGroup(
 			| (batchStarsPaid ? Flag::f_allow_paid_stars : Flag(0));
 		auto media = QVector<MTPInputSingleMedia>();
 		media.reserve(int(requests.size()));
-		for (const auto &item : requests) {
+		for (auto i = 0; i != int(requests.size()); ++i) {
+			const auto &item = requests[i];
 			const auto entities = EntitiesToMTP(
 				session,
 				item.caption.entities,
@@ -1214,7 +1311,9 @@ void SendMergeGroup(
 				MTP_flags(!entities.v.isEmpty()
 					? SingleFlag::f_entities
 					: SingleFlag(0)),
-				PrepareMergeInputMedia(item.media, action.options.mediaSpoiler),
+				(fallback->attempted
+					? fallback->result.media[i]
+					: PrepareMergeInputMedia(item.media, action.options.mediaSpoiler)),
 				MTP_long(item.randomId),
 				MTP_string(item.caption.text),
 				entities));
@@ -1591,6 +1690,14 @@ void SendMergedAlbums(
 			state->action,
 			std::move(batch),
 			std::move(caption),
+			tr::lng_selected_action_merge_group(
+				tr::now,
+				lt_peer,
+				SelectedActionPeer(state->action.history->peer),
+				lt_ready,
+				QString::number(groupIndex + 1),
+				lt_total,
+				QString::number(state->groups.size())),
 			[=](QString error) {
 			if (!error.isEmpty()) {
 				LOG(("MergeAlbum: group fail dest=%1 index=%2/%3 error=%4"
@@ -1763,17 +1870,67 @@ void AppendSourceLinksToCopiedMessages(
 
 namespace {
 
+HistoryItem *FindCopiedMessage(
+		const SendAction &action,
+		const MTPUpdates &updates,
+		uint64 randomId) {
+	auto id = MsgId();
+	const auto takeUpdate = [&](const MTPUpdate &update) {
+		update.match([&](const MTPDupdateMessageID &data) {
+			if (uint64(data.vrandom_id().v) == randomId) {
+				id = MsgId(data.vid().v);
+			}
+		}, [](const auto &) {});
+	};
+	updates.match([&](const MTPDupdates &data) {
+		for (const auto &update : data.vupdates().v) {
+			takeUpdate(update);
+		}
+	}, [&](const MTPDupdatesCombined &data) {
+		for (const auto &update : data.vupdates().v) {
+			takeUpdate(update);
+		}
+	}, [](const auto &) {});
+	if (!id) {
+		return nullptr;
+	}
+	const auto session = &action.history->session();
+	const auto peer = action.history->peer->id;
+	if (action.options.shortcutId) {
+		id = session->data().shortcutMessages().localMessageId(id);
+	} else if (action.options.scheduled) {
+		const auto &scheduled = session->scheduledMessages();
+		return scheduled.lookupItem(peer, scheduled.localMessageId(id));
+	}
+	return session->data().message(FullMsgId(peer, id));
+}
+
 void ForwardOneAsCopy(
 		SendAction action,
 		not_null<HistoryItem*> item,
-		Fn<void(FullMsgId, QString)> done) {
+		QString stage,
+		QString details,
+		Fn<void(FullMsgId, std::optional<MTP::Error>)> done) {
 	const auto history = action.history;
 	const auto peer = history->peer;
 	const auto session = &history->session();
 	const auto fromPeer = item->history()->peer;
+	const auto sourceId = item->id;
+	const auto sendAs = action.options.sendAs;
+	const auto tracked = TrackSelectedAction(
+		action.progress,
+		std::move(stage),
+		1,
+		std::move(details));
 	using Flag = MTPmessages_ForwardMessages::Flag;
 	auto sendFlags = MTPmessages_ForwardMessages::Flags(0);
 	sendFlags |= Flag::f_drop_author;
+	if (item->isEphemeral()) {
+		sendFlags |= Flag::f_from_ephemeral;
+	}
+	if (sendAs) {
+		sendFlags |= Flag::f_send_as;
+	}
 	if (ShouldSendSilent(peer, action.options)) {
 		sendFlags |= Flag::f_silent;
 	}
@@ -1797,13 +1954,6 @@ void ForwardOneAsCopy(
 	if (topMsgId) {
 		sendFlags |= Flag::f_top_msg_id;
 	}
-	const auto starsPaid = std::min(
-		peer->starsPerMessageChecked(),
-		action.options.starsApproved);
-	if (starsPaid) {
-		action.options.starsApproved -= starsPaid;
-		sendFlags |= Flag::f_allow_paid_stars;
-	}
 	const auto randomId = base::RandomValue<uint64>();
 	const auto dest = peer->id;
 	LOG(("MergeAlbum: copy dest=%1 src=%2/%3"
@@ -1814,137 +1964,141 @@ void ForwardOneAsCopy(
 		history,
 		FullReplyTo{ .topicRootId = topicRootId },
 		uint64(0),
-		[=](not_null<History*> history, FullReplyTo)
+		[=](not_null<History*> history, FullReplyTo replyTo)
 		-> Data::Histories::PreparedMessage {
 			return MTPmessages_ForwardMessages(
 				MTP_flags(sendFlags),
 				fromPeer->input(),
-				MTP_vector<MTPint>(1, MTP_int(item->id)),
+				MTP_vector<MTPint>(1, MTP_int(sourceId)),
 				MTP_vector<MTPlong>(1, MTP_long(randomId)),
 				history->peer->input(),
-				MTP_int(topMsgId),
+				MTP_int(replyTo.topicRootId),
 				MTPInputReplyTo(),
 				MTP_int(action.options.scheduled),
 				MTP_int(action.options.scheduleRepeatPeriod),
-				MTP_inputPeerEmpty(),
+				(sendAs ? sendAs->input() : MTP_inputPeerEmpty()),
 				Data::ShortcutIdToMTP(session, action.options.shortcutId),
 				MTP_long(action.options.effectId),
 				MTPint(),
-				MTP_long(starsPaid),
+				MTP_long(0), // Temporary copies have no Stars spending approval.
 				SuggestToMTP(action.options.suggest));
 		},
 		[=](const MTPUpdates &updates, const MTP::Response &) {
-			auto ids = MessageIdsList();
-			CollectNewMessageIds(updates, dest, ids);
-			LOG(("MergeAlbum: copy ok dest=%1 got=%2"
-			).arg(dest.value
-			).arg(int(ids.size())));
-			done(ids.empty() ? FullMsgId() : ids.front(), QString());
-		},
-		[=](const MTP::Error &error, const MTP::Response &) {
-			LOG(("MergeAlbum: copy fail dest=%1 error=%2"
-			).arg(dest.value
-			).arg(error.type()));
-			done(FullMsgId(), error.type());
-		}, TrackSelectedAction(action.progress,
-			tr::lng_selected_action_copy(tr::now), 1,
-			SelectedActionPeer(item->history()->peer) + u" → "_q
-				+ SelectedActionPeer(history->peer)));
-}
-
-} // namespace
-
-void CopyThenMergeAlbums(
-		SendAction action,
-		const std::vector<not_null<HistoryItem*>> &items,
-		Fn<void(MergeAlbumResult)> done) {
-	action.clearDraft = false;
-	action.generateLocal = false;
-	if (items.empty()) {
-		if (done) {
-			done(MergeAlbumResult());
-		}
-		return;
-	}
-	const auto sameChat = (action.history == items.front()->history())
-		&& (!items.front()->topic()
-			|| (action.replyTo.topicRootId == items.front()->topicRootId()));
-	if (sameChat) {
-		SendMergedAlbums(
-			std::move(action),
-			items,
-			std::move(done),
-			true);
-		return;
-	}
-	if (!action.options.scheduled && !action.options.shortcutId) {
-		action.history->owner().histories().readInbox(action.history);
-	}
-	LOG(("MergeAlbum: copy-then-merge dest=%1 selected=%2"
-	).arg(action.history->peer->id.value
-	).arg(int(items.size())));
-
-	struct State {
-		SendAction action;
-		MessageIdsList items;
-		MessageIdsList copied;
-		QString error;
-		int index = 0;
-		Fn<void(MergeAlbumResult)> done;
-	};
-	const auto state = std::make_shared<State>(State{
-		.action = action,
-		.items = action.history->owner().itemsToIds(items),
-		.index = 0,
-		.done = std::move(done),
-	});
-	const auto sendNext = [=](const auto &self) -> void {
-		if (state->index >= int(state->items.size())) {
-			const auto destItems = state->action.history->owner().idsToItems(
-				state->copied);
-			if (destItems.empty()) {
-				auto result = MergeAlbumResult();
-				result.error = state->error.isEmpty()
-					? u"COPY_FAILED"_q
-					: state->error;
-				LOG(("MergeAlbum: copy empty dest=%1 error=%2"
-				).arg(state->action.history->peer->id.value
-				).arg(result.error));
-				if (state->done) {
-					state->done(std::move(result));
+			const auto copied = FindCopiedMessage(action, updates, randomId);
+			if (!copied) {
+				const auto error = MTP::Error::Local(
+					u"COPY_MESSAGE_ID_MISSING"_q,
+					u"Copy response did not identify the temporary message"_q);
+				LOG(("MergeAlbum: copy fail dest=%1 src=%2/%3 error=%4")
+					.arg(dest.value).arg(fromPeer->id.value)
+					.arg(sourceId.bare).arg(error.type()));
+				if (tracked) {
+					tracked->fail(error);
 				}
+				done(FullMsgId(), error);
 				return;
 			}
-			LOG(("MergeAlbum: copy done dest=%1 copied=%2 merge"
-			).arg(state->action.history->peer->id.value
-			).arg(int(destItems.size())));
-			SendMergedAlbums(
-				state->action,
-				destItems,
-				std::move(state->done),
-				true);
+			LOG(("MergeAlbum: copy ok dest=%1 src=%2/%3 copied=%4")
+				.arg(dest.value).arg(fromPeer->id.value)
+				.arg(sourceId.bare).arg(copied->id.bare));
+			if (tracked) {
+				tracked->done();
+			}
+			done(copied->fullId(), std::nullopt);
+		},
+		[=](const MTP::Error &error, const MTP::Response &) {
+			const auto reason = u"%1 (%2): %3"_q.arg(error.type())
+				.arg(error.code()).arg(error.description());
+			LOG(("MergeAlbum: copy fail dest=%1 src=%2/%3 error=%4")
+				.arg(dest.value).arg(fromPeer->id.value)
+				.arg(sourceId.bare).arg(reason));
+			if (tracked) {
+				tracked->fail(error);
+			}
+			done(FullMsgId(), error);
+		}, tracked, false);
+}
+
+void CopyMergeGroup(
+		SendAction action,
+		MessageIdsList sources,
+		QString details,
+		Fn<void(MergeFallbackResult)> done) {
+	struct State {
+		SendAction action;
+		MessageIdsList sources;
+		QString details;
+		MergeFallbackResult result;
+		int index = 0;
+		Fn<void(MergeFallbackResult)> done;
+	};
+	const auto state = std::make_shared<State>(State{
+		.action = std::move(action),
+		.sources = std::move(sources),
+		.details = std::move(details),
+		.done = std::move(done),
+	});
+	const auto session = &state->action.history->session();
+	const auto sendNext = [=](const auto &self) -> void {
+		if (state->index == int(state->sources.size())) {
+			state->done(std::move(state->result));
 			return;
 		}
-		const auto item = state->action.history->owner().message(
-			state->items[state->index++]);
-		if (!item) {
-			if (state->action.progress) {
-				state->action.progress->skip(1, u"Source no longer available"_q);
+		const auto source = state->sources[state->index++];
+		const auto item = session->data().message(source);
+		if (!item || !item->allowsForward()) {
+			state->result.error = MTP::Error::Local(
+				u"SOURCE_UNAVAILABLE_OR_NOT_FORWARDABLE"_q,
+				u"%1/%2"_q.arg(source.peer.value).arg(source.msg.bare));
+			LOG(("MergeAlbum: fallback source rejected dest=%1 error=%2")
+				.arg(state->action.history->peer->id.value)
+				.arg(state->result.error->type() + u": "_q
+					+ state->result.error->description()));
+			if (const auto rejected = TrackSelectedAction(
+					state->action.progress,
+					tr::lng_selected_action_fallback_copy_failed(tr::now),
+					1,
+					state->details)) {
+				rejected->fail(*state->result.error);
 			}
 			self(self);
 			return;
 		}
-		ForwardOneAsCopy(state->action, item, [=](FullMsgId id, QString error) {
-			if (!error.isEmpty()) {
-				state->error = error;
-			} else if (id) {
-				state->copied.push_back(id);
+		ForwardOneAsCopy(
+			state->action,
+			item,
+			tr::lng_selected_action_fallback_copy(
+				tr::now,
+				lt_ready,
+				QString::number(state->index),
+				lt_total,
+				QString::number(state->sources.size())),
+			state->details + QChar(10) + SourceMessageLink(item),
+			[=](FullMsgId id, std::optional<MTP::Error> error) {
+			if (error) {
+				state->result.error = std::move(error);
+			} else {
+				state->result.copies.push_back(id);
+				const auto copied = session->data().message(id);
+				const auto media = copied ? copied->media() : nullptr;
+				if (!media || (!media->photo() && !media->document())) {
+					state->result.error = MTP::Error::Local(
+						u"COPIED_MEDIA_MISSING"_q,
+						u"%1/%2"_q.arg(id.peer.value).arg(id.msg.bare));
+				} else {
+					state->result.media.push_back(PrepareMergeInputMedia({
+						.photo = media->photo(),
+						.document = media->document(),
+					}, state->action.options.mediaSpoiler));
+				}
 			}
 			self(self);
 		});
 	};
 	sendNext(sendNext);
 }
+
+} // namespace
 
 MergeAlbumCleanup CleanupMergedSources(
 		not_null<Main::Session*> session,

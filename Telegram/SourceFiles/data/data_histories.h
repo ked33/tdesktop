@@ -87,7 +87,8 @@ public:
 		not_null<History*> history,
 		const QVector<MTPint> &ids,
 		bool revoke,
-		std::shared_ptr<Api::SelectedAction> progress = nullptr);
+		std::shared_ptr<Api::SelectedAction> progress = nullptr,
+		QString progressStage = QString());
 	void deleteAllMessages(
 		not_null<History*> history,
 		MsgId deleteTillId,
@@ -108,7 +109,8 @@ public:
 	void deleteMessages(
 		const MessageIdsList &ids,
 		bool revoke,
-		std::shared_ptr<Api::SelectedAction> progress = nullptr);
+		std::shared_ptr<Api::SelectedAction> progress = nullptr,
+		QString progressStage = QString());
 
 	int sendRequest(
 		not_null<History*> history,
