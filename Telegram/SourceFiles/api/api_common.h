@@ -18,6 +18,8 @@ class Thread;
 
 namespace Api {
 
+class SelectedAction;
+
 inline constexpr auto kScheduledUntilOnlineTimestamp = TimeId(0x7FFFFFFE);
 
 [[nodiscard]] MTPSuggestedPost SuggestToMTP(SuggestOptions suggest);
@@ -64,6 +66,7 @@ struct SendAction {
 	bool clearDraft = true;
 	bool generateLocal = true;
 	MsgId replaceMediaOf = 0;
+	std::shared_ptr<SelectedAction> progress;
 
 	[[nodiscard]] MTPInputReplyTo mtpReplyTo() const;
 

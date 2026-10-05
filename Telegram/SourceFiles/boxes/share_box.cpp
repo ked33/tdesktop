@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/share_box.h"
+#include "api/api_selected_action.h"
 
 #include "api/api_merge_album.h"
 #include "api/api_premium.h"
@@ -2109,11 +2110,18 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 			result,
 			{ .forward = &items, .text = &comment });
 		if (error.error) {
+			Api::ReportSelectedActionError(&history->session(), show,
+				tr::lng_selected_action_forward(tr::now), error.error.text);
 			show->showBox(MakeSendErrorBox(error, result.size() > 1));
 			return;
 		} else if (!checkPaid()) {
 			return;
 		}
+
+		const auto progress = Api::SelectedAction::Start(&history->session(), show,
+			no_quote ? tr::lng_selected_copy_to_tooltip(tr::now)
+				: tr::lng_selected_forward_to_tooltip(tr::now), int(msgIds.size()));
+		progress->skip(int(msgIds.size() - existingIds.size()), u"Unavailable messages"_q);
 
 		using Flag = MTPmessages_ForwardMessages::Flag;
 		using Flags = MTPmessages_ForwardMessages::Flags;
@@ -2133,20 +2141,6 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 
 		state->failed = false;
 		auto &api = history->session().api();
-		const auto donePhraseArgs = CreateForwardedMessagePhraseArgs(
-			result,
-			existingIds);
-		const auto destinationToastText = destinationToast
-			? ChatHelpers::JoinToastParts(
-				no_quote
-					? tr::lng_copy_to_done(
-						tr::now,
-						lt_total,
-						QString::number(int(existingIds.size())))
-					: tr::lng_forward_to_done(tr::now),
-				ChatHelpers::DestinationLines(result),
-				QString())
-			: QString();
 		const auto showRecentForwardsToSelf = result.size() == 1
 			&& result.front()->peer()->isSelf()
 			&& history->session().premium();
@@ -2160,7 +2154,7 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 			int starsPaid = 0;
 			Flags sendFlags;
 			PeerData *sublistPeer = nullptr;
-			std::vector<not_null<HistoryItem*>> sourceItems;
+			MessageIdsList sourceIds;
 		};
 		auto jobs = std::vector<ForwardJob>();
 		for (const auto &thread : result) {
@@ -2185,6 +2179,7 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 					Api::SendAction(effectiveThread, options));
 				message.textWithTags = comment;
 				message.action.clearDraft = false;
+				message.action.progress = progress;
 				api.sendMessage(std::move(message));
 			}
 
@@ -2230,47 +2225,37 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 							? Flag::f_from_ephemeral
 							: Flag(0)),
 					.sublistPeer = sublistPeer,
-					.sourceItems = range.items,
+					.sourceIds = history->owner().itemsToIds(range.items),
 				});
 			}
 		}
 		if (jobs.empty()) {
+			progress->finish();
 			return;
 		}
 		const auto pending = std::make_shared<std::vector<ForwardJob>>(
 			std::move(jobs));
-		const auto sendNext = std::make_shared<Fn<void()>>();
+		const auto pipeline = progress->add(tr::lng_selected_action_preparing(tr::now), 0);
 		const auto finishUi = [=] {
-			if (state->requests.empty() && show->valid()) {
+			pipeline->done();
+			progress->finish();
+			if (show->valid()) {
 				show->hideLayer();
-				if (!state->failed) {
-					if (destinationToast) {
-						base::call_delayed(
-							st::boxDuration,
-							&history->session(),
-							[=] {
-								if (show->valid()) {
-									show->showToast(
-										destinationToastText,
-										ChatHelpers::kSelectedActionToastDuration);
-								}
-							});
-					} else {
-						ShowForwardedMessageToast(
-							show,
-							&history->session(),
-							donePhraseArgs);
-					}
-				}
 			}
 		};
-		*sendNext = [=] {
+		const auto sendNext = [=](const auto &self) -> void {
 			if (pending->empty()) {
 				finishUi();
 				return;
 			}
 			const auto job = std::move(pending->front());
 			pending->erase(begin(*pending));
+			auto loggedIds = QStringList();
+			for (const auto &id : job.mtpMsgIds) {
+				loggedIds.push_back(QString::number(id.v));
+			}
+			LOG(("SelectedAction: method=messages.forwardMessages source=%1 target=%2 ids=%3")
+				.arg(job.fromPeer->id.value).arg(job.peer->id.value).arg(loggedIds.join(',')));
 			const auto requestKey = ++state->nextRequestKey;
 			state->requests.insert(requestKey);
 			auto buildMessage = [=](
@@ -2329,8 +2314,8 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 							destIds);
 						Api::AppendSourceLinksToCopiedMessages(
 							&history->session(),
-							job.sourceItems,
-							destIds);
+							history->owner().idsToItems(job.sourceIds),
+							destIds, progress);
 					}
 					if (showRecentForwardsToSelf) {
 						ApiWrap::ProcessRecentSelfForwards(
@@ -2340,29 +2325,19 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 							job.fromPeer->id);
 					}
 					state->requests.remove(requestKey);
-					(*sendNext)();
+					self(self);
 				},
 				[=](const MTP::Error &error, const MTP::Response &) {
 					state->failed = true;
-					const auto type = error.type();
-					if (type.startsWith(
-							u"ALLOW_PAYMENT_REQUIRED_"_q)) {
-						show->showToast(
-							u"Payment requirements changed. "
-							"Please, try again."_q);
-					} else if (type
-						== u"VOICE_MESSAGES_FORBIDDEN"_q) {
-						show->showToast(
-							tr::lng_restricted_send_voice_messages(
-								tr::now,
-								lt_user,
-								job.peer->name()));
-					}
 					state->requests.remove(requestKey);
-					(*sendNext)();
-				});
+					self(self);
+				}, Api::TrackSelectedAction(progress,
+					no_quote ? tr::lng_selected_action_copy(tr::now)
+						: tr::lng_selected_action_forward(tr::now), job.msgCount,
+					Api::SelectedActionPeer(job.fromPeer) + u" → "_q
+						+ Api::SelectedActionPeer(job.peer)));
 		};
-		(*sendNext)();
+		sendNext(sendNext);
 		if (state->submitCallback) {
 			state->submitCallback();
 		}

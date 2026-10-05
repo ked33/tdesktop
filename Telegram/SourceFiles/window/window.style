@@ -419,3 +419,18 @@ macCautionIconSize: 16;
 macWindowRoundRadius: 10;
 macWindowShadowTopLeft: icon {{ "mac_window_shadow_top_left", windowShadowFg }};
 macTrayIcon: icon {{ "mac_tray_icon", windowFg }};
+
+selectedActionToast: Toast(defaultMultilineToast) {
+	minWidth: 160px;
+	maxWidth: 460px;
+	padding: margins(16px, 14px, 16px, 14px);
+}
+selectedActionTextStyle: TextStyle(defaultTextStyle) {
+	lineHeight: 20px;
+}
+selectedActionToastLabel: FlatLabel(transferLimitToastLabel) {
+	style: selectedActionTextStyle;
+	minWidth: 0px;
+	maxHeight: 0px;
+}
+selectedActionScrollSkip: 12px;

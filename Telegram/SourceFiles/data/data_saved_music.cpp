@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_saved_music.h"
+#include "api/api_selected_action.h"
+#include "lang/lang_keys.h"
 
 #include "api/api_hash.h"
 #include "apiwrap.h"
@@ -141,7 +143,14 @@ void SavedMusic::save(
 	_changed.fire_copy(peerId);
 }
 
-void SavedMusic::remove(not_null<DocumentData*> document) {
+void SavedMusic::remove(not_null<DocumentData*> document,
+		std::shared_ptr<Api::SelectedAction> progress) {
+	const auto tracked = Api::TrackSelectedAction(progress,
+		tr::lng_selected_action_delete(tr::now), 1,
+		QString::number(document->id));
+	if (tracked) {
+		tracked->start();
+	}
 	const auto peerId = _owner->session().userPeerId();
 	auto &entry = _entries[peerId];
 	const auto i = entry.musicIdToMsg.find(document);
@@ -159,11 +168,22 @@ void SavedMusic::remove(not_null<DocumentData*> document) {
 		entry.musicIdToMsg.erase(i);
 	}
 	_myIds.erase(ranges::remove(_myIds, document->id), end(_myIds));
-	_owner->session().api().request(MTPaccount_SaveMusic(
+	const auto requestId = _owner->session().api().request(MTPaccount_SaveMusic(
 		MTP_flags(MTPaccount_SaveMusic::Flag::f_unsave),
 		document->mtpInput(),
 		MTPInputDocument()
-	)).send();
+	)).done([=] {
+		if (tracked) {
+			tracked->done();
+		}
+	}).fail([=](const MTP::Error &error) {
+		if (tracked) {
+			tracked->fail(error);
+		}
+	}).send();
+	if (tracked) {
+		tracked->observe(&_owner->session(), requestId);
+	}
 	_changed.fire_copy(peerId);
 }
 

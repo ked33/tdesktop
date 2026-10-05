@@ -17,6 +17,8 @@ class HistoryItem;
 class PeerData;
 class UserData;
 
+namespace Api { class SelectedAction; }
+
 namespace Api {
 struct MessageToSend;
 struct SendAction;
@@ -93,7 +95,8 @@ public:
 	[[nodiscard]] const Media *anchoredMedia(
 		not_null<const HistoryItem*> item) const;
 	void revertAnchored(not_null<HistoryItem*> item);
-	void deleteMessage(not_null<HistoryItem*> item);
+	void deleteMessage(not_null<HistoryItem*> item,
+		std::shared_ptr<Api::SelectedAction> progress = nullptr);
 
 private:
 	struct Entry {

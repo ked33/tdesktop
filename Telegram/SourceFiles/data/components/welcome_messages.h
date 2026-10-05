@@ -14,6 +14,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 class History;
 class PeerData;
 
+namespace Api { class SelectedAction; }
+
 namespace Main {
 class Session;
 } // namespace Main
@@ -70,7 +72,8 @@ public:
 		Fn<std::optional<MTPInputRichMessage>()> richMessage,
 		Fn<void()> done,
 		Fn<void(const QString &)> fail);
-	void deleteTemplate(not_null<HistoryItem*> item);
+	void deleteTemplate(not_null<HistoryItem*> item,
+		std::shared_ptr<Api::SelectedAction> progress = nullptr);
 	void deleteAll(not_null<History*> history);
 
 	[[nodiscard]] rpl::producer<> updates(not_null<History*> history);

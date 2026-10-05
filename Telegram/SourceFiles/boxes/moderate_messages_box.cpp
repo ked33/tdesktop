@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/moderate_messages_box.h"
+#include "api/api_selected_action.h"
 
 #include "api/api_blocked_peers.h"
 #include "api/api_chat_participants.h"
@@ -1525,7 +1526,10 @@ void CreateModerateMessagesBox(
 			confirmed();
 		}
 		if (hasItems) {
-			session->data().histories().deleteMessages(ids, true);
+			const auto progress = Api::SelectedAction::Start(session, box->uiShow(),
+				tr::lng_selected_action_delete(tr::now), int(ids.size()));
+			session->data().histories().deleteMessages(ids, true, progress);
+			progress->finish();
 			session->data().sendHistoryChangeNotifications();
 		}
 		const auto deleteThisReaction = reaction

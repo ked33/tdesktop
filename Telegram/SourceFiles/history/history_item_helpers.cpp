@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_item_helpers.h"
+#include "api/api_selected_action.h"
+#include "data/data_histories.h"
 
 #include "api/api_reactions_notify_settings.h"
 #include "api/api_text_entities.h"
@@ -802,12 +804,10 @@ void ConfirmDeleteSelectedEphemeral(
 		.text = tr::lng_selected_delete_sure(tr::now, lt_count, count),
 		.confirmed = [=](Fn<void()> &&close) {
 			close();
-			const auto owner = &session->data();
-			for (const auto &id : ids) {
-				if (const auto item = owner->message(id)) {
-					session->ephemeralMessages().deleteMessage(item);
-				}
-			}
+			const auto progress = Api::SelectedAction::Start(session, show,
+				tr::lng_selected_action_delete(tr::now), int(ids.size()));
+			session->data().histories().deleteMessages(ids, true, progress);
+			progress->finish();
 			if (const auto onstack = confirmed) {
 				onstack();
 			}

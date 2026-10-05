@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "apiwrap.h"
+#include "api/api_selected_action.h"
 
 #include "settings.h"
 
@@ -3880,8 +3881,19 @@ void ApiWrap::finishForwarding(const SendAction &action) {
 void ApiWrap::forwardMessages(
 		Data::ResolvedForwardDraft &&draft,
 		SendAction action,
-		FnMut<void()> &&successCallback) {
+		FnMut<void()> &&completionCallback) {
 	Expects(!draft.items.empty());
+	const auto ownsProgress = !action.progress;
+	if (ownsProgress) {
+		action.progress = Api::SelectedAction::Start(_session,
+			ShowForPeer(action.history->peer),
+			tr::lng_selected_action_forward(tr::now), int(draft.items.size()));
+	}
+	const auto pipeline = action.progress->add(
+		tr::lng_selected_action_preparing(tr::now), 0);
+	if (ownsProgress) {
+		action.progress->finish();
+	}
 
 	auto &histories = _session->data().histories();
 
@@ -3895,9 +3907,10 @@ void ApiWrap::forwardMessages(
 		}
 	}
 	if (draft.items.empty()) {
-		if (successCallback) {
-			successCallback();
+		if (completionCallback) {
+			completionCallback();
 		}
+		pipeline->done();
 		return;
 	}
 	draft.options = HistoryView::Controls::NormalizeForwardOptions(
@@ -3911,9 +3924,10 @@ void ApiWrap::forwardMessages(
 			GetEnhancedBool("keep_selected_messages_across_chats")),
 		ForwardMessagesChunkLimit(_session));
 	if (collected.empty()) {
-		if (successCallback) {
-			successCallback();
+		if (completionCallback) {
+			completionCallback();
 		}
+		pipeline->done();
 		return;
 	}
 
@@ -4076,21 +4090,35 @@ void ApiWrap::forwardMessages(
 		std::vector<ForwardJob> jobs;
 		int index = 0;
 		FnMut<void()> callback;
+		std::vector<Api::SelectedActionBatchPtr> batches;
 	};
 	const auto state = std::make_shared<SendState>();
 	state->jobs = std::move(jobs);
-	if (successCallback) {
-		state->callback = std::move(successCallback);
+	for (const auto &job : state->jobs) {
+		state->batches.push_back(action.progress->add(
+			tr::lng_selected_action_forward(tr::now), int(job.ids.size()),
+			Api::SelectedActionPeer(job.from) + u" → "_q
+				+ Api::SelectedActionPeer(peer)));
 	}
-	const auto sendNext = std::make_shared<Fn<void()>>();
-	*sendNext = [=] {
+	if (completionCallback) {
+		state->callback = std::move(completionCallback);
+	}
+	const auto sendNext = [=](const auto &self) -> void {
 		if (state->index >= int(state->jobs.size())) {
 			if (state->callback) {
 				state->callback();
 			}
+			pipeline->done();
 			return;
 		}
+		const auto tracked = state->batches[state->index];
 		const auto &job = state->jobs[state->index];
+		auto loggedIds = QStringList();
+		for (const auto &id : job.ids) {
+			loggedIds.push_back(QString::number(id.v));
+		}
+		LOG(("SelectedAction: method=messages.forwardMessages source=%1 target=%2 ids=%3")
+			.arg(job.from->id.value).arg(peer->id.value).arg(loggedIds.join(',')));
 		++state->index;
 		const auto idsCopy = job.localIds;
 		const auto scheduled = action.options.scheduled;
@@ -4156,7 +4184,7 @@ void ApiWrap::forwardMessages(
 						peer->id,
 						from->id);
 				}
-				(*sendNext)();
+				self(self);
 			},
 			[=](const MTP::Error &error, const MTP::Response &) {
 				if (idsCopy) {
@@ -4170,15 +4198,16 @@ void ApiWrap::forwardMessages(
 				} else {
 					_session->api().sendMessageFail(error, peer);
 				}
-				(*sendNext)();
-			});
+				self(self);
+			}, tracked);
 	};
 	if (state->jobs.empty()) {
 		if (state->callback) {
 			state->callback();
 		}
+		pipeline->done();
 	} else {
-		(*sendNext)();
+		sendNext(sendNext);
 	}
 	_session->data().sendHistoryChangeNotifications();
 }
@@ -5062,7 +5091,9 @@ void ApiWrap::sendMessage(
 					MTP_long(action.options.effectId),
 					MTP_long(starsPaid),
 					Api::SuggestToMTP(action.options.suggest)
-				), done, fail);
+				), done, fail, Api::TrackSelectedAction(action.progress,
+					tr::lng_selected_action_text(tr::now), 1,
+					Api::SelectedActionPeer(peer)));
 		} else {
 			histories.sendPreparedMessage(
 				history,
@@ -5084,7 +5115,9 @@ void ApiWrap::sendMessage(
 					MTP_long(starsPaid),
 					Api::SuggestToMTP(action.options.suggest),
 					MTPInputRichMessage()
-				), done, fail);
+				), done, fail, Api::TrackSelectedAction(action.progress,
+					tr::lng_selected_action_text(tr::now), 1,
+					Api::SelectedActionPeer(peer)));
 		}
 		isFirst = false;
 	}

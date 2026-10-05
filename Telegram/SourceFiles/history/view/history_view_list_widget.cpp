@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_list_widget.h"
+#include "api/api_selected_action.h"
 
 #include "history/view/history_view_about_view.h"
 #include "base/unixtime.h"
@@ -6998,20 +6999,7 @@ void ConfirmDeleteSelectedItems(not_null<ListWidget*> widget) {
 	}
 	const auto controller = widget->controller();
 	const auto owner = &controller->session().data();
-	const auto showDeleted = [=](const QString &chat, int count) {
-		if (chat.isEmpty() || count <= 0) {
-			return;
-		}
-		controller->uiShow()->showToast(
-			ChatHelpers::JoinToastParts(
-				tr::lng_deleted_then_chat(
-					tr::now,
-					lt_total,
-					QString::number(count)),
-				chat,
-				QString()),
-			ChatHelpers::kSelectedActionToastDuration);
-	};
+
 	if (ranges::all_of(items, &SelectedItem::ephemeral)) {
 		auto ephemeralItems = std::vector<not_null<HistoryItem*>>();
 		ephemeralItems.reserve(items.size());
@@ -7023,13 +7011,10 @@ void ConfirmDeleteSelectedItems(not_null<ListWidget*> widget) {
 		if (ephemeralItems.empty()) {
 			return;
 		}
-		const auto chat = ChatHelpers::BracketChatName(ephemeralItems.front());
-		const auto count = int(ephemeralItems.size());
 		ConfirmDeleteSelectedEphemeral(
 			controller->uiShow(),
 			std::move(ephemeralItems),
 			crl::guard(widget, [=] {
-				showDeleted(chat, count);
 				widget->cancelSelection();
 			}));
 		return;
@@ -7043,12 +7028,7 @@ void ConfirmDeleteSelectedItems(not_null<ListWidget*> widget) {
 			historyItems.push_back(i);
 		}
 	}
-	const auto count = int(items.size());
-	const auto chat = historyItems.empty()
-		? QString()
-		: ChatHelpers::BracketChatName(historyItems.front());
 	const auto confirmed = crl::guard(widget, [=] {
-		showDeleted(chat, count);
 		widget->cancelSelection();
 	});
 	const auto mixed = ranges::any_of(items, &SelectedItem::ephemeral);
@@ -7147,30 +7127,34 @@ void ConfirmForwardSelectedToSavedMessagesItems(not_null<ListWidget*> widget) {
 
 	const auto itemsList = ExtractIdsList(items);
 	const auto item = widget->controller()->session().data().message(itemsList[0]);
+	if (!item) {
+		return;
+	}
 	const auto api = &item->history()->peer->session().api();
 	const auto session = &item->history()->peer->session();
 	const auto self = api->session().user()->asUser();
-	auto msgItems = session->data().idsToItems(itemsList);
 
 	auto action = Api::SendAction(item->history()->peer->owner().history(self));
 	action.clearDraft = false;
 	action.generateLocal = false;
+	action.progress = Api::SelectedAction::Start(session,
+		widget->controller()->uiShow(), tr::lng_selected_saved_tooltip(tr::now),
+		int(itemsList.size()));
+	const auto progress = action.progress;
 
 	const auto history = item->history()->peer->owner().history(self);
 	auto resolved = history->resolveForwardDraft(Data::ForwardDraft{ .ids = itemsList });
 
-	const auto count = int(itemsList.size());
-	api->forwardMessages(std::move(resolved), action, [=] {
-		if (const auto strong = weak.get()) {
-			strong->controller()->uiShow()->showToast(
-				tr::lng_saved_done(
-					tr::now,
-					lt_total,
-					QString::number(count)),
-				ChatHelpers::kSelectedActionToastDuration);
-			strong->cancelSelection();
-		}
-	});
+	if (resolved.items.empty()) {
+		progress->skip(int(itemsList.size()), u"No available messages"_q);
+	} else {
+		api->forwardMessages(std::move(resolved), action, [=] {
+			if (const auto strong = weak.get()) {
+				strong->cancelSelection();
+			}
+		});
+	}
+	progress->finish();
 }
 
 void ConfirmMergeForwardSelectedItems(not_null<ListWidget*> widget) {
@@ -7209,39 +7193,22 @@ void ConfirmMergeAlbumHereSelectedItems(not_null<ListWidget*> widget) {
 	action.clearDraft = false;
 	const auto weak = base::make_weak(widget);
 	const auto show = widget->controller()->uiShow();
-	const auto sourceChat = ChatHelpers::BracketChatName(items.front());
-	Api::SendMergedAlbums(
-		std::move(action),
-		items,
-		[=](Api::MergeAlbumResult result) {
-			if (!result.error.isEmpty()) {
-				show->showToast(
-					result.error,
-					Api::kMergeAlbumToastDuration);
-				return;
-			} else if (result.sentMedia <= 0) {
-				show->showToast(
-					tr::lng_merge_album_none(tr::now),
-					Api::kMergeAlbumToastDuration);
-				return;
-			}
-			const auto cleanup = Api::CleanupMergedSources(
-				session,
-				result.sentSourceIds);
-			const auto total = cleanup.deleted
-				? cleanup.deleted
-				: result.sentMedia;
-			const auto header = tr::lng_merge_here_done(
-				tr::now,
-				lt_total,
-				QString::number(total));
-			show->showToast(
-				ChatHelpers::JoinToastParts(header, sourceChat, QString()),
-				Api::kMergeAlbumToastDuration);
-			if (const auto strong = weak.get()) {
-				strong->cancelSelection();
+	const auto progress = Api::SelectedAction::Start(session, show,
+		tr::lng_selected_merge_here(tr::now), int(ids.size()));
+	action.progress = progress;
+	Api::SendMergedAlbums(action, items, [=](Api::MergeAlbumResult result) {
+		progress->afterRequests([=] {
+			if (!progress->failed()) {
+				Api::CleanupMergedSources(session, result.sentSourceIds, progress);
+			} else {
+				progress->skip(int(result.sentSourceIds.size()), u"Sources retained after failure"_q);
 			}
 		});
+		if (const auto strong = weak.get()) {
+			strong->cancelSelection();
+		}
+		progress->finish();
+	});
 }
 
 void ConfirmSendNowSelectedItems(not_null<ListWidget*> widget) {

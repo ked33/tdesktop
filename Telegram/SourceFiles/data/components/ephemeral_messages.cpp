@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/components/ephemeral_messages.h"
+#include "api/api_selected_action.h"
 
 #include "api/api_common.h"
 #include "api/api_text_entities.h"
@@ -1070,16 +1071,37 @@ void EphemeralMessages::request(
 	send(send, media, richMessage.value_or(MTPInputRichMessage()), 0);
 }
 
-void EphemeralMessages::deleteMessage(not_null<HistoryItem*> item) {
+void EphemeralMessages::deleteMessage(not_null<HistoryItem*> item,
+		std::shared_ptr<Api::SelectedAction> progress) {
+	const auto tracked = Api::TrackSelectedAction(progress,
+		tr::lng_selected_action_delete(tr::now), 1,
+		Api::SelectedActionPeer(item->history()->peer));
+	if (tracked) {
+		tracked->start();
+	}
 	const auto entry = findByItem(item);
 	if (entry && entry->receiverId) {
 		const auto receiver = _session->data().user(entry->receiverId);
-		_session->api().request(MTPephemeral_DeleteMessage(
+		const auto requestId = _session->api().request(MTPephemeral_DeleteMessage(
 			MTP_flags(MTPephemeral_DeleteMessage::Flag::f_peer),
 			item->history()->peer->input(),
 			receiver->inputUser(),
 			MTP_int(entry->ephemeralId)
-		)).send();
+		)).done([=] {
+			if (tracked) {
+				tracked->done();
+			}
+		}).fail([=](const MTP::Error &error) {
+			if (tracked) {
+				tracked->fail(error);
+			}
+		}).send();
+		if (tracked) {
+			tracked->observe(_session, requestId);
+		}
+	}
+	if ((!entry || !entry->receiverId) && tracked) {
+		tracked->done();
 	}
 	if (anchored(item)) {
 		revertAnchored(item);

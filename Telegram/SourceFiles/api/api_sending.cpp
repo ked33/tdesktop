@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_sending.h"
+#include "api/api_selected_action.h"
+#include "lang/lang_keys.h"
 
 #include "api/api_text_entities.h"
 #include "base/random.h"
@@ -315,6 +317,8 @@ void SendExistingMedia(
 		return;
 	}
 
+	const auto tracked = TrackSelectedAction(action.progress,
+		tr::lng_selected_action_forward(tr::now), 1, SelectedActionPeer(peer));
 	const auto performRequest = [=](const auto &repeatRequest) -> void {
 		auto &histories = history->owner().histories();
 		const auto session = &history->session();
@@ -340,20 +344,32 @@ void SendExistingMedia(
 				MTP_long(starsPaid),
 				SuggestToMTP(action.options.suggest)
 			), [=](const MTPUpdates &result, const MTP::Response &response) {
+			if (tracked) {
+				tracked->done();
+			}
 		}, [=](const MTP::Error &error, const MTP::Response &response) {
 			if (error.code() == 400
 				&& error.type().startsWith(u"FILE_REFERENCE_"_q)) {
+				if (tracked) {
+					tracked->retry(error);
+				}
 				api->refreshFileReference(origin, [=](const auto &result) {
 					if (media->fileReference() != usedFileReference) {
 						repeatRequest(repeatRequest);
 					} else {
+						if (tracked) {
+							tracked->fail(error);
+						}
 						api->sendMessageFail(error, peer, randomId, newId);
 					}
 				});
 			} else {
+				if (tracked) {
+					tracked->fail(error);
+				}
 				api->sendMessageFail(error, peer, randomId, newId);
 			}
-		});
+		}, tracked, false);
 	};
 	performRequest(performRequest);
 

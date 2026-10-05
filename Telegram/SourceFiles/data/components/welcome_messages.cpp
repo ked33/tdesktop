@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/components/welcome_messages.h"
+#include "api/api_selected_action.h"
+#include "lang/lang_keys.h"
 
 #include "api/api_text_entities.h"
 #include "apiwrap.h"
@@ -485,16 +487,33 @@ void WelcomeMessages::editRich(
 	send(send, *first, 0);
 }
 
-void WelcomeMessages::deleteTemplate(not_null<HistoryItem*> item) {
+void WelcomeMessages::deleteTemplate(not_null<HistoryItem*> item,
+		std::shared_ptr<Api::SelectedAction> progress) {
+	const auto tracked = Api::TrackSelectedAction(progress,
+		tr::lng_selected_action_delete(tr::now), 1,
+		Api::SelectedActionPeer(item->history()->peer));
+	if (tracked) {
+		tracked->start();
+	}
 	const auto history = item->history();
 	const auto id = lookupId(item);
-	_session->api().request(MTPephemeral_DeleteWelcomeMessage(
+	const auto requestId = _session->api().request(MTPephemeral_DeleteWelcomeMessage(
 		history->peer->input(),
 		MTP_int(id)
-	)).fail([=](const MTP::Error &error) {
+	)).done([=] {
+		if (tracked) {
+			tracked->done();
+		}
+	}).fail([=](const MTP::Error &error) {
+		if (tracked) {
+			tracked->fail(error);
+		}
 		LOG(("API Error: delete welcome template - %1"
 			).arg(error.type()));
 	}).send();
+	if (tracked) {
+		tracked->observe(_session, requestId);
+	}
 	_session->data().destroyMessageWithCacheCleanup(item);
 }
 

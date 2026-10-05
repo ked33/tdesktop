@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_histories.h"
+#include "api/api_selected_action.h"
+#include "lang/lang_keys.h"
 
 #include "api/api_text_entities.h"
 #include "data/business/data_shortcut_messages.h"
@@ -803,37 +805,66 @@ bool Histories::postponeEntryRequest(const State &state) const {
 void Histories::deleteMessages(
 		not_null<History*> history,
 		const QVector<MTPint> &ids,
-		bool revoke) {
+		bool revoke,
+		std::shared_ptr<Api::SelectedAction> progress) {
 	if (ids.isEmpty()) {
 		return;
 	}
 	const auto sendChunk = [=](QVector<MTPint> chunk, Fn<void()> next) {
+		if (progress) {
+			auto loggedIds = QStringList();
+			for (const auto &id : chunk) {
+				loggedIds.push_back(QString::number(id.v));
+			}
+			LOG(("SelectedAction: method=deleteMessages target=%1 ids=%2")
+				.arg(history->peer->id.value).arg(loggedIds.join(',')));
+		}
+		const auto tracked = Api::TrackSelectedAction(progress,
+			tr::lng_selected_action_delete(tr::now), int(chunk.size()),
+			Api::SelectedActionPeer(history->peer));
+		if (tracked) {
+			tracked->start();
+		}
 		sendRequest(history, RequestType::Delete, [=](Fn<void()> finish) {
 			const auto done = [=](const MTPmessages_AffectedMessages &result) {
 				session().api().applyAffectedMessages(history->peer, result);
+				if (tracked) {
+					tracked->done();
+				}
 				finish();
 				history->requestChatListMessage();
 				if (next) {
 					next();
 				}
 			};
-			const auto fail = [=] {
+			const auto fail = [=](const MTP::Error &error) {
+				if (tracked) {
+					tracked->fail(error);
+				}
 				finish();
 				if (next) {
 					next();
 				}
 			};
 			if (const auto channel = history->peer->asChannel()) {
-				return session().api().request(MTPchannels_DeleteMessages(
+				const auto requestId = session().api().request(MTPchannels_DeleteMessages(
 					channel->inputChannel(),
 					MTP_vector<MTPint>(chunk)
 				)).done(done).fail(fail).send();
+				if (tracked) {
+					tracked->observe(&session(), requestId);
+				}
+				return requestId;
 			} else {
 				using Flag = MTPmessages_DeleteMessages::Flag;
-				return session().api().request(MTPmessages_DeleteMessages(
+				const auto requestId = session().api().request(MTPmessages_DeleteMessages(
 					MTP_flags(revoke ? Flag::f_revoke : Flag(0)),
 					MTP_vector<MTPint>(chunk)
 				)).done(done).fail(fail).send();
+				if (tracked) {
+					tracked->observe(&session(), requestId);
+				}
+				return requestId;
 			}
 		});
 	};
@@ -842,8 +873,7 @@ void Histories::deleteMessages(
 		return;
 	}
 	auto remaining = std::make_shared<QVector<MTPint>>(ids);
-	const auto sendNext = std::make_shared<Fn<void()>>();
-	*sendNext = [=] {
+	const auto sendNext = [=](const auto &self) -> void {
 		if (remaining->isEmpty()) {
 			return;
 		}
@@ -852,9 +882,9 @@ void Histories::deleteMessages(
 			int(remaining->size()));
 		auto chunk = remaining->mid(0, take);
 		remaining->erase(remaining->begin(), remaining->begin() + take);
-		sendChunk(std::move(chunk), *sendNext);
+		sendChunk(std::move(chunk), [=] { self(self); });
 	};
-	(*sendNext)();
+	sendNext(sendNext);
 }
 
 void Histories::deleteAllMessages(
@@ -983,7 +1013,10 @@ void Histories::deleteMessagesByDates(
 	history->destroyMessagesByDates(minDate, maxDate);
 }
 
-void Histories::deleteMessages(const MessageIdsList &ids, bool revoke) {
+void Histories::deleteMessages(
+		const MessageIdsList &ids,
+		bool revoke,
+		std::shared_ptr<Api::SelectedAction> progress) {
 	auto remove = std::vector<not_null<HistoryItem*>>();
 	remove.reserve(ids.size());
 	base::flat_map<not_null<History*>, QVector<MTPint>> idsByPeer;
@@ -1012,6 +1045,10 @@ void Histories::deleteMessages(const MessageIdsList &ids, bool revoke) {
 						MTP_int(scheduled.lookupId(item)));
 				} else {
 					scheduled.removeSending(item);
+					if (const auto local = Api::TrackSelectedAction(progress,
+							tr::lng_selected_action_delete(tr::now), 1)) {
+						local->done();
+					}
 				}
 				continue;
 			} else if (item->isBusinessShortcut()) {
@@ -1022,49 +1059,88 @@ void Histories::deleteMessages(const MessageIdsList &ids, bool revoke) {
 						_owner->shortcutMessages().lookupId(item)));
 				} else {
 					_owner->shortcutMessages().removeSending(item);
+					if (const auto local = Api::TrackSelectedAction(progress,
+							tr::lng_selected_action_delete(tr::now), 1)) {
+						local->done();
+					}
 				}
 				continue;
 			} else if (item->isWelcomeTemplate()) {
 				auto &welcome = _owner->session().welcomeMessages();
 				if (item->isSending() || item->hasFailed()) {
 					welcome.removeSending(item);
+					if (const auto local = Api::TrackSelectedAction(progress,
+							tr::lng_selected_action_delete(tr::now), 1)) {
+						local->done();
+					}
 				} else {
-					welcome.deleteTemplate(item);
+					welcome.deleteTemplate(item, progress);
 				}
 				continue;
 			} else if (item->isEphemeral()) {
-				_owner->session().ephemeralMessages().deleteMessage(item);
+				_owner->session().ephemeralMessages().deleteMessage(item, progress);
 				continue;
 			}
 			remove.push_back(item);
 			if (item->isRegular()) {
 				idsByPeer[history].push_back(MTP_int(itemId.msg));
+			} else if (const auto local = Api::TrackSelectedAction(progress,
+					tr::lng_selected_action_delete(tr::now), 1)) {
+				local->done();
 			}
+		} else if (progress) {
+			progress->skip(1, u"Message no longer available"_q);
 		}
 	}
 
 	for (const auto &[history, ids] : idsByPeer) {
-		history->owner().histories().deleteMessages(history, ids, revoke);
+		history->owner().histories().deleteMessages(history, ids, revoke, progress);
 	}
 	for (const auto &[peer, ids] : scheduledIdsByPeer) {
+		const auto tracked = Api::TrackSelectedAction(progress,
+			tr::lng_selected_action_delete(tr::now), int(ids.size()),
+			Api::SelectedActionPeer(peer));
+		if (tracked) {
+			tracked->start();
+		}
 		peer->session().api().request(MTPmessages_DeleteScheduledMessages(
 			peer->input(),
 			MTP_vector<MTPint>(ids)
-		)).done([peer = peer](const MTPUpdates &result) {
+		)).done([peer = peer, tracked](const MTPUpdates &result) {
 			peer->session().api().applyUpdates(result);
+			if (tracked) {
+				tracked->done();
+			}
+		}).fail([=](const MTP::Error &error) {
+			if (tracked) {
+				tracked->fail(error);
+			}
 		}).send();
 	}
 	for (const auto &[shortcutId, ids] : quickIdsByShortcut) {
+		const auto tracked = Api::TrackSelectedAction(progress,
+			tr::lng_selected_action_delete(tr::now), int(ids.size()),
+			QString::number(shortcutId));
+		if (tracked) {
+			tracked->start();
+		}
 		const auto api = &_owner->session().api();
 		api->request(MTPmessages_DeleteQuickReplyMessages(
 			MTP_int(shortcutId),
 			MTP_vector<MTPint>(ids)
 		)).done([=](const MTPUpdates &result) {
 			api->applyUpdates(result);
+			if (tracked) {
+				tracked->done();
+			}
+		}).fail([=](const MTP::Error &error) {
+			if (tracked) {
+				tracked->fail(error);
+			}
 		}).send();
 	}
 	for (const auto &document : savedMusic) {
-		document->owner().savedMusic().remove(document);
+		document->owner().savedMusic().remove(document, progress);
 	}
 
 	if (!remove.empty()) {
@@ -1154,6 +1230,19 @@ void Histories::sendCreateTopicRequest(
 		api->applyUpdates(result, randomId);
 	}).fail([=](const MTP::Error &error) {
 		api->sendMessageFail(error, history->peer, randomId);
+		const auto key = FullMsgId(history->peer->id, rootId);
+		const auto i = _creatingTopics.find(key);
+		if (i != end(_creatingTopics)) {
+			auto pending = base::take(i->second);
+			_creatingTopics.erase(i);
+			for (auto &entry : pending) {
+				_creatingTopicRequests.erase(entry.requestId);
+				if (entry.progress) {
+					entry.progress->fail(error);
+				}
+				entry.fail(error, MTP::Response());
+			}
+		}
 	}).send();
 }
 
@@ -1170,7 +1259,9 @@ int Histories::sendPreparedMessage(
 		uint64 randomId,
 		Fn<PreparedMessage(not_null<History*>, FullReplyTo)> message,
 		Fn<void(const MTPUpdates&, const MTP::Response&)> done,
-		Fn<void(const MTP::Error&, const MTP::Response&)> fail) {
+		Fn<void(const MTP::Error&, const MTP::Response&)> fail,
+		std::shared_ptr<Api::SelectedActionBatch> progress,
+		bool completeProgress) {
 	if (isCreatingTopic(history, replyTo.topicRootId)) {
 		const auto id = ++_requestAutoincrement;
 		const auto creatingId = FullMsgId(
@@ -1187,6 +1278,8 @@ int Histories::sendPreparedMessage(
 			.message = std::move(message),
 			.done = std::move(done),
 			.fail = std::move(fail),
+			.progress = progress,
+			.completeProgress = completeProgress,
 			.requestId = id,
 		});
 		_creatingTopicRequests.emplace(id);
@@ -1203,6 +1296,9 @@ int Histories::sendPreparedMessage(
 		return sendRequest(history, type, [=](Fn<void()> finish) {
 			const auto session = &_owner->session();
 			const auto api = &session->api();
+			if (progress) {
+				progress->start();
+			}
 			history->sendRequestId = api->request(
 				base::duplicate(request)
 			).done([=](
@@ -1210,15 +1306,24 @@ int Histories::sendPreparedMessage(
 					const MTP::Response &response) {
 				api->applyUpdates(result, randomId);
 				done(result, response);
+				if (progress && completeProgress) {
+					progress->done();
+				}
 				finish();
 			}).fail([=](
 					const MTP::Error &error,
 					const MTP::Response &response) {
+				if (progress && completeProgress) {
+					progress->fail(error);
+				}
 				fail(error, response);
 				finish();
 			}).afterRequest(
 				history->sendRequestId
 			).send();
+			if (progress) {
+				progress->observe(session, history->sendRequestId);
+			}
 			return history->sendRequestId;
 		});
 	});
@@ -1248,7 +1353,9 @@ void Histories::checkTopicCreated(FullMsgId rootId, MsgId realRoot) {
 				entry.randomId,
 				std::move(entry.message),
 				std::move(entry.done),
-				std::move(entry.fail));
+				std::move(entry.fail),
+				entry.progress,
+				entry.completeProgress);
 		}
 		for (const auto &item : history->clientSideMessages()) {
 			const auto replace = [&](MsgId nowId) {

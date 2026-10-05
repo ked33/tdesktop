@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_merge_album.h"
+#include "api/api_selected_action.h"
+#include "lang/lang_keys.h"
 
 #include "api/api_editing.h"
 #include "api/api_sending.h"
@@ -1023,7 +1025,17 @@ void SendMergeGroup(
 		});
 	}
 
+	const auto tracked = TrackSelectedAction(action.progress,
+		tr::lng_selected_action_merge(tr::now), int(items.size()),
+		SelectedActionPeer(peer));
+	if (tracked) {
+		tracked->start();
+	}
+
 	const auto failRequest = [=](const MTP::Error &error, bool refreshed) {
+		if (tracked) {
+			tracked->fail(error);
+		}
 		LOG(("MergeAlbum: fail dest=%1 method=%2 count=%3 error=%4 refreshed=%5"
 		).arg(peer->id.value
 		).arg(multi ? "sendMultiMedia" : "sendMedia"
@@ -1056,6 +1068,9 @@ void SendMergeGroup(
 			-> void {
 		const auto sendAs = action.options.sendAs;
 		const auto finishOk = [=] {
+			if (tracked) {
+				tracked->done();
+			}
 			LOG(("MergeAlbum: ok dest=%1 method=%2 count=%3 refreshed=%4"
 			).arg(peer->id.value
 			).arg(multi ? "sendMultiMedia" : "sendMedia"
@@ -1074,6 +1089,9 @@ void SendMergeGroup(
 				|| refreshItems.empty()) {
 				failRequest(error, refreshed);
 				return;
+			}
+			if (tracked) {
+				tracked->retry(error);
 			}
 			LOG(("MergeAlbum: file_reference retry dest=%1 error=%2 items=%3"
 			).arg(peer->id.value
@@ -1166,7 +1184,7 @@ void SendMergeGroup(
 					SuggestToMTP(action.options.suggest)
 				), [=](const MTPUpdates &result, const MTP::Response &response) {
 					finishOk();
-				}, retryOrFail);
+				}, retryOrFail, tracked, false);
 			return;
 		}
 
@@ -1218,7 +1236,7 @@ void SendMergeGroup(
 				MTP_long(batchStarsPaid)
 			), [=](const MTPUpdates &result, const MTP::Response &response) {
 				finishOk();
-			}, retryOrFail);
+			}, retryOrFail, tracked, false);
 	};
 	performRequest(performRequest, false);
 }
@@ -1433,6 +1451,9 @@ void SendMergedAlbums(
 		}
 	}
 	auto result = MergeAlbumResult{ .skipped = skipped };
+	if (action.progress) {
+		action.progress->skip(skipped, u"Unsupported media"_q);
+	}
 	if (media.empty()) {
 		LOG(("MergeAlbum: no media dest=%1 selected=%2 skipped=%3"
 		).arg(action.history->peer->id.value
@@ -1578,11 +1599,7 @@ void SendMergedAlbums(
 				).arg(state->groups.size()
 				).arg(error));
 				state->result.error = error;
-				state->action.history->session().api().finishForwarding(
-					state->action);
-				if (state->done) {
-					state->done(std::move(state->result));
-				}
+				self(self);
 				return;
 			}
 			state->result.sentMedia += count;
@@ -1641,9 +1658,14 @@ void CollectNewMessageIds(
 void AppendSourceLinksToCopiedMessages(
 		not_null<Main::Session*> session,
 		const std::vector<not_null<HistoryItem*>> &sources,
-		const MessageIdsList &destIds) {
+		const MessageIdsList &destIds,
+		std::shared_ptr<SelectedAction> progress) {
 	const auto n = std::min(int(sources.size()), int(destIds.size()));
 	if (n <= 0) {
+		if (progress && !sources.empty()) {
+			const auto missing = progress->add(tr::lng_selected_action_links(tr::now), 1);
+			missing->fail(u"Destination messages missing from server response"_q);
+		}
 		return;
 	}
 	for (auto i = 0; i < n;) {
@@ -1681,30 +1703,59 @@ void AppendSourceLinksToCopiedMessages(
 		const auto captionable = media && media->allowsEditCaption();
 		const auto textEditable = !media || media->webpage();
 		const auto history = dest->history();
+		auto action = SendAction(history);
+		action.progress = progress;
+		const auto tracked = TrackSelectedAction(progress,
+			tr::lng_selected_action_links(tr::now), 1, SelectedActionPeer(history->peer));
+		if (tracked) {
+			tracked->start();
+		}
 		auto options = SendOptions();
 		options.invertCaption = dest->invertMedia();
 		if (canEdit
 			&& captionable
 			&& combined.text.size() <= captionLimit) {
-			EditCaption(dest, combined, options, [] {}, [=](
-					const QString &) {
-				SendTextWithEntities(SendAction(history), footer);
+			const auto requestId = EditCaption(dest, combined, options, [=] {
+				if (tracked) {
+					tracked->done();
+				}
+			}, [=](const QString &error) {
+				if (tracked) {
+					tracked->fail(error);
+				}
+				SendTextWithEntities(action, footer);
 			});
+			if (tracked) {
+				tracked->observe(session, requestId);
+			}
 		} else if (canEdit
 			&& textEditable
 			&& combined.text.size() <= kMergeMessageTextLimit) {
-			EditTextMessage(
+			const auto requestId = EditTextMessage(
 				dest,
 				combined,
 				Data::WebPageDraft{ .removed = true },
 				options,
-				[](mtpRequestId) {},
-				[=](const QString &, mtpRequestId) {
-					SendTextWithEntities(SendAction(history), footer);
+				[=](mtpRequestId) {
+					if (tracked) {
+						tracked->done();
+					}
+				},
+				[=](const QString &error, mtpRequestId) {
+					if (tracked) {
+						tracked->fail(error);
+					}
+					SendTextWithEntities(action, footer);
 				},
 				false);
+			if (tracked) {
+				tracked->observe(session, requestId);
+			}
 		} else {
-			SendTextWithEntities(SendAction(history), footer);
+			SendTextWithEntities(action, footer);
+			if (tracked) {
+				tracked->done();
+			}
 		}
 		i = till;
 	}
@@ -1795,7 +1846,10 @@ void ForwardOneAsCopy(
 			).arg(dest.value
 			).arg(error.type()));
 			done(FullMsgId(), error.type());
-		});
+		}, TrackSelectedAction(action.progress,
+			tr::lng_selected_action_copy(tr::now), 1,
+			SelectedActionPeer(item->history()->peer) + u" → "_q
+				+ SelectedActionPeer(history->peer)));
 }
 
 } // namespace
@@ -1832,7 +1886,7 @@ void CopyThenMergeAlbums(
 
 	struct State {
 		SendAction action;
-		std::vector<not_null<HistoryItem*>> items;
+		MessageIdsList items;
 		MessageIdsList copied;
 		QString error;
 		int index = 0;
@@ -1840,7 +1894,7 @@ void CopyThenMergeAlbums(
 	};
 	const auto state = std::make_shared<State>(State{
 		.action = action,
-		.items = items,
+		.items = action.history->owner().itemsToIds(items),
 		.index = 0,
 		.done = std::move(done),
 	});
@@ -1871,7 +1925,15 @@ void CopyThenMergeAlbums(
 				true);
 			return;
 		}
-		const auto item = state->items[state->index++];
+		const auto item = state->action.history->owner().message(
+			state->items[state->index++]);
+		if (!item) {
+			if (state->action.progress) {
+				state->action.progress->skip(1, u"Source no longer available"_q);
+			}
+			self(self);
+			return;
+		}
 		ForwardOneAsCopy(state->action, item, [=](FullMsgId id, QString error) {
 			if (!error.isEmpty()) {
 				state->error = error;
@@ -1886,7 +1948,8 @@ void CopyThenMergeAlbums(
 
 MergeAlbumCleanup CleanupMergedSources(
 		not_null<Main::Session*> session,
-		const MessageIdsList &ids) {
+		const MessageIdsList &ids,
+		std::shared_ptr<SelectedAction> progress) {
 	auto result = MergeAlbumCleanup();
 	auto deleteIds = MessageIdsList();
 	auto seen = base::flat_set<FullMsgId>();
@@ -1912,8 +1975,11 @@ MergeAlbumCleanup CleanupMergedSources(
 	).arg(int(deleteIds.size())
 	).arg(result.kept));
 	if (!deleteIds.empty()) {
-		session->data().histories().deleteMessages(deleteIds, true);
+		session->data().histories().deleteMessages(deleteIds, true, progress);
 		session->data().sendHistoryChangeNotifications();
+	}
+	if (progress) {
+		progress->skip(result.kept, u"No permission to delete source"_q);
 	}
 	result.deleted = int(deleteIds.size());
 	return result;

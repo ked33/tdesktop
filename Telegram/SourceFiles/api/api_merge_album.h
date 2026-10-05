@@ -73,7 +73,8 @@ void CollectNewMessageIds(
 void AppendSourceLinksToCopiedMessages(
 	not_null<Main::Session*> session,
 	const std::vector<not_null<HistoryItem*>> &sources,
-	const MessageIdsList &destIds);
+	const MessageIdsList &destIds,
+	std::shared_ptr<SelectedAction> progress = nullptr);
 
 void SendMergedAlbums(
 	SendAction action,
@@ -88,6 +89,7 @@ void CopyThenMergeAlbums(
 
 MergeAlbumCleanup CleanupMergedSources(
 	not_null<Main::Session*> session,
-	const MessageIdsList &ids);
+	const MessageIdsList &ids,
+	std::shared_ptr<SelectedAction> progress = nullptr);
 
 } // namespace Api

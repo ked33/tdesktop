@@ -21,6 +21,8 @@ class Error;
 struct Response;
 } // namespace MTP
 
+namespace Api { class SelectedAction; class SelectedActionBatch; }
+
 namespace Data {
 
 class Session;
@@ -84,7 +86,8 @@ public:
 	void deleteMessages(
 		not_null<History*> history,
 		const QVector<MTPint> &ids,
-		bool revoke);
+		bool revoke,
+		std::shared_ptr<Api::SelectedAction> progress = nullptr);
 	void deleteAllMessages(
 		not_null<History*> history,
 		MsgId deleteTillId,
@@ -102,7 +105,10 @@ public:
 		TimeId maxDate,
 		bool revoke);
 
-	void deleteMessages(const MessageIdsList &ids, bool revoke);
+	void deleteMessages(
+		const MessageIdsList &ids,
+		bool revoke,
+		std::shared_ptr<Api::SelectedAction> progress = nullptr);
 
 	int sendRequest(
 		not_null<History*> history,
@@ -122,7 +128,9 @@ public:
 		uint64 randomId,
 		Fn<PreparedMessage(not_null<History*>, FullReplyTo)> message,
 		Fn<void(const MTPUpdates&, const MTP::Response&)> done,
-		Fn<void(const MTP::Error&, const MTP::Response&)> fail);
+		Fn<void(const MTP::Error&, const MTP::Response&)> fail,
+		std::shared_ptr<Api::SelectedActionBatch> progress = nullptr,
+		bool completeProgress = true);
 
 	struct ReplyToPlaceholder {
 	};
@@ -171,6 +179,8 @@ private:
 		Fn<PreparedMessage(not_null<History*>, FullReplyTo)> message;
 		Fn<void(const MTPUpdates&, const MTP::Response&)> done;
 		Fn<void(const MTP::Error&, const MTP::Response&)> fail;
+		std::shared_ptr<Api::SelectedActionBatch> progress;
+		bool completeProgress = true;
 		int requestId = 0;
 	};
 	struct GroupRequestKey {

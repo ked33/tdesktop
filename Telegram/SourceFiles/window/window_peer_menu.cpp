@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_peer_menu.h"
+#include "api/api_selected_action.h"
 
 #include "base/call_delayed.h"
 #include "menu/menu_check_item.h"
@@ -3716,6 +3717,9 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 					.messagesCount = int(items.size()),
 				});
 			if (error.error) {
+				Api::ReportSelectedActionError(session,
+					navigation->parentController()->uiShow(),
+					tr::lng_selected_merge_forward(tr::now), error.error.text);
 				navigation->parentController()->show(
 					MakeSendErrorBox(error, result.size() > 1));
 				return;
@@ -3734,16 +3738,20 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 				}
 			}
 			const auto show = navigation->parentController()->uiShow();
+			const auto progress = Api::SelectedAction::Start(session, show,
+				tr::lng_selected_merge_forward(tr::now), int(ids.size()));
 			for (const auto &thread : result) {
 				if (!comment.text.isEmpty()) {
 					auto message = Api::MessageToSend(
 						Api::SendAction(thread, options));
 					message.textWithTags = comment;
 					message.action.clearDraft = false;
+					message.action.progress = progress;
 					session->api().sendMessage(std::move(message));
 				}
 				auto action = Api::SendAction(thread, options);
 				action.clearDraft = false;
+				action.progress = progress;
 				const auto finish = [=](Api::MergeAlbumResult sendResult) {
 					state->sentMedia += sendResult.sentMedia;
 					if (sendResult.error.isEmpty()
@@ -3765,49 +3773,21 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 					if (--state->requestsLeft) {
 						return;
 					}
-					if (state->failed) {
-						show->showToast(
-							state->error.isEmpty()
-								? tr::lng_merge_album_failed(tr::now)
-								: state->error,
-							Api::kMergeAlbumToastDuration);
-					} else if (state->sentMedia <= 0) {
-						show->showToast(
-							tr::lng_merge_album_none(tr::now),
-							Api::kMergeAlbumToastDuration);
-					} else {
-						const auto cleanup = Api::CleanupMergedSources(
-							session,
-							state->sentSourceIds);
-						const auto merged = state->mediaCount
-							? state->mediaCount
-							: state->sentMedia;
-						const auto header = tr::lng_merge_forward_done(
-							tr::now,
-							lt_total,
-							QString::number(merged));
-						const auto footer = (cleanup.deleted > 0
-							&& !state->sourceChat.isEmpty())
-							? tr::lng_chat_then_deleted(
-								tr::now,
-								lt_chat,
-								state->sourceChat,
-								lt_total,
-								QString::number(cleanup.deleted))
-							: QString();
-						show->showToast(
-							ChatHelpers::JoinToastParts(
-								header,
-								state->destinations,
-								footer),
-							Api::kMergeAlbumToastDuration);
-					}
+					progress->afterRequests([=] {
+						if (!progress->failed()) {
+							Api::CleanupMergedSources(session, state->sentSourceIds, progress);
+						} else {
+							progress->skip(int(state->sentSourceIds.size()), u"Sources retained after failure"_q);
+						}
+					});
+					progress->finish();
 				};
 				Api::SendMergedAlbums(
 					action,
 					items,
 					[=](Api::MergeAlbumResult sendResult) {
-						if (sendResult.error == u"CHAT_FORWARDS_RESTRICTED"_q
+						if (!sendResult.sentMedia
+							&& sendResult.error == u"CHAT_FORWARDS_RESTRICTED"_q
 							&& action.history != items.front()->history()) {
 							LOG(("MergeAlbum: fallback copy-then-merge dest=%1"
 							).arg(action.history->peer->id.value));
@@ -4730,29 +4710,45 @@ base::weak_qptr<Ui::BoxContent> ShowSendNowMessagesBox(
 		Data::ShowSendErrorToast(navigation, history->peer, error);
 		return { nullptr };
 	}
+	const auto show = navigation->parentController()->uiShow();
 	auto done = [
 		=,
 		list = std::move(items),
 		callback = std::move(successCallback)
 	](Fn<void()> &&close) {
 		close();
-		auto ids = QVector<MTPint>();
+		const auto progress = Api::SelectedAction::Start(session, show,
+			tr::lng_selected_send_now(tr::now), int(list.size()));
+		auto byPeer = base::flat_map<not_null<PeerData*>, QVector<MTPint>>();
 		auto sorted = session->data().idsToItems(list);
 		ranges::sort(sorted, ranges::less(), &HistoryItem::date);
 		for (const auto &item : sorted) {
 			if (item->allowsSendNow()) {
-				ids.push_back(
+				byPeer[item->history()->peer].push_back(
 					MTP_int(session->scheduledMessages().lookupId(item)));
+			} else {
+				progress->skip(1, u"Message cannot be sent now"_q);
 			}
 		}
-		session->api().request(MTPmessages_SendScheduledMessages(
-			history->peer->input(),
-			MTP_vector<MTPint>(ids)
-		)).done([=](const MTPUpdates &result) {
-			session->api().applyUpdates(result);
-		}).fail([=](const MTP::Error &error) {
-			session->api().sendMessageFail(error, history->peer);
-		}).send();
+		progress->skip(int(list.size() - sorted.size()), u"Unavailable messages"_q);
+		for (const auto &[peer, ids] : byPeer) {
+			for (auto offset = 0; offset < ids.size(); offset += MaxSelectedItems) {
+				const auto chunk = ids.mid(offset, MaxSelectedItems);
+				const auto tracked = progress->add(tr::lng_selected_send_now(tr::now),
+					int(chunk.size()), Api::SelectedActionPeer(peer));
+				tracked->start();
+				const auto requestId = session->api().request(MTPmessages_SendScheduledMessages(
+					peer->input(), MTP_vector<MTPint>(chunk)
+				)).done([=](const MTPUpdates &result) {
+					session->api().applyUpdates(result);
+					tracked->done();
+				}).fail([=](const MTP::Error &error) {
+					tracked->fail(error);
+				}).send();
+				tracked->observe(session, requestId);
+			}
+		}
+		progress->finish();
 		if (callback) {
 			callback();
 		}

@@ -126,6 +126,8 @@ public:
 				Storage::NonPremiumDelayInfo>>;
 		[[nodiscard]] rpl::producer<> frozenErrorReceived() const;
 	[[nodiscard]] rpl::producer<TransferLimitInfo> transferLimits() const;
+	[[nodiscard]] rpl::producer<RequestRetryInfo> requestRetries() const;
+	[[nodiscard]] rpl::producer<RequestRetryInfo> requestErrors() const;
 	void notifyTransferLimit(mtpRequestId requestId, const Error &error);
 
 	void restart();
@@ -335,6 +337,8 @@ private:
 			Storage::NonPremiumDelayInfo
 		>> _nonPremiumDelayedRequests;
 	rpl::event_stream<TransferLimitInfo> _transferLimits;
+	rpl::event_stream<RequestRetryInfo> _requestRetries;
+	rpl::event_stream<RequestRetryInfo> _requestErrors;
 		rpl::event_stream<> _frozenErrorReceived;
 
 	base::Timer _checkDelayedTimer;
@@ -614,6 +618,14 @@ auto Instance::Private::nonPremiumDelayedRequests() const
 
 rpl::producer<> Instance::Private::frozenErrorReceived() const {
 	return _frozenErrorReceived.events();
+}
+
+rpl::producer<RequestRetryInfo> Instance::Private::requestErrors() const {
+	return _requestErrors.events();
+}
+
+rpl::producer<RequestRetryInfo> Instance::Private::requestRetries() const {
+	return _requestRetries.events();
 }
 
 rpl::producer<TransferLimitInfo> Instance::Private::transferLimits() const {
@@ -1461,6 +1473,15 @@ bool Instance::Private::rpcErrorOccured(
 		const Error &error) { // return true if need to clean request data
 	const auto guard = QPointer<Instance>(_instance);
 	finishTransferLimitTrace(response.requestId, "error", error.type());
+	_requestErrors.fire_copy({
+		.requestId = response.requestId,
+		.type = error.type(),
+		.description = error.description(),
+		.code = error.code(),
+	});
+	if (!guard) {
+		return false;
+	}
 	notifyTransferLimit(response.requestId, error);
 	if (!guard) {
 		return false;
@@ -1776,6 +1797,13 @@ bool Instance::Private::onErrorDefault(
 		}
 		const auto appliedWaitMs = secs * 1000;
 		auto sendAt = crl::now() + appliedWaitMs + 10;
+		_requestRetries.fire_copy({
+			.requestId = requestId,
+			.type = type,
+			.description = error.description(),
+			.code = code,
+			.retryAt = sendAt,
+		});
 		auto it = _delayedRequests.begin(), e = _delayedRequests.end();
 		for (; it != e; ++it) {
 			if (it->first == requestId) {
@@ -2199,6 +2227,14 @@ rpl::producer<ShiftedDcId> Instance::restartsByTimeout() const {
 rpl::producer<std::pair<mtpRequestId, Storage::NonPremiumDelayInfo>>
 Instance::nonPremiumDelayedRequests() const {
 	return _private->nonPremiumDelayedRequests();
+}
+
+rpl::producer<RequestRetryInfo> Instance::requestErrors() const {
+	return _private->requestErrors();
+}
+
+rpl::producer<RequestRetryInfo> Instance::requestRetries() const {
+	return _private->requestRetries();
 }
 
 rpl::producer<TransferLimitInfo> Instance::transferLimits() const {

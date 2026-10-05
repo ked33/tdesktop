@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/delete_messages_box.h"
+#include "api/api_selected_action.h"
 
 #include "apiwrap.h"
 #include "base/unixtime.h"
@@ -584,7 +585,10 @@ void DeleteMessagesBox::deleteAndClear() {
 		return;
 	}
 	const auto ids = _ids;
+	const auto progress = Api::SelectedAction::Start(session, uiShow(),
+		tr::lng_selected_action_delete(tr::now), int(ids.size()));
 	invokeCallbackAndClose();
-	session->data().histories().deleteMessages(ids, revoke);
+	session->data().histories().deleteMessages(ids, revoke, progress);
+	progress->finish();
 	session->data().sendHistoryChangeNotifications();
 }

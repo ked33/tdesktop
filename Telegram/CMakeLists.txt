@@ -135,6 +135,8 @@ PRIVATE
     data/data_search_calendar.cpp
     api/api_common.cpp
     api/api_common.h
+    api/api_selected_action.cpp
+    api/api_selected_action.h
     api/api_confirm_phone.cpp
     api/api_confirm_phone.h
     api/api_compose_with_ai.cpp

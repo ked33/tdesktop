@@ -13,6 +13,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 class PeerData;
 
+namespace Api { class SelectedAction; }
+
 namespace Data {
 
 class Session;
@@ -37,7 +39,8 @@ public:
 	void loadIds();
 	[[nodiscard]] bool has(not_null<DocumentData*> document) const;
 	void save(not_null<DocumentData*> document, FileOrigin origin);
-	void remove(not_null<DocumentData*> document);
+	void remove(not_null<DocumentData*> document,
+		std::shared_ptr<Api::SelectedAction> progress = nullptr);
 	void reorder(int oldPosition, int newPosition);
 
 	void apply(not_null<UserData*> user, const MTPDocument *last);

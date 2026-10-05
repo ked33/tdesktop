@@ -30,6 +30,14 @@ using AuthKeyPtr = std::shared_ptr<AuthKey>;
 using AuthKeysList = std::vector<AuthKeyPtr>;
 enum class Environment : uchar;
 
+struct RequestRetryInfo {
+	mtpRequestId requestId = 0;
+	QString type;
+	QString description;
+	int code = 0;
+	crl::time retryAt = 0;
+};
+
 struct TransferLimitInfo {
 	QString type;
 	mtpRequestId requestId = 0;
@@ -157,6 +165,8 @@ public:
 	[[nodiscard]] auto nonPremiumDelayedRequests() const
 		-> rpl::producer<std::pair<mtpRequestId, Storage::NonPremiumDelayInfo>>;
 	[[nodiscard]] rpl::producer<TransferLimitInfo> transferLimits() const;
+	[[nodiscard]] rpl::producer<RequestRetryInfo> requestRetries() const;
+	[[nodiscard]] rpl::producer<RequestRetryInfo> requestErrors() const;
 	[[nodiscard]] rpl::producer<> frozenErrorReceived() const;
 
 	void syncHttpUnixtime();
