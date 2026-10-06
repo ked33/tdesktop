@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_suggest_post.h"
 #include "api/api_toggling_media.h" // Api::ToggleFavedSticker
 #include "base/qt/qt_key_modifiers.h"
+#include "base/event_filter.h"
 #include "base/unixtime.h"
 #include "history/view/history_view_list_widget.h"
 #include "history/view/controls/history_view_suggest_options.h"
@@ -131,6 +132,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_layers.h"
 #include "styles/style_menu_icons.h"
 
+#include <QtCore/QCoreApplication>
 #include <QtGui/QCursor>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
@@ -215,6 +217,113 @@ const TextParseOptions kMenuTextOptions = {
 	0,
 	Qt::LayoutDirectionAuto,
 };
+
+void LogDetailsMenuEvent(
+		not_null<QEvent*> event,
+		const char *target,
+		not_null<Ui::PopupMenu*> root,
+		not_null<Ui::PopupMenu*> submenu) {
+	const auto type = event->type();
+	if (type == QEvent::MouseButtonPress
+		|| type == QEvent::MouseButtonRelease
+		|| type == QEvent::MouseButtonDblClick) {
+		if (root->isHidden() || submenu->isHidden()) {
+			return;
+		}
+		const auto mouse = static_cast<QMouseEvent*>(event.get());
+		const auto global = mouse->globalPosition().toPoint();
+		const auto local = submenu->mapFromGlobal(global);
+		const auto selected = submenu->menu()->findSelectedAction();
+		LOG(("Message details: phase=input target=%1 type=%2 button=%3 "
+			"source=%4 spontaneous=%5 accepted=%6 local=%7,%8 "
+			"inside=%9 selected=%10 moved=%11 frozen=%12"
+			).arg(target
+			).arg(int(type)
+			).arg(int(mouse->button())
+			).arg(int(mouse->source())
+			).arg(event->spontaneous()
+			).arg(event->isAccepted()
+			).arg(local.x()
+			).arg(local.y()
+			).arg(submenu->inner().contains(local)
+			).arg(selected ? selected->index() : -1
+			).arg(submenu->menu()->hasMouseMoved(global)
+			).arg(submenu->menu()->mouseSelectionFrozen()));
+	} else if (type == QEvent::Show
+		|| type == QEvent::Hide
+		|| type == QEvent::FocusOut
+		|| type == QEvent::WindowDeactivate) {
+		LOG(("Message details: phase=visibility target=%1 type=%2 "
+			"root_hidden=%3 submenu_hidden=%4"
+			).arg(target
+			).arg(int(type)
+			).arg(root->isHidden()
+			).arg(submenu->isHidden()));
+	}
+}
+
+void ObserveDetailsMenu(
+		not_null<Ui::PopupMenu*> root,
+		not_null<Ui::PopupMenu*> submenu) {
+	LOG(("Message details: phase=setup diagnostics=1 rows=%1"
+		).arg(submenu->actions().size()));
+	const auto observe = [=](
+			not_null<Ui::RpWidget*> widget,
+			const char *target,
+			bool visibility = false) {
+		widget->events() | rpl::on_next([=](not_null<QEvent*> event) {
+			const auto type = event->type();
+			if (visibility
+				|| type == QEvent::MouseButtonPress
+				|| type == QEvent::MouseButtonRelease
+				|| type == QEvent::MouseButtonDblClick) {
+				LogDetailsMenuEvent(event, target, root, submenu);
+			}
+		}, submenu->lifetime());
+	};
+	observe(root, "root", true);
+	observe(root->menu(), "root_inner");
+	observe(submenu, "submenu", true);
+	observe(submenu->menu(), "submenu_inner");
+	base::install_event_filter(
+		submenu,
+		QCoreApplication::instance(),
+		[=](not_null<QEvent*> event) {
+			const auto type = event->type();
+			if (type == QEvent::MouseButtonPress
+				|| type == QEvent::MouseButtonRelease
+				|| type == QEvent::MouseButtonDblClick) {
+				LogDetailsMenuEvent(event, "application", root, submenu);
+			}
+			return base::EventFilterResult::Continue;
+		});
+	for (const auto action : submenu->actions()) {
+		if (action->isSeparator()) {
+			continue;
+		}
+		const auto row = submenu->menu()->itemForAction(action);
+		if (!row) {
+			continue;
+		}
+		observe(row, "row");
+		row->clicks() | rpl::on_next([=](const Ui::Menu::CallbackData &data) {
+			LOG(("Message details: phase=activate index=%1 source=%2"
+				).arg(data.index).arg(int(data.source)));
+		}, row->lifetime());
+		const auto index = row->index();
+		QObject::connect(action.get(), &QAction::triggered, submenu.get(), [=] {
+			LOG(("Message details: phase=trigger index=%1").arg(index));
+		});
+	}
+}
+
+void CopyDetailsValue(const QString &value) {
+	const auto clipboard = QGuiApplication::clipboard();
+	clipboard->setText(value);
+	LOG(("Message details: phase=copy matched=%1"
+		).arg(clipboard->text() == value));
+	Ui::Toast::Show(tr::lng_text_copied(tr::now));
+}
 
 class TwoTextAction final : public Ui::Menu::ItemBase {
 public:
@@ -356,6 +465,12 @@ private:
 };
 
 void TwoTextAction::mousePressEvent(QMouseEvent *e) {
+	LOG(("Message details: phase=row_press index=%1 button=%2 "
+		"selected=%3 inside=%4"
+		).arg(index()
+		).arg(int(e->button())
+		).arg(isSelected()
+		).arg(rect().contains(e->pos())));
 	if (e->button() != Qt::LeftButton && e->button() != Qt::RightButton) {
 		ItemBase::mousePressEvent(e);
 		return;
@@ -367,6 +482,8 @@ void TwoTextAction::mousePressEvent(QMouseEvent *e) {
 }
 
 void TwoTextAction::mouseReleaseEvent(QMouseEvent *e) {
+	LOG(("Message details: phase=row_release index=%1 button=%2"
+		).arg(index()).arg(int(e->button())));
 	if (e->button() != Qt::LeftButton && e->button() != Qt::RightButton) {
 		ItemBase::mouseReleaseEvent(e);
 		return;
@@ -383,8 +500,7 @@ void TwoTextAction::mouseReleaseEvent(QMouseEvent *e) {
 	if (!callback) {
 		const auto copy = text2;
 		callback = [=] {
-			QGuiApplication::clipboard()->setText(copy);
-			Ui::Toast::Show(tr::lng_text_copied(tr::now));
+			CopyDetailsValue(copy);
 		};
 	}
 	return base::make_unique_q<TwoTextAction>(
@@ -392,7 +508,10 @@ void TwoTextAction::mouseReleaseEvent(QMouseEvent *e) {
 		menu->st(),
 		text1,
 		text2,
-		std::move(callback),
+		[callback = std::move(callback)] {
+			LOG(("Message details: phase=callback"));
+			callback();
+		},
 		icon,
 		icon);
 }
@@ -803,8 +922,7 @@ void FillDetailsSubmenu(
 				tr::lng_context_details_file_name(tr::now),
 				ShortenFileName(mediaName),
 				[=] {
-					QGuiApplication::clipboard()->setText(mediaName);
-					Ui::Toast::Show(tr::lng_text_copied(tr::now));
+					CopyDetailsValue(mediaName);
 				}));
 		}
 		if (!mediaDocumentId.isEmpty()) {
@@ -3221,6 +3339,7 @@ void AddMessageDetailsAction(
 		.icon = &st::menuIconInfo,
 		.fillSubmenu = [=](not_null<Ui::PopupMenu*> submenu) {
 			FillDetailsSubmenu(submenu, item, view, controller);
+			ObserveDetailsMenu(menu, submenu);
 		},
 		});
 	}
