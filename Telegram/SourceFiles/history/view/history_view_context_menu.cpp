@@ -348,6 +348,7 @@ public:
 		+ _st.itemStyle.font->height
 		+ st::ttlItemTimerFont->height
 		+ st::ttlItemPadding.bottom()) {
+		setAcceptBoth(true);
 		fitToMenuWidth();
 
 		paintRequest(
@@ -471,24 +472,13 @@ void TwoTextAction::mousePressEvent(QMouseEvent *e) {
 		).arg(int(e->button())
 		).arg(isSelected()
 		).arg(rect().contains(e->pos())));
-	if (e->button() != Qt::LeftButton && e->button() != Qt::RightButton) {
-		ItemBase::mousePressEvent(e);
-		return;
-	}
-	e->accept();
-	if (isEnabled() && rect().contains(e->pos())) {
-		setClicked(Ui::Menu::TriggeredSource::Mouse);
-	}
+	ItemBase::mousePressEvent(e);
 }
 
 void TwoTextAction::mouseReleaseEvent(QMouseEvent *e) {
 	LOG(("Message details: phase=row_release index=%1 button=%2"
 		).arg(index()).arg(int(e->button())));
-	if (e->button() != Qt::LeftButton && e->button() != Qt::RightButton) {
-		ItemBase::mouseReleaseEvent(e);
-		return;
-	}
-	e->accept();
+	ItemBase::mouseReleaseEvent(e);
 }
 
 [[nodiscard]] base::unique_qptr<Ui::Menu::ItemBase> CreateTwoTextAction(
