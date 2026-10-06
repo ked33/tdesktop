@@ -21,7 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_suggest_post.h"
 #include "api/api_toggling_media.h" // Api::ToggleFavedSticker
 #include "base/qt/qt_key_modifiers.h"
-#include "base/event_filter.h"
+// #include "base/event_filter.h"
 #include "base/unixtime.h"
 #include "history/view/history_view_list_widget.h"
 #include "history/view/controls/history_view_suggest_options.h"
@@ -132,7 +132,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_layers.h"
 #include "styles/style_menu_icons.h"
 
-#include <QtCore/QCoreApplication>
+// #include <QtCore/QCoreApplication>
 #include <QtGui/QCursor>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
@@ -218,6 +218,7 @@ const TextParseOptions kMenuTextOptions = {
 	Qt::LayoutDirectionAuto,
 };
 
+/*
 void LogDetailsMenuEvent(
 		not_null<QEvent*> event,
 		const char *target,
@@ -316,12 +317,15 @@ void ObserveDetailsMenu(
 		});
 	}
 }
+*/
 
 void CopyDetailsValue(const QString &value) {
 	const auto clipboard = QGuiApplication::clipboard();
 	clipboard->setText(value);
+	/*
 	LOG(("Message details: phase=copy matched=%1"
 		).arg(clipboard->text() == value));
+	*/
 	Ui::Toast::Show(tr::lng_text_copied(tr::now));
 }
 
@@ -380,8 +384,8 @@ public:
 	}
 
 private:
-	void mousePressEvent(QMouseEvent *e) override;
-	void mouseReleaseEvent(QMouseEvent *e) override;
+	// void mousePressEvent(QMouseEvent *e) override;
+	// void mouseReleaseEvent(QMouseEvent *e) override;
 
 	[[nodiscard]] QPoint prepareRippleStartPosition() const override {
 		return mapFromGlobal(QCursor::pos());
@@ -465,6 +469,7 @@ private:
 	const int _height;
 };
 
+/*
 void TwoTextAction::mousePressEvent(QMouseEvent *e) {
 	LOG(("Message details: phase=row_press index=%1 button=%2 "
 		"selected=%3 inside=%4"
@@ -480,6 +485,7 @@ void TwoTextAction::mouseReleaseEvent(QMouseEvent *e) {
 		).arg(index()).arg(int(e->button())));
 	ItemBase::mouseReleaseEvent(e);
 }
+*/
 
 [[nodiscard]] base::unique_qptr<Ui::Menu::ItemBase> CreateTwoTextAction(
 		not_null<Ui::Menu::Menu*> menu,
@@ -499,7 +505,7 @@ void TwoTextAction::mouseReleaseEvent(QMouseEvent *e) {
 		text1,
 		text2,
 		[callback = std::move(callback)] {
-			LOG(("Message details: phase=callback"));
+			// LOG(("Message details: phase=callback"));
 			callback();
 		},
 		icon,
@@ -3329,7 +3335,7 @@ void AddMessageDetailsAction(
 		.icon = &st::menuIconInfo,
 		.fillSubmenu = [=](not_null<Ui::PopupMenu*> submenu) {
 			FillDetailsSubmenu(submenu, item, view, controller);
-			ObserveDetailsMenu(menu, submenu);
+			// ObserveDetailsMenu(menu, submenu);
 		},
 		});
 	}
