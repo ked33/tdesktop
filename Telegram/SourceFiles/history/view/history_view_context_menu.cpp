@@ -227,7 +227,10 @@ public:
 		const style::icon *icon,
 		const style::icon *iconOver)
 	: ItemBase(parent, st)
-	, _dummyAction(Ui::CreateChild<QAction>(parent))
+	, _dummyAction(Ui::Menu::CreateAction(
+		parent,
+		text1,
+		std::move(callback)))
 	, _st(st)
 	, _icon(icon)
 	, _iconOver(iconOver)
@@ -237,7 +240,6 @@ public:
 		+ st::ttlItemTimerFont->height
 		+ st::ttlItemPadding.bottom()) {
 		fitToMenuWidth();
-		setActionTriggered(std::move(callback));
 
 		paintRequest(
 		) | rpl::on_next([=] {
@@ -360,6 +362,7 @@ private:
 		const auto copy = text2;
 		callback = [=] {
 			QGuiApplication::clipboard()->setText(copy);
+			Ui::Toast::Show(tr::lng_text_copied(tr::now));
 		};
 	}
 	return base::make_unique_q<TwoTextAction>(
@@ -779,6 +782,7 @@ void FillDetailsSubmenu(
 				ShortenFileName(mediaName),
 				[=] {
 					QGuiApplication::clipboard()->setText(mediaName);
+					Ui::Toast::Show(tr::lng_text_copied(tr::now));
 				}));
 		}
 		if (!mediaDocumentId.isEmpty()) {
