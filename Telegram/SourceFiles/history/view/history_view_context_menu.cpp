@@ -270,6 +270,9 @@ public:
 	}
 
 private:
+	void mousePressEvent(QMouseEvent *e) override;
+	void mouseReleaseEvent(QMouseEvent *e) override;
+
 	[[nodiscard]] QPoint prepareRippleStartPosition() const override {
 		return mapFromGlobal(QCursor::pos());
 	}
@@ -351,6 +354,25 @@ private:
 	int _textWidth1 = 0;
 	const int _height;
 };
+
+void TwoTextAction::mousePressEvent(QMouseEvent *e) {
+	if (e->button() != Qt::LeftButton && e->button() != Qt::RightButton) {
+		ItemBase::mousePressEvent(e);
+		return;
+	}
+	e->accept();
+	if (isEnabled() && rect().contains(e->pos())) {
+		setClicked(Ui::Menu::TriggeredSource::Mouse);
+	}
+}
+
+void TwoTextAction::mouseReleaseEvent(QMouseEvent *e) {
+	if (e->button() != Qt::LeftButton && e->button() != Qt::RightButton) {
+		ItemBase::mouseReleaseEvent(e);
+		return;
+	}
+	e->accept();
+}
 
 [[nodiscard]] base::unique_qptr<Ui::Menu::ItemBase> CreateTwoTextAction(
 		not_null<Ui::Menu::Menu*> menu,
