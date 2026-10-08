@@ -800,6 +800,24 @@ bool ChatFilters::applyChange(ChatFilter &filter, ChatFilter &&updated) {
 		// Trigger a full refresh of height for the main list.
 		entryToRefreshHeight->updateChatListEntryHeight();
 	}
+	if (exceptionsChanged || filter.never() != wasFilter.never()) {
+		auto histories = wasFilter.always();
+		for (const auto &history : filter.always()) {
+			histories.emplace(history);
+		}
+		for (const auto &history : histories) {
+			if (_loaded
+				&& filter.always().contains(history)
+				&& !wasFilter.always().contains(history)) {
+				history->setEmptyChatHidden(false);
+			}
+			if (history->folderKnown()
+				&& history->lastMessageKnown()
+				&& !history->lastMessage()) {
+				history->updateChatListExistence();
+			}
+		}
+	}
 	return listUpdated;
 }
 

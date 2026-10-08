@@ -19,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_translation.h"
 #include "history/history_unread_things.h"
 #include "iv/editor/iv_editor_session.h"
+#include "core/core_settings.h"
 #include "core/ui_integration.h"
 #include "dialogs/ui/dialogs_layout.h"
 #include "data/business/data_shortcut_messages.h"
@@ -90,6 +91,13 @@ constexpr auto kSkipCloudDraftsFor = TimeId(2);
 constexpr auto kCountUnreadMessagesLimit = 10000;
 
 using UpdateFlag = Data::HistoryUpdate::Flag;
+
+[[nodiscard]] std::string EmptyChatHiddenKey(not_null<const History*> history) {
+	return u"empty_chat_hidden_%1_%2"_q
+		.arg(history->session().uniqueId())
+		.arg(SerializePeerId(history->peer->id))
+		.toStdString();
+}
 
 [[nodiscard]] HistoryItemCommonFields WithLocalFlag(
 		HistoryItemCommonFields fields) {
@@ -2642,7 +2650,7 @@ void History::applyPinnedUpdate(const MTPDupdateDialogPinned &data) {
 }
 
 TimeId History::adjustedChatListTimeId() const {
-	const auto result = chatListTimeId();
+	auto result = chatListTimeId();
 	if (const auto channel = peer->asChannel()) {
 		if (channel->isCommunity()) {
 			if (const auto info = channel->communityInfo()) {
@@ -2654,10 +2662,13 @@ TimeId History::adjustedChatListTimeId() const {
 		if (!peer->forum()
 			&& !Data::DraftIsNull(draft)
 			&& !session().supportMode()) {
-			return std::max(result, draft->date);
+			result = std::max(result, draft->date);
 		}
 	}
-	return result;
+	// Empty folder entries need a sort position without a message timestamp.
+	return (!result && keepEmptyChatInFolder() && shouldBeInChatList())
+		? TimeId(1)
+		: result;
 }
 
 void History::countScrollState(int top) {
@@ -3159,6 +3170,9 @@ void History::setLastMessage(HistoryItem *item) {
 	if (_lastMessage && *_lastMessage == item) {
 		return;
 	}
+	if (item && !item->isHistoryClearPlaceholder()) {
+		setEmptyChatHidden(false);
+	}
 	_lastMessage = item;
 	if (!item || item->isRegular()) {
 		_lastServerMessage = item;
@@ -3441,7 +3455,37 @@ bool History::lastServerMessageKnown() const {
 }
 
 void History::updateChatListExistence() {
-	Entry::updateChatListExistence();
+	if (keepEmptyChatInFolder() && shouldBeInChatList()) {
+		updateChatListSortPosition();
+	} else {
+		Entry::updateChatListExistence();
+	}
+}
+
+void History::setEmptyChatHidden(bool hidden) {
+	const auto key = EmptyChatHiddenKey(this);
+	auto &settings = Core::App().settings();
+	if (hidden) {
+		settings.writePref<bool>(key, true);
+	} else {
+		settings.clearPref(key);
+	}
+}
+
+bool History::keepEmptyChatInFolder() const {
+	if (!lastMessageKnown() || lastMessage()) {
+		return false;
+	}
+	const auto self = not_null<const History*>(this);
+	const auto included = ranges::any_of(
+		owner().chatsFilters().list(),
+		[&](const Data::ChatFilter &filter) {
+			return filter.id()
+				&& filter.always().contains(self)
+				&& !filter.never().contains(self);
+		});
+	return included && !Core::App().settings().readPref<bool>(
+		EmptyChatHiddenKey(this));
 }
 
 bool History::useTopPromotion() const {
@@ -3490,7 +3534,8 @@ bool History::shouldBeInChatList() const {
 		}
 	}
 	return !lastMessageKnown()
-		|| (lastMessage() != nullptr);
+		|| (lastMessage() != nullptr)
+		|| keepEmptyChatInFolder();
 }
 
 void History::unknownMessageDeleted(MsgId messageId) {
@@ -3596,6 +3641,7 @@ void History::dialogEntryApplied() {
 				insertJoinedMessage();
 			}
 		}
+		updateChatListExistence();
 		return;
 	}
 
@@ -4450,6 +4496,9 @@ std::vector<MsgId> History::collectMessagesFromParticipantToDelete(
 }
 
 void History::clear(ClearType type, bool markEmpty) {
+	if (type != ClearType::Unload) {
+		setEmptyChatHidden(type == ClearType::DeleteChat);
+	}
 	_unreadBarView = nullptr;
 	_firstUnreadView = nullptr;
 	removeJoinedMessage();

@@ -422,6 +422,7 @@ public:
 	[[nodiscard]] bool useTopPromotion() const;
 	int fixedOnTopIndex() const override;
 	void updateChatListExistence() override;
+	void setEmptyChatHidden(bool hidden);
 	bool shouldBeInChatList() const override;
 	Dialogs::UnreadState chatListUnreadState() const override;
 	Dialogs::BadgesState chatListBadgesState() const override;
@@ -610,6 +611,7 @@ private:
 	void mainViewHeightAdjusted(not_null<Element*> view, int delta);
 
 	TimeId adjustedChatListTimeId() const override;
+	[[nodiscard]] bool keepEmptyChatInFolder() const;
 	void changedChatListPinHook() override;
 
 	void setOutboxReadTill(MsgId upTo);
