@@ -9,8 +9,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "apiwrap.h"
 #include "base/openssl_help.h"
+#include "data/data_channel.h"
 #include "data/data_document.h"
 #include "data/data_session.h"
+#include "data/data_user.h"
 #include "main/main_session.h"
 #include "media/streaming/media_streaming_boost.h"
 #include "mtproto/facade.h"
@@ -18,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/mtproto_auth_key.h"
 #include "mtproto/mtproto_response.h"
 #include "settings.h"
+#include "ui/image/image_location.h"
 
 #include <algorithm>
 
@@ -53,6 +56,49 @@ constexpr auto kSmartProbeMaximumLatency = 4 * crl::time(1000);
 constexpr auto kSmartProbeMinimumGain = 1.08;
 constexpr auto kSmartProbeMaximumLatencyRatio = 1.35;
 constexpr auto kSmartMaximumMeasuredThroughput = 64 * 1024 * 1024;
+
+[[nodiscard]] PeerId AvatarPeerId(const MTPInputPeer &peer, UserId self) {
+	return peer.match([&](const MTPDinputPeerSelf &) {
+		return peerFromUser(self);
+	}, [](const MTPDinputPeerUser &data) {
+		return peerFromUser(data.vuser_id());
+	}, [](const MTPDinputPeerChat &data) {
+		return peerFromChat(data.vchat_id());
+	}, [](const MTPDinputPeerChannel &data) {
+		return peerFromChannel(data.vchannel_id());
+	}, [](const MTPDinputPeerUserFromMessage &data) {
+		return peerFromUser(data.vuser_id());
+	}, [](const MTPDinputPeerChannelFromMessage &data) {
+		return peerFromChannel(data.vchannel_id());
+	}, [](const MTPDinputPeerEmpty &) {
+		return PeerId();
+	});
+}
+
+[[nodiscard]] QString AvatarPeerType(const Data::Session &data, PeerId id) {
+	if (!id) {
+		return u"unknown"_q;
+	} else if (peerIsUser(id)) {
+		if (const auto user = data.userLoaded(peerToUser(id))) {
+			return user->isBot()
+				? u"bot"_q
+				: user->isContact() ? u"contact"_q : u"user"_q;
+		}
+		return u"user_unknown"_q;
+	} else if (peerIsChat(id)) {
+		return u"group"_q;
+	} else if (peerIsChannel(id)) {
+		if (const auto channel = data.channelLoaded(peerToChannel(id))) {
+			if (channel->isMegagroup()) {
+				return u"supergroup"_q;
+			} else if (channel->isBroadcast()) {
+				return u"channel"_q;
+			}
+		}
+		return u"channel_unknown"_q;
+	}
+	return u"unknown"_q;
+}
 
 [[nodiscard]] QString SmartRequestLimitReasonString(
 		NonPremiumRequestLimitReason reason) {
@@ -1707,6 +1753,10 @@ void DownloadMtprotoTask::subscribeToTransferLimits() {
 	if (_transferLimitSubscription) {
 		return;
 	}
+	_owner->api().instance().requestErrors(
+	) | rpl::on_next([=](const MTP::RequestRetryInfo &info) {
+		logAvatarFailure(info);
+	}, _transferLimitSubscription);
 	_owner->api().instance().requestRetries(
 	) | rpl::on_next([=](const MTP::RequestRetryInfo &info) {
 		if (_sentRequests.contains(info.requestId) && _downloadTrace) {
@@ -1738,6 +1788,67 @@ void DownloadMtprotoTask::subscribeToTransferLimits() {
 			}
 		}
 	}, _transferLimitSubscription);
+}
+
+void DownloadMtprotoTask::logAvatarFailure(
+		const MTP::RequestRetryInfo &info) {
+	if (_avatarFailureLogged || !_sentRequests.contains(info.requestId)) {
+		return;
+	}
+	const auto location = std::get_if<StorageFileLocation>(&_location.data);
+	if (!location) {
+		return;
+	}
+	const auto &session = api().session();
+	auto peerId = PeerId();
+	auto photoId = PhotoId(0);
+	auto size = QString();
+	if (location->type() == StorageFileLocation::Type::PeerPhoto) {
+		const auto input = location->tl(session.userId());
+		const auto &photo = input.c_inputPeerPhotoFileLocation();
+		peerId = AvatarPeerId(photo.vpeer(), session.userId());
+		photoId = photo.vphoto_id().v;
+		size = photo.is_big() ? u"big"_q : u"small"_q;
+	} else if (location->type() == StorageFileLocation::Type::Photo) {
+		peerId = v::match(_origin.data, [](
+				const Data::FileOriginUserPhoto &origin) {
+			return peerFromUser(origin.userId);
+		}, [](const Data::FileOriginFullUser &origin) {
+			return peerFromUser(origin.userId);
+		}, [](const Data::FileOriginPeerPhoto &origin) {
+			return origin.peerId;
+		}, [](const auto &) {
+			return PeerId();
+		});
+		if (!peerId) {
+			return;
+		}
+		photoId = location->objectId();
+		size = u"profile"_q;
+	} else {
+		return;
+	}
+	const auto bareId = peerId.value & PeerId::kChatTypeMask;
+	const auto chatId = peerIsChannel(peerId)
+		? -qlonglong(1000000000000LL) - qlonglong(bareId)
+		: peerIsChat(peerId) ? -qlonglong(bareId) : qlonglong(bareId);
+	const auto error = info.type.left(80)
+		.replace(u'\r', u' ')
+		.replace(u'\n', u' ')
+		.replace(u'\t', u' ');
+	_avatarFailureLogged = true;
+	LOG(("Avatar load failed: id=%1 request=%2 dc=%3 peer_type=%4 "
+		"peer_id=%5 chat_id=%6 photo_id=%7 size=%8 code=%9 error=%10")
+		.arg(qulonglong(_downloadTrace ? _downloadTrace->id : 0))
+		.arg(info.requestId)
+		.arg(dcId())
+		.arg(AvatarPeerType(session.data(), peerId))
+		.arg(qulonglong(bareId))
+		.arg(chatId)
+		.arg(qulonglong(photoId))
+		.arg(size)
+		.arg(info.code)
+		.arg(error));
 }
 
 void DownloadMtprotoTask::logTransferLimitSource(

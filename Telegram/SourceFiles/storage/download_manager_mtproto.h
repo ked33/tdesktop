@@ -22,6 +22,7 @@ class ApiWrap;
 
 namespace MTP {
 class Error;
+struct RequestRetryInfo;
 struct TransferLimitInfo;
 } // namespace MTP
 
@@ -405,11 +406,13 @@ private:
 	void updateDownloadTrace();
 	void recordReceivedPart(int64 size);
 	void subscribeToTransferLimits();
+	void logAvatarFailure(const MTP::RequestRetryInfo &info);
 	void logTransferLimitSource(const MTP::TransferLimitInfo &info) const;
 
 	std::shared_ptr<DownloadTrace> _downloadTrace;
 	const not_null<DownloadManagerMtproto*> _owner;
 	const MTP::DcId _dcId = 0;
+	bool _avatarFailureLogged = false;
 
 	// _location can be changed with an updated file_reference.
 	Location _location;
