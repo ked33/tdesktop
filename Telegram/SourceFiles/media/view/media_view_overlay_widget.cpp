@@ -28,6 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/crash_reports.h"
 #include "core/sandbox.h"
 #include "core/shortcuts.h"
+#include "test/test_video_scroll.h"
 #include "ui/widgets/menu/menu.h"
 #include "ui/widgets/menu/menu_add_action_callback.h"
 #include "ui/widgets/menu/menu_add_action_callback_factory.h"
@@ -1625,6 +1626,7 @@ bool OverlayWidget::opaqueContentShown() const {
 }
 
 void OverlayWidget::clearStreaming(bool savePosition) {
+	Test::VideoScrollViewer(Test::VideoScrollViewerEvent::ClearStream, _window);
 	cancelPlaybackHolds();
 	_speedBoostAnimation.stop();
 	_speedBoostTicker.stop();
@@ -4596,6 +4598,7 @@ void OverlayWidget::hide() {
 	clearBeforeHide();
 	applyHideWindowWorkaround();
 	_window->hide();
+	Test::VideoScrollViewer(Test::VideoScrollViewerEvent::Hidden, _window);
 	if (Platform::IsWayland()) {
 		if (const auto handle = _window->windowHandle()) {
 			handle->destroy();
@@ -4632,6 +4635,10 @@ void OverlayWidget::show(OpenRequest request) {
 	const auto photo = story ? story->photo() : request.photo();
 	const auto call = story ? story->call() : request.call();
 	const auto contextItem = request.item();
+	Test::VideoScrollViewer(
+		Test::VideoScrollViewerEvent::Open,
+		_window,
+		contextItem);
 	const auto contextPeer = request.peer();
 	const auto contextTopicRootId = request.topicRootId();
 	const auto contextMonoforumPeerId = request.monoforumPeerId();
@@ -5104,6 +5111,7 @@ void OverlayWidget::showAndActivate() {
 	_helper->afterShow(_fullscreen);
 	_widget->update();
 	activate();
+	Test::VideoScrollViewer(Test::VideoScrollViewerEvent::Shown, _window);
 }
 
 bool OverlayWidget::canInitStreaming() const {
@@ -5337,6 +5345,7 @@ void OverlayWidget::initStreamingThumbnail() {
 }
 
 void OverlayWidget::streamingReady(Streaming::Information &&info) {
+	Test::VideoScrollViewer(Test::VideoScrollViewerEvent::Ready, _window);
 	markStreamedReady();
 	if (videoShown()) {
 		if (_document
@@ -5408,6 +5417,7 @@ bool OverlayWidget::createStreamingObjects() {
 	++_streamedCreated;
 	_streamed->instance.setPriority(kOverlayLoaderPriority);
 	_streamed->instance.lockPlayer();
+	Test::VideoScrollViewer(Test::VideoScrollViewerEvent::Locked, _window);
 	_streamed->withSound = video
 		&& !video->isSilentVideo()
 		&& (_document->isAudioFile()
@@ -9333,6 +9343,7 @@ Window::SessionController *OverlayWidget::findWindow(bool switchTo) const {
 
 // #TODO unite and check
 void OverlayWidget::clearBeforeHide() {
+	Test::VideoScrollViewer(Test::VideoScrollViewerEvent::Closing, _window);
 	checkSingleViewMediaBurn();
 	_message = nullptr;
 	_sharedMedia = nullptr;

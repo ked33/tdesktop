@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "core/mime_type.h" // Core::IsMimeSticker
+#include "test/test_video_scroll.h"
 #include "ui/image/image_location_factory.h" // Images::FromPhotoSize
 #include "ui/text/format_values.h" // Ui::FormatPhone
 #include "ui/color_int_conversion.h"
@@ -2330,6 +2331,7 @@ rpl::producer<not_null<const HistoryItem*>> Session::itemResizeRequest() const {
 }
 
 void Session::requestViewResize(not_null<ViewElement*> view) {
+	Test::VideoScrollView("resize-request", view);
 	view->setPendingResize();
 	_viewResizeRequest.fire_copy(view);
 	notifyViewLayoutChange(view);
@@ -2342,6 +2344,7 @@ rpl::producer<not_null<ViewElement*>> Session::viewResizeRequest() const {
 void Session::notifyViewHeightAdjusted(
 		not_null<ViewElement*> view,
 		int delta) {
+	Test::VideoScrollView("height-adjusted", view, {}, delta);
 	_viewHeightAdjusted.fire({ view, delta });
 }
 

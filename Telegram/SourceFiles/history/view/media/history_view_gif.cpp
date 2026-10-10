@@ -24,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_utility.h"
 #include "media/view/media_view_open_common.h"
 #include "media/view/media_view_playback_progress.h"
+#include "test/test_video_scroll.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/painter.h"
 #include "ui/rect.h"
@@ -456,6 +457,12 @@ QSize Gif::countOptimalSize() {
 		maxWidth += additionalWidth(reply, via, forwarded);
 		accumulate_max(maxWidth, _parent->reactionsOptimalWidth());
 	}
+	Test::VideoScrollView(
+		"inline-optimal",
+		_parent,
+		{ maxWidth, minHeight },
+		activeCurrentStreamed() != nullptr,
+		videoSize());
 	return { maxWidth, minHeight };
 }
 
@@ -555,6 +562,12 @@ QSize Gif::countCurrentSize(int newWidth) {
 		}
 	}
 
+	Test::VideoScrollView(
+		"inline-current",
+		_parent,
+		{ newWidth, newHeight },
+		activeCurrentStreamed() != nullptr,
+		videoSize());
 	return { newWidth, newHeight };
 }
 
@@ -2731,6 +2744,11 @@ void Gif::repaintStreamedContent() {
 void Gif::streamingReady(::Media::Streaming::Information &&info) {
 	Expects(_streamed != nullptr);
 
+	Test::VideoScrollView(
+		"inline-ready",
+		_parent,
+		info.video.size,
+		activeCurrentStreamed() != nullptr);
 	const auto chosen = _streamed->chosen;
 	const auto measured = info.video.realSize;
 	const auto video = measured.isEmpty() ? nullptr : chosen->video();
@@ -2753,7 +2771,9 @@ void Gif::streamingReady(::Media::Streaming::Information &&info) {
 
 void Gif::stopAnimation() {
 	if (_streamed) {
+		Test::VideoScrollView("inline-stop-before", _parent);
 		setStreamed(nullptr);
+		Test::VideoScrollView("inline-stop-after", _parent);
 		history()->owner().requestViewResize(_parent);
 	}
 }

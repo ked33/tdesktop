@@ -44,6 +44,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item_text.h"
 #include "media/streaming/media_streaming_mpv.h"
 #include "payments/payments_reaction_process.h"
+#include "test/test_video_scroll.h"
 #include "ui/toast/toast.h"
 #include "ui/widgets/menu/menu_add_action_callback_factory.h"
 #include "ui/widgets/menu/menu_action.h"
@@ -2784,6 +2785,12 @@ void HistoryInner::mouseActionFinish(
 			? _mouseActionItem->fullId()
 			: FullMsgId();
 		const auto weak = base::make_weak(_controller);
+		Test::VideoScrollClick(
+			this,
+			_scroll,
+			_history,
+			_migrated,
+			activated.get());
 		mouseActionCancel();
 		ActivateClickHandler(
 			window(),
@@ -5382,6 +5389,7 @@ bool HistoryInner::wasSelectedText() const {
 }
 
 void HistoryInner::visibleAreaUpdated(int top, int bottom) {
+	Test::VideoScrollHistory("visible-area", this, top, bottom);
 	auto scrolledUp = (top < _visibleAreaTop);
 	_visibleAreaTop = top;
 	_visibleAreaBottom = bottom;
@@ -5391,6 +5399,7 @@ void HistoryInner::visibleAreaUpdated(int top, int bottom) {
 
 	// if history has pending resize events we should not update scrollTopItem
 	if (hasPendingResizedItems()) {
+		Test::VideoScrollHistory("anchor-skipped-pending", this);
 		return;
 	}
 
@@ -5416,6 +5425,7 @@ void HistoryInner::visibleAreaUpdated(int top, int bottom) {
 			}
 		}
 	}
+	Test::VideoScrollHistory("anchor-updated", this);
 	if (scrolledUp) {
 		_scrollDateAfterDayCrossing = false;
 		_scrollDateCheck.call();
@@ -5715,6 +5725,7 @@ void HistoryInner::setupThanosEffect() {
 }
 
 HistoryInner::~HistoryInner() {
+	Test::VideoScrollDetach(this);
 	if (_overlayHost) {
 		_overlayHost->hide();
 	}
@@ -6070,6 +6081,13 @@ void HistoryInner::elementOpenDocument(
 		not_null<DocumentData*> document,
 		FullMsgId context,
 		bool showInMediaView) {
+	Test::VideoScrollBegin(
+		this,
+		_scroll,
+		_history,
+		_migrated,
+		document,
+		context);
 	const auto showDrawButton = Data::CanSendAnyOf(
 		_history->peer,
 		Data::FilesSendRestrictions());
