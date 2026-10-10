@@ -36,6 +36,13 @@ constexpr auto kDownloadPartSize = 128 * 1024;
 
 class DownloadMtprotoTask;
 
+struct ThumbnailRetryInfo {
+	DownloadMtprotoTask *task = nullptr;
+	crl::time retryAt = 0;
+	int attempt = 0;
+	int total = 0;
+};
+
 class DownloadManagerMtproto final : public base::has_weak_ptr {
 public:
 	using Task = DownloadMtprotoTask;
@@ -49,6 +56,10 @@ public:
 
 	[[nodiscard]] DownloadDiagnostics &diagnostics() {
 		return _diagnostics;
+	}
+	void notifyThumbnailRetry(const ThumbnailRetryInfo &info);
+	[[nodiscard]] rpl::producer<ThumbnailRetryInfo> thumbnailRetries() const {
+		return _thumbnailRetries.events();
 	}
 
 	void enqueue(not_null<Task*> task, int priority);
@@ -231,6 +242,7 @@ private:
 
 	const not_null<ApiWrap*> _api;
 	DownloadDiagnostics _diagnostics;
+	rpl::event_stream<ThumbnailRetryInfo> _thumbnailRetries;
 
 	rpl::event_stream<> _taskFinished;
 	rpl::event_stream<std::pair<DocumentId, NonPremiumDelayInfo>>
@@ -406,12 +418,17 @@ private:
 	void updateDownloadTrace();
 	void recordReceivedPart(int64 size);
 	void subscribeToTransferLimits();
+	void handleRequestRetry(const MTP::RequestRetryInfo &info);
+	void failThumbnailAfterRetries(mtpRequestId requestId);
+	void clearThumbnailRetry();
 	void logAvatarFailure(const MTP::RequestRetryInfo &info);
 	void logTransferLimitSource(const MTP::TransferLimitInfo &info) const;
 
 	std::shared_ptr<DownloadTrace> _downloadTrace;
 	const not_null<DownloadManagerMtproto*> _owner;
 	const MTP::DcId _dcId = 0;
+	int _thumbnailServerFailures = 0;
+	bool _thumbnailFailureQueued = false;
 	bool _avatarFailureLogged = false;
 
 	// _location can be changed with an updated file_reference.

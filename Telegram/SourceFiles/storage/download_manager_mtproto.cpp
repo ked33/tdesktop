@@ -28,6 +28,7 @@ namespace Storage {
 namespace {
 
 constexpr auto kKillSessionTimeout = 15 * crl::time(1000);
+constexpr auto kThumbnailServerFailureLimit = 3;
 constexpr auto kMaxTrackedSessionRemoves = 64;
 constexpr auto kRetryAddSessionTimeout = 8 * crl::time(1000);
 constexpr auto kRetryAddSessionSuccesses = 3;
@@ -808,6 +809,11 @@ void DownloadManagerMtproto::checkNonPremiumDelayState() {
 	_nonPremiumDelayTimer.cancel();
 	checkSendNext();
 	scheduleNonPremiumDelayCheck();
+}
+
+void DownloadManagerMtproto::notifyThumbnailRetry(
+		const ThumbnailRetryInfo &info) {
+	_thumbnailRetries.fire_copy(info);
 }
 
 void DownloadManagerMtproto::enqueue(not_null<Task*> task, int priority) {
@@ -1759,13 +1765,7 @@ void DownloadMtprotoTask::subscribeToTransferLimits() {
 	}, _transferLimitSubscription);
 	_owner->api().instance().requestRetries(
 	) | rpl::on_next([=](const MTP::RequestRetryInfo &info) {
-		if (_sentRequests.contains(info.requestId) && _downloadTrace) {
-			++_downloadTrace->retries;
-			_downloadTrace->requestId = info.requestId;
-			_downloadTrace->retryAt = info.retryAt;
-			_downloadTrace->setError(info.type);
-			_downloadTrace->setStage(DownloadTrace::Stage::Retry);
-		}
+		handleRequestRetry(info);
 	}, _transferLimitSubscription);
 	_owner->api().instance().transferLimits(
 	) | rpl::on_next([=](const MTP::TransferLimitInfo &info) {
@@ -1788,6 +1788,72 @@ void DownloadMtprotoTask::subscribeToTransferLimits() {
 			}
 		}
 	}, _transferLimitSubscription);
+}
+
+void DownloadMtprotoTask::handleRequestRetry(
+		const MTP::RequestRetryInfo &info) {
+	if (!_sentRequests.contains(info.requestId)) {
+		return;
+	}
+	if (_downloadTrace) {
+		++_downloadTrace->retries;
+		_downloadTrace->requestId = info.requestId;
+		_downloadTrace->retryAt = info.retryAt;
+		_downloadTrace->setError(info.type);
+		_downloadTrace->setStage(DownloadTrace::Stage::Retry);
+	}
+	const auto location = std::get_if<StorageFileLocation>(&_location.data);
+	if (!location
+		|| !location->isDocumentThumbnail()
+		|| _thumbnailFailureQueued) {
+		return;
+	}
+	if (info.code >= 500) {
+		++_thumbnailServerFailures;
+	}
+	if (!_thumbnailServerFailures) {
+		return;
+	} else if (_thumbnailServerFailures < kThumbnailServerFailureLimit) {
+		_owner->notifyThumbnailRetry({
+			.task = this,
+			.retryAt = info.retryAt,
+			.attempt = _thumbnailServerFailures + 1,
+			.total = kThumbnailServerFailureLimit,
+		});
+		return;
+	}
+	_thumbnailFailureQueued = true;
+	const auto requestId = info.requestId;
+	// WHY: MTProto restores the response handler after notifying retry observers.
+	// Defer cancellation until that handler and its delayed retry are registered.
+	crl::on_main(this, [=] {
+		failThumbnailAfterRetries(requestId);
+	});
+}
+
+void DownloadMtprotoTask::failThumbnailAfterRetries(mtpRequestId requestId) {
+	_thumbnailFailureQueued = false;
+	if (_thumbnailServerFailures < kThumbnailServerFailureLimit
+		|| !_sentRequests.contains(requestId)) {
+		return;
+	}
+	if (_downloadTrace) {
+		_downloadTrace->setError(u"thumbnail_retry_exhausted:%1"_q.arg(
+			_downloadTrace->error));
+		_downloadTrace->finish(DownloadTrace::Stage::Failed);
+	}
+	cancelAllRequests();
+	const auto weak = base::make_weak(this);
+	removeFromQueue();
+	if (weak) {
+		cancelOnFail();
+	}
+}
+
+void DownloadMtprotoTask::clearThumbnailRetry() {
+	if (base::take(_thumbnailServerFailures)) {
+		_owner->notifyThumbnailRetry({ .task = this });
+	}
 }
 
 void DownloadMtprotoTask::logAvatarFailure(
@@ -1978,6 +2044,7 @@ void DownloadMtprotoTask::cancelAllRequests() {
 		cancelRequest(_sentRequests.begin()->first);
 	}
 	_cdnUncheckedParts.clear();
+	clearThumbnailRetry();
 }
 
 void DownloadMtprotoTask::cancelRequestForOffset(int64 offset) {
@@ -2103,6 +2170,7 @@ void DownloadMtprotoTask::partLoaded(
 }
 
 void DownloadMtprotoTask::recordReceivedPart(int64 size) {
+	clearThumbnailRetry();
 	if (_downloadTrace) {
 		_downloadTrace->bytes += size;
 		++_downloadTrace->received;

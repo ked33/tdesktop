@@ -9,6 +9,7 @@
 #include "main/main_session.h"
 #include "media/view/media_view_overlay_widget.h"
 #include "mtproto/mtp_instance.h"
+#include "storage/download_manager_mtproto.h"
 #include "ui/toast/toast.h"
 #include "ui/widgets/labels.h"
 #include "window/window_controller.h"
@@ -36,6 +37,7 @@ private:
 	[[nodiscard]] std::shared_ptr<ChatHelpers::Show> resolveShow() const;
 	void show(const MTP::TransferLimitInfo &info);
 	void pruneCountdowns();
+	[[nodiscard]] TextWithEntities thumbnailRetryText(crl::time now) const;
 	void updateCountdown();
 	void hideCountdown();
 	void modeChanged();
@@ -45,6 +47,8 @@ private:
 	base::weak_ptr<Ui::Toast::Instance> _countdownToast;
 	QPointer<Ui::FlatLabel> _countdownLabel;
 	base::flat_map<mtpRequestId, MTP::TransferLimitInfo> _countdowns;
+	base::flat_map<Storage::DownloadMtprotoTask*, Storage::ThumbnailRetryInfo>
+		_thumbnailRetries;
 	base::Timer _countdownTimer;
 	MTP::TransferLimitInfo _last;
 	MTP::TransferLimitInfo _lastDownloadLimit;
@@ -77,6 +81,7 @@ void TransferLimitToast::start() {
 				}
 				_toast = nullptr;
 			}
+			updateCountdown();
 		}
 	}, _lifetime);
 	EnhancedSettings::DownloadLimitToastModeChanges(
@@ -92,6 +97,17 @@ void TransferLimitToast::start() {
 	_session->mtp().transferLimits(
 	) | rpl::on_next([=](const MTP::TransferLimitInfo &info) {
 		crl::on_main(this, [=] { show(info); });
+	}, _lifetime);
+	_session->downloader().thumbnailRetries(
+	) | rpl::on_next([=](const Storage::ThumbnailRetryInfo &info) {
+		crl::on_main(this, [=] {
+			if (info.attempt) {
+				_thumbnailRetries[info.task] = info;
+			} else {
+				_thumbnailRetries.remove(info.task);
+			}
+			updateCountdown();
+		});
 	}, _lifetime);
 }
 
@@ -129,8 +145,9 @@ void TransferLimitToast::show(const MTP::TransferLimitInfo &info) {
 		_lastDownloadLimit = info;
 	}
 	if (!info.upload
-		&& EnhancedSettings::DownloadLimitToastsMode()
+		&& (EnhancedSettings::DownloadLimitToastsMode()
 			== EnhancedSettings::DownloadLimitToastMode::Countdown
+			|| !_thumbnailRetries.empty())
 		&& info.waitSeconds >= 0) {
 		_countdowns[info.requestId] = info;
 		updateCountdown();
@@ -199,39 +216,96 @@ void TransferLimitToast::pruneCountdowns() {
 	}
 }
 
+TextWithEntities TransferLimitToast::thumbnailRetryText(crl::time now) const {
+	const auto nearest = std::min_element(
+		_thumbnailRetries.begin(),
+		_thumbnailRetries.end(),
+		[=](const auto &a, const auto &b) {
+			const auto waitingA = a.second.retryAt > now;
+			const auto waitingB = b.second.retryAt > now;
+			return (waitingA != waitingB)
+				? waitingA
+				: a.second.retryAt < b.second.retryAt;
+		});
+	const auto &info = nearest->second;
+	const auto amount = QString::number(qlonglong(_thumbnailRetries.size()));
+	const auto attempt = QString::number(info.attempt);
+	const auto total = QString::number(info.total);
+	const auto seconds = TransferLimitRemainingSeconds(info.retryAt, now);
+	return tr::marked(seconds
+		? tr::lng_thumbnail_retry_wait(
+			tr::now,
+			lt_amount,
+			amount,
+			lt_ready,
+			attempt,
+			lt_total,
+			total,
+			lt_seconds,
+			QString::number(qlonglong(seconds)))
+		: tr::lng_thumbnail_retry_active(
+			tr::now,
+			lt_amount,
+			amount,
+			lt_ready,
+			attempt,
+			lt_total,
+			total));
+}
+
 void TransferLimitToast::updateCountdown() {
 	pruneCountdowns();
-	if (_countdowns.empty()
-		|| !EnhancedSettings::DownloadLimitToastsEnabled()
-		|| EnhancedSettings::DownloadLimitToastsMode()
-			!= EnhancedSettings::DownloadLimitToastMode::Countdown) {
+	const auto showLimit = !_countdowns.empty()
+		&& EnhancedSettings::DownloadLimitToastsEnabled()
+		&& (EnhancedSettings::DownloadLimitToastsMode()
+			== EnhancedSettings::DownloadLimitToastMode::Countdown
+			|| !_thumbnailRetries.empty());
+	if (!showLimit && _thumbnailRetries.empty()) {
 		hideCountdown();
 		return;
 	}
 	const auto now = crl::now();
-	const auto latest = std::max_element(
-		_countdowns.begin(),
-		_countdowns.end(),
-		[](const auto &a, const auto &b) {
-			return a.second.retryAt < b.second.retryAt;
-		});
-	const auto &info = latest->second;
+	auto text = TextWithEntities();
+	auto tick = crl::time(1000);
+	auto limit = MTP::TransferLimitInfo();
+	if (showLimit) {
+		const auto latest = std::max_element(
+			_countdowns.begin(),
+			_countdowns.end(),
+			[](const auto &a, const auto &b) {
+				return a.second.retryAt < b.second.retryAt;
+			});
+		limit = latest->second;
+		const auto until = limit.retryAt;
+		text = tr::lng_transfer_limit_countdown(
+			tr::now,
+			lt_seconds,
+			tr::marked(QString::number(qlonglong(
+				TransferLimitRemainingSeconds(until, now)))),
+			tr::marked);
+		tick = std::min(tick, TransferLimitNextTick(until, now));
+	}
+	if (!_thumbnailRetries.empty()) {
+		if (!text.empty()) {
+			text.append(u"\n"_q);
+		}
+		text.append(thumbnailRetryText(now));
+		for (const auto &[task, info] : _thumbnailRetries) {
+			if (info.retryAt > now) {
+				tick = std::min(tick, TransferLimitNextTick(info.retryAt, now));
+			}
+		}
+	}
 	const auto show = resolveShow();
 	if (!show || !show->valid()) {
 		hideCountdown();
 		if (!Core::App().passcodeLocked()) {
 			_countdownTimer.callOnce(
-				TransferLimitNextTick(info.retryAt, now),
+				std::max(tick, crl::time(1)),
 				Qt::PreciseTimer);
 		}
 		return;
 	}
-	const auto seconds = TransferLimitRemainingSeconds(info.retryAt, now);
-	const auto text = tr::lng_transfer_limit_countdown(
-		tr::now,
-		lt_seconds,
-		tr::marked(QString::number(qlonglong(seconds))),
-		tr::marked);
 	const auto toast = _countdownToast.get();
 	if (!toast
 		|| !_countdownLabel
@@ -253,17 +327,19 @@ void TransferLimitToast::updateCountdown() {
 			.attach = RectPart::Top,
 			.infinite = true,
 		});
-		LOG(("Transfer limit toast: direction=download error=%1 "
-			"wait_seconds=%2 dc=%3 request=%4 mode=countdown")
-			.arg(info.type)
-			.arg(qlonglong(seconds))
-			.arg(info.dcId)
-			.arg(info.requestId));
+		if (showLimit) {
+			LOG(("Transfer limit toast: direction=download error=%1 "
+				"wait_seconds=%2 dc=%3 request=%4 mode=countdown")
+				.arg(limit.type)
+				.arg(qlonglong(TransferLimitRemainingSeconds(limit.retryAt, now)))
+				.arg(limit.dcId)
+				.arg(limit.requestId));
+		}
 	} else {
 		_countdownLabel->setMarkedText(text);
 	}
 	_countdownTimer.callOnce(
-		TransferLimitNextTick(info.retryAt, crl::now()),
+		std::max(tick, crl::time(1)),
 		Qt::PreciseTimer);
 }
 
@@ -273,6 +349,7 @@ void TransferLimitToast::modeChanged() {
 	hideCountdown();
 	if (_countdowns.empty()
 		|| !EnhancedSettings::DownloadLimitToastsEnabled()) {
+		updateCountdown();
 		return;
 	}
 	const auto latest = std::max_element(
