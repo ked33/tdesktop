@@ -4,6 +4,8 @@
 
 #include <QtCore/QSize>
 
+#include <source_location>
+
 class ClickHandler;
 class DocumentData;
 class History;
@@ -32,6 +34,21 @@ enum class VideoScrollViewerEvent {
 	Hidden,
 };
 
+void VideoScrollSettings();
+void VideoScrollCause(
+	const char *event,
+	not_null<History*> history,
+	const HistoryItem *item,
+	std::source_location source = std::source_location::current());
+void VideoScrollGeometryState(
+	HistoryInner *list,
+	bool initial,
+	bool loadedDown,
+	bool inited,
+	bool loading,
+	bool animating,
+	bool required,
+	bool updating);
 void VideoScrollClick(
 	not_null<HistoryInner*> list,
 	not_null<Ui::ElasticScroll*> scroll,
@@ -50,7 +67,8 @@ void VideoScrollHistory(
 	const char *event,
 	HistoryInner *list,
 	int value = 0,
-	int extra = 0);
+	int extra = 0,
+	std::source_location source = std::source_location::current());
 void VideoScrollView(
 	const char *event,
 	not_null<HistoryView::Element*> view,

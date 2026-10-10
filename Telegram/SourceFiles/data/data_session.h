@@ -16,6 +16,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_location_manager.h"
 #include "storage/storage_databases.h"
 
+#include <source_location>
+
 class Image;
 class HistoryItem;
 struct WebPageCollage;
@@ -389,7 +391,9 @@ public:
 	};
 	void notifyItemIdChange(IdChange event);
 	[[nodiscard]] rpl::producer<IdChange> itemIdChanged() const;
-	void notifyItemLayoutChange(not_null<const HistoryItem*> item);
+	void notifyItemLayoutChange(
+		not_null<const HistoryItem*> item,
+		std::source_location source = std::source_location::current());
 	[[nodiscard]] rpl::producer<not_null<const HistoryItem*>> itemLayoutChanged() const;
 	void notifyViewLayoutChange(not_null<const ViewElement*> view);
 	[[nodiscard]] rpl::producer<not_null<const ViewElement*>> viewLayoutChanged() const;
@@ -407,9 +411,13 @@ public:
 	[[nodiscard]] rpl::producer<DrawToReplyRequest> drawToReplyRequests() const;
 	void requestViewRepaint(not_null<const ViewElement*> view, QRect r = QRect());
 	[[nodiscard]] rpl::producer<RequestViewRepaint> viewRepaintRequest() const;
-	void requestItemResize(not_null<const HistoryItem*> item);
+	void requestItemResize(
+		not_null<const HistoryItem*> item,
+		std::source_location source = std::source_location::current());
 	[[nodiscard]] rpl::producer<not_null<const HistoryItem*>> itemResizeRequest() const;
-	void requestViewResize(not_null<ViewElement*> view);
+	void requestViewResize(
+		not_null<ViewElement*> view,
+		std::source_location source = std::source_location::current());
 	[[nodiscard]] rpl::producer<not_null<ViewElement*>> viewResizeRequest() const;
 	struct ViewHeightAdjusted {
 		not_null<ViewElement*> view;
@@ -419,13 +427,17 @@ public:
 	[[nodiscard]] rpl::producer<ViewHeightAdjusted> viewHeightAdjusted() const;
 	void requestItemShowHighlight(not_null<HistoryItem*> item);
 	[[nodiscard]] rpl::producer<not_null<HistoryItem*>> itemShowHighlightRequest() const;
-	void requestItemViewRefresh(not_null<const HistoryItem*> item);
+	void requestItemViewRefresh(
+		not_null<const HistoryItem*> item,
+		std::source_location source = std::source_location::current());
 	[[nodiscard]] rpl::producer<not_null<const HistoryItem*>> itemViewRefreshRequest() const;
 	void requestItemTextRefresh(not_null<HistoryItem*> item);
 	void requestUnreadReactionsAnimation(not_null<HistoryItem*> item);
 	void notifyHistoryUnloaded(not_null<const History*> history);
 	[[nodiscard]] rpl::producer<not_null<const History*>> historyUnloaded() const;
-	void notifyItemDataChange(not_null<HistoryItem*> item);
+	void notifyItemDataChange(
+		not_null<HistoryItem*> item,
+		std::source_location source = std::source_location::current());
 	[[nodiscard]] rpl::producer<not_null<HistoryItem*>> itemDataChanges() const;
 	void notifyReactionsRemoved(ReactionsRemoved update);
 	[[nodiscard]] rpl::producer<ReactionsRemoved> reactionsRemoved() const;

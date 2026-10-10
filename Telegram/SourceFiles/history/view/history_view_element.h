@@ -14,6 +14,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "iv/iv_rich_page.h"
 #include "ui/userpic_view.h"
 
+#include <source_location>
+
 class History;
 class HistoryBlock;
 class HistoryItem;
@@ -482,7 +484,8 @@ public:
 
 	void addVerticalMargins(int top, int bottom);
 
-	void setPendingResize();
+	void setPendingResize(
+		std::source_location source = std::source_location::current());
 	[[nodiscard]] bool pendingResize() const;
 	[[nodiscard]] bool isUnderCursor() const;
 

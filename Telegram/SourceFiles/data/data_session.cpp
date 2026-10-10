@@ -2109,7 +2109,10 @@ void Session::markMediaRead(not_null<const DocumentData*> document) {
 	}
 }
 
-void Session::notifyItemLayoutChange(not_null<const HistoryItem*> item) {
+void Session::notifyItemLayoutChange(
+		not_null<const HistoryItem*> item,
+		std::source_location source) {
+	Test::VideoScrollCause("notifyItemLayoutChange", item->history(), item, source);
 	_itemLayoutChanges.fire_copy(item);
 	enumerateItemViews(item, [&](not_null<ViewElement*> view) {
 		notifyViewLayoutChange(view);
@@ -2319,10 +2322,13 @@ void Session::refreshMessageFolding(
 	}
 }
 
-void Session::requestItemResize(not_null<const HistoryItem*> item) {
+void Session::requestItemResize(
+		not_null<const HistoryItem*> item,
+		std::source_location source) {
+	Test::VideoScrollCause("requestItemResize", item->history(), item, source);
 	_itemResizeRequest.fire_copy(item);
 	enumerateItemViews(item, [&](not_null<ViewElement*> view) {
-		requestViewResize(view);
+		requestViewResize(view, source);
 	});
 }
 
@@ -2330,9 +2336,11 @@ rpl::producer<not_null<const HistoryItem*>> Session::itemResizeRequest() const {
 	return _itemResizeRequest.events();
 }
 
-void Session::requestViewResize(not_null<ViewElement*> view) {
-	Test::VideoScrollView("resize-request", view);
-	view->setPendingResize();
+void Session::requestViewResize(
+		not_null<ViewElement*> view,
+		std::source_location source) {
+	Test::VideoScrollCause("resize-request", view->history(), view->data(), source);
+	view->setPendingResize(source);
 	_viewResizeRequest.fire_copy(view);
 	notifyViewLayoutChange(view);
 }
@@ -2360,7 +2368,10 @@ rpl::producer<not_null<HistoryItem*>> Session::itemShowHighlightRequest() const 
 	return _itemShowHighlightRequest.events();
 }
 
-void Session::requestItemViewRefresh(not_null<const HistoryItem*> item) {
+void Session::requestItemViewRefresh(
+		not_null<const HistoryItem*> item,
+		std::source_location source) {
+	Test::VideoScrollCause("requestItemViewRefresh", item->history(), item, source);
 	if (const auto view = item->mainView()) {
 		notifyHistoryChangeDelayed(item->history());
 		view->refreshInBlock();
@@ -2372,7 +2383,10 @@ rpl::producer<not_null<const HistoryItem*>> Session::itemViewRefreshRequest() co
 	return _itemViewRefreshRequest.events();
 }
 
-void Session::notifyItemDataChange(not_null<HistoryItem*> item) {
+void Session::notifyItemDataChange(
+		not_null<HistoryItem*> item,
+		std::source_location source) {
+	Test::VideoScrollCause("notifyItemDataChange", item->history(), item, source);
 	_itemDataChanges.fire_copy(item);
 }
 

@@ -406,7 +406,10 @@ HistoryInner::HistoryInner(
 , _touchSelectTimer([=] { onTouchSelect(); })
 , _touchScrollTimer([=] { onTouchScrollTimer(); })
 , _middleClickAutoscroll(
-	[=](int d) { _scroll->scrollToY(_scroll->scrollTop() + d); },
+	[=](int d) {
+		Test::VideoScrollHistory("scroll-middle-click", this, d);
+		_scroll->scrollToY(_scroll->scrollTop() + d);
+	},
 	[=](const QCursor &cursor) { setCursor(cursor); },
 	[=] { mouseActionUpdate(QCursor::pos()); setCursor(_cursor); },
 	[=] { return window()->isActiveWindow(); })
@@ -566,6 +569,7 @@ HistoryInner::HistoryInner(
 
 	_selectScroll.scrolls(
 	) | rpl::on_next([=](int d) {
+		Test::VideoScrollHistory("scroll-selection", this, d);
 		_scroll->scrollToY(_scroll->scrollTop() + d);
 		if (_mouseAction == MouseAction::Selecting) {
 			mouseActionUpdate();
@@ -5142,6 +5146,8 @@ void HistoryInner::keyPressEvent(QKeyEvent *e) {
 			setAccessibilityFocusedItem(newIndex, item);
 
 			const auto rect = accessibilityChildRect(newIndex);
+			Test::VideoScrollHistory("scroll-keyboard-focus", this,
+				rect.top(), rect.bottom());
 			if (!rect.isEmpty()) {
 				if (rect.top() < _visibleAreaTop) {
 					_scroll->scrollToY(rect.top());
@@ -8098,6 +8104,8 @@ void HistoryInner::applyAccessibilityFocus(
 	}
 	const auto rect = accessibilityChildRect(index);
 	if (!rect.isEmpty()) {
+		Test::VideoScrollHistory("scroll-accessibility-focus", this,
+			rect.top(), rect.bottom());
 		if (rect.top() < _visibleAreaTop) {
 			_scroll->scrollToY(rect.top());
 		} else if (rect.bottom() > _visibleAreaBottom) {

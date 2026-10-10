@@ -21,6 +21,7 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #include "lang/lang_cloud_manager.h"
 #include "media/streaming/media_streaming_boost.h"
 #include "rpl/event_stream.h"
+#include "test/test_video_scroll.h"
 #include "settings.h"
 
 #include <algorithm>
@@ -1232,12 +1233,14 @@ namespace EnhancedSettings {
 
 		Data = std::make_unique<Manager>();
 		Data->fill();
+		Test::VideoScrollSettings();
 		Media::Streaming::LogOnlinePlaybackProfile();
 	}
 
 	void Write() {
 		if (!Data) return;
 
+		Test::VideoScrollSettings();
 		Data->write();
 	}
 

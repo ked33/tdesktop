@@ -226,6 +226,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QWindow>
 #include <QtCore/QMimeData>
 
+#include <utility>
+
 namespace {
 
 constexpr auto kMessagesPerPageFirst = 30;
@@ -9101,22 +9103,33 @@ void HistoryWidget::updateSendRestriction() {
 void HistoryWidget::updateHistoryGeometry(
 		bool initial,
 		bool loadedDown,
-		const ScrollChange &change) {
+		const ScrollChange &change,
+		std::source_location source) {
 	Test::VideoScrollHistory(
 		"geometry-enter",
 		_list,
 		_topDelta,
-		int(change.type));
+		int(change.type),
+		source);
+	Test::VideoScrollGeometryState(_list, initial, loadedDown,
+		_historyInited, bool(_firstLoadRequest), bool(_showAnimation),
+		_updateHistoryGeometryRequired, _updatingHistoryGeometry);
+	const auto wasUpdating = std::exchange(_updatingHistoryGeometry, true);
 	const auto guard = gsl::finally([&] {
+		_updatingHistoryGeometry = wasUpdating;
 		_itemRevealPending.clear();
+		Test::VideoScrollHistory("geometry-exit", _list,
+			_updateHistoryGeometryRequired, _updatingHistoryGeometry, source);
 	});
 	if (!_history
 		|| (initial && _historyInited)
 		|| (!initial && !_historyInited && !_firstLoadRequest)) {
+		Test::VideoScrollHistory("geometry-skip-init", _list, 0, 0, source);
 		return;
 	}
 	if (_showAnimation) {
 		_updateHistoryGeometryRequired = true;
+		Test::VideoScrollHistory("geometry-defer-animation", _list, 0, 0, source);
 		return;
 	}
 
@@ -9176,6 +9189,8 @@ void HistoryWidget::updateHistoryGeometry(
 		}
 	}
 	if (newScrollHeight <= 0) {
+		Test::VideoScrollHistory("geometry-skip-height", _list,
+			newScrollHeight, 0, source);
 		return;
 	}
 	const auto wasScrollTop = _scroll->scrollTop();
@@ -9218,10 +9233,13 @@ void HistoryWidget::updateHistoryGeometry(
 		// scrollTopMax etc are not working after recountHistoryGeometry()
 		// and the initial scroll position can not be counted yet.
 		_updateHistoryGeometryRequired = true;
+		Test::VideoScrollHistory("geometry-defer-load", _list, 0, 0, source);
 		return;
 	}
 
-	updateListSize();
+	Test::VideoScrollHistory("geometry-policy", _list,
+		wasAtBottom, needResize, source);
+	updateListSize(source);
 	_updateHistoryGeometryRequired = false;
 
 	auto newScrollTop = 0;
@@ -9229,8 +9247,10 @@ void HistoryWidget::updateHistoryGeometry(
 		newScrollTop = countInitialScrollTop();
 		_historyInited = true;
 		_scrollToAnimation.stop();
+		Test::VideoScrollHistory("geometry-initial", _list, newScrollTop, 0, source);
 	} else if (wasAtBottom && !loadedDown && !_history->unreadBar()) {
 		newScrollTop = countAutomaticScrollTop();
+		Test::VideoScrollHistory("geometry-bottom", _list, newScrollTop, 0, source);
 	} else {
 		newScrollTop = std::min(
 			_list->historyScrollTop(),
@@ -9240,10 +9260,12 @@ void HistoryWidget::updateHistoryGeometry(
 		} else if (change.type == ScrollChangeNoJumpToBottom) {
 			newScrollTop = wasScrollTop;
 		}
+		Test::VideoScrollHistory("geometry-anchor", _list,
+			newScrollTop, int(change.type), source);
 	}
 	const auto toY = std::clamp(newScrollTop, 0, _scroll->scrollTopMax());
-	Test::VideoScrollHistory("geometry-target", _list, toY, change.value);
-	synteticScrollToY(toY);
+	Test::VideoScrollHistory("geometry-target", _list, toY, change.value, source);
+	synteticScrollToY(toY, source);
 	if (initial && _showAtMsgId) {
 		const auto timestamp = base::take(_showAtMsgParams.videoTimestamp);
 		if (timestamp.has_value()) {
@@ -9363,10 +9385,10 @@ void HistoryWidget::startMessageSendingAnimation(
 	});
 }
 
-void HistoryWidget::updateListSize() {
+void HistoryWidget::updateListSize(std::source_location source) {
 	Expects(_list != nullptr);
 
-	Test::VideoScrollHistory("list-size-before", _list);
+	Test::VideoScrollHistory("list-size-before", _list, 0, 0, source);
 	_list->recountHistoryGeometry(!_historyInited);
 	auto washidden = _scroll->isHidden();
 	if (washidden) {
@@ -9379,7 +9401,7 @@ void HistoryWidget::updateListSize() {
 		_scroll->hide();
 	}
 	_updateHistoryGeometryRequired = true;
-	Test::VideoScrollHistory("list-size-after", _list);
+	Test::VideoScrollHistory("list-size-after", _list, 0, 0, source);
 }
 
 bool HistoryWidget::hasPendingResizedItems() const {
@@ -12419,8 +12441,12 @@ void HistoryWidget::paintEvent(QPaintEvent *e) {
 		return;
 	}
 	if (hasPendingResizedItems()) {
-		Test::VideoScrollHistory("paint-layout", _list);
-		updateListSize();
+		if (_updatingHistoryGeometry) {
+			Test::VideoScrollHistory("paint-layout-reentrant", _list);
+		} else {
+			Test::VideoScrollHistory("paint-layout", _list);
+			updateHistoryGeometry();
+		}
 	}
 
 	Window::SectionWidget::PaintBackground(
@@ -12500,8 +12526,8 @@ bool HistoryWidget::touchScroll(const QPoint &delta) {
 	return true;
 }
 
-void HistoryWidget::synteticScrollToY(int y) {
-	Test::VideoScrollHistory("scroll-request", _list, y);
+void HistoryWidget::synteticScrollToY(int y, std::source_location source) {
+	Test::VideoScrollHistory("scroll-request", _list, y, 0, source);
 	_synteticScrollEvent = true;
 	if (_scroll->scrollTop() == y) {
 		visibleAreaUpdated();
@@ -12509,7 +12535,7 @@ void HistoryWidget::synteticScrollToY(int y) {
 		_scroll->scrollToY(y);
 	}
 	_synteticScrollEvent = false;
-	Test::VideoScrollHistory("scroll-applied", _list, y);
+	Test::VideoScrollHistory("scroll-applied", _list, y, 0, source);
 }
 
 HistoryWidget::~HistoryWidget() {

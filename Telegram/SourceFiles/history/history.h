@@ -16,6 +16,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/flat_set.h"
 #include "base/flags.h"
 
+#include <source_location>
+
 class History;
 class HistoryBlock;
 class HistoryTranslation;
@@ -301,14 +303,16 @@ public:
 	HistoryItem *lastEditableMessage() const;
 
 	void resizeToWidth(int newWidth);
-	void forceFullResize();
+	void forceFullResize(
+		std::source_location source = std::source_location::current());
 	int height() const;
 
 	void itemRemoved(not_null<HistoryItem*> item);
 	void itemVanished(not_null<HistoryItem*> item);
 
 	bool hasPendingResizedItems() const;
-	void setHasPendingResizedItems();
+	void setHasPendingResizedItems(
+		std::source_location source = std::source_location::current());
 
 	[[nodiscard]] auto sendActionPainter()
 	-> HistoryView::SendActionPainter* override {

@@ -71,6 +71,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_shared_media.h"
 #include "storage/storage_account.h"
 #include "support/support_helper.h"
+#include "test/test_video_scroll.h"
 #include "ui/image/image.h"
 #include "ui/text/text_options.h"
 #include "ui/text/text_utilities.h"
@@ -216,7 +217,8 @@ bool History::hasPendingResizedItems() const {
 	return _flags & Flag::HasPendingResizedItems;
 }
 
-void History::setHasPendingResizedItems() {
+void History::setHasPendingResizedItems(std::source_location source) {
+	Test::VideoScrollCause("pending-history", this, nullptr, source);
 	_flags |= Flag::HasPendingResizedItems;
 }
 
@@ -3955,7 +3957,8 @@ void History::resizeToWidth(int newWidth) {
 	_height = y;
 }
 
-void History::forceFullResize() {
+void History::forceFullResize(std::source_location source) {
+	Test::VideoScrollCause("force-resize", this, nullptr, source);
 	_width = 0;
 	_flags |= Flag::HasPendingResizedItems;
 }

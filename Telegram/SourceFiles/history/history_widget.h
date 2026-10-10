@@ -22,6 +22,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/fields/input_field.h"
 #include "mtproto/sender.h"
 
+#include <source_location>
+
 enum class SendMediaType;
 class MessageLinksParser;
 struct InlineBotQuery;
@@ -364,7 +366,9 @@ protected:
 	void mouseMoveEvent(QMouseEvent *e) override;
 
 public:
-	void synteticScrollToY(int y);
+	void synteticScrollToY(
+		int y,
+		std::source_location source = std::source_location::current());
 
 private:
 	using TabbedPanel = ChatHelpers::TabbedPanel;
@@ -698,8 +702,13 @@ private:
 
 	void updateSendRestriction();
 	[[nodiscard]] Data::SendError computeSendRestriction() const;
-	void updateHistoryGeometry(bool initial = false, bool loadedDown = false, const ScrollChange &change = { ScrollChangeNone, 0 });
-	void updateListSize();
+	void updateHistoryGeometry(
+		bool initial = false,
+		bool loadedDown = false,
+		const ScrollChange &change = { ScrollChangeNone, 0 },
+		std::source_location source = std::source_location::current());
+	void updateListSize(
+		std::source_location source = std::source_location::current());
 	void startItemRevealAnimations();
 	void revealItemsCallback();
 
@@ -915,6 +924,7 @@ private:
 	bool _historyInited = false;
 	// If updateListSize() was called without updateHistoryGeometry().
 	bool _updateHistoryGeometryRequired = false;
+	bool _updatingHistoryGeometry = false;
 
 	int _lastScrollTop = 0; // gifs optimization
 	crl::time _lastScrolled = 0;
