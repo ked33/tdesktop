@@ -1,4 +1,5 @@
 {
+    "lng_thumbnail_failed": "加载失败",
     "lng_transfer_limit_download": "在线播放或下载暂时受限",
     "lng_transfer_limit_upload": "上传暂时受限",
     "lng_transfer_limit_wait": "服务端要求等待 {seconds} 秒后重试；重试后仍可能要求继续等待。",

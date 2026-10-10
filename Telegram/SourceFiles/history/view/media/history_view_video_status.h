@@ -21,6 +21,7 @@ namespace HistoryView {
 struct VideoCornerStatus {
 	QString text;
 	QString downloadSize;
+	QString failureText;
 	QPoint position;
 	int outerWidth = 0;
 	Ui::RadialAnimation *radial = nullptr;

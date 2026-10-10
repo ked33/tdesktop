@@ -68,6 +68,7 @@ DocumentOpenClickHandler::DocumentOpenClickHandler(
 }
 
 void DocumentOpenClickHandler::onClickImpl() const {
+	document()->retryThumbnail(context());
 	_handler(context());
 }
 
@@ -141,6 +142,7 @@ void DocumentSaveClickHandler::SaveAndTrack(
 }
 
 void DocumentSaveClickHandler::onClickImpl() const {
+	document()->retryThumbnail(context());
 	SaveAndTrack(context(), document());
 }
 

@@ -890,7 +890,19 @@ void DocumentData::loadThumbnail(Data::FileOrigin origin) {
 		autoLoading,
 		Data::kImageCacheTag,
 		finalCheck,
-		done);
+		done,
+		[=](bool) { owner().requestDocumentViewRepaint(this); });
+}
+
+void DocumentData::retryThumbnail(Data::FileOrigin origin) {
+	if (!thumbnailFailed()
+		|| thumbnailLoading()
+		|| !_thumbnail.location.valid()) {
+		return;
+	}
+	_thumbnail.flags &= ~Data::CloudFile::Flag::Failed;
+	loadThumbnail(origin);
+	owner().requestDocumentViewRepaint(this);
 }
 
 const ImageLocation &DocumentData::thumbnailLocation() const {

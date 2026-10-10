@@ -1404,6 +1404,9 @@ void Gif::drawCornerStatus(
 	PaintVideoCornerStatus(p, context, {
 		.text = text,
 		.downloadSize = _downloadSize,
+		.failureText = thumbnailFailed()
+			? tr::lng_thumbnail_failed(tr::now)
+			: QString(),
 		.position = position,
 		.outerWidth = width(),
 		.radial = ((_animation && _animation->radial.animating())
@@ -2798,7 +2801,17 @@ bool Gif::needInfoDisplay() const {
 
 bool Gif::needCornerStatusDisplay() const {
 	return _data->isVideoFile()
-		|| needInfoDisplay();
+		|| needInfoDisplay()
+		|| thumbnailFailed();
+}
+
+bool Gif::thumbnailFailed() const {
+	return _data->thumbnailFailed()
+		&& !_videoCover
+		&& !_videoThumbnailFrame
+		&& !activeCurrentStreamed()
+		&& (!_dataMedia
+			|| (!_dataMedia->thumbnail() && !_dataMedia->goodThumbnail()));
 }
 
 void Gif::ensureTranscribeButton() const {

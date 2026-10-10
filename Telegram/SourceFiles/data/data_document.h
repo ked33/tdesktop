@@ -227,6 +227,7 @@ public:
 	[[nodiscard]] bool thumbnailLoading() const;
 	[[nodiscard]] bool thumbnailFailed() const;
 	void loadThumbnail(Data::FileOrigin origin);
+	void retryThumbnail(Data::FileOrigin origin);
 	[[nodiscard]] const ImageLocation &thumbnailLocation() const;
 	[[nodiscard]] int thumbnailByteSize() const;
 

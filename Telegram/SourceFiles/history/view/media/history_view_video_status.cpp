@@ -45,7 +45,11 @@ void PaintVideoCornerStatus(
 	const auto downloadWidth = secondLine
 		? font->width(status.downloadSize)
 		: 0;
-	const auto statusWidth = std::max(downloadWidth, font->width(status.text))
+	const auto statusWidth = std::max({
+		downloadWidth,
+		font->width(status.text),
+		font->width(status.failureText),
+	})
 		+ 2 * padding.x()
 		+ addLeft
 		+ addRight;
@@ -53,6 +57,7 @@ void PaintVideoCornerStatus(
 		+ (status.download
 			? st::historyVideoDownloadSize
 			: ((secondLine ? 2 : 1) * font->height));
+	const auto failureHeight = status.failureText.isEmpty() ? 0 : font->height;
 	const auto statusX = position.x() + st::msgDateImgDelta + padding.x();
 	const auto statusY = position.y() + st::msgDateImgDelta + padding.y();
 	const auto textWidth = statusWidth - 2 * padding.x();
@@ -64,7 +69,7 @@ void PaintVideoCornerStatus(
 		statusX - padding.x(),
 		statusY - padding.y(),
 		statusWidth,
-		statusHeight,
+		statusHeight + failureHeight,
 		outerWidth);
 	Ui::FillRoundRect(p, around, sti->msgDateImgBg, sti->msgDateImgBgCorners);
 	p.setFont(font);
@@ -84,6 +89,14 @@ void PaintVideoCornerStatus(
 			downloadTextTop,
 			outerWidth,
 			status.downloadSize,
+			textWidth);
+	}
+	if (failureHeight) {
+		p.drawTextLeft(
+			statusX + addLeft,
+			statusY + statusHeight - 2 * padding.y(),
+			outerWidth,
+			status.failureText,
 			textWidth);
 	}
 	if (status.download) {

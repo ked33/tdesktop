@@ -1,4 +1,5 @@
 {
+    "lng_thumbnail_failed": "Failed",
     "lng_transfer_limit_download": "Playback or download temporarily limited",
     "lng_transfer_limit_upload": "Upload temporarily limited",
     "lng_transfer_limit_wait": "The server asks you to wait {seconds} seconds before retrying. It may require another wait after the retry.",

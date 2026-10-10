@@ -213,6 +213,7 @@ private:
 
 	[[nodiscard]] bool needInfoDisplay() const;
 	[[nodiscard]] bool needCornerStatusDisplay() const;
+	[[nodiscard]] bool thumbnailFailed() const;
 	[[nodiscard]] int additionalWidth(
 		const Reply *reply,
 		const HistoryMessageVia *via,

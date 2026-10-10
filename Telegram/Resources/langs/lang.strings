@@ -8639,6 +8639,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_transfer_limit_countdown" = "Server limit ({seconds}s)";
 "lng_thumbnail_retry_wait" = "缩略图重试（{amount} 项）\n第 {ready}/{total} 次尝试将在 {seconds} 秒后开始";
 "lng_thumbnail_retry_active" = "缩略图重试（{amount} 项）\n正在进行第 {ready}/{total} 次尝试…";
+"lng_thumbnail_failed" = "Failed";
 
 "lng_limit_download_title" = "Download speed limited";
 "lng_limit_download_subscribe" = "Subscribe to {link} to increase download speed {increase}.";
