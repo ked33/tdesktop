@@ -14,6 +14,7 @@ using "intro/intro.style";
 
 onlinePlaybackProfilesPreferredWidth: 900px;
 onlinePlaybackProfilesMaximumHeight: 1000px;
+mediaPreviewParametersMaximumHeight: 650px;
 onlinePlaybackProfilesOuterSkip: 24px;
 onlinePlaybackProfilesSectionSkip: 16px;
 onlinePlaybackProfilesItemSkip: 16px;

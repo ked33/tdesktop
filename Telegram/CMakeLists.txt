@@ -1977,6 +1977,7 @@ PRIVATE
     storage/localimageloader.h
     storage/localstorage.cpp
     storage/localstorage.h
+    storage/media_preview_limits.h
     storage/serialize_common.cpp
     storage/serialize_common.h
     storage/serialize_document.cpp

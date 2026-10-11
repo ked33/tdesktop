@@ -9125,6 +9125,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_net_speed_boost_smart" = "Smart";
 
 "lng_settings_online_playback_parameters_title" = "Online playback parameters";
+"lng_settings_media_preview_parameters_title" = "Image and video thumbnail loading parameters";
+"lng_media_preview_parameters_about" = "Limit downloads of photos and document thumbnails, including video covers, independently of video playback. These limits apply to every playback profile and account type, even when no video is playing. Each account shares one allowance per server. Cached images are loaded immediately. Enter 0 in any field to use the default shown beside it; 0 keeps the limit enabled. Save applies changes immediately. Server waits and overall download capacity still apply.";
+"lng_media_preview_parameters_reset" = "Use defaults";
+"lng_media_preview_parameters_invalid" = "Enter an integer within the range shown for this setting.";
+"lng_media_preview_concurrent" = "Maximum concurrent requests";
+"lng_media_preview_concurrent_about" = "Range: 0-32. The maximum number of image and thumbnail download requests in flight. Existing requests finish normally when this value is lowered. Enter 0 to use the default.";
+"lng_media_preview_rate" = "Sustained requests per second";
+"lng_media_preview_rate_about" = "Range: 0-120. The sustained rate at which image and thumbnail download requests may start. Idle time can build up the burst allowance, so this is not a strict limit for each one-second window. A large image can require several requests. Enter 0 to use the default.";
+"lng_media_preview_burst" = "Burst allowance";
+"lng_media_preview_burst_about" = "Range: 0-32. The maximum request allowance that can accumulate while idle, for loading newly visible images promptly. The concurrency limit still applies. Enter 0 to use the default.";
 "lng_settings_online_playback_parameters_reset" = "Reset selected profile";
 "lng_settings_online_playback_parameters_saved_restart" = "Parameters saved. Restart Telegram to apply the new online playback parameters.";
 "lng_settings_online_playback_parameters_desc" = "Video downloads use fixed 128 KiB chunks. Each title names the supported players; MPV means playback launched through this app. Only the active profile affects playback. Select a profile to edit; Save writes all profiles and changes apply after restart. More concurrency or prefetch does not guarantee faster playback.";

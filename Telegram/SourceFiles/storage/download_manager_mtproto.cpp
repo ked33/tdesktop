@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "apiwrap.h"
 #include "base/openssl_help.h"
+#include "core/enhanced_settings.h"
 #include "data/data_channel.h"
 #include "data/data_document.h"
 #include "data/data_session.h"
@@ -203,23 +204,31 @@ bool DownloadManagerMtproto::Queue::empty() const {
 	return _tasks.empty();
 }
 
-auto DownloadManagerMtproto::Queue::nextTask(bool onlyHighestPriority) const
+auto DownloadManagerMtproto::Queue::nextTask(
+		bool onlyHighestPriority,
+		bool allowPreviews) const
 -> Task* {
-	if (_tasks.empty()) {
+	const auto allowed = [&](const Enqueued &enqueued) {
+		return allowPreviews || !enqueued.task->isMediaPreview();
+	};
+	const auto from = ranges::find_if(_tasks, allowed);
+	if (from == end(_tasks)) {
 		return nullptr;
 	}
-	const auto highestPriority = _tasks.front().priority;
+	const auto highestPriority = from->priority;
 	const auto notHighestPriority = [&](const Enqueued &enqueued) {
 		return (enqueued.priority != highestPriority);
 	};
 	const auto till = (onlyHighestPriority && highestPriority > 0)
-		? ranges::find_if(_tasks, notHighestPriority)
+		? ranges::find_if(
+			ranges::make_subrange(from, end(_tasks)),
+			notHighestPriority)
 		: end(_tasks);
 	const auto readyToRequest = [&](const Enqueued &enqueued) {
-		return enqueued.task->readyToRequest();
+		return allowed(enqueued) && enqueued.task->readyToRequest();
 	};
 	const auto first = ranges::find_if(
-		ranges::make_subrange(begin(_tasks), till),
+		ranges::make_subrange(from, till),
 		readyToRequest);
 	return (first != till) ? first->task.get() : nullptr;
 }
@@ -258,6 +267,25 @@ QString DownloadManagerMtproto::diagnosticSnapshot(int dcId) const {
 	const auto requested = (balance == _balanceData.end())
 		? 0
 		: balance->second.totalRequested;
+	const auto previewLimits = EnhancedSettings::MediaPreviewDownloadLimits();
+	const auto resolvedPreviewLimits = previewLimits.resolved();
+	auto previews = (balance == _balanceData.end())
+		? MediaPreviewRequestLimiter()
+		: balance->second.previews;
+	previews.configure(previewLimits, now);
+	const auto previewWait = previews.delay(now);
+	const auto allowPreviews = previews.hasCapacity() && !previewWait;
+	const auto hasDeferred = (deferred != _deferredTasks.end())
+		&& !deferred->second.empty();
+	const auto deferredReady = hasDeferred
+		&& ranges::any_of(deferred->second, [&](const auto task) {
+			return allowPreviews || !task->isMediaPreview();
+		});
+	const auto previewBlocked = !allowPreviews
+		&& ((hasDeferred && !deferredReady)
+			|| (queue != _queues.end()
+				&& queue->second.nextTask(false)
+				&& !queue->second.nextTask(false, false)));
 	auto capacity = 0;
 	auto slots = 0;
 	if (balance != _balanceData.end()) {
@@ -285,16 +313,20 @@ QString DownloadManagerMtproto::diagnosticSnapshot(int dcId) const {
 		? "smart_limit"
 		: !slots
 		? "session_capacity"
-		: (deferred != _deferredTasks.end() && !deferred->second.empty())
+		: deferredReady
 		? "deferred_pending"
-		: (queue == _queues.end())
-		? "no_ready_task"
-		: !queue->second.nextTask(requested > 0)
-		? (queue->second.nextTask(false) ? "priority" : "no_ready_task")
-		: "sendable";
+		: (queue != _queues.end()
+			&& queue->second.nextTask(requested > 0, allowPreviews))
+		? "sendable"
+		: previewBlocked
+		? "preview_limit"
+		: (queue != _queues.end() && queue->second.nextTask(false, allowPreviews))
+		? "priority"
+		: "no_ready_task";
 	return u"requested_bytes=%1 free_bytes=%2 deferred_tasks=%3 "
 		"limit_wait_ms=%4 recovery_ms=%5 smart_limit=%6 %7 "
-		"gate=%8 rate_timer_ms=%9"_q
+		"gate=%8 rate_timer_ms=%9 preview_active=%10 preview_limit=%11 "
+		"preview_rps=%12 preview_burst=%13 preview_wait_ms=%14"_q
 		.arg(requested).arg(capacity)
 		.arg(deferred == _deferredTasks.end() ? 0 : deferred->second.size())
 		.arg(qlonglong(std::max(delay.limitedUntil - now, crl::time(0))))
@@ -306,7 +338,12 @@ QString DownloadManagerMtproto::diagnosticSnapshot(int dcId) const {
 		.arg(reason)
 		.arg(qlonglong(_downloadRateTimer.isActive()
 			? _downloadRateTimer.remainingTime()
-			: -1));
+			: -1))
+		.arg(previews.active())
+		.arg(resolvedPreviewLimits.concurrent)
+		.arg(resolvedPreviewLimits.requestsPerSecond)
+		.arg(resolvedPreviewLimits.burst)
+		.arg(qlonglong(previewWait));
 }
 
 DownloadManagerMtproto::DcSessionBalanceData::DcSessionBalanceData()
@@ -324,6 +361,10 @@ DownloadManagerMtproto::DownloadManagerMtproto(not_null<ApiWrap*> api)
 , _downloadRateTimer([=] { checkSendNext(); })
 , _resetGenerationTimer([=] { resetGeneration(); })
 , _killSessionsTimer([=] { killSessions(); }) {
+	EnhancedSettings::MediaPreviewDownloadLimitsChanges(
+	) | rpl::on_next([=] {
+		scheduleDownloadCheck(1);
+	}, _lifetime);
 	_api->instance().restartsByTimeout(
 	) | rpl::filter([](MTP::ShiftedDcId shiftedDcId) {
 		return MTP::isDownloadDcId(shiftedDcId);
@@ -771,6 +812,10 @@ void DownloadManagerMtproto::notifyNonPremiumDelay(
 	state.recoveryUntil = std::max(
 		state.recoveryUntil,
 		state.limitedUntil + NonPremiumRecoveryDuration(state.penalty));
+	const auto balance = _balanceData.find(dcId);
+	if (balance != end(_balanceData)) {
+		balance->second.previews.suspend(state.limitedUntil, state.recoveryUntil);
+	}
 	if (smartNonPremiumEnabled()) {
 		auto &limiter = smartRequestState(dcId, now).rateLimiter;
 		if (limiter.rate() > 0 && newWindow) {
@@ -784,7 +829,9 @@ void DownloadManagerMtproto::notifyNonPremiumDelay(
 		return;
 	}
 	_nonPremiumDelayUpdates.fire_copy({ dcId, info });
-	_nonPremiumDelays.fire_copy({ id, info });
+	if (id) {
+		_nonPremiumDelays.fire_copy({ id, info });
+	}
 }
 
 void DownloadManagerMtproto::scheduleNonPremiumDelayCheck() {
@@ -947,7 +994,7 @@ void DownloadManagerMtproto::checkSendNextAfterSuccess(MTP::DcId dcId) {
 }
 
 bool DownloadManagerMtproto::trySendNextPart(MTP::DcId dcId, Queue &queue) {
-	const auto &balanceData = _balanceData[dcId];
+	auto &balanceData = _balanceData[dcId];
 	const auto delay = nonPremiumDelayState(dcId);
 	const auto now = crl::now();
 	if (now < delay.limitedUntil) {
@@ -985,16 +1032,35 @@ bool DownloadManagerMtproto::trySendNextPart(MTP::DcId dcId, Queue &queue) {
 	if (bestIndex < 0) {
 		return false;
 	}
+	auto &previews = balanceData.previews;
+	previews.configure(EnhancedSettings::MediaPreviewDownloadLimits(), now);
+	const auto previewDelay = previews.delay(now);
+	const auto allowPreviews = previews.hasCapacity() && !previewDelay;
 	const auto onlyHighestPriority = (balanceData.totalRequested > 0);
 	const auto &deferred = _deferredTasks[dcId];
-	const auto task = deferred.empty()
-		? queue.nextTask(onlyHighestPriority)
-		: deferred.front().get();
+	const auto firstDeferred = ranges::find_if(deferred, [&](const auto task) {
+		return allowPreviews || !task->isMediaPreview();
+	});
+	const auto task = (firstDeferred != end(deferred))
+		? firstDeferred->get()
+		: queue.nextTask(onlyHighestPriority, allowPreviews);
+	if (previewDelay > 0 && previews.hasCapacity()) {
+		const auto waiting = queue.nextTask(false);
+		const auto deferredPreview = ranges::any_of(deferred, [](const auto task) {
+			return task->isMediaPreview();
+		});
+		if ((waiting && waiting->isMediaPreview()) || deferredPreview) {
+			scheduleDownloadCheck(previewDelay);
+		}
+	}
 	if (task) {
-		if (downloadRateDelay(dcId, now) > 0) {
+		const auto preview = task->isMediaPreview();
+		if (!preview && downloadRateDelay(dcId, now) > 0) {
 			return false;
 		}
-		if (smartNonPremiumEnabled() && smartDemandSummary(dcId).streaming) {
+		if (!preview
+			&& smartNonPremiumEnabled()
+			&& smartDemandSummary(dcId).streaming) {
 			smartRequestState(dcId, now).rateLimiter.consume(
 				kDownloadPartSize,
 				now);
@@ -1008,13 +1074,21 @@ bool DownloadManagerMtproto::trySendNextPart(MTP::DcId dcId, Queue &queue) {
 int DownloadManagerMtproto::changeRequestedAmount(
 		MTP::DcId dcId,
 		int index,
-		int delta) {
+		int delta,
+		bool preview) {
 	const auto i = _balanceData.find(dcId);
 	Assert(i != _balanceData.end());
 	Assert(index < i->second.sessions.size());
 	trackSmartRequestActivity(dcId, crl::now());
 	const auto result = (i->second.sessions[index].requested += delta);
 	i->second.totalRequested += delta;
+	if (preview) {
+		if (delta > 0) {
+			i->second.previews.requestStarted(crl::now());
+		} else {
+			i->second.previews.requestFinished();
+		}
+	}
 	const auto findNonEmptySession = [](const DcBalanceData &data) {
 		using namespace rpl::mappers;
 		return ranges::find_if(
@@ -1242,7 +1316,9 @@ void DownloadManagerMtproto::killSessions(MTP::DcId dcId) {
 		auto &dc = i->second;
 		Assert(dc.totalRequested == 0);
 		auto sessions = base::take(dc.sessions);
+		const auto previews = dc.previews;
 		dc = DcBalanceData();
+		dc.previews = previews;
 		for (auto j = 0; j != int(sessions.size()); ++j) {
 			Assert(sessions[j].requested == 0);
 			sessions[j] = DcSessionBalanceData();
@@ -1345,6 +1421,13 @@ uint64 DownloadMtprotoTask::objectId() const {
 
 const DownloadMtprotoTask::Location &DownloadMtprotoTask::location() const {
 	return _location;
+}
+
+bool DownloadMtprotoTask::isMediaPreview() const {
+	const auto location = std::get_if<StorageFileLocation>(&_location.data);
+	return location
+		&& (location->type() == StorageFileLocation::Type::Photo
+			|| location->isDocumentThumbnail());
 }
 
 void DownloadMtprotoTask::refreshFileReferenceFrom(
@@ -1513,7 +1596,8 @@ bool DownloadMtprotoTask::setWebFileSizeHook(int64 size) {
 }
 
 void DownloadMtprotoTask::makeRequest(const RequestData &requestData) {
-	if (DownloadBoostLevel() != 6 || api().session().premium()) {
+	if (!isMediaPreview()
+		&& (DownloadBoostLevel() != 6 || api().session().premium())) {
 		placeSentRequest(sendRequest(requestData), requestData);
 		return;
 	}
@@ -1539,7 +1623,7 @@ void DownloadMtprotoTask::requestMoreCdnFileHashes() {
 	}).fail([=](const MTP::Error &error, mtpRequestId id) {
 		cdnPartFailed(error, id);
 	}).toDC(shiftedDcId).send();
-	placeSentRequest(_cdnHashesRequestId, requestData);
+	placeSentRequest(_cdnHashesRequestId, requestData, false);
 }
 
 void DownloadMtprotoTask::normalPartLoaded(
@@ -1594,7 +1678,7 @@ void DownloadMtprotoTask::cdnPartLoaded(const MTPupload_CdnFile &result, mtpRequ
 		}).fail([=](const MTP::Error &error, mtpRequestId id) {
 			cdnPartFailed(error, id);
 		}).toDC(shiftedDcId).send();
-		placeSentRequest(requestId, requestData);
+		placeSentRequest(requestId, requestData, false);
 	}, [&](const MTPDupload_cdnFile &data) {
 		const auto requestData = finishSentRequest(
 			requestId,
@@ -1724,21 +1808,25 @@ void DownloadMtprotoTask::getCdnFileHashesDone(
 
 void DownloadMtprotoTask::placeSentRequest(
 		mtpRequestId requestId,
-		const RequestData &requestData) {
+		const RequestData &requestData,
+		bool content) {
 	if (_sentRequests.empty()) {
 		subscribeToTransferLimits();
 	}
 
+	const auto preview = content && isMediaPreview();
 	const auto amount = _owner->changeRequestedAmount(
 		dcId(),
 		requestData.sessionIndex,
-		Storage::kDownloadPartSize);
+		Storage::kDownloadPartSize,
+		preview);
 	const auto &[i, ok1] = _sentRequests.emplace(requestId, requestData);
 	const auto &[j, ok2] = _requestByOffset.emplace(
 		requestData.offset,
 		requestId);
 
 	i->second.requestedInSession = amount;
+	i->second.previewCounted = preview;
 	i->second.sent = crl::now();
 	i->second.referenceAt = 0;
 	const auto trace = downloadTrace();
@@ -1775,17 +1863,22 @@ void DownloadMtprotoTask::subscribeToTransferLimits() {
 	}, _transferLimitSubscription);
 	_owner->api().instance().nonPremiumDelayedRequests(
 	) | rpl::on_next([=](const auto &data) {
-		if (_sentRequests.contains(data.first)) {
-			if (const auto documentId = objectId()) {
-				const auto type = v::get<StorageFileLocation>(
-					_location.data).type();
-				if (type == StorageFileLocation::Type::Document) {
-					_owner->notifyNonPremiumDelay(
-						dcId(),
-						documentId,
-						data.second);
-				}
-			}
+		if (!_sentRequests.contains(data.first)) {
+			return;
+		}
+		const auto location = std::get_if<StorageFileLocation>(&_location.data);
+		if (!location) {
+			return;
+		}
+		const auto type = location->type();
+		if (type == StorageFileLocation::Type::Document
+			|| type == StorageFileLocation::Type::Photo) {
+			_owner->notifyNonPremiumDelay(
+				dcId(),
+				(type == StorageFileLocation::Type::Document)
+					? location->objectId()
+					: DocumentId(0),
+				data.second);
 		}
 	}, _transferLimitSubscription);
 }
@@ -2003,7 +2096,8 @@ auto DownloadMtprotoTask::finishSentRequest(
 	_owner->changeRequestedAmount(
 		dcId(),
 		result.sessionIndex,
-		-Storage::kDownloadPartSize);
+		-Storage::kDownloadPartSize,
+		result.previewCounted);
 	_sentRequests.erase(it);
 	updateDownloadTrace();
 	const auto ok = _requestByOffset.remove(result.offset);

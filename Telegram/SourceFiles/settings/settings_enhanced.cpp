@@ -254,6 +254,14 @@ void ImportEnhancedSettings() {
 		playbackParameters->addClickHandler([=] {
 			Ui::show(Box<DownloadBoostProfilesBox>());
 		});
+		trackSearch(
+			AddButtonWithIcon(
+				inner,
+				tr::lng_settings_media_preview_parameters_title(),
+				st::settingsButtonNoIcon),
+			u"enhanced/media_preview_parameters"_q)->addClickHandler([] {
+			Ui::show(Box<MediaPreviewParametersBox>());
+		});
 
 		trackSearch(
 			AddButtonWithIcon(
@@ -1874,6 +1882,14 @@ void ImportEnhancedSettings() {
 				tr::lng_online_playback_profile_manual_pacing(tr::now),
 				tr::lng_online_playback_profile_target_percent(tr::now),
 				tr::lng_online_playback_profile_adaptive_pacing(tr::now),
+			});
+		addButton(
+			u"enhanced/media_preview_parameters"_q,
+			tr::lng_settings_media_preview_parameters_title(tr::now),
+			{
+				tr::lng_media_preview_concurrent(tr::now),
+				tr::lng_media_preview_rate(tr::now),
+				tr::lng_media_preview_burst(tr::now),
 			});
 		addBool(
 			"download_limit_toasts",

@@ -858,6 +858,159 @@ void DownloadBoostProfilesBox::reset() {
 	loadProfile(_editingProfile);
 }
 
+MediaPreviewParametersBox::MediaPreviewParametersBox(QWidget *parent)
+: _scroll(base::make_unique_q<Ui::ScrollArea>(this, st::boxScroll)) {
+}
+
+void MediaPreviewParametersBox::prepare() {
+	setTitle(tr::lng_settings_media_preview_parameters_title());
+	addButton(tr::lng_media_preview_parameters_reset(), [=] { reset(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+	addButton(tr::lng_settings_save(), [=] { save(); });
+
+	_content = new Ui::VerticalLayout(this);
+	_scroll->setOwnedWidget(object_ptr<Ui::VerticalLayout>::fromRaw(_content));
+	_content->add(object_ptr<Ui::FlatLabel>(
+		_content,
+		tr::lng_media_preview_parameters_about(tr::now),
+		st::onlinePlaybackProfilesAbout));
+	Ui::AddSkip(_content, st::onlinePlaybackProfilesSectionSkip);
+	const auto titles = std::array{
+		tr::lng_media_preview_concurrent(tr::now),
+		tr::lng_media_preview_rate(tr::now),
+		tr::lng_media_preview_burst(tr::now),
+	};
+	const auto descriptions = std::array{
+		tr::lng_media_preview_concurrent_about(tr::now),
+		tr::lng_media_preview_rate_about(tr::now),
+		tr::lng_media_preview_burst_about(tr::now),
+	};
+	const auto settings = EnhancedSettings::MediaPreviewDownloadLimits();
+	const auto values = std::array{
+		settings.concurrent,
+		settings.requestsPerSecond,
+		settings.burst,
+	};
+	const auto defaults = Storage::MediaPreviewLimits().resolved();
+	const auto defaultValues = std::array{
+		defaults.concurrent,
+		defaults.requestsPerSecond,
+		defaults.burst,
+	};
+	for (auto i = 0; i != int(_fields.size()); ++i) {
+		_content->add(object_ptr<Ui::FlatLabel>(
+			_content,
+			titles[i],
+			st::onlinePlaybackProfilesTitle));
+		Ui::AddSkip(_content, st::onlinePlaybackProfilesTitleSkip);
+		_content->add(object_ptr<Ui::FlatLabel>(
+			_content,
+			descriptions[i],
+			st::onlinePlaybackProfilesAbout));
+		Ui::AddSkip(_content, st::onlinePlaybackProfilesFieldSkip);
+		const auto row = _content->add(object_ptr<Ui::RpWidget>(_content));
+		const auto field = Ui::CreateChild<Ui::InputField>(
+			row,
+			st::onlinePlaybackProfilesField);
+		_fields[i] = field;
+		field->setMaxLength(3);
+		field->setText(QString::number(values[i]));
+		const auto label = Ui::CreateChild<Ui::FlatLabel>(
+			row,
+			tr::lng_online_playback_profile_default(
+				tr::now,
+				lt_value,
+				QString::number(defaultValues[i])),
+			st::defaultInputFieldLimit);
+		label->setAttribute(Qt::WA_TransparentForMouseEvents);
+		rpl::combine(
+			row->widthValue(),
+			field->heightValue(),
+			label->naturalWidthValue()
+		) | rpl::on_next([=](int width, int fieldHeight, int) {
+			if (field->width() != st::onlinePlaybackProfilesFieldWidth) {
+				field->resizeToWidth(st::onlinePlaybackProfilesFieldWidth);
+			}
+			field->moveToLeft(0, 0);
+			const auto labelLeft = field->width()
+				+ st::onlinePlaybackProfilesDefaultSkip;
+			label->resizeToNaturalWidth(std::max(width - labelLeft, 0));
+			label->moveToLeft(
+				labelLeft,
+				std::max((fieldHeight - label->height()) / 2, 0));
+			row->resize(
+				width,
+				std::max(fieldHeight, label->y() + label->height()));
+		}, row->lifetime());
+		Ui::AddSkip(_content, st::onlinePlaybackProfilesItemSkip);
+	}
+	showChildren();
+	const auto outer = getDelegate()->outerContainer();
+	const auto availableWidth = (outer
+		&& outer->width() > 2 * st::onlinePlaybackProfilesOuterSkip)
+		? std::max(
+			outer->width() - 2 * st::onlinePlaybackProfilesOuterSkip,
+			st::boxWidth)
+		: st::onlinePlaybackProfilesPreferredWidth;
+	setDimensions(
+		std::min(st::onlinePlaybackProfilesPreferredWidth, availableWidth),
+		st::mediaPreviewParametersMaximumHeight);
+}
+
+void MediaPreviewParametersBox::setInnerFocus() {
+	_fields.front()->setFocusFast();
+}
+
+void MediaPreviewParametersBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+	const auto top = st::boxOptionListPadding.top();
+	_scroll->setGeometry(
+		st::boxPadding.left(),
+		top,
+		width() - st::boxPadding.left() - st::boxPadding.right(),
+		height() - top - st::boxPadding.bottom());
+	if (_content) {
+		const auto margins = _content->getMargins();
+		_content->resizeToWidth(
+			_scroll->width() - margins.left() - margins.right());
+	}
+}
+
+void MediaPreviewParametersBox::save() {
+	const auto maximum = std::array{
+		Storage::MediaPreviewLimits::kConcurrentMaximum,
+		Storage::MediaPreviewLimits::kRateMaximum,
+		Storage::MediaPreviewLimits::kBurstMaximum,
+	};
+	auto values = std::array<int, 3>();
+	for (auto i = 0; i != int(_fields.size()); ++i) {
+		auto valid = false;
+		const auto value = _fields[i]->getLastText().trimmed().toInt(&valid);
+		if (!valid || value < 0 || value > maximum[i]) {
+			_fields[i]->showError();
+			_scroll->scrollToWidget(_fields[i]);
+			Ui::Toast::Show(
+				tr::lng_media_preview_parameters_invalid(tr::now));
+			return;
+		}
+		_fields[i]->hideError();
+		values[i] = value;
+	}
+	EnhancedSettings::SetMediaPreviewDownloadLimits({
+		values[0],
+		values[1],
+		values[2],
+	});
+	closeBox();
+}
+
+void MediaPreviewParametersBox::reset() {
+	for (const auto field : _fields) {
+		field->hideError();
+		field->setText(u"0"_q);
+	}
+}
+
 void NetBoostBox::save() {
 	const auto changeBoost = [=](Fn<void()> &&close) {
 		SetNetworkBoost(_boostGroup->current());

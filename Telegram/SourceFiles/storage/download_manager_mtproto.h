@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_origin.h"
 #include "storage/download_diagnostics.h"
 #include "storage/download_rate_limiter.h"
+#include "storage/media_preview_limits.h"
 #include "storage/storage_non_premium_delay.h"
 
 #include <optional>
@@ -75,7 +76,11 @@ public:
 		return _taskFinished.events();
 	}
 
-	int changeRequestedAmount(MTP::DcId dcId, int index, int delta);
+	int changeRequestedAmount(
+		MTP::DcId dcId,
+		int index,
+		int delta,
+		bool preview);
 	void requestSucceeded(
 		MTP::DcId dcId,
 		int index,
@@ -130,7 +135,9 @@ private:
 		void remove(not_null<Task*> task);
 		void resetGeneration();
 		[[nodiscard]] bool empty() const;
-		[[nodiscard]] Task *nextTask(bool onlyHighestPriority) const;
+		[[nodiscard]] Task *nextTask(
+			bool onlyHighestPriority,
+			bool allowPreviews = true) const;
 		void removeSession(int index);
 		[[nodiscard]] QString diagnosticSnapshot(crl::time now) const;
 
@@ -153,6 +160,7 @@ private:
 		DcBalanceData();
 
 		std::vector<DcSessionBalanceData> sessions;
+		MediaPreviewRequestLimiter previews;
 		crl::time lastSessionRemove = 0;
 		int sessionRemoveIndex = 0;
 		int sessionRemoveTimes = 0;
@@ -296,6 +304,7 @@ public:
 	[[nodiscard]] Data::FileOrigin fileOrigin() const;
 	[[nodiscard]] uint64 objectId() const;
 	[[nodiscard]] const Location &location() const;
+	[[nodiscard]] bool isMediaPreview() const;
 
 	[[nodiscard]] virtual bool readyToRequest() const = 0;
 	void loadPart(int sessionIndex);
@@ -334,6 +343,7 @@ private:
 		int requestedInSession = 0;
 		crl::time sent = 0;
 		bool readRetrySuppressed = false;
+		bool previewCounted = false;
 		crl::time referenceAt = 0;
 
 		inline bool operator<(const RequestData &other) const {
@@ -395,7 +405,8 @@ private:
 	[[nodiscard]] mtpRequestId sendRequest(const RequestData &requestData);
 	void placeSentRequest(
 		mtpRequestId requestId,
-		const RequestData &requestData);
+		const RequestData &requestData,
+		bool content = true);
 	[[nodiscard]] RequestData finishSentRequest(
 		mtpRequestId requestId,
 		FinishRequestReason reason);

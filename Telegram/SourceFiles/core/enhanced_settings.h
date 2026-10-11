@@ -8,6 +8,7 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 
 #include "data/data_peer_id.h"
 #include "rpl/producer.h"
+#include "storage/media_preview_limits.h"
 
 #include <QtCore/QByteArray>
 #include <QtCore/QTimer>
@@ -40,6 +41,9 @@ namespace EnhancedSettings {
 
 	[[nodiscard]] int MessageEmojiSize();
 	[[nodiscard]] int MessageStickerSize();
+	[[nodiscard]] Storage::MediaPreviewLimits MediaPreviewDownloadLimits();
+	[[nodiscard]] rpl::producer<> MediaPreviewDownloadLimitsChanges();
+	void SetMediaPreviewDownloadLimits(Storage::MediaPreviewLimits limits);
 	[[nodiscard]] DownloadLimitToastMode DownloadLimitToastsMode();
 	[[nodiscard]] auto DownloadLimitToastModeChanges()
 		-> rpl::producer<DownloadLimitToastMode>;

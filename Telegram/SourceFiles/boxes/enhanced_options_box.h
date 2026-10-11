@@ -106,6 +106,25 @@ private:
 
 };
 
+class MediaPreviewParametersBox final : public Ui::BoxContent {
+public:
+	explicit MediaPreviewParametersBox(QWidget *parent);
+
+protected:
+	void prepare() override;
+	void setInnerFocus() override;
+	void resizeEvent(QResizeEvent *e) override;
+
+private:
+	void save();
+	void reset();
+
+	base::unique_qptr<Ui::ScrollArea> _scroll;
+	Ui::VerticalLayout *_content = nullptr;
+	std::array<Ui::InputField*, 3> _fields = {};
+
+};
+
 class AlwaysDeleteBox : public Ui::BoxContent {
 public:
 	AlwaysDeleteBox(QWidget *parent);

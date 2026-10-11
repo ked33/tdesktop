@@ -142,6 +142,11 @@ namespace EnhancedSettings {
 			return events;
 		}
 
+		rpl::event_stream<> &MediaPreviewDownloadLimitsEvents() {
+			static auto events = rpl::event_stream<>();
+			return events;
+		}
+
 		void FillMissingDefaults() {
 			const auto ensureBool = [](const QString &key, bool value) {
 				if (!gEnhancedOptions.contains(key)) {
@@ -173,6 +178,9 @@ namespace EnhancedSettings {
 				ensureBool(qsl("online_playback_debug_logs"), false);
 			ensureBool(u"download_limit_toasts"_q, true);
 			ensureInt(u"download_limit_toast_mode"_q, 0);
+			ensureInt(u"media_preview_concurrent_requests"_q, 0);
+			ensureInt(u"media_preview_requests_per_second"_q, 0);
+			ensureInt(u"media_preview_burst_requests"_q, 0);
 			ensureBool(u"video_player_prefer_original"_q, true);
 			ensureBool(u"video_player_auto_fullscreen"_q, false);
 				ensureBool(qsl("show_message_context_show_messages_from"), true);
@@ -479,6 +487,31 @@ namespace EnhancedSettings {
 		Write();
 		InvalidateSearchDialogFilterCache();
 		SearchDialogFilterEvents().fire({});
+	}
+
+	Storage::MediaPreviewLimits MediaPreviewDownloadLimits() {
+		return Storage::MediaPreviewLimits{
+			GetEnhancedInt(u"media_preview_concurrent_requests"_q),
+			GetEnhancedInt(u"media_preview_requests_per_second"_q),
+			GetEnhancedInt(u"media_preview_burst_requests"_q),
+		}.normalized();
+	}
+
+	rpl::producer<> MediaPreviewDownloadLimitsChanges() {
+		return MediaPreviewDownloadLimitsEvents().events();
+	}
+
+	void SetMediaPreviewDownloadLimits(Storage::MediaPreviewLimits limits) {
+		limits = limits.normalized();
+		SetEnhancedValue(
+			u"media_preview_concurrent_requests"_q,
+			limits.concurrent);
+		SetEnhancedValue(
+			u"media_preview_requests_per_second"_q,
+			limits.requestsPerSecond);
+		SetEnhancedValue(u"media_preview_burst_requests"_q, limits.burst);
+		Write();
+		MediaPreviewDownloadLimitsEvents().fire({});
 	}
 
 	int SearchPornConcurrency() {
@@ -848,6 +881,9 @@ namespace EnhancedSettings {
 			settings.insert(qsl("online_playback_debug_logs"), false);
 		settings.insert(u"download_limit_toasts"_q, true);
 		settings.insert(u"download_limit_toast_mode"_q, 0);
+		settings.insert(u"media_preview_concurrent_requests"_q, 0);
+		settings.insert(u"media_preview_requests_per_second"_q, 0);
+		settings.insert(u"media_preview_burst_requests"_q, 0);
 		settings.insert(u"video_player_prefer_original"_q, true);
 		settings.insert(u"video_player_auto_fullscreen"_q, false);
 			settings.insert(qsl("show_message_context_show_messages_from"), true);
@@ -922,6 +958,14 @@ namespace EnhancedSettings {
 
 	QJsonObject CurrentSettingsObject() {
 		auto settings = QJsonObject();
+		const auto previewLimits = MediaPreviewDownloadLimits();
+		settings.insert(
+			u"media_preview_concurrent_requests"_q,
+			previewLimits.concurrent);
+		settings.insert(
+			u"media_preview_requests_per_second"_q,
+			previewLimits.requestsPerSecond);
+		settings.insert(u"media_preview_burst_requests"_q, previewLimits.burst);
 		settings.insert(qsl("net_speed_boost"), GetEnhancedInt("net_speed_boost"));
 		settings.insert(qsl("net_download_speed_boost"), GetEnhancedInt("net_download_speed_boost"));
 		settings.insert(
@@ -1281,6 +1325,7 @@ namespace EnhancedSettings {
 			return false;
 		}
 		MessageFolding::Reload();
+		MediaPreviewDownloadLimitsEvents().fire({});
 		if (chineseSearchBefore != SearchChineseKeywordsEnabled()) {
 			SearchChineseKeywordsEvents().fire_copy(
 				SearchChineseKeywordsEnabled());
