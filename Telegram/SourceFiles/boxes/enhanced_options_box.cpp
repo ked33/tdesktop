@@ -891,7 +891,7 @@ void MediaPreviewParametersBox::prepare() {
 		settings.requestsPerSecond,
 		settings.burst,
 	};
-	const auto defaults = Storage::MediaPreviewLimits().resolved();
+	const auto defaults = Storage::MediaPreviewLimits();
 	const auto defaultValues = std::array{
 		defaults.concurrent,
 		defaults.requestsPerSecond,
@@ -944,6 +944,15 @@ void MediaPreviewParametersBox::prepare() {
 		}, row->lifetime());
 		Ui::AddSkip(_content, st::onlinePlaybackProfilesItemSkip);
 	}
+	_content->add(object_ptr<Ui::FlatLabel>(
+		_content,
+		tr::lng_media_preview_examples_title(tr::now),
+		st::onlinePlaybackProfilesTitle));
+	Ui::AddSkip(_content, st::onlinePlaybackProfilesTitleSkip);
+	_content->add(object_ptr<Ui::FlatLabel>(
+		_content,
+		tr::lng_media_preview_examples(tr::now),
+		st::onlinePlaybackProfilesAbout));
 	showChildren();
 	const auto outer = getDelegate()->outerContainer();
 	const auto availableWidth = (outer

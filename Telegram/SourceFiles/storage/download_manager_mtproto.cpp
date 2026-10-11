@@ -268,7 +268,6 @@ QString DownloadManagerMtproto::diagnosticSnapshot(int dcId) const {
 		? 0
 		: balance->second.totalRequested;
 	const auto previewLimits = EnhancedSettings::MediaPreviewDownloadLimits();
-	const auto resolvedPreviewLimits = previewLimits.resolved();
 	auto previews = (balance == _balanceData.end())
 		? MediaPreviewRequestLimiter()
 		: balance->second.previews;
@@ -340,9 +339,9 @@ QString DownloadManagerMtproto::diagnosticSnapshot(int dcId) const {
 			? _downloadRateTimer.remainingTime()
 			: -1))
 		.arg(previews.active())
-		.arg(resolvedPreviewLimits.concurrent)
-		.arg(resolvedPreviewLimits.requestsPerSecond)
-		.arg(resolvedPreviewLimits.burst)
+		.arg(previewLimits.concurrent)
+		.arg(previewLimits.requestsPerSecond)
+		.arg(previewLimits.burst)
 		.arg(qlonglong(previewWait));
 }
 
@@ -814,7 +813,7 @@ void DownloadManagerMtproto::notifyNonPremiumDelay(
 		state.limitedUntil + NonPremiumRecoveryDuration(state.penalty));
 	const auto balance = _balanceData.find(dcId);
 	if (balance != end(_balanceData)) {
-		balance->second.previews.suspend(state.limitedUntil, state.recoveryUntil);
+		balance->second.previews.suspend(state.limitedUntil);
 	}
 	if (smartNonPremiumEnabled()) {
 		auto &limiter = smartRequestState(dcId, now).rateLimiter;
@@ -1054,11 +1053,12 @@ bool DownloadManagerMtproto::trySendNextPart(MTP::DcId dcId, Queue &queue) {
 		}
 	}
 	if (task) {
-		const auto preview = task->isMediaPreview();
-		if (!preview && downloadRateDelay(dcId, now) > 0) {
+		const auto separatePacing = task->isMediaPreview()
+			&& previews.rateLimited();
+		if (!separatePacing && downloadRateDelay(dcId, now) > 0) {
 			return false;
 		}
-		if (!preview
+		if (!separatePacing
 			&& smartNonPremiumEnabled()
 			&& smartDemandSummary(dcId).streaming) {
 			smartRequestState(dcId, now).rateLimiter.consume(
@@ -1084,7 +1084,11 @@ int DownloadManagerMtproto::changeRequestedAmount(
 	i->second.totalRequested += delta;
 	if (preview) {
 		if (delta > 0) {
-			i->second.previews.requestStarted(crl::now());
+			const auto now = crl::now();
+			i->second.previews.configure(
+				EnhancedSettings::MediaPreviewDownloadLimits(),
+				now);
+			i->second.previews.requestStarted(now);
 		} else {
 			i->second.previews.requestFinished();
 		}
@@ -1596,7 +1600,9 @@ bool DownloadMtprotoTask::setWebFileSizeHook(int64 size) {
 }
 
 void DownloadMtprotoTask::makeRequest(const RequestData &requestData) {
-	if (!isMediaPreview()
+	const auto previewLimited = isMediaPreview()
+		&& EnhancedSettings::MediaPreviewDownloadLimits().enabled();
+	if (!previewLimited
 		&& (DownloadBoostLevel() != 6 || api().session().premium())) {
 		placeSentRequest(sendRequest(requestData), requestData);
 		return;
@@ -1872,7 +1878,8 @@ void DownloadMtprotoTask::subscribeToTransferLimits() {
 		}
 		const auto type = location->type();
 		if (type == StorageFileLocation::Type::Document
-			|| type == StorageFileLocation::Type::Photo) {
+			|| (type == StorageFileLocation::Type::Photo
+				&& EnhancedSettings::MediaPreviewDownloadLimits().enabled())) {
 			_owner->notifyNonPremiumDelay(
 				dcId(),
 				(type == StorageFileLocation::Type::Document)
