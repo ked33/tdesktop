@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer.h"
 #include "base/weak_ptr.h"
 #include "data/data_file_origin.h"
+#include "storage/avatar_retry_policy.h"
 #include "storage/download_diagnostics.h"
 #include "storage/download_rate_limiter.h"
 #include "storage/media_preview_limits.h"
@@ -37,6 +38,12 @@ constexpr auto kDownloadPartSize = 128 * 1024;
 
 class DownloadMtprotoTask;
 
+enum class AvatarLimitToast {
+	Foreground,
+	Notify,
+	Silent,
+};
+
 struct ThumbnailRetryInfo {
 	DownloadMtprotoTask *task = nullptr;
 	crl::time retryAt = 0;
@@ -61,6 +68,11 @@ public:
 	void notifyThumbnailRetry(const ThumbnailRetryInfo &info);
 	[[nodiscard]] rpl::producer<ThumbnailRetryInfo> thumbnailRetries() const {
 		return _thumbnailRetries.events();
+	}
+
+	[[nodiscard]] AvatarLimitToast avatarLimitToast(mtpRequestId requestId);
+	[[nodiscard]] rpl::producer<mtpRequestId> requestsFinished() const {
+		return _requestsFinished.events();
 	}
 
 	void enqueue(not_null<Task*> task, int priority);
@@ -129,6 +141,8 @@ public:
 	}
 
 private:
+	friend class DownloadMtprotoTask;
+
 	class Queue final {
 	public:
 		void enqueue(not_null<Task*> task, int priority);
@@ -250,6 +264,10 @@ private:
 
 	const not_null<ApiWrap*> _api;
 	DownloadDiagnostics _diagnostics;
+	AvatarRetryPolicy _avatarRetries;
+	base::flat_map<mtpRequestId, AvatarRetryKey> _avatarRequests;
+	base::flat_map<AvatarRetryKey, Task*> _avatarLoads;
+	rpl::event_stream<mtpRequestId> _requestsFinished;
 	rpl::event_stream<ThumbnailRetryInfo> _thumbnailRetries;
 
 	rpl::event_stream<> _taskFinished;
@@ -316,6 +334,9 @@ public:
 		const QByteArray &current);
 
 protected:
+	void markBackgroundAvatar();
+	[[nodiscard]] bool startBackgroundAvatar();
+	void finishBackgroundAvatar();
 	[[nodiscard]] bool haveSentRequests() const;
 	[[nodiscard]] bool haveSentRequestForOffset(int64 offset) const;
 	void cancelAllRequests();
@@ -372,6 +393,7 @@ private:
 	virtual bool feedPart(int64 offset, const QByteArray &bytes) = 0;
 	virtual bool setWebFileSizeHook(int64 size);
 	virtual void cancelOnFail() = 0;
+	virtual void cancelForRateLimit(crl::time retryAt);
 	[[nodiscard]] virtual QString downloadSource() const = 0;
 
 	void cancelRequest(mtpRequestId requestId);
@@ -430,6 +452,8 @@ private:
 	void recordReceivedPart(int64 size);
 	void subscribeToTransferLimits();
 	void handleRequestRetry(const MTP::RequestRetryInfo &info);
+	void failBackgroundAvatar(crl::time retryAt);
+	void releaseBackgroundAvatar();
 	void failThumbnailAfterRetries(mtpRequestId requestId);
 	void clearThumbnailRetry();
 	void logAvatarFailure(const MTP::RequestRetryInfo &info);
@@ -441,11 +465,15 @@ private:
 	int _thumbnailServerFailures = 0;
 	bool _thumbnailFailureQueued = false;
 	bool _avatarFailureLogged = false;
+	bool _avatarFailureQueued = false;
+	std::optional<AvatarRetryKey> _backgroundAvatarKey;
+	base::Timer _avatarRetryTimer;
 
 	// _location can be changed with an updated file_reference.
 	Location _location;
 	const Data::FileOrigin _origin;
 
+	base::flat_set<mtpRequestId> _limitedRequests;
 	base::flat_map<mtpRequestId, RequestData> _sentRequests;
 	base::flat_map<int64, RequestData> _deferredRequests;
 	base::flat_map<int64, mtpRequestId> _requestByOffset;

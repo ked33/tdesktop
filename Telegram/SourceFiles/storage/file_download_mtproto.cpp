@@ -119,6 +119,10 @@ mtpFileLoader::~mtpFileLoader() {
 	}
 }
 
+void mtpFileLoader::setBackgroundAvatar() {
+	markBackgroundAvatar();
+}
+
 Data::FileOrigin mtpFileLoader::fileOrigin() const {
 	return DownloadMtprotoTask::fileOrigin();
 }
@@ -153,6 +157,7 @@ bool mtpFileLoader::feedPart(int64 offset, const QByteArray &bytes) {
 	const auto finished = !haveSentRequests()
 		&& (_lastComplete || (_fullSize && _nextRequestOffset >= _loadSize));
 	if (finished) {
+		finishBackgroundAvatar();
 		removeFromQueue();
 		if (!finalizeResult()) {
 			return false;
@@ -165,6 +170,10 @@ bool mtpFileLoader::feedPart(int64 offset, const QByteArray &bytes) {
 
 void mtpFileLoader::cancelOnFail() {
 	cancel(FailureReason::OtherFailure);
+}
+
+void mtpFileLoader::cancelForRateLimit(crl::time retryAt) {
+	cancel(FailureReason::RateLimited, retryAt);
 }
 
 QString mtpFileLoader::downloadSource() const {
@@ -189,7 +198,9 @@ std::shared_ptr<Storage::DownloadTrace> mtpFileLoader::createDownloadTrace() {
 }
 
 void mtpFileLoader::startLoading() {
-	addToQueue();
+	if (startBackgroundAvatar()) {
+		addToQueue();
+	}
 }
 
 void mtpFileLoader::startLoadingWithPartial(const QByteArray &data) {

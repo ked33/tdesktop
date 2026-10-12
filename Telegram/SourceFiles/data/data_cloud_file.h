@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/flags.h"
+#include "crl/crl_time.h"
 #include "ui/image/image.h"
 #include "ui/image/image_location.h"
 
@@ -32,6 +33,7 @@ struct CloudFile final {
 		Cancelled = 0x01,
 		Failed = 0x02,
 		Loaded = 0x04,
+		BackgroundAvatar = 0x08,
 	};
 	friend inline constexpr bool is_flag_type(Flag) { return true; };
 
@@ -43,6 +45,7 @@ struct CloudFile final {
 	std::unique_ptr<FileLoader> loader;
 	int byteSize = 0;
 	int progressivePartSize = 0;
+	crl::time retryAfter = 0;
 	base::flags<Flag> flags;
 };
 

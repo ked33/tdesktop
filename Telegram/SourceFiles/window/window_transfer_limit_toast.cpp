@@ -35,7 +35,11 @@ public:
 
 private:
 	[[nodiscard]] std::shared_ptr<ChatHelpers::Show> resolveShow() const;
-	void show(const MTP::TransferLimitInfo &info);
+	void show(
+		const MTP::TransferLimitInfo &info,
+		Storage::AvatarLimitToast avatar = Storage::AvatarLimitToast::Foreground);
+	void showAvatarLimit(const MTP::TransferLimitInfo &info);
+	void requestFinished(mtpRequestId requestId);
 	void pruneCountdowns();
 	[[nodiscard]] TextWithEntities thumbnailRetryText(crl::time now) const;
 	void updateCountdown();
@@ -96,7 +100,15 @@ void TransferLimitToast::start() {
 	}, _lifetime);
 	_session->mtp().transferLimits(
 	) | rpl::on_next([=](const MTP::TransferLimitInfo &info) {
-		crl::on_main(this, [=] { show(info); });
+		if (!info.upload && !EnhancedSettings::DownloadLimitToastsEnabled()) {
+			return;
+		}
+		const auto avatar = _session->downloader().avatarLimitToast(info.requestId);
+		crl::on_main(this, [=] { show(info, avatar); });
+	}, _lifetime);
+	_session->downloader().requestsFinished(
+	) | rpl::on_next([=](mtpRequestId requestId) {
+		crl::on_main(this, [=] { requestFinished(requestId); });
 	}, _lifetime);
 	_session->downloader().thumbnailRetries(
 	) | rpl::on_next([=](const Storage::ThumbnailRetryInfo &info) {
@@ -137,8 +149,16 @@ std::shared_ptr<ChatHelpers::Show> TransferLimitToast::resolveShow() const {
 		: _session->windows().front()->uiShow();
 }
 
-void TransferLimitToast::show(const MTP::TransferLimitInfo &info) {
+void TransferLimitToast::show(
+		const MTP::TransferLimitInfo &info,
+		Storage::AvatarLimitToast avatar) {
 	if (!info.upload && !EnhancedSettings::DownloadLimitToastsEnabled()) {
+		return;
+	}
+	if (avatar != Storage::AvatarLimitToast::Foreground) {
+		if (avatar == Storage::AvatarLimitToast::Notify) {
+			showAvatarLimit(info);
+		}
 		return;
 	}
 	if (!info.upload) {
@@ -194,6 +214,41 @@ void TransferLimitToast::show(const MTP::TransferLimitInfo &info) {
 		.arg(info.waitSeconds)
 		.arg(info.dcId)
 		.arg(info.requestId));
+}
+
+void TransferLimitToast::showAvatarLimit(const MTP::TransferLimitInfo &info) {
+	if (_toast || _countdownToast) {
+		return;
+	}
+	const auto show = resolveShow();
+	if (!show || !show->valid()) {
+		return;
+	}
+	_last = info;
+	_lastShown = crl::now();
+	_toast = show->showToast({
+		.text = tr::lng_avatar_limit_wait(tr::now, tr::marked),
+		.attach = RectPart::Top,
+		.duration = kTransferLimitToastDuration,
+	});
+	LOG(("Transfer limit toast: direction=download request=%1 mode=avatar_fixed")
+		.arg(info.requestId));
+}
+
+void TransferLimitToast::requestFinished(mtpRequestId requestId) {
+	const auto removed = _countdowns.remove(requestId);
+	if (_lastDownloadLimit.requestId == requestId) {
+		_lastDownloadLimit = {};
+	}
+	if (_last.requestId == requestId) {
+		if (const auto toast = _toast.get()) {
+			toast->hide();
+		}
+		_toast = nullptr;
+	}
+	if (removed) {
+		updateCountdown();
+	}
 }
 
 void TransferLimitToast::hideCountdown() {

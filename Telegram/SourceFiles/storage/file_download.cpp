@@ -371,11 +371,14 @@ bool FileLoader::tryLoadLocal() {
 	return false;
 }
 
+void FileLoader::setBackgroundAvatar() {
+}
+
 void FileLoader::cancel() {
 	cancel(FailureReason::NoFailure);
 }
 
-void FileLoader::cancel(FailureReason fail) {
+void FileLoader::cancel(FailureReason fail, crl::time retryAt) {
 	if (_loadTrace) {
 		if (_loadTrace->error.isEmpty()) {
 			_loadTrace->setError(u"file_failure_%1"_q.arg(int(fail)));
@@ -399,7 +402,7 @@ void FileLoader::cancel(FailureReason fail) {
 
 	const auto weak = base::make_weak(this);
 	if (fail != FailureReason::NoFailure) {
-		_updates.fire_error_copy({ fail, started });
+		_updates.fire_error_copy({ fail, started, retryAt });
 	} else {
 		_updates.fire_done();
 	}

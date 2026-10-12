@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/binary_guard.h"
 #include "base/weak_ptr.h"
+#include "crl/crl_time.h"
 
 #include <QtNetwork/QNetworkReply>
 
@@ -57,11 +58,13 @@ public:
 		NoFailure,
 		FileWriteFailure,
 		OtherFailure,
+		RateLimited,
 	};
 
 	struct Error {
 		FailureReason failureReason = FailureReason::NoFailure;
 		bool started = false;
+		crl::time retryAt = 0;
 	};
 
 	FileLoader(
@@ -110,6 +113,7 @@ public:
 	void permitLoadFromCloud();
 	void increaseLoadSize(int64 size, bool autoLoading);
 
+	virtual void setBackgroundAvatar();
 	void start();
 	void cancel();
 
@@ -156,7 +160,7 @@ protected:
 		startLoading();
 	}
 
-	void cancel(FailureReason failed);
+	void cancel(FailureReason failed, crl::time retryAt = 0);
 
 	void notifyAboutProgress();
 

@@ -27,6 +27,7 @@ void CloudFile::clear() {
 	base::take(loader);
 	byteSize = 0;
 	progressivePartSize = 0;
+	retryAfter = 0;
 	flags = {};
 }
 
@@ -49,6 +50,7 @@ void CloudImage::set(
 		_file.location = ImageLocation();
 		_file.byteSize = 0;
 		_file.flags = CloudFile::Flag();
+		_file.retryAfter = 0;
 		_view = std::weak_ptr<QImage>();
 	} else if (was != now
 		&& (!v::is<InMemoryLocation>(was) || v::is<InMemoryLocation>(now))) {
@@ -97,6 +99,7 @@ bool CloudImage::loadedOnce() const {
 }
 
 void CloudImage::load(not_null<Main::Session*> session, FileOrigin origin) {
+	_file.flags |= CloudFile::Flag::BackgroundAvatar;
 	const auto autoLoading = false;
 	const auto finalCheck = [=] {
 		if (const auto active = activeView()) {
@@ -215,6 +218,7 @@ void UpdateCloudFile(
 					cacheTag));
 		}
 	}
+	file.retryAfter = 0;
 	file.location = data.location;
 	file.byteSize = data.bytesCount;
 	if (!data.preloaded.isNull()) {
@@ -253,7 +257,8 @@ void LoadCloudFile(
 			file.loader->increaseLoadSize(loadSize, autoLoading);
 		}
 		return;
-	} else if ((file.flags & CloudFile::Flag::Failed)
+	} else if (file.retryAfter > crl::now()
+		|| (file.flags & CloudFile::Flag::Failed)
 		|| !file.location.valid()
 		|| (finalCheck && !finalCheck())) {
 		return;
@@ -271,6 +276,9 @@ void LoadCloudFile(
 		fromCloud,
 		autoLoading,
 		cacheTag);
+	if (file.flags & CloudFile::Flag::BackgroundAvatar) {
+		file.loader->setBackgroundAvatar();
+	}
 
 	const auto finish = [done](CloudFile &file) {
 		if (!file.loader || file.loader->cancelled()) {
@@ -295,7 +303,11 @@ void LoadCloudFile(
 		}
 	}, [=, &file](FileLoader::Error error) {
 		finish(file);
-		file.flags |= CloudFile::Flag::Failed;
+		if (error.failureReason == FileLoader::FailureReason::RateLimited) {
+			file.retryAfter = error.retryAt;
+		} else {
+			file.flags |= CloudFile::Flag::Failed;
+		}
 		if (const auto onstack = fail) {
 			onstack(error.started);
 		}

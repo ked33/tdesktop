@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/mtproto_auth_key.h"
 #include "mtproto/mtproto_response.h"
 #include "settings.h"
+#include "storage/cache/storage_cache_types.h"
 #include "ui/image/image_location.h"
 
 #include <algorithm>
@@ -75,6 +76,35 @@ constexpr auto kSmartMaximumMeasuredThroughput = 64 * 1024 * 1024;
 	}, [](const MTPDinputPeerEmpty &) {
 		return PeerId();
 	});
+}
+
+[[nodiscard]] std::optional<AvatarRetryKey> BackgroundAvatarKey(
+		const StorageFileLocation &location,
+		const Data::FileOrigin &origin,
+		UserId self) {
+	auto peer = PeerId();
+	auto big = false;
+	if (location.type() == StorageFileLocation::Type::PeerPhoto) {
+		const auto input = location.tl(self);
+		const auto &photo = input.c_inputPeerPhotoFileLocation();
+		peer = AvatarPeerId(photo.vpeer(), self);
+		big = photo.is_big();
+	} else if (location.type() == StorageFileLocation::Type::Photo) {
+		peer = v::match(origin.data, [](const Data::FileOriginUserPhoto &data) {
+			return peerFromUser(data.userId);
+		}, [](const Data::FileOriginFullUser &data) {
+			return peerFromUser(data.userId);
+		}, [](const Data::FileOriginPeerPhoto &data) {
+			return data.peerId;
+		}, [](const auto &) {
+			return PeerId();
+		});
+	}
+	if (!peer) {
+		return std::nullopt;
+	}
+	const auto key = location.cacheKey();
+	return AvatarRetryKey{ peer.value, key.high, key.low, big ? 1ULL : 0ULL };
 }
 
 [[nodiscard]] QString AvatarPeerType(const Data::Session &data, PeerId id) {
@@ -376,6 +406,17 @@ DownloadManagerMtproto::DownloadManagerMtproto(not_null<ApiWrap*> api)
 
 DownloadManagerMtproto::~DownloadManagerMtproto() {
 	killSessions();
+}
+
+AvatarLimitToast DownloadManagerMtproto::avatarLimitToast(
+		mtpRequestId requestId) {
+	const auto i = _avatarRequests.find(requestId);
+	if (i == _avatarRequests.end()) {
+		return AvatarLimitToast::Foreground;
+	}
+	return _avatarRetries.notify(i->second, crl::now())
+		? AvatarLimitToast::Notify
+		: AvatarLimitToast::Silent;
 }
 
 bool DownloadManagerMtproto::smartNonPremiumEnabled() const {
@@ -1427,6 +1468,69 @@ const DownloadMtprotoTask::Location &DownloadMtprotoTask::location() const {
 	return _location;
 }
 
+void DownloadMtprotoTask::markBackgroundAvatar() {
+	if (const auto location = std::get_if<StorageFileLocation>(&_location.data)) {
+		_backgroundAvatarKey = BackgroundAvatarKey(
+			*location,
+			_origin,
+			api().session().userId());
+	}
+}
+
+bool DownloadMtprotoTask::startBackgroundAvatar() {
+	if (!_backgroundAvatarKey) {
+		return true;
+	}
+	const auto now = crl::now();
+	auto until = _owner->_avatarRetries.blockedUntil(*_backgroundAvatarKey, now);
+	const auto i = _owner->_avatarLoads.find(*_backgroundAvatarKey);
+	if (i != _owner->_avatarLoads.end() && i->second != this) {
+		until = std::max(until, now + crl::time(1000));
+	}
+	if (until > now) {
+		cancelForRateLimit(until);
+		return false;
+	}
+	_owner->_avatarLoads[*_backgroundAvatarKey] = this;
+	return true;
+}
+
+void DownloadMtprotoTask::releaseBackgroundAvatar() {
+	_avatarRetryTimer.cancel();
+	if (!_backgroundAvatarKey) {
+		return;
+	}
+	const auto i = _owner->_avatarLoads.find(*_backgroundAvatarKey);
+	if (i != _owner->_avatarLoads.end() && i->second == this) {
+		_owner->_avatarLoads.erase(i);
+	}
+}
+
+void DownloadMtprotoTask::finishBackgroundAvatar() {
+	if (_backgroundAvatarKey) {
+		_owner->_avatarRetries.succeeded(*_backgroundAvatarKey);
+	}
+	releaseBackgroundAvatar();
+}
+
+void DownloadMtprotoTask::cancelForRateLimit(crl::time) {
+	cancelOnFail();
+}
+
+void DownloadMtprotoTask::failBackgroundAvatar(crl::time retryAt) {
+	if (_downloadTrace) {
+		_downloadTrace->setError(u"avatar_retry_exhausted"_q);
+	}
+	const auto owner = _owner;
+	cancelAllRequests();
+	const auto weak = base::make_weak(this);
+	removeFromQueue();
+	owner->scheduleDownloadCheck(1);
+	if (weak) {
+		cancelForRateLimit(retryAt);
+	}
+}
+
 bool DownloadMtprotoTask::isMediaPreview() const {
 	const auto location = std::get_if<StorageFileLocation>(&_location.data);
 	return location
@@ -1833,6 +1937,9 @@ void DownloadMtprotoTask::placeSentRequest(
 
 	i->second.requestedInSession = amount;
 	i->second.previewCounted = preview;
+	if (_backgroundAvatarKey) {
+		_owner->_avatarRequests[requestId] = *_backgroundAvatarKey;
+	}
 	i->second.sent = crl::now();
 	i->second.referenceAt = 0;
 	const auto trace = downloadTrace();
@@ -1863,6 +1970,9 @@ void DownloadMtprotoTask::subscribeToTransferLimits() {
 	}, _transferLimitSubscription);
 	_owner->api().instance().transferLimits(
 	) | rpl::on_next([=](const MTP::TransferLimitInfo &info) {
+		if (_sentRequests.contains(info.requestId) && !info.upload) {
+			_limitedRequests.emplace(info.requestId);
+		}
 		if (info.logDetails && !info.upload) {
 			logTransferLimitSource(info);
 		}
@@ -1901,6 +2011,37 @@ void DownloadMtprotoTask::handleRequestRetry(
 		_downloadTrace->retryAt = info.retryAt;
 		_downloadTrace->setError(info.type);
 		_downloadTrace->setStage(DownloadTrace::Stage::Retry);
+	}
+	if (_backgroundAvatarKey
+		&& !_avatarFailureQueued
+		&& (info.type.startsWith(u"FLOOD_WAIT_"_q)
+			|| info.type.startsWith(u"FLOOD_PREMIUM_WAIT_"_q))) {
+		const auto now = crl::now();
+		const auto state = _owner->_avatarRetries.failed(
+			*_backgroundAvatarKey,
+			now,
+			info.retryAt);
+		LOG(("Avatar retry: request=%1 attempt=%2 action=%3 wait_ms=%4")
+			.arg(info.requestId)
+			.arg(state.failures)
+			.arg(state.stopped ? u"cooldown"_q : u"wait"_q)
+			.arg(qlonglong(state.retryAt - now)));
+		if (state.stopped) {
+			_avatarFailureQueued = true;
+			// WHY: MTProto restores callbacks after retry observers return.
+			// Cancel only after the restored callback and delayed retry exist.
+			crl::on_main(this, [=] { failBackgroundAvatar(state.retryAt); });
+		} else {
+			_avatarRetryTimer.setCallback([=] {
+				const auto until = _owner->_avatarRetries.expire(
+					*_backgroundAvatarKey,
+					crl::now());
+				LOG(("Avatar retry: action=timeout"));
+				failBackgroundAvatar(until);
+			});
+			_avatarRetryTimer.callOnce(state.deadline - now, Qt::PreciseTimer);
+		}
+		return;
 	}
 	const auto location = std::get_if<StorageFileLocation>(&_location.data);
 	if (!location
@@ -2106,6 +2247,10 @@ auto DownloadMtprotoTask::finishSentRequest(
 		-Storage::kDownloadPartSize,
 		result.previewCounted);
 	_sentRequests.erase(it);
+	_owner->_avatarRequests.remove(requestId);
+	if (_limitedRequests.remove(requestId)) {
+		_owner->_requestsFinished.fire_copy(requestId);
+	}
 	updateDownloadTrace();
 	const auto ok = _requestByOffset.remove(result.offset);
 
@@ -2138,6 +2283,7 @@ bool DownloadMtprotoTask::haveSentRequestForOffset(int64 offset) const {
 }
 
 void DownloadMtprotoTask::cancelAllRequests() {
+	releaseBackgroundAvatar();
 	_deferredRequests.clear();
 	updateDownloadTrace();
 	_owner->forgetDeferredRequests(this);

@@ -52,6 +52,7 @@ public:
 		uint8 cacheTag);
 	~mtpFileLoader();
 
+	void setBackgroundAvatar() override;
 	Data::FileOrigin fileOrigin() const override;
 	uint64 objId() const override;
 
@@ -67,6 +68,7 @@ private:
 	int64 takeNextRequestOffset() override;
 	bool feedPart(int64 offset, const QByteArray &bytes) override;
 	void cancelOnFail() override;
+	void cancelForRateLimit(crl::time retryAt) override;
 	QString downloadSource() const override;
 	bool setWebFileSizeHook(int64 size) override;
 
