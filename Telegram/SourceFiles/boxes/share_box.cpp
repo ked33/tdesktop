@@ -516,6 +516,7 @@ void ShareBox::prepare() {
 			_descriptor.session,
 			[this](FilterId id) {
 				_inner->applyChatFilter(id);
+				searchByUsername(true);
 				scrollToY(0);
 			},
 			Window::GifPauseReason::Layer);
@@ -1113,6 +1114,20 @@ ShareBox::Inner::Inner(
 		}
 		updateChat(update.peer);
 		scheduleSearchRefresh();
+	}, lifetime());
+
+	_descriptor.session->data().dialogsRowReplacements(
+	) | rpl::on_next([=](Data::Session::DialogsRowReplacement r) {
+		for (auto i = begin(_filtered); i != end(_filtered);) {
+			if (*i != r.old) {
+				++i;
+			} else if (r.now) {
+				*i = r.now;
+				++i;
+			} else {
+				i = _filtered.erase(i);
+			}
+		}
 	}, lifetime());
 
 	_descriptor.session->downloaderTaskFinished(

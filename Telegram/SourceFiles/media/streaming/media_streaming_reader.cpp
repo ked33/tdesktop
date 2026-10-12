@@ -17,6 +17,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/cache/storage_cache_database.h"
 #include "storage/storage_non_premium_delay.h"
 
+#include <QtCore/QtEndian>
+
 namespace Media {
 namespace Streaming {
 namespace {
@@ -166,8 +168,7 @@ bytes::const_span ParseComplexCachedMap(
 		if (data.size() < sizeof(uint32)) {
 			return std::nullopt;
 		}
-		const auto bytes = data.data();
-		const auto result = *reinterpret_cast<const uint32*>(bytes);
+		const auto result = qFromUnaligned<uint32>(data.data());
 		data = data.subspan(sizeof(uint32));
 		return result;
 	};

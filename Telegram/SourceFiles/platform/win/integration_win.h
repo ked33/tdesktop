@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/platform/win/base_windows_shlobj_h.h"
 #include "base/platform/win/base_windows_winrt.h"
 #include "base/qt_connection.h"
+#include "base/timer.h"
 #include "platform/platform_integration.h"
 
 #include <QAbstractNativeEventFilter>
@@ -32,6 +33,15 @@ public:
 	[[nodiscard]] static WindowsIntegration &Instance();
 
 private:
+	enum class PowerState {
+		Awake,
+		SuspendNotified,
+		SuspendSettled,
+		AutomaticResumeNotified,
+		AutomaticResumeSettled,
+		UserResumeNotified,
+	};
+
 	bool nativeEventFilter(
 		const QByteArray &eventType,
 		void *message,
@@ -48,6 +58,8 @@ private:
 	void setupTaskbarButtons(HWND window);
 
 	uint32 _taskbarCreatedMsgId = 0;
+	PowerState _powerState = PowerState::Awake;
+	base::Timer _powerBroadcastTimer;
 	winrt::com_ptr<ITaskbarList3> _taskbarList;
 	winrt::com_ptr<ICustomDestinationList> _jumpList;
 	std::unique_ptr<TaskbarButtons> _taskbarButtons;

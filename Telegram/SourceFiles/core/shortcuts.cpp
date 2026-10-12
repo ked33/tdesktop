@@ -137,6 +137,7 @@ const auto CommandByName = base::flat_map<QString, Command>{
 	{ u"show_chat_preview"_q             , Command::ShowChatPreview },
 
 	{ u"record_voice"_q                  , Command::RecordVoice },
+	{ u"stash_message"_q                 , Command::StashMessage },
 
 	// Shortcuts that have no default values.
 	{ u"message"_q                       , Command::JustSendMessage },
@@ -616,6 +617,8 @@ void Manager::fillDefaults() {
 	set(u"alt+f"_q, Command::FastForward);
 	set(u"alt+c"_q, Command::FastCopy);
 	
+	set(u"ctrl+s"_q                  , Command::StashMessage);
+
 	_defaults = keysCurrents();
 }
 

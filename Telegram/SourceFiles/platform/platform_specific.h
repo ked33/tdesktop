@@ -68,6 +68,9 @@ void NewVersionLaunched(int oldVersion);
 [[nodiscard]] bool PreventsQuit(Core::QuitReason reason);
 [[nodiscard]] QString ExecutablePathForShortcuts();
 void LaunchMaps(const Data::LocationPoint &point, Fn<void()> fail);
+[[nodiscard]] QString LocalizedCurrencyName(
+	const QString &currency,
+	const QString &languageId);
 
 struct ProcessMemory {
 	uint64 workingSet = 0;
