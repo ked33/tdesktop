@@ -4,19 +4,24 @@
 完成布局和锚点滚动补偿；更新期间的绘制重入不会重复启动更新。保留原有的
 首次加载、窗口动画、底部跟随和必要重排策略。
 
-诊断辅助代码位于 `Telegram/SourceFiles/test/test_video_scroll.cpp`，只观察状态，
-普通云构建也会包含，不需要 `-testagent` 或本地 Debug 构建。
+诊断辅助代码位于 `Telegram/SourceFiles/test/test_video_scroll.cpp`，目前在编译期
+停用，保留空操作接口和完整诊断实现。不会创建观察器、启动采样、缓存来源或输出
+`Video Scroll:` 日志；上述布局与滚动修复继续生效，其他播放日志不受影响。
+
+需要恢复诊断时，取消该文件中 `#define TDESKTOP_VIDEO_SCROLL_DIAGNOSTICS` 的
+注释，重新通过 GitHub Actions 构建并安装，再按下面步骤操作。无需逐个恢复调用点，
+也不需要 `-testagent` 或本地 Debug 构建；仅开启客户端中的日志选项不会恢复诊断。
 
 ## 使用
 
-1. 安装包含此改动的 GitHub Actions 构建。
+1. 安装已取消上述开关注释的 GitHub Actions 构建。
 2. 开启“设置 → 增强设置 → 网络 → 将在线播放调试日志写入 log.txt”。
 3. 完全退出并重新启动客户端，打开原聊天中间位置的视频 A，观察位移后关闭。
 4. 关闭后等待约 25 秒，再打开、关闭同一个 A；最后再等待约 25 秒。
 5. 查看现有 `log.txt` 中以 `Video Scroll:` 开头的行。便携版通常位于程序目录。
    保留首轮异常和第二轮正常的完整记录，随后关闭上述日志开关。
 
-启动或切换日志开关时，`config version=2 enabled=1` 表示新版诊断已开启；
+恢复编译开关后，启动或切换日志开关时，`config version=2 enabled=1` 表示诊断已开启；
 `enabled=0` 表示当前关闭。缺少该标记不能当作“没有发生滚动”。
 
 不要求视频能够自动播放。捕获从手动激活视频点击处理器开始；`open-dispatch`

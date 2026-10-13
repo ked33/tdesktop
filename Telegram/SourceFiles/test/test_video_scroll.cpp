@@ -1,5 +1,11 @@
 #include "test/test_video_scroll.h"
 
+#include "data/data_msg_id.h"
+
+// #define TDESKTOP_VIDEO_SCROLL_DIAGNOSTICS
+
+#ifdef TDESKTOP_VIDEO_SCROLL_DIAGNOSTICS
+
 #include "base/timer.h"
 #include "data/data_document.h"
 #include "data/data_file_click_handler.h"
@@ -931,3 +937,74 @@ void VideoScrollViewer(
 }
 
 } // namespace Test
+
+#else
+
+namespace Test {
+
+void VideoScrollSettings() {
+}
+
+void VideoScrollCause(
+		const char *,
+		not_null<History*>,
+		const HistoryItem *,
+		std::source_location) {
+}
+
+void VideoScrollGeometryState(
+		HistoryInner *,
+		bool,
+		bool,
+		bool,
+		bool,
+		bool,
+		bool,
+		bool) {
+}
+
+void VideoScrollClick(
+		not_null<HistoryInner*>,
+		not_null<Ui::ElasticScroll*>,
+		not_null<History*>,
+		History *,
+		const ClickHandler *) {
+}
+
+void VideoScrollBegin(
+		not_null<HistoryInner*>,
+		not_null<Ui::ElasticScroll*>,
+		not_null<History*>,
+		History *,
+		not_null<DocumentData*>,
+		FullMsgId) {
+}
+
+void VideoScrollDetach(not_null<HistoryInner*>) {
+}
+
+void VideoScrollHistory(
+		const char *,
+		HistoryInner *,
+		int,
+		int,
+		std::source_location) {
+}
+
+void VideoScrollView(
+		const char *,
+		not_null<HistoryView::Element*>,
+		QSize,
+		int,
+		QSize) {
+}
+
+void VideoScrollViewer(
+		VideoScrollViewerEvent,
+		not_null<QObject*>,
+		HistoryItem *) {
+}
+
+} // namespace Test
+
+#endif // TDESKTOP_VIDEO_SCROLL_DIAGNOSTICS
