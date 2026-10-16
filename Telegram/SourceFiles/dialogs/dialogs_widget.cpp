@@ -706,8 +706,11 @@ Widget::Widget(
 		applySearchState(std::move(copy));
 	}, lifetime());
 
+	const auto hashtagPanelParent = (_layout == Layout::Child)
+		? static_cast<QWidget*>(this)
+		: parentWidget();
 	_hashtagAutocomplete = object_ptr<ChatHelpers::HashtagAutocomplete>(
-		this,
+		hashtagPanelParent ? hashtagPanelParent : static_cast<QWidget*>(this),
 		_search.data(),
 		&session());
 	_hashtagAutocomplete->setTitle(tr::lng_hashtag_suggestions());
@@ -5250,19 +5253,38 @@ void Widget::updateControlsGeometry() {
 				&& !searchInPeer())
 				? (_chatFilters->height() * (1. - narrowRatio))
 				: 0);
-		for (const auto panel : {
-				_hashtagSearchHistory.data(),
-				_hashtagAutocomplete.data() }) {
-			if (!panel) {
-				continue;
-			}
-			panel->setTargetRect(QRect(
+		if (_hashtagSearchHistory) {
+			_hashtagSearchHistory->setTargetRect(QRect(
 				0,
 				int(scrollTop),
 				scrollWidth,
 				std::max(int(height() - scrollTop - bottomSkip), 0)));
-			if (!panel->isHidden()) {
-				scrollTop += panel->height();
+			if (!_hashtagSearchHistory->isHidden()) {
+				scrollTop += _hashtagSearchHistory->height();
+			}
+		}
+		if (_hashtagAutocomplete) {
+			if (_layout == Layout::Child) {
+				_hashtagAutocomplete->setTargetRect(QRect(
+					0,
+					int(scrollTop),
+					scrollWidth,
+					std::max(int(height() - scrollTop - bottomSkip), 0)));
+				if (!_hashtagAutocomplete->isHidden()) {
+					scrollTop += _hashtagAutocomplete->height();
+				}
+			} else if (const auto panelHost = parentWidget()) {
+				const auto fieldRightTop = _search->mapTo(
+					panelHost,
+					QPoint(_search->width(), 0));
+				const auto left = std::min(
+					fieldRightTop.x(),
+					std::max(panelHost->width() - scrollWidth, 0));
+				_hashtagAutocomplete->setTargetRect(QRect(
+					left,
+					fieldRightTop.y(),
+					scrollWidth,
+					std::max(panelHost->height() - fieldRightTop.y(), 0)));
 			}
 		}
 		const auto scrollHeight = std::max(
