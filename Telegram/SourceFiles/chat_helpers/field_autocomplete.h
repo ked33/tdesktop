@@ -50,6 +50,7 @@ public:
 		std::shared_ptr<Show> show,
 		const style::EmojiPan *stOverride = nullptr);
 	~FieldAutocomplete();
+	[[nodiscard]] static int MaxHeight();
 
 	[[nodiscard]] std::shared_ptr<Show> uiShow() const;
 

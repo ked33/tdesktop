@@ -160,6 +160,7 @@ public:
 	void readRecentHashtagsAndBots();
 	void saveRecentSentHashtags(const QString &text);
 	void saveRecentSearchHashtags(const QString &text);
+	[[nodiscard]] quint64 recentSearchHashtagCount(const QString &tag);
 	void applyRecentWriteHashtagLimit(int limit);
 	[[nodiscard]] rpl::producer<> recentHashtagsChanges() const;
 
@@ -327,7 +328,9 @@ private:
 	std::optional<RecentHashtagPack> saveRecentHashtags(
 		Fn<RecentHashtagPack()> getPack,
 		const QString &text,
-		int limit);
+		int limit,
+		Fn<void(const QString &)> record = nullptr);
+	void readRecentSearchHashtagCounts(QDataStream &stream);
 
 	template <typename Type>
 	void writePrefImpl(std::string_view key, Type value);
@@ -380,6 +383,7 @@ private:
 	FileKey _settingsKey = 0;
 	FileKey _recentHashtagsAndBotsKey = 0;
 	rpl::event_stream<> _recentHashtagsChanges;
+	base::flat_map<QString, quint64> _recentSearchHashtagCounts;
 	FileKey _exportSettingsKey = 0;
 	FileKey _installedMasksKey = 0;
 	FileKey _recentMasksKey = 0;

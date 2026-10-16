@@ -899,9 +899,13 @@ void FieldAutocomplete::setBoundings(QRect boundings) {
 	recount();
 }
 
+int FieldAutocomplete::MaxHeight() {
+	return int(4.5 * st::mentionHeight);
+}
+
 void FieldAutocomplete::recount(bool resetScroll) {
 	const auto oldScrollTop = _scroll->scrollTop();
-	const auto maxHeight = int(4.5 * st::mentionHeight);
+	const auto maxHeight = MaxHeight();
 	auto height = 0;
 	if (!_srows.empty()) {
 		const auto stickersPerRow = std::max(

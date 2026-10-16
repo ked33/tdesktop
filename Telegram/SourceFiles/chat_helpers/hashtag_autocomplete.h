@@ -56,16 +56,18 @@ private:
 
 	struct Row {
 		QString tag;
-		int count = 0;
+		quint64 count = 0;
 
 		friend inline bool operator==(const Row&, const Row&) = default;
 	};
 
 	void updateQuery();
-	void updateFiltered(const QString &filter);
+	bool updateFiltered(const QString &filter);
 	void updateListGeometry();
 	void hideFast();
 	void setSelected(int index);
+	void clearInvisibleSelection();
+	[[nodiscard]] bool selectedVisible() const;
 	void moveSelection(int delta);
 	bool chooseSelected();
 	void removeSelected();
@@ -87,6 +89,7 @@ private:
 	bool _allowed = true;
 	bool _keyboardEnabled = true;
 	bool _mouseSelection = false;
+	bool _rowsDirty = true;
 	rpl::event_stream<QString> _chosen;
 
 };

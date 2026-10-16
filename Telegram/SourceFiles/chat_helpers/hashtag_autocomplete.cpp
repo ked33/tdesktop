@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/hashtag_autocomplete.h"
 
 #include "chat_helpers/compose/compose_features.h"
+#include "chat_helpers/field_autocomplete.h"
 #include "chat_helpers/message_field.h"
 #include "core/enhanced_settings.h"
 #include "main/main_session.h"
@@ -38,6 +39,7 @@ constexpr auto kSearchHistoryVisibleRows = 5;
 class HashtagAutocomplete::Inner final : public Ui::RpWidget {
 public:
 	Inner(QWidget *parent, not_null<HashtagAutocomplete*> owner);
+	void clearPressed();
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -63,6 +65,12 @@ HashtagAutocomplete::Inner::Inner(
 : RpWidget(parent)
 , _owner(owner) {
 	setMouseTracking(true);
+}
+
+void HashtagAutocomplete::Inner::clearPressed() {
+	_pressed = -1;
+	_pressedTag.clear();
+	_deletePressed = false;
 }
 
 int HashtagAutocomplete::Inner::rowIndexAt(QPoint position) const {
@@ -213,6 +221,10 @@ HashtagAutocomplete::HashtagAutocomplete(
 	_scroll->setGeometry(rect());
 	_inner = _scroll->setOwnedWidget(
 		object_ptr<Inner>(this, this));
+	_scroll->scrolls(
+	) | rpl::on_next([=] {
+		clearInvisibleSelection();
+	}, lifetime());
 
 	_field->rawTextEdit()->installEventFilter(this);
 
@@ -221,7 +233,13 @@ HashtagAutocomplete::HashtagAutocomplete(
 		&QTextEdit::cursorPositionChanged,
 		this,
 		[=] { updateQuery(); },
-		Qt::QueuedConnection); // So getLastText() works already.
+		Qt::QueuedConnection);
+	QObject::connect(
+		_field->rawTextEdit().get(),
+		&QTextEdit::selectionChanged,
+		this,
+		[=] { updateQuery(); },
+		Qt::QueuedConnection);
 
 	_field->changes(
 	) | rpl::on_next([=] {
@@ -243,6 +261,7 @@ HashtagAutocomplete::HashtagAutocomplete(
 
 	_session->local().recentHashtagsChanges(
 	) | rpl::on_next([=] {
+		_rowsDirty = true;
 		crl::on_main(this, [=] { updateQuery(); });
 	}, lifetime());
 }
@@ -278,7 +297,8 @@ void HashtagAutocomplete::setKeyboardEnabled(bool enabled) {
 bool HashtagAutocomplete::acceptsKeyboard() const {
 	return !isHidden()
 		&& _keyboardEnabled
-		&& _field->rawTextEdit()->hasFocus();
+		&& _field->rawTextEdit()->hasFocus()
+		&& !computeQuery().isEmpty();
 }
 
 bool HashtagAutocomplete::handleKeyPress(not_null<QKeyEvent*> e) {
@@ -325,7 +345,12 @@ void HashtagAutocomplete::paintEvent(QPaintEvent *e) {
 	p.fillRect(rect(), st::mentionBg);
 	const auto line = st::lineWidth;
 	if (_title) {
-		p.fillRect(0, 0, width(), st::searchedBarHeight, st::searchedBarBg);
+		p.fillRect(
+			0,
+			line,
+			width(),
+			st::searchedBarHeight,
+			st::searchedBarBg);
 	}
 	p.fillRect(0, 0, width(), line, st::shadowFg);
 	p.fillRect(0, height() - line, width(), line, st::shadowFg);
@@ -335,25 +360,28 @@ void HashtagAutocomplete::resizeEvent(QResizeEvent *e) {
 	RpWidget::resizeEvent(e);
 
 	const auto titleHeight = _title ? st::searchedBarHeight : 0;
+	const auto line = st::lineWidth;
 	if (_title) {
 		_title->resizeToWidth(std::max(
 			width() - 2 * st::searchedBarPosition.x(),
 			0));
 		_title->moveToLeft(
 			st::searchedBarPosition.x(),
-			st::searchedBarPosition.y());
+			line + st::searchedBarPosition.y());
 	}
 	_scroll->setGeometry(
 		0,
-		titleHeight,
+		titleHeight + line,
 		width(),
-		std::max(height() - titleHeight, 0));
+		std::max(height() - titleHeight - 2 * line, 0));
 }
 
 void HashtagAutocomplete::updateQuery() {
+	const auto headerHeight = (_title ? st::searchedBarHeight : 0)
+		+ 2 * st::lineWidth;
 	if (!_allowed || !_field->isVisible()
 		|| (_source == Source::Sent && !_field->rawTextEdit()->hasFocus())
-		|| _target.width() <= 0 || _target.height() <= 0) {
+		|| _target.width() <= 0 || _target.height() <= headerHeight) {
 		hideFast();
 		return;
 	}
@@ -365,7 +393,7 @@ void HashtagAutocomplete::updateQuery() {
 		hideFast();
 		return;
 	}
-	updateFiltered(query.mid(1));
+	const auto resetSelection = updateFiltered(query.mid(1));
 	if (_rows.empty()) {
 		hideFast();
 		return;
@@ -373,6 +401,13 @@ void HashtagAutocomplete::updateQuery() {
 	updateListGeometry();
 	show();
 	raise();
+	if (resetSelection) {
+		_mouseSelection = false;
+		_lastMousePosition = QCursor::pos();
+		_scroll->scrollToY(0);
+		setSelected(_source == Source::SearchHistory ? -1 : 0);
+	}
+	clearInvisibleSelection();
 }
 
 QString HashtagAutocomplete::computeQuery() const {
@@ -383,12 +418,16 @@ QString HashtagAutocomplete::computeQuery() const {
 	}).query;
 }
 
-void HashtagAutocomplete::updateFiltered(const QString &filter) {
+bool HashtagAutocomplete::updateFiltered(const QString &filter) {
 	const auto history = (_source == Source::SearchHistory);
 	const auto normalized = history
 		? filter.toLower()
 		: TextUtilities::RemoveAccents(filter.toLower());
 	const auto resetScroll = isHidden() || (normalized != _filter);
+	if (!_rowsDirty && normalized == _filter) {
+		return resetScroll;
+	}
+	_rowsDirty = false;
 	_filter = normalized;
 
 	_session->local().readRecentHashtagsAndBots();
@@ -408,23 +447,23 @@ void HashtagAutocomplete::updateFiltered(const QString &filter) {
 				|| !match.startsWith(_filter, Qt::CaseInsensitive))) {
 			continue;
 		}
-		rows.push_back({ tag, int(item.second) });
+		rows.push_back({
+			tag,
+			history ? _session->local().recentSearchHashtagCount(tag) : 0,
+		});
 		if (int(rows.size()) >= limit) {
 			break;
 		}
 	}
 	if (!resetScroll && rows == _rows) {
-		return;
+		return false;
 	}
 	const auto selected = (_selected >= 0 && _selected < int(_rows.size()))
 		? _rows[_selected].tag
 		: QString();
 	_rows = std::move(rows);
 	if (resetScroll) {
-		_mouseSelection = false;
-		_lastMousePosition = QCursor::pos();
-		setSelected(history || _rows.empty() ? -1 : 0);
-		_scroll->scrollToY(0);
+		setSelected(-1);
 	} else {
 		const auto i = ranges::find(_rows, selected, &Row::tag);
 		setSelected(i == end(_rows) ? -1 : int(i - begin(_rows)));
@@ -432,15 +471,17 @@ void HashtagAutocomplete::updateFiltered(const QString &filter) {
 	if (_inner) {
 		_inner->update();
 	}
+	return resetScroll;
 }
 
 void HashtagAutocomplete::updateListGeometry() {
-	const auto titleHeight = _title ? st::searchedBarHeight : 0;
-	const auto maxHeight = (_source == Source::SearchHistory)
-		? titleHeight + kSearchHistoryVisibleRows * st::mentionHeight
-		: int(4.5 * st::mentionHeight);
-	const auto fullHeight = titleHeight
-		+ int(_rows.size()) * st::mentionHeight;
+	const auto headerHeight = (_title ? st::searchedBarHeight : 0)
+		+ 2 * st::lineWidth;
+	const auto listHeight = (_source == Source::SearchHistory)
+		? kSearchHistoryVisibleRows * st::mentionHeight
+		: std::min(
+			int(_rows.size()) * st::mentionHeight,
+			FieldAutocomplete::MaxHeight());
 	const auto width = _target.width();
 	if (_inner) {
 		_inner->resize(width, int(_rows.size()) * st::mentionHeight);
@@ -449,13 +490,17 @@ void HashtagAutocomplete::updateListGeometry() {
 		_target.x(),
 		_target.y(),
 		width,
-		std::min({ _target.height(), fullHeight, maxHeight }));
+		std::min(_target.height(), headerHeight + listHeight));
 }
 
 void HashtagAutocomplete::hideFast() {
 	if (!isHidden()) {
 		hide();
 	}
+	setSelected(-1);
+	_mouseSelection = false;
+	_scroll->scrollToY(0);
+	_inner->clearPressed();
 }
 
 void HashtagAutocomplete::setSelected(int index) {
@@ -464,6 +509,20 @@ void HashtagAutocomplete::setSelected(int index) {
 		if (_inner) {
 			_inner->update();
 		}
+	}
+}
+
+bool HashtagAutocomplete::selectedVisible() const {
+	const auto top = _selected * st::mentionHeight;
+	return _selected >= 0
+		&& _selected < int(_rows.size())
+		&& top < _scroll->scrollTop() + _scroll->height()
+		&& top + st::mentionHeight > _scroll->scrollTop();
+}
+
+void HashtagAutocomplete::clearInvisibleSelection() {
+	if (!selectedVisible()) {
+		setSelected(-1);
 	}
 }
 
@@ -488,8 +547,7 @@ void HashtagAutocomplete::moveSelection(int delta) {
 }
 
 bool HashtagAutocomplete::chooseSelected() {
-	if (_selected < 0 || _selected >= int(_rows.size())
-		|| computeQuery().isEmpty()) {
+	if (!selectedVisible() || computeQuery().isEmpty()) {
 		return false;
 	}
 	const auto tag = _rows[_selected].tag;

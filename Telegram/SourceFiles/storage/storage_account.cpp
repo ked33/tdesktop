@@ -45,6 +45,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "webview/webview_interface.h"
 #include "window/themes/window_theme.h"
 
+#include <limits>
+
 namespace Storage {
 namespace {
 
@@ -54,6 +56,7 @@ using Database = Cache::Database;
 constexpr auto kDelayedWriteTimeout = crl::time(1000);
 constexpr auto kWriteSearchSuggestionsDelay = 5 * crl::time(1000);
 constexpr auto kMaxSavedPlaybackPositions = 256;
+constexpr auto kSearchHashtagCountsVersion = quint32(1);
 
 constexpr auto kStickersVersionTag = quint32(-1);
 constexpr auto kStickersSerializeVersion = 4;
@@ -2834,6 +2837,16 @@ void Account::writeRecentHashtagsAndBots() {
 	if (write.isEmpty() && search.isEmpty() && bots.empty()) {
 		readRecentHashtagsAndBots();
 	}
+	auto counts = base::flat_map<QString, quint64>();
+	for (const auto &[tag, weight] : search) {
+		if (!tag.isEmpty()) {
+			const auto i = _recentSearchHashtagCounts.find(tag);
+			counts.emplace(tag, (i != end(_recentSearchHashtagCounts))
+				? i->second
+				: quint64(weight));
+		}
+	}
+	_recentSearchHashtagCounts = std::move(counts);
 	if (write.isEmpty() && search.isEmpty() && bots.empty()) {
 		if (_recentHashtagsAndBotsKey) {
 			ClearKey(_recentHashtagsAndBotsKey, _basePath);
@@ -2846,7 +2859,13 @@ void Account::writeRecentHashtagsAndBots() {
 		_recentHashtagsAndBotsKey = GenerateKey(_basePath);
 		writeMapQueued();
 	}
-	quint32 size = sizeof(quint32) * 3, writeCnt = 0, searchCnt = 0, botsCnt = bots.size();
+	auto size = quint32(sizeof(quint32) * 5);
+	auto writeCnt = quint32();
+	auto searchCnt = quint32();
+	const auto botsCnt = quint32(bots.size());
+	for (const auto &[tag, count] : _recentSearchHashtagCounts) {
+		size += Serialize::stringSize(tag) + sizeof(quint64);
+	}
 	for (auto i = write.cbegin(), e = write.cend(); i != e; ++i) {
 		if (!i->first.isEmpty()) {
 			size += Serialize::stringSize(i->first) + sizeof(quint16);
@@ -2874,6 +2893,11 @@ void Account::writeRecentHashtagsAndBots() {
 	data.stream << quint32(botsCnt);
 	for (auto i = bots.cbegin(), e = bots.cend(); i != e; ++i) {
 		Serialize::writePeer(data.stream, *i);
+	}
+	data.stream << kSearchHashtagCountsVersion
+		<< quint32(_recentSearchHashtagCounts.size());
+	for (const auto &[tag, count] : _recentSearchHashtagCounts) {
+		data.stream << tag << count;
 	}
 	FileWriteDescriptor file(_recentHashtagsAndBotsKey, _basePath);
 	file.writeEncrypted(data, _localKey);
@@ -2925,6 +2949,10 @@ void Account::readRecentHashtagsAndBots() {
 	}
 	cSetRecentWriteHashtags(write);
 	cSetRecentSearchHashtags(search);
+	_recentSearchHashtagCounts.clear();
+	for (const auto &[tag, weight] : search) {
+		_recentSearchHashtagCounts.emplace(tag, quint64(weight));
+	}
 
 	if (!hashtags.stream.atEnd()) {
 		hashtags.stream >> botsCount;
@@ -2950,12 +2978,49 @@ void Account::readRecentHashtagsAndBots() {
 		}
 		_owner->session().recentInlineBots().applyLocal(std::move(bots));
 	}
+	if (!hashtags.stream.atEnd()) {
+		readRecentSearchHashtagCounts(hashtags.stream);
+	}
+}
+
+void Account::readRecentSearchHashtagCounts(QDataStream &stream) {
+	auto version = quint32();
+	auto size = quint32();
+	stream >> version >> size;
+	if (stream.status() != QDataStream::Ok
+		|| version != kSearchHashtagCountsVersion
+		|| size > quint32(cRecentSearchHashtags().size())) {
+		return;
+	}
+	auto counts = base::flat_map<QString, quint64>();
+	for (auto i = quint32(); i != size; ++i) {
+		auto tag = QString();
+		auto count = quint64();
+		stream >> tag >> count;
+		if (stream.status() != QDataStream::Ok) {
+			return;
+		}
+		counts.emplace(std::move(tag), count);
+	}
+	for (auto &[tag, count] : _recentSearchHashtagCounts) {
+		const auto i = counts.find(tag);
+		if (i != end(counts)) {
+			count = i->second;
+		}
+	}
+}
+
+quint64 Account::recentSearchHashtagCount(const QString &tag) {
+	readRecentHashtagsAndBots();
+	const auto i = _recentSearchHashtagCounts.find(tag);
+	return (i != end(_recentSearchHashtagCounts)) ? i->second : 0;
 }
 
 std::optional<RecentHashtagPack> Account::saveRecentHashtags(
 		Fn<RecentHashtagPack()> getPack,
 		const QString &text,
-		int limit) {
+		int limit,
+		Fn<void(const QString &)> record) {
 	auto found = false;
 	auto m = QRegularExpressionMatch();
 	auto recent = getPack();
@@ -2983,6 +3048,9 @@ std::optional<RecentHashtagPack> Account::saveRecentHashtags(
 			recent = getPack();
 		}
 		found = true;
+		if (record) {
+			record(tag);
+		}
 		Local::incrementRecentHashtag(recent, tag, limit);
 	}
 	return found ? base::make_optional(recent) : std::nullopt;
@@ -3015,10 +3083,20 @@ void Account::applyRecentWriteHashtagLimit(int limit) {
 }
 
 void Account::saveRecentSearchHashtags(const QString &text) {
+	readRecentHashtagsAndBots();
+	auto counted = base::flat_set<QString>();
 	const auto result = saveRecentHashtags(
 		[] { return cRecentSearchHashtags(); },
 		text,
-		64);
+		64,
+		[&](const QString &tag) {
+			if (counted.emplace(tag).second) {
+				auto &count = _recentSearchHashtagCounts[tag];
+				if (count != std::numeric_limits<quint64>::max()) {
+					++count;
+				}
+			}
+		});
 	if (result) {
 		cSetRecentSearchHashtags(*result);
 		writeRecentHashtagsAndBots();
