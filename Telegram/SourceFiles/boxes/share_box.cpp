@@ -2164,6 +2164,12 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 			no_quote ? tr::lng_selected_copy_to_tooltip(tr::now)
 				: tr::lng_selected_forward_to_tooltip(tr::now), int(msgIds.size()));
 		progress->skip(int(msgIds.size() - existingIds.size()), u"Unavailable messages"_q);
+		const auto sourceLinks = no_quote
+			? std::make_shared<Api::SourceLinkTracker>(
+				&history->session(),
+				items,
+				progress)
+			: nullptr;
 
 		using Flag = MTPmessages_ForwardMessages::Flag;
 		using Flags = MTPmessages_ForwardMessages::Flags;
@@ -2280,6 +2286,9 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 		const auto pipeline = progress->add(tr::lng_selected_action_preparing(tr::now), 0);
 		const auto finishUi = [=] {
 			pipeline->done();
+			if (sourceLinks) {
+				sourceLinks->finish();
+			}
 			progress->finish();
 			if (show->valid()) {
 				show->hideLayer();
@@ -2300,6 +2309,10 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 				.arg(job.fromPeer->id.value).arg(job.peer->id.value).arg(loggedIds.join(',')));
 			const auto requestKey = ++state->nextRequestKey;
 			state->requests.insert(requestKey);
+			auto randoms = QVector<MTPlong>(job.msgCount);
+			for (auto &value : randoms) {
+				value = base::RandomValue<MTPlong>();
+			}
 			auto buildMessage = [=](
 					not_null<History*> history,
 					FullReplyTo replyTo)
@@ -2315,10 +2328,6 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 					flags |= Flag::f_top_msg_id;
 				} else {
 					flags &= ~Flag::f_top_msg_id;
-				}
-				auto randoms = QVector<MTPlong>(job.msgCount);
-				for (auto &value : randoms) {
-					value = base::RandomValue<MTPlong>();
 				}
 				return MTPmessages_ForwardMessages(
 					MTP_flags(flags),
@@ -2348,16 +2357,10 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 				uint64(0),
 				std::move(buildMessage),
 				[=](const MTPUpdates &updates, const MTP::Response &) {
-					if (no_quote) {
-						auto destIds = MessageIdsList();
-						Api::CollectNewMessageIds(
-							updates,
-							job.peer->id,
-							destIds);
-						Api::AppendSourceLinksToCopiedMessages(
-							&history->session(),
-							history->owner().idsToItems(job.sourceIds),
-							destIds, progress);
+					if (sourceLinks) {
+						auto action = Api::SendAction(job.threadHistory, options);
+						action.replyTo.topicRootId = job.topicRootId;
+						sourceLinks->add(action, job.sourceIds, randoms, updates);
 					}
 					if (showRecentForwardsToSelf) {
 						ApiWrap::ProcessRecentSelfForwards(

@@ -3685,7 +3685,6 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 	const auto ids = msgIds;
 	struct State {
 		FnMut<void()> submitCallback;
-		MessageIdsList sentSourceIds;
 		int requestsLeft = 0;
 		int sentMedia = 0;
 		int mergedCount = 0;
@@ -3756,6 +3755,10 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 			const auto show = navigation->parentController()->uiShow();
 			const auto progress = Api::SelectedAction::Start(session, show,
 				tr::lng_selected_merge_forward(tr::now), int(ids.size()));
+			const auto sourceLinks = std::make_shared<Api::SourceLinkTracker>(
+				session,
+				items,
+				progress);
 			for (const auto &thread : result) {
 				if (!comment.text.isEmpty()) {
 					auto message = Api::MessageToSend(
@@ -3770,13 +3773,6 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 				action.progress = progress;
 				const auto finish = [=](Api::MergeAlbumResult sendResult) {
 					state->sentMedia += sendResult.sentMedia;
-					if (sendResult.error.isEmpty()
-						&& !sendResult.sentSourceIds.empty()) {
-						state->sentSourceIds.insert(
-							state->sentSourceIds.end(),
-							sendResult.sentSourceIds.begin(),
-							sendResult.sentSourceIds.end());
-					}
 					if (const auto merged = int(sendResult.sentSourceIds.size())) {
 						state->mergedCount = merged;
 					} else if (sendResult.sentMedia > state->mergedCount) {
@@ -3789,20 +3785,14 @@ QPointer<Ui::BoxContent> ShowMergeAlbumMessagesBox(
 					if (--state->requestsLeft) {
 						return;
 					}
-					progress->afterRequests([=] {
-						if (!progress->failed()) {
-							Api::CleanupMergedSources(session, state->sentSourceIds, progress);
-						} else {
-							progress->skip(int(state->sentSourceIds.size()), u"Sources retained after failure"_q);
-						}
-					});
+					sourceLinks->finish();
 					progress->finish();
 				};
 				Api::SendMergedAlbums(
 					action,
 					items,
 					finish,
-					true);
+					sourceLinks);
 			}
 			if (show->valid()) {
 				show->hideLayer();

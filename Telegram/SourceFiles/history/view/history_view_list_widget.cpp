@@ -7171,11 +7171,16 @@ void ConfirmForwardSelectedToSavedMessagesItems(not_null<ListWidget*> widget) {
 	if (resolved.items.empty()) {
 		progress->skip(int(itemsList.size()), u"No available messages"_q);
 	} else {
+		const auto sourceLinks = std::make_shared<Api::SourceLinkTracker>(
+			session,
+			resolved.items,
+			progress);
+		sourceLinks->finish();
 		api->forwardMessages(std::move(resolved), action, [=] {
 			if (const auto strong = weak.get()) {
 				strong->cancelSelection();
 			}
-		});
+		}, sourceLinks);
 	}
 	progress->finish();
 }

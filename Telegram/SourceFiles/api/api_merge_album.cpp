@@ -943,14 +943,15 @@ void SendTextWithEntities(
 		return;
 	}
 	action.clearDraft = false;
-	auto message = MessageToSend(action);
-	message.textWithTags = {
-		text.text,
-		TextUtilities::ConvertEntitiesToTextTags(text.entities),
-	};
-	message.webPage.removed = true;
-	message.action.clearDraft = false;
-	action.history->session().api().sendMessage(std::move(message));
+	for (const auto &chunk : SplitTextChunks(text, kMergeMessageTextLimit)) {
+		auto message = MessageToSend(action);
+		message.textWithTags = {
+			chunk.text,
+			TextUtilities::ConvertEntitiesToTextTags(chunk.entities),
+		};
+		message.webPage.removed = true;
+		action.history->session().api().sendMessage(std::move(message));
+	}
 }
 
 void SendMergeGroup(
@@ -958,6 +959,8 @@ void SendMergeGroup(
 		std::vector<MergeAlbumMedia> items,
 		TextWithEntities caption,
 		QString details,
+		MessageIdsList sources,
+		std::shared_ptr<SourceLinkTracker> sourceLinks,
 		Fn<void(QString)> done) {
 	Expects(!items.empty());
 
@@ -1104,7 +1107,14 @@ void SendMergeGroup(
 	const auto performRequest = [=](const auto &repeatRequest, bool refreshed)
 			-> void {
 		const auto sendAs = action.options.sendAs;
-		const auto finishOk = [=] {
+		const auto finishOk = [=](const MTPUpdates &updates) {
+			if (sourceLinks) {
+				auto randomIds = QVector<MTPlong>();
+				for (const auto &request : requests) {
+					randomIds.push_back(MTP_long(request.randomId));
+				}
+				sourceLinks->add(action, sources, randomIds, updates, true);
+			}
 			if (fallback->attempted) {
 				LOG(("MergeAlbum: fallback merged dest=%1 count=%2 cleanup=%3")
 					.arg(peer->id.value).arg(requests.size())
@@ -1279,7 +1289,7 @@ void SendMergeGroup(
 					MTP_long(batchStarsPaid),
 					SuggestToMTP(action.options.suggest)
 				), [=](const MTPUpdates &result, const MTP::Response &response) {
-					finishOk();
+					finishOk(result);
 				}, retryOrFail, tracked, false);
 			return;
 		}
@@ -1334,7 +1344,7 @@ void SendMergeGroup(
 				MTP_long(action.options.effectId),
 				MTP_long(batchStarsPaid)
 			), [=](const MTPUpdates &result, const MTP::Response &response) {
-				finishOk();
+				finishOk(result);
 			}, retryOrFail, tracked, false);
 	};
 	performRequest(performRequest, false);
@@ -1482,18 +1492,9 @@ QString SourceMessageLink(not_null<HistoryItem*> item) {
 	return QString();
 }
 
-TextWithEntities SourceLinkFooter(
-		const std::vector<not_null<HistoryItem*>> &items) {
-	auto links = std::vector<QString>();
-	auto seen = base::flat_set<QString>();
-	for (const auto &item : items) {
-		const auto link = SourceMessageLink(item);
-		if (link.isEmpty() || seen.contains(link)) {
-			continue;
-		}
-		seen.emplace(link);
-		links.push_back(link);
-	}
+namespace {
+
+TextWithEntities SourceLinkFooter(const std::vector<QString> &links) {
 	auto result = TextWithEntities();
 	if (links.empty()) {
 		return result;
@@ -1512,8 +1513,7 @@ TextWithEntities SourceLinkFooter(
 
 TextWithEntities AppendSourceLinkFooter(
 		TextWithEntities content,
-		const std::vector<not_null<HistoryItem*>> &items) {
-	auto footer = SourceLinkFooter(items);
+		TextWithEntities footer) {
 	if (footer.empty()) {
 		return content;
 	}
@@ -1526,11 +1526,13 @@ TextWithEntities AppendSourceLinkFooter(
 	return content.append(std::move(footer));
 }
 
+} // namespace
+
 void SendMergedAlbums(
 		SendAction action,
 		const std::vector<not_null<HistoryItem*>> &items,
 		Fn<void(MergeAlbumResult)> done,
-		bool appendSourceLinks) {
+		std::shared_ptr<SourceLinkTracker> sourceLinks) {
 	action.clearDraft = false;
 	const auto session = &action.history->session();
 	const auto captionLimit = session->serverConfig().captionLengthMax;
@@ -1586,7 +1588,7 @@ void SendMergedAlbums(
 		MergeAlbumResult result;
 		int index = 0;
 		Fn<void(MergeAlbumResult)> done;
-		bool appendSourceLinks = false;
+		std::shared_ptr<SourceLinkTracker> sourceLinks;
 	};
 	const auto state = std::make_shared<State>(State{
 		.action = action,
@@ -1598,7 +1600,7 @@ void SendMergedAlbums(
 		.result = std::move(result),
 		.index = 0,
 		.done = std::move(done),
-		.appendSourceLinks = appendSourceLinks,
+		.sourceLinks = std::move(sourceLinks),
 	});
 	auto uniqueSources = base::flat_set<PeerId>();
 	for (const auto &item : state->media) {
@@ -1660,28 +1662,7 @@ void SendMergedAlbums(
 		const auto merged = SummarizeMergeCaptions(captions);
 		auto caption = merged;
 		auto overflowText = TextWithEntities();
-		auto overflowFooter = TextWithEntities();
-		if (state->appendSourceLinks) {
-			auto sourceItems = std::vector<not_null<HistoryItem*>>();
-			sourceItems.reserve(sentIds.size());
-			for (const auto &id : sentIds) {
-				if (const auto item = session->data().message(id)) {
-					sourceItems.push_back(item);
-				}
-			}
-			const auto withFooter = AppendSourceLinkFooter(
-				caption,
-				sourceItems);
-			if (withFooter.text.size() <= captionLimit) {
-				caption = withFooter;
-			} else if (merged.text.size() <= captionLimit) {
-				overflowFooter = SourceLinkFooter(sourceItems);
-			} else {
-				caption = {};
-				overflowText = merged;
-				overflowFooter = SourceLinkFooter(sourceItems);
-			}
-		} else if (merged.text.size() > captionLimit) {
+		if (merged.text.size() > captionLimit) {
 			caption = {};
 			overflowText = merged;
 		}
@@ -1698,6 +1679,8 @@ void SendMergedAlbums(
 				QString::number(groupIndex + 1),
 				lt_total,
 				QString::number(state->groups.size())),
+			sentIds,
+			state->sourceLinks,
 			[=](QString error) {
 			if (!error.isEmpty()) {
 				LOG(("MergeAlbum: group fail dest=%1 index=%2/%3 error=%4"
@@ -1720,35 +1703,23 @@ void SendMergedAlbums(
 			if (!overflowText.empty()) {
 				SendTextChunks(state->action, overflowText);
 			}
-			if (!overflowFooter.empty()) {
-				SendTextWithEntities(state->action, overflowFooter);
-			}
 			self(self);
 		});
 	};
 	sendNext(sendNext);
 }
 
-void CollectNewMessageIds(
-		const MTPUpdates &updates,
-		PeerId dest,
-		MessageIdsList &out) {
-	const auto takeMessage = [&](const MTPMessage &message) {
-		if (PeerFromMessage(message) != dest) {
-			return;
-		}
-		const auto id = IdFromMessage(message);
-		if (id) {
-			out.push_back({ dest, id });
-		}
-	};
+namespace {
+
+MessageIdsList SentMessageIds(
+		const SendAction &action,
+		const QVector<MTPlong> &randomIds,
+		const MTPUpdates &updates) {
+	auto mapped = base::flat_map<uint64, MsgId>();
 	const auto takeUpdate = [&](const MTPUpdate &update) {
-		update.match([&](const MTPDupdateNewMessage &data) {
-			takeMessage(data.vmessage());
-		}, [&](const MTPDupdateNewChannelMessage &data) {
-			takeMessage(data.vmessage());
-		}, [](const auto &) {
-		});
+		update.match([&](const MTPDupdateMessageID &data) {
+			mapped.emplace(uint64(data.vrandom_id().v), MsgId(data.vid().v));
+		}, [](const auto &) {});
 	};
 	updates.match([&](const MTPDupdates &data) {
 		for (const auto &update : data.vupdates().v) {
@@ -1758,66 +1729,178 @@ void CollectNewMessageIds(
 		for (const auto &update : data.vupdates().v) {
 			takeUpdate(update);
 		}
-	}, [](const auto &) {
-	});
+	}, [&](const MTPDupdateShort &data) {
+		takeUpdate(data.vupdate());
+	}, [&](const MTPDupdateShortSentMessage &data) {
+		if (randomIds.size() == 1) {
+			mapped.emplace(uint64(randomIds.front().v), MsgId(data.vid().v));
+		}
+	}, [](const auto &) {});
+	const auto session = &action.history->session();
+	const auto peer = action.history->peer->id;
+	auto result = MessageIdsList();
+	result.reserve(randomIds.size());
+	for (const auto &randomId : randomIds) {
+		const auto i = mapped.find(uint64(randomId.v));
+		auto item = static_cast<HistoryItem*>(nullptr);
+		if (i != end(mapped)) {
+			auto id = i->second;
+			if (action.options.shortcutId) {
+				id = session->data().shortcutMessages().localMessageId(id);
+			} else if (action.options.scheduled) {
+				const auto &scheduled = session->scheduledMessages();
+				item = scheduled.lookupItem(peer, scheduled.localMessageId(id));
+			}
+			if (!action.options.scheduled) {
+				item = session->data().message(FullMsgId(peer, id));
+			}
+		}
+		result.push_back(item ? item->fullId() : FullMsgId());
+	}
+	return result;
 }
 
-void AppendSourceLinksToCopiedMessages(
-		not_null<Main::Session*> session,
-		const std::vector<not_null<HistoryItem*>> &sources,
-		const MessageIdsList &destIds,
-		std::shared_ptr<SelectedAction> progress) {
-	const auto n = std::min(int(sources.size()), int(destIds.size()));
-	if (n <= 0) {
-		if (progress && !sources.empty()) {
-			const auto missing = progress->add(tr::lng_selected_action_links(tr::now), 1);
-			missing->fail(u"Destination messages missing from server response"_q);
+} // namespace
+
+SourceLinkTracker::SourceLinkTracker(
+	not_null<Main::Session*> session,
+	const std::vector<not_null<HistoryItem*>> &sources,
+	std::shared_ptr<SelectedAction> progress)
+: _session(session)
+, _progress(std::move(progress)) {
+	Expects(_progress != nullptr);
+	for (const auto &item : sources) {
+		_sources.emplace(item->fullId(), SourceMessageLink(item));
+	}
+}
+
+void SourceLinkTracker::add(
+		SendAction action,
+		const MessageIdsList &sources,
+		const QVector<MTPlong> &randomIds,
+		const MTPUpdates &updates,
+		bool merged) {
+	const auto destIds = SentMessageIds(action, randomIds, updates);
+	const auto complete = !destIds.empty()
+		&& (merged || sources.size() == destIds.size())
+		&& ranges::all_of(destIds, [](const FullMsgId &id) {
+			return bool(id.msg);
+		});
+	if (!complete) {
+		const auto failed = _progress->add(
+			tr::lng_selected_action_links(tr::now), 1);
+		if (failed) {
+			failed->fail(u"Destination messages missing from server response"_q);
+		}
+	}
+	if (merged) {
+		for (const auto &id : destIds) {
+			if (id.msg) {
+				_targets.push_back({ action, id, sources });
+				for (const auto &source : sources) {
+					_copied.emplace(source);
+				}
+				break;
+			}
 		}
 		return;
 	}
+	const auto n = std::min(int(sources.size()), int(destIds.size()));
 	for (auto i = 0; i < n;) {
-		const auto dest = session->data().message(destIds[i]);
+		const auto dest = _session->data().message(destIds[i]);
 		if (!dest) {
 			++i;
 			continue;
 		}
-		auto groupSources = std::vector<not_null<HistoryItem*>>();
-		groupSources.push_back(sources[i]);
+		auto target = Target{ action, destIds[i], { sources[i] } };
 		auto till = i + 1;
-		const auto groupId = dest->groupId();
-		if (groupId) {
+		if (const auto groupId = dest->groupId()) {
 			while (till < n) {
-				const auto next = session->data().message(destIds[till]);
+				const auto next = _session->data().message(destIds[till]);
 				if (!next || next->groupId() != groupId) {
 					break;
 				}
-				groupSources.push_back(sources[till]);
-				++till;
+				target.sources.push_back(sources[till++]);
 			}
 		}
-		const auto footer = SourceLinkFooter(groupSources);
+		for (const auto &source : target.sources) {
+			_copied.emplace(source);
+		}
+		_targets.push_back(std::move(target));
+		i = till;
+	}
+}
+
+void SourceLinkTracker::finish(bool deleteSources) {
+	const auto self = shared_from_this();
+	_progress->afterRequests([=] {
+		if (!deleteSources || _progress->failed()) {
+			_progress->skip(int(_copied.size()), u"Sources retained after incomplete send"_q);
+			self->appendRetainedLinks();
+			return;
+		}
+		CleanupMergedSources(
+			_session,
+			MessageIdsList(begin(_copied), end(_copied)),
+			_progress,
+			[self](const MessageIdsList &ids) {
+				for (const auto &id : ids) {
+					self->_deleted.emplace(id);
+				}
+			});
+		_progress->afterRequests([self] {
+			self->appendRetainedLinks();
+		});
+	});
+}
+
+void SourceLinkTracker::appendRetainedLinks() {
+	for (const auto &target : _targets) {
+		auto urls = std::vector<QString>();
+		auto seen = base::flat_set<QString>();
+		for (const auto &source : target.sources) {
+			const auto i = _sources.find(source);
+			if (_deleted.contains(source)
+				|| i == end(_sources)
+				|| i->second.isEmpty()
+				|| !seen.emplace(i->second).second) {
+				continue;
+			}
+			urls.push_back(i->second);
+		}
+		const auto footer = SourceLinkFooter(urls);
 		if (footer.empty()) {
-			i = till;
 			continue;
 		}
-		const auto combined = AppendSourceLinkFooter(
-			dest->originalText(),
-			groupSources);
+		const auto dest = _session->data().message(target.message);
+		const auto tracked = TrackSelectedAction(
+			_progress,
+			tr::lng_selected_action_links(tr::now),
+			1,
+			SelectedActionPeer(target.action.history->peer));
+		if (!dest) {
+			if (tracked) {
+				tracked->fail(u"Destination message no longer available"_q);
+			}
+			continue;
+		}
+		const auto combined = AppendSourceLinkFooter(dest->originalText(), footer);
 		const auto media = dest->media();
-		const auto captionLimit = session->serverConfig().captionLengthMax;
+		const auto captionLimit = _session->serverConfig().captionLengthMax;
 		const auto now = base::unixtime::now();
 		const auto canEdit = dest->allowsEdit(now);
 		const auto captionable = media && media->allowsEditCaption();
 		const auto textEditable = !media || media->webpage();
-		const auto history = dest->history();
-		auto action = SendAction(history);
-		action.progress = progress;
-		const auto tracked = TrackSelectedAction(progress,
-			tr::lng_selected_action_links(tr::now), 1, SelectedActionPeer(history->peer));
+		auto action = target.action;
+		action.progress = _progress;
+		if (dest->isRegular()) {
+			action.replyTo.messageId = target.message;
+		}
+		action.replyTo.topicRootId = dest->topicRootId();
 		if (tracked) {
 			tracked->start();
 		}
-		auto options = SendOptions();
+		auto options = action.options;
 		options.invertCaption = dest->invertMedia();
 		if (canEdit
 			&& captionable
@@ -1833,7 +1916,7 @@ void AppendSourceLinksToCopiedMessages(
 				SendTextWithEntities(action, footer);
 			});
 			if (tracked) {
-				tracked->observe(session, requestId);
+				tracked->observe(_session, requestId);
 			}
 		} else if (canEdit
 			&& textEditable
@@ -1856,7 +1939,7 @@ void AppendSourceLinksToCopiedMessages(
 				},
 				false);
 			if (tracked) {
-				tracked->observe(session, requestId);
+				tracked->observe(_session, requestId);
 			}
 		} else {
 			SendTextWithEntities(action, footer);
@@ -1864,7 +1947,6 @@ void AppendSourceLinksToCopiedMessages(
 				tracked->done();
 			}
 		}
-		i = till;
 	}
 }
 
@@ -2100,43 +2182,55 @@ void CopyMergeGroup(
 
 } // namespace
 
-MergeAlbumCleanup CleanupMergedSources(
+void CleanupMergedSources(
 		not_null<Main::Session*> session,
 		const MessageIdsList &ids,
-		std::shared_ptr<SelectedAction> progress) {
-	auto result = MergeAlbumCleanup();
-	auto deleteIds = MessageIdsList();
+		std::shared_ptr<SelectedAction> progress,
+		Fn<void(const MessageIdsList &)> deleted) {
+	auto byHistory = base::flat_map<not_null<History*>, QVector<MTPint>>();
 	auto seen = base::flat_set<FullMsgId>();
-	auto duplicate = 0;
+	auto kept = 0;
+	const auto now = base::unixtime::now();
 	for (const auto &id : ids) {
 		if (!seen.emplace(id).second) {
-			++duplicate;
 			continue;
 		}
 		const auto item = session->data().message(id);
-		if (!item) {
+		if (!item
+			|| !item->isRegular()
+			|| !item->canDelete()
+			|| (!item->history()->peer->isChannel()
+				&& !item->history()->peer->isSelf()
+				&& !item->canDeleteForEveryone(now))) {
+			++kept;
 			continue;
-		} else if (item->canDelete()) {
-			deleteIds.push_back(id);
-		} else {
-			++result.kept;
 		}
+		byHistory[item->history()].push_back(MTP_int(item->id));
 	}
-	LOG(("MergeAlbum: cleanup requested=%1 unique=%2 duplicate=%3 delete=%4 kept=%5"
-	).arg(int(ids.size())
-	).arg(int(seen.size())
-	).arg(duplicate
-	).arg(int(deleteIds.size())
-	).arg(result.kept));
-	if (!deleteIds.empty()) {
-		session->data().histories().deleteMessages(deleteIds, true, progress);
-		session->data().sendHistoryChangeNotifications();
+	for (const auto &[history, messageIds] : byHistory) {
+		const auto peer = history->peer->id;
+		session->data().histories().deleteMessages(
+			history,
+			messageIds,
+			true,
+			progress,
+			QString(),
+			[=](const QVector<MTPint> &confirmed) {
+				auto ids = MessageIdsList();
+				ids.reserve(confirmed.size());
+				for (const auto &id : confirmed) {
+					ids.emplace_back(peer, MsgId(id.v));
+				}
+				session->data().processMessagesDeleted(peer, confirmed);
+				session->data().sendHistoryChangeNotifications();
+				if (deleted) {
+					deleted(ids);
+				}
+			});
 	}
 	if (progress) {
-		progress->keepSources(result.kept);
+		progress->keepSources(kept);
 	}
-	result.deleted = int(deleteIds.size());
-	return result;
 }
 
 } // namespace Api

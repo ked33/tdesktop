@@ -8,7 +8,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "api/api_common.h"
+#include "base/flat_map.h"
+#include "base/flat_set.h"
 #include "data/data_types.h"
+
+#include <memory>
 
 class HistoryItem;
 
@@ -41,9 +45,36 @@ struct MergeAlbumResult {
 	MessageIdsList sentSourceIds;
 };
 
-struct MergeAlbumCleanup {
-	int deleted = 0;
-	int kept = 0;
+class SourceLinkTracker final
+	: public std::enable_shared_from_this<SourceLinkTracker> {
+public:
+	SourceLinkTracker(
+		not_null<Main::Session*> session,
+		const std::vector<not_null<HistoryItem*>> &sources,
+		std::shared_ptr<SelectedAction> progress);
+	void add(
+		SendAction action,
+		const MessageIdsList &sources,
+		const QVector<MTPlong> &randomIds,
+		const MTPUpdates &updates,
+		bool merged = false);
+	void finish(bool deleteSources = true);
+
+private:
+	struct Target {
+		SendAction action;
+		FullMsgId message;
+		MessageIdsList sources;
+	};
+	void appendRetainedLinks();
+
+	const not_null<Main::Session*> _session;
+	const std::shared_ptr<SelectedAction> _progress;
+	base::flat_map<FullMsgId, QString> _sources;
+	base::flat_set<FullMsgId> _copied;
+	base::flat_set<FullMsgId> _deleted;
+	std::vector<Target> _targets;
+
 };
 
 [[nodiscard]] MergeAlbumKind ClassifyMergeAlbumKind(
@@ -61,30 +92,17 @@ struct MergeAlbumCleanup {
 [[nodiscard]] TextWithEntities SummarizeMergeCaptions(
 	const std::vector<TextWithEntities> &captions);
 [[nodiscard]] QString SourceMessageLink(not_null<HistoryItem*> item);
-[[nodiscard]] TextWithEntities SourceLinkFooter(
-	const std::vector<not_null<HistoryItem*>> &items);
-[[nodiscard]] TextWithEntities AppendSourceLinkFooter(
-	TextWithEntities content,
-	const std::vector<not_null<HistoryItem*>> &items);
-void CollectNewMessageIds(
-	const MTPUpdates &updates,
-	PeerId dest,
-	MessageIdsList &out);
-void AppendSourceLinksToCopiedMessages(
-	not_null<Main::Session*> session,
-	const std::vector<not_null<HistoryItem*>> &sources,
-	const MessageIdsList &destIds,
-	std::shared_ptr<SelectedAction> progress = nullptr);
 
 void SendMergedAlbums(
 	SendAction action,
 	const std::vector<not_null<HistoryItem*>> &items,
 	Fn<void(MergeAlbumResult)> done,
-	bool appendSourceLinks = false);
+	std::shared_ptr<SourceLinkTracker> sourceLinks = nullptr);
 
-MergeAlbumCleanup CleanupMergedSources(
+void CleanupMergedSources(
 	not_null<Main::Session*> session,
 	const MessageIdsList &ids,
-	std::shared_ptr<SelectedAction> progress = nullptr);
+	std::shared_ptr<SelectedAction> progress = nullptr,
+	Fn<void(const MessageIdsList &)> deleted = nullptr);
 
 } // namespace Api

@@ -66,6 +66,7 @@ class Show;
 
 namespace Api {
 
+class SourceLinkTracker;
 struct SearchResult;
 struct GlobalMediaResult;
 
@@ -360,7 +361,8 @@ public:
 	void forwardMessages(
 		Data::ResolvedForwardDraft &&draft,
 		SendAction action,
-		FnMut<void()> &&completionCallback = nullptr);
+		FnMut<void()> &&completionCallback = nullptr,
+		std::shared_ptr<Api::SourceLinkTracker> sourceLinks = nullptr);
 	void shareContact(
 		const QString &phone,
 		const QString &firstName,

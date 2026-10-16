@@ -11813,11 +11813,16 @@ void HistoryWidget::forwardSelectedToSavedMessages() {
 	if (resolved.items.empty()) {
 		progress->skip(int(items.size()), u"No available messages"_q);
 	} else {
+		const auto sourceLinks = std::make_shared<Api::SourceLinkTracker>(
+			session,
+			resolved.items,
+			progress);
+		sourceLinks->finish();
 		api->forwardMessages(std::move(resolved), action, [=] {
 			if (const auto strong = weak.get()) {
 				strong->clearSelected();
 			}
-		});
+		}, sourceLinks);
 	}
 	progress->finish();
 }
@@ -11888,22 +11893,18 @@ void HistoryWidget::quickCopySelected() {
 	progress->skip(skipped, u"Unavailable destinations"_q);
 	struct QuickCopyState {
 		int requestsLeft = 0;
-		MessageIdsList deleteIds;
 	};
 	const auto state = std::make_shared<QuickCopyState>();
 	state->requestsLeft = int(sendTargets.size());
 
-	if (!skipped
+	const auto sourceLinks = std::make_shared<Api::SourceLinkTracker>(
+		&session(),
+		resolved.items,
+		progress);
+	sourceLinks->finish(!skipped
 		&& ranges::none_of(resolved.items, [](not_null<HistoryItem*> item) {
 			return item->isSavedMusicItem();
-		})) {
-		state->deleteIds.reserve(resolved.items.size());
-		for (const auto &item : resolved.items) {
-			if (item->canDelete()) {
-				state->deleteIds.push_back(item->fullId());
-			}
-		}
-	}
+		}));
 
 	const auto weak = base::make_weak(this);
 	for (const auto &thread : sendTargets) {
@@ -11919,19 +11920,11 @@ void HistoryWidget::quickCopySelected() {
 			if (--state->requestsLeft) {
 				return;
 			}
-			progress->afterRequests([=] {
-				if (!progress->failed()) {
-					sourceHistory->owner().histories().deleteMessages(
-						state->deleteIds, true, progress);
-				} else {
-					progress->skip(int(state->deleteIds.size()), u"Sources retained after copy failure"_q);
-				}
-			});
 			if (const auto strong = weak.get()) {
 				strong->clearSelected();
 			}
 			progress->finish();
-		});
+		}, sourceLinks);
 	}
 }
 

@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "apiwrap.h"
+#include "api/api_merge_album.h"
 #include "api/api_selected_action.h"
 
 #include "settings.h"
@@ -3951,7 +3952,8 @@ void ApiWrap::finishForwarding(const SendAction &action) {
 void ApiWrap::forwardMessages(
 		Data::ResolvedForwardDraft &&draft,
 		SendAction action,
-		FnMut<void()> &&completionCallback) {
+		FnMut<void()> &&completionCallback,
+		std::shared_ptr<Api::SourceLinkTracker> sourceLinks) {
 	Expects(!draft.items.empty());
 	const auto ownsProgress = !action.progress;
 	if (ownsProgress) {
@@ -4069,12 +4071,14 @@ void ApiWrap::forwardMessages(
 	auto fromEphemeral = false;
 	auto ids = QVector<MTPint>();
 	auto randomIds = QVector<MTPlong>();
+	auto sourceIds = MessageIdsList();
 	auto localIds = std::shared_ptr<base::flat_map<uint64, FullMsgId>>();
 
 	struct ForwardJob {
 		not_null<PeerData*> from;
 		QVector<MTPint> ids;
 		QVector<MTPlong> randomIds;
+		MessageIdsList sourceIds;
 		std::shared_ptr<base::flat_map<uint64, FullMsgId>> localIds;
 		SendFlags flags;
 		int starsPaid = 0;
@@ -4102,12 +4106,14 @@ void ApiWrap::forwardMessages(
 			.from = forwardFrom,
 			.ids = ids,
 			.randomIds = randomIds,
+			.sourceIds = sourceIds,
 			.localIds = localIds,
 			.flags = oneFlags,
 			.starsPaid = starsPaid,
 		});
 		ids.resize(0);
 		randomIds.resize(0);
+		sourceIds.clear();
 		localIds = nullptr;
 	};
 
@@ -4152,6 +4158,7 @@ void ApiWrap::forwardMessages(
 				? MTP_int(_session->ephemeralMessages().lookupId(item))
 				: MTP_int(item->id));
 			randomIds.push_back(MTP_long(randomId));
+			sourceIds.push_back(item->fullId());
 		}
 		enqueueAccumulated();
 	}
@@ -4197,6 +4204,7 @@ void ApiWrap::forwardMessages(
 		const auto starsPaid = job.starsPaid;
 		const auto jobIds = job.ids;
 		const auto jobRandomIds = job.randomIds;
+		const auto jobSourceIds = job.sourceIds;
 		auto buildMessage = [=](
 				not_null<History*> history,
 				FullReplyTo replyTo)
@@ -4243,6 +4251,9 @@ void ApiWrap::forwardMessages(
 			uint64(0),
 			std::move(buildMessage),
 			[=](const MTPUpdates &result, const MTP::Response &) {
+				if (sourceLinks) {
+					sourceLinks->add(action, jobSourceIds, jobRandomIds, result);
+				}
 				if (!scheduled) {
 					_session->api().updates().checkForSentToScheduled(
 						result);

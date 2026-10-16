@@ -829,7 +829,8 @@ void Histories::deleteMessages(
 		const QVector<MTPint> &ids,
 		bool revoke,
 		std::shared_ptr<Api::SelectedAction> progress,
-		QString progressStage) {
+		QString progressStage,
+		Fn<void(const QVector<MTPint> &)> deleted) {
 	const auto stage = progressStage.isEmpty()
 		? tr::lng_selected_action_delete(tr::now)
 		: std::move(progressStage);
@@ -854,6 +855,9 @@ void Histories::deleteMessages(
 		sendRequest(history, RequestType::Delete, [=](Fn<void()> finish) {
 			const auto done = [=](const MTPmessages_AffectedMessages &result) {
 				session().api().applyAffectedMessages(history->peer, result);
+				if (deleted) {
+					deleted(chunk);
+				}
 				if (tracked) {
 					tracked->done();
 				}
