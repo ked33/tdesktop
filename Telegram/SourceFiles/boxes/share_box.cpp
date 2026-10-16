@@ -428,6 +428,7 @@ void ShareBox::prepare() {
 		this,
 		_select->queryField(),
 		_descriptor.session);
+	_hashtagAutocomplete->setTitle(tr::lng_hashtag_suggestions());
 	updateHashtagAutocompleteGeometry();
 
 	setTitle(header);
