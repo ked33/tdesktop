@@ -2826,6 +2826,7 @@ void Account::readSavedGifs() {
 }
 
 void Account::writeRecentHashtagsAndBots() {
+	const auto notify = gsl::finally([&] { _recentHashtagsChanges.fire({}); });
 	const auto &write = cRecentWriteHashtags();
 	const auto &search = cRecentSearchHashtags();
 	const auto &bots = _owner->session().recentInlineBots().list();
@@ -2876,6 +2877,10 @@ void Account::writeRecentHashtagsAndBots() {
 	}
 	FileWriteDescriptor file(_recentHashtagsAndBotsKey, _basePath);
 	file.writeEncrypted(data, _localKey);
+}
+
+rpl::producer<> Account::recentHashtagsChanges() const {
+	return _recentHashtagsChanges.events();
 }
 
 void Account::readRecentHashtagsAndBots() {

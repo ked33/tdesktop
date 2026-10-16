@@ -54,6 +54,8 @@
     "lng_settings_message_sticker_size": "贴纸尺寸（{size}）",
     "lng_settings_message_sticker_size_invalid": "贴纸尺寸必须在 {size} 范围内。",
     "lng_settings_button": "按钮",
+    "lng_hashtag_search_history": "搜索标签记录",
+    "lng_hashtag_suggestions": "标签联想",
     "lng_settings_hashtag_autocomplete_limit": "# 联想数量",
     "lng_settings_hashtag_autocomplete_limit_placeholder": "1–5000（默认 1000）",
     "lng_settings_hashtag_autocomplete_limit_invalid": "请输入 1 至 5000 之间的整数。",

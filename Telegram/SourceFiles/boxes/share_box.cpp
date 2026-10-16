@@ -457,7 +457,6 @@ void ShareBox::prepare() {
 	});
 	_select->setResizedCallback([=] {
 		updateScrollSkips();
-		updateHashtagAutocompleteGeometry();
 	});
 	_select->setSubmittedCallback([=](Qt::KeyboardModifiers modifiers) {
 		if (IsJumpToDialogMode(_descriptor)) {
@@ -561,6 +560,7 @@ int ShareBox::contentHeight() const {
 void ShareBox::updateScrollSkips() {
 	setInnerTopSkip(getTopScrollSkip(), true);
 	setInnerBottomSkip(getBottomScrollSkip());
+	updateHashtagAutocompleteGeometry();
 }
 
 bool ShareBox::searchByUsername(bool searchCache) {
@@ -652,11 +652,12 @@ void ShareBox::setInnerFocus() {
 
 void ShareBox::updateHashtagAutocompleteGeometry() {
 	if (_hashtagAutocomplete) {
+		const auto top = _select->y() + _select->height();
 		_hashtagAutocomplete->setTargetRect(QRect(
 			0,
-			_select->y() + _select->height(),
+			top,
 			width(),
-			0));
+			std::max(height() - top - getBottomScrollSkip(), 0)));
 	}
 }
 

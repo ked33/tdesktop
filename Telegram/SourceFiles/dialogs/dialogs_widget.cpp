@@ -690,10 +690,43 @@ Widget::Widget(
 		return false;
 	});
 
+	_hashtagSearchHistory = object_ptr<ChatHelpers::HashtagAutocomplete>(
+		this,
+		_search.data(),
+		&session(),
+		ChatHelpers::HashtagAutocomplete::Source::SearchHistory);
+	_hashtagSearchHistory->setAllowed(!_searchState.inChat);
+	_hashtagSearchHistory->setTitle(tr::lng_hashtag_search_history());
+	_hashtagSearchHistory->chosen(
+	) | rpl::on_next([=](const QString &tag) {
+		session().local().saveRecentSearchHashtags('#' + tag);
+		_pendingHashtagSearchQuery.clear();
+		auto copy = _searchState;
+		copy.query = validateSearchQuery();
+		applySearchState(std::move(copy));
+	}, lifetime());
+
 	_hashtagAutocomplete = object_ptr<ChatHelpers::HashtagAutocomplete>(
 		this,
 		_search.data(),
 		&session());
+	_hashtagAutocomplete->setTitle(tr::lng_hashtag_suggestions());
+	_hashtagAutocomplete->shownValue(
+	) | rpl::on_next([=](bool shown) {
+		_hashtagSearchHistory->setKeyboardEnabled(!shown);
+	}, lifetime());
+	rpl::combine(
+		_hashtagSearchHistory->shownValue(),
+		_hashtagSearchHistory->heightValue(),
+		_hashtagAutocomplete->shownValue(),
+		_hashtagAutocomplete->heightValue()
+	) | rpl::on_next([=] {
+		crl::on_main(this, [=] {
+			if (_updateScrollGeometryCached) {
+				_updateScrollGeometryCached();
+			}
+		});
+	}, lifetime());
 
 	if (!Core::UpdaterDisabled()) {
 		Core::UpdateChecker checker;
@@ -3399,7 +3432,11 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 		listScrollUpdated();
 	});
 	if (_searchState.tab == ChatSearchTab::PornMessages) {
-		return searchPornMessages(inCache);
+		const auto result = searchPornMessages(inCache);
+		if (result) {
+			savePendingSearchHashtags();
+		}
+		return result;
 	}
 
 	auto result = false;
@@ -3468,6 +3505,7 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 			_migratedProcess.full = false;
 			cancelSearchRequest();
 			searchReceived(fromStartType, i->second, process, true);
+			savePendingSearchHashtags();
 			result = true;
 		}
 	} else if (_searchQuery != query
@@ -3552,6 +3590,7 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 			requestMessages(true);
 		}
 		_inner->searchRequested(true);
+		savePendingSearchHashtags();
 	} else {
 		_inner->searchRequested(false);
 	}
@@ -3586,6 +3625,14 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 		updatePornSearch();
 	}
 	return result;
+}
+
+void Widget::savePendingSearchHashtags() {
+	if (!_pendingHashtagSearchQuery.isEmpty()
+		&& _pendingHashtagSearchQuery == _searchState.query.trimmed()) {
+		session().local().saveRecentSearchHashtags(
+			base::take(_pendingHashtagSearchQuery));
+	}
 }
 
 bool Widget::searchPornMessages(bool inCache) {
@@ -3762,6 +3809,7 @@ void Widget::showMainMenu() {
 }
 
 void Widget::searchMessages(SearchState state) {
+	_pendingHashtagSearchQuery.clear();
 	if (const auto peer = state.inChat.peer()) {
 		if (_openedForum && peer->forum() != _openedForum) {
 			controller()->closeForum();
@@ -4442,6 +4490,9 @@ QString Widget::validateSearchQuery() {
 void Widget::applySearchUpdate() {
 	auto copy = _searchState;
 	copy.query = validateSearchQuery();
+	if (copy.query.trimmed() != _searchState.query.trimmed()) {
+		_pendingHashtagSearchQuery = copy.query.trimmed();
+	}
 	if (Ui::ScreenReaderModeActive() && !copy.query.isEmpty()) {
 		_searchEngaged = true;
 	}
@@ -4614,6 +4665,9 @@ void Widget::closeChildList(anim::type animated) {
 }
 
 bool Widget::applySearchState(SearchState state) {
+	if (state.query.trimmed() != _pendingHashtagSearchQuery) {
+		_pendingHashtagSearchQuery.clear();
+	}
 	if (_searchState == state) {
 		return true;
 	} else if (_childList) {
@@ -4756,6 +4810,9 @@ bool Widget::applySearchState(SearchState state) {
 		? peer->owner().history(migrateFrom).get()
 		: nullptr;
 	_searchState = state;
+	if (_hashtagSearchHistory) {
+		_hashtagSearchHistory->setAllowed(!state.inChat);
+	}
 	updateRecentSearchDraft();
 	if (queryChanged) {
 		cancelSearchRequest();
@@ -5049,13 +5106,6 @@ void Widget::updateControlsGeometry() {
 		filterTop,
 		filterWidth,
 		_search->height());
-	if (_hashtagAutocomplete) {
-		_hashtagAutocomplete->setTargetRect(QRect(
-			0,
-			_searchControls->y() + _search->y() + _search->height(),
-			width(),
-			0));
-	}
 	_searchDialogFilter->moveToLeft(0, 0);
 	_searchChineseKeywords->moveToLeft(_searchDialogFilter->width(), 0);
 
@@ -5192,7 +5242,7 @@ void Widget::updateControlsGeometry() {
 		if (_chatFilters) {
 			_chatFilters->move(0, chatFiltersTop);
 		}
-		const auto scrollTop = chatFiltersTop
+		auto scrollTop = chatFiltersTop
 			+ ((_chatFilters
 				&& _searchState.query.isEmpty()
 				&& !_openedForum
@@ -5200,7 +5250,24 @@ void Widget::updateControlsGeometry() {
 				&& !searchInPeer())
 				? (_chatFilters->height() * (1. - narrowRatio))
 				: 0);
-		const auto scrollHeight = height() - scrollTop - bottomSkip;
+		for (const auto panel : {
+				_hashtagSearchHistory.data(),
+				_hashtagAutocomplete.data() }) {
+			if (!panel) {
+				continue;
+			}
+			panel->setTargetRect(QRect(
+				0,
+				int(scrollTop),
+				scrollWidth,
+				std::max(int(height() - scrollTop - bottomSkip), 0)));
+			if (!panel->isHidden()) {
+				scrollTop += panel->height();
+			}
+		}
+		const auto scrollHeight = std::max(
+			int(height() - scrollTop - bottomSkip),
+			0);
 		const auto wasScrollHeight = _scroll->height();
 		_scroll->setGeometry(0, scrollTop, scrollWidth, scrollHeight);
 		if (_chatsFilterSlideCanvas) {
@@ -5250,7 +5317,8 @@ RowDescriptor Widget::resolveChatPrevious(RowDescriptor from) const {
 }
 
 void Widget::keyPressEvent(QKeyEvent *e) {
-	if (_hashtagAutocomplete->handleKeyPress(e)) {
+	if (_hashtagAutocomplete->handleKeyPress(e)
+		|| _hashtagSearchHistory->handleKeyPress(e)) {
 		return;
 	}
 	if (e->key() == Qt::Key_Escape) {

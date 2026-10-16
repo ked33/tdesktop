@@ -45,6 +45,8 @@
     "lng_settings_message_sticker_size": "Sticker size ({size})",
     "lng_settings_message_sticker_size_invalid": "Sticker size must be within {size}.",
     "lng_settings_button": "Button",
+    "lng_hashtag_search_history": "Search hashtag history",
+    "lng_hashtag_suggestions": "Hashtag suggestions",
     "lng_settings_hashtag_autocomplete_limit": "Hashtag suggestions",
     "lng_settings_hashtag_autocomplete_limit_placeholder": "1–5000 (default: 1000)",
     "lng_settings_hashtag_autocomplete_limit_invalid": "Enter a whole number from 1 to 5000.",

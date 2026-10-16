@@ -14,6 +14,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_drafts.h"
 #include "webview/webview_common.h"
 
+#include <rpl/event_stream.h>
+
 class History;
 
 namespace Core {
@@ -159,6 +161,7 @@ public:
 	void saveRecentSentHashtags(const QString &text);
 	void saveRecentSearchHashtags(const QString &text);
 	void applyRecentWriteHashtagLimit(int limit);
+	[[nodiscard]] rpl::producer<> recentHashtagsChanges() const;
 
 	void writeExportSettings(const Export::Settings &settings);
 	[[nodiscard]] Export::Settings readExportSettings();
@@ -376,6 +379,7 @@ private:
 	FileKey _legacyBackgroundKeyNight = 0;
 	FileKey _settingsKey = 0;
 	FileKey _recentHashtagsAndBotsKey = 0;
+	rpl::event_stream<> _recentHashtagsChanges;
 	FileKey _exportSettingsKey = 0;
 	FileKey _installedMasksKey = 0;
 	FileKey _recentMasksKey = 0;

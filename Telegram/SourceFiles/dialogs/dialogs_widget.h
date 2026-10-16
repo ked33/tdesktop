@@ -199,6 +199,7 @@ private:
 	void commitRecentSearchDraft();
 	void searchRequested(SearchRequestDelay delay);
 	bool search(bool inCache = false, SearchRequestDelay after = {});
+	void savePendingSearchHashtags();
 	bool searchPornMessages(bool inCache);
 	void searchTopics();
 	void searchMore();
@@ -358,6 +359,7 @@ private:
 	object_ptr<Ui::IconButton> _searchForNarrowLayout;
 	object_ptr<Ui::InputField> _search;
 	object_ptr<ChatHelpers::HashtagAutocomplete> _hashtagAutocomplete = { nullptr };
+	object_ptr<ChatHelpers::HashtagAutocomplete> _hashtagSearchHistory = { nullptr };
 	object_ptr<Ui::IconButton> _searchDialogFilter;
 	object_ptr<Ui::IconButton> _searchChineseKeywords;
 	object_ptr<Ui::FadeWrapScaled<Ui::IconButton>> _chooseFromUser;
@@ -454,6 +456,7 @@ private:
 	mtpRequestId _topicSearchRequest = 0;
 
 	QString _searchQuery;
+	QString _pendingHashtagSearchQuery;
 	QString _recentSearchDraft;
 	PeerData *_searchQueryFrom = nullptr;
 	std::vector<Data::ReactionId> _searchQueryTags;
