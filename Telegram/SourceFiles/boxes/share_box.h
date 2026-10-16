@@ -59,6 +59,10 @@ class SlideWrap;
 class PopupMenu;
 } // namespace Ui
 
+namespace ChatHelpers {
+class HashtagAutocomplete;
+} // namespace ChatHelpers
+
 class ShareBox;
 
 struct ShareBoxStyleOverrides {
@@ -182,6 +186,7 @@ private:
 	int getBottomScrollSkip() const;
 	int contentHeight() const;
 	void updateScrollSkips();
+	void updateHashtagAutocompleteGeometry();
 
 	void addPeerToMultiSelect(not_null<Data::Thread*> thread);
 	void innerSelectedChanged(not_null<Data::Thread*> thread, bool checked);
@@ -197,6 +202,7 @@ private:
 	MTP::Sender _api;
 
 	object_ptr<Ui::MultiSelect> _select;
+	object_ptr<ChatHelpers::HashtagAutocomplete> _hashtagAutocomplete = { nullptr };
 	object_ptr<Ui::SlideWrap<Ui::InputField>> _comment;
 	object_ptr<Ui::RpWidget> _bottomWidget;
 

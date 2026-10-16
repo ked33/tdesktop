@@ -537,6 +537,8 @@ PRIVATE
     chat_helpers/field_autocomplete.h
     chat_helpers/gifs_list_widget.cpp
     chat_helpers/gifs_list_widget.h
+    chat_helpers/hashtag_autocomplete.cpp
+    chat_helpers/hashtag_autocomplete.h
     chat_helpers/message_field.cpp
     chat_helpers/message_field.h
     chat_helpers/rich_paste_toast.cpp

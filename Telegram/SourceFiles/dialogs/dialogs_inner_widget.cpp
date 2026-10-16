@@ -5210,14 +5210,6 @@ rpl::producer<SearchRequestDelay> InnerWidget::searchRequests() const {
 	return _searchRequests.events();
 }
 
-rpl::producer<QString> InnerWidget::completeHashtagRequests() const {
-	return _completeHashtagRequests.events();
-}
-
-rpl::producer<> InnerWidget::refreshHashtagsRequests() const {
-	return _refreshHashtagsRequests.events();
-}
-
 void InnerWidget::visibleTopBottomUpdated(
 		int visibleTop,
 		int visibleBottom) {
@@ -6892,11 +6884,9 @@ bool InnerWidget::chooseHashtag() {
 		}
 		cSetRecentSearchHashtags(recent);
 		session().local().writeRecentHashtagsAndBots();
-		_refreshHashtagsRequests.fire({});
 		selectByMouse(QCursor::pos());
 	} else {
 		session().local().saveRecentSearchHashtags('#' + hashtag->tag);
-		_completeHashtagRequests.fire_copy(hashtag->tag);
 	}
 	return true;
 }

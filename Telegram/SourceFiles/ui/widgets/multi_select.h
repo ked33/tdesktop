@@ -17,6 +17,7 @@ struct MultiSelect;
 namespace Ui {
 
 class ScrollArea;
+class InputField;
 
 class MultiSelect : public RpWidget {
 public:
@@ -27,6 +28,7 @@ public:
 		const QString &query = QString());
 
 	[[nodiscard]] QString getQuery() const;
+	[[nodiscard]] InputField *queryField() const;
 	void setQuery(const QString &query);
 	void setInnerFocus();
 	void clearQuery();

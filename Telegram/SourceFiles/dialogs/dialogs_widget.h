@@ -35,6 +35,10 @@ namespace Main {
 class Session;
 } // namespace Main
 
+namespace ChatHelpers {
+class HashtagAutocomplete;
+} // namespace ChatHelpers
+
 namespace HistoryView {
 class TopBarWidget;
 class ContactStatus;
@@ -177,8 +181,6 @@ private:
 
 	void chosenRow(const ChosenRow &row);
 	void listScrollUpdated();
-	void searchCursorMoved();
-	void completeHashtag(QString tag);
 	void requestPublicPosts(bool fromStart);
 	void requestMessages(bool fromStart);
 	void updatePornSearch();
@@ -355,6 +357,7 @@ private:
 	} _mainMenu;
 	object_ptr<Ui::IconButton> _searchForNarrowLayout;
 	object_ptr<Ui::InputField> _search;
+	object_ptr<ChatHelpers::HashtagAutocomplete> _hashtagAutocomplete = { nullptr };
 	object_ptr<Ui::IconButton> _searchDialogFilter;
 	object_ptr<Ui::IconButton> _searchChineseKeywords;
 	object_ptr<Ui::FadeWrapScaled<Ui::IconButton>> _chooseFromUser;

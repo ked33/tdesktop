@@ -31,6 +31,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/toast/toast.h"
 #include "ui/painter.h"
 #include "ui/ui_utility.h"
+#include "chat_helpers/hashtag_autocomplete.h"
 #include "chat_helpers/message_field.h"
 #include "menu/menu_check_item.h"
 #include "menu/menu_send.h"
@@ -423,6 +424,12 @@ void ShareBox::prepare() {
 	_select->resizeToWidth(st::boxWideWidth);
 	Ui::SendPendingMoveResizeEvents(_select);
 
+	_hashtagAutocomplete = object_ptr<ChatHelpers::HashtagAutocomplete>(
+		this,
+		_select->queryField(),
+		_descriptor.session);
+	updateHashtagAutocompleteGeometry();
+
 	setTitle(header);
 
 	_inner = setInnerWidget(
@@ -448,7 +455,10 @@ void ShareBox::prepare() {
 			update();
 		}
 	});
-	_select->setResizedCallback([=] { updateScrollSkips(); });
+	_select->setResizedCallback([=] {
+		updateScrollSkips();
+		updateHashtagAutocompleteGeometry();
+	});
 	_select->setSubmittedCallback([=](Qt::KeyboardModifiers modifiers) {
 		if (IsJumpToDialogMode(_descriptor)) {
 			_inner->selectActive();
@@ -640,11 +650,22 @@ void ShareBox::setInnerFocus() {
 	}
 }
 
+void ShareBox::updateHashtagAutocompleteGeometry() {
+	if (_hashtagAutocomplete) {
+		_hashtagAutocomplete->setTargetRect(QRect(
+			0,
+			_select->y() + _select->height(),
+			width(),
+			0));
+	}
+}
+
 void ShareBox::resizeEvent(QResizeEvent *e) {
 	BoxContent::resizeEvent(e);
 
 	_select->resizeToWidth(width());
 	_select->moveToLeft(0, 0);
+	updateHashtagAutocompleteGeometry();
 
 	updateScrollSkips();
 
@@ -652,6 +673,9 @@ void ShareBox::resizeEvent(QResizeEvent *e) {
 }
 
 void ShareBox::keyPressEvent(QKeyEvent *e) {
+	if (_hashtagAutocomplete->handleKeyPress(e)) {
+		return;
+	}
 	auto focused = focusWidget();
 	if (_select == focused || _select->isAncestorOf(focusWidget())) {
 		if (e->key() == Qt::Key_Up) {

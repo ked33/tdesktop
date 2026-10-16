@@ -64,6 +64,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_authorizations.h"
 #include "api/api_chat_filters.h"
 #include "apiwrap.h"
+#include "chat_helpers/hashtag_autocomplete.h"
 #include "chat_helpers/message_field.h"
 #include "core/application.h"
 #include "core/ui_integration.h"
@@ -571,14 +572,6 @@ Widget::Widget(
 	) | rpl::on_next([=](SearchRequestDelay delay) {
 		searchRequested(delay);
 	}, lifetime());
-	_inner->completeHashtagRequests(
-	) | rpl::on_next([=](const QString &tag) {
-		completeHashtag(tag);
-	}, lifetime());
-	_inner->refreshHashtagsRequests(
-	) | rpl::on_next([=] {
-		searchCursorMoved();
-	}, lifetime());
 	_inner->changeSearchTabRequests(
 	) | rpl::filter([=](ChatSearchTab tab) {
 		return _searchState.tab != tab;
@@ -697,12 +690,10 @@ Widget::Widget(
 		return false;
 	});
 
-	QObject::connect(
-		_search->rawTextEdit().get(),
-		&QTextEdit::cursorPositionChanged,
+	_hashtagAutocomplete = object_ptr<ChatHelpers::HashtagAutocomplete>(
 		this,
-		[=] { searchCursorMoved(); },
-		Qt::QueuedConnection); // So getLastText() works already.
+		_search.data(),
+		&session());
 
 	if (!Core::UpdaterDisabled()) {
 		Core::UpdateChecker checker;
@@ -4918,65 +4909,6 @@ void Widget::showSearchFrom() {
 	}
 }
 
-void Widget::searchCursorMoved() {
-	const auto to = _search->textCursor().position();
-	const auto text = _search->getLastText();
-	auto hashtag = QStringView();
-	for (int start = to; start > 0;) {
-		--start;
-		if (text.size() <= start) {
-			break;
-		}
-		const auto ch = text[start];
-		if (ch == '#') {
-			hashtag = base::StringViewMid(text, start, to - start);
-			break;
-		} else if (!ch.isLetterOrNumber() && ch != '_') {
-			break;
-		}
-	}
-	_inner->onHashtagFilterUpdate(hashtag);
-}
-
-void Widget::completeHashtag(QString tag) {
-	const auto t = _search->getLastText();
-	auto cur = _search->textCursor().position();
-	auto hashtag = QString();
-	for (int start = cur; start > 0;) {
-		--start;
-		if (t.size() <= start) {
-			break;
-		} else if (t.at(start) == '#') {
-			if (cur == start + 1
-				|| base::StringViewMid(t, start + 1, cur - start - 1)
-					== base::StringViewMid(tag, 0, cur - start - 1)) {
-				while (cur < t.size() && cur - start - 1 < tag.size()) {
-					if (t.at(cur) != tag.at(cur - start - 1)) {
-						break;
-					}
-					++cur;
-				}
-				if (cur - start - 1 == tag.size()
-					&& cur < t.size()
-					&& t.at(cur) == ' ') {
-					++cur;
-				}
-				hashtag = t.mid(0, start + 1) + tag + ' ' + t.mid(cur);
-				setSearchQuery(hashtag, start + 1 + tag.size() + 1);
-				applySearchUpdate();
-				return;
-			}
-			break;
-		} else if (!t.at(start).isLetterOrNumber() && t.at(start) != '_') {
-			break;
-		}
-	}
-	setSearchQuery(
-		t.mid(0, cur) + '#' + tag + ' ' + t.mid(cur),
-		cur + 1 + tag.size() + 1);
-	applySearchUpdate();
-}
-
 void Widget::resizeEvent(QResizeEvent *e) {
 	updateControlsGeometry();
 	if (_childListPostponed) {
@@ -5117,6 +5049,13 @@ void Widget::updateControlsGeometry() {
 		filterTop,
 		filterWidth,
 		_search->height());
+	if (_hashtagAutocomplete) {
+		_hashtagAutocomplete->setTargetRect(QRect(
+			0,
+			_searchControls->y() + _search->y() + _search->height(),
+			width(),
+			0));
+	}
 	_searchDialogFilter->moveToLeft(0, 0);
 	_searchChineseKeywords->moveToLeft(_searchDialogFilter->width(), 0);
 
@@ -5311,6 +5250,9 @@ RowDescriptor Widget::resolveChatPrevious(RowDescriptor from) const {
 }
 
 void Widget::keyPressEvent(QKeyEvent *e) {
+	if (_hashtagAutocomplete->handleKeyPress(e)) {
+		return;
+	}
 	if (e->key() == Qt::Key_Escape) {
 		escape();
 		//if (_openedForum) {
