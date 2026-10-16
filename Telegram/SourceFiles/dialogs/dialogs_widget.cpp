@@ -696,7 +696,6 @@ Widget::Widget(
 		&session(),
 		ChatHelpers::HashtagAutocomplete::Source::SearchHistory);
 	_hashtagSearchHistory->setAllowed(!_searchState.inChat);
-	_hashtagSearchHistory->setTitle(tr::lng_hashtag_search_history());
 	_hashtagSearchHistory->chosen(
 	) | rpl::on_next([=](const QString &tag) {
 		session().local().saveRecentSearchHashtags('#' + tag);
@@ -713,7 +712,6 @@ Widget::Widget(
 		hashtagPanelParent ? hashtagPanelParent : static_cast<QWidget*>(this),
 		_search.data(),
 		&session());
-	_hashtagAutocomplete->setTitle(tr::lng_hashtag_suggestions());
 	_hashtagAutocomplete->shownValue(
 	) | rpl::on_next([=](bool shown) {
 		_hashtagSearchHistory->setKeyboardEnabled(!shown);

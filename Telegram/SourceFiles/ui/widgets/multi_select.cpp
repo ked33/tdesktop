@@ -420,7 +420,6 @@ public:
 		ScrollCallback callback);
 
 	[[nodiscard]] QString getQuery() const;
-	[[nodiscard]] InputField *queryField() const;
 	void setQuery(const QString &query);
 	bool setInnerFocus();
 	void clearQuery();
@@ -613,10 +612,6 @@ QString MultiSelect::getQuery() const {
 	return _inner->getQuery();
 }
 
-InputField *MultiSelect::queryField() const {
-	return _inner->queryField();
-}
-
 void MultiSelect::setQuery(const QString &query) {
 	_inner->setQuery(query);
 }
@@ -719,10 +714,6 @@ void MultiSelect::Inner::queryChanged() {
 
 QString MultiSelect::Inner::getQuery() const {
 	return _field->getLastText().trimmed();
-}
-
-InputField *MultiSelect::Inner::queryField() const {
-	return _field.get();
 }
 
 void MultiSelect::Inner::setQuery(const QString &query) {

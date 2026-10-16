@@ -13,7 +13,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <rpl/event_stream.h>
 
 namespace Ui {
-class FlatLabel;
 class InputField;
 class ScrollArea;
 } // namespace Ui
@@ -30,6 +29,10 @@ public:
 		SearchHistory,
 		Sent,
 	};
+	enum class Direction {
+		Down,
+		Up,
+	};
 
 	HashtagAutocomplete(
 		QWidget *parent,
@@ -38,8 +41,7 @@ public:
 		Source source = Source::Sent);
 	~HashtagAutocomplete();
 
-	void setTitle(rpl::producer<QString> title);
-	void setTargetRect(QRect rect);
+	void setTargetRect(QRect rect, Direction direction = Direction::Down);
 	void setAllowed(bool allowed);
 	void setKeyboardEnabled(bool enabled);
 	bool handleKeyPress(not_null<QKeyEvent*> e);
@@ -77,7 +79,7 @@ private:
 	const not_null<Ui::InputField*> _field;
 	const not_null<Main::Session*> _session;
 	const Source _source;
-	object_ptr<Ui::FlatLabel> _title = { nullptr };
+	Direction _direction = Direction::Down;
 	object_ptr<Ui::ScrollArea> _scroll;
 	QPointer<Inner> _inner;
 	std::vector<Row> _rows;

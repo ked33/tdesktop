@@ -385,6 +385,7 @@ void ShareBox::prepareCommentField() {
 		if (_bottomWidget) {
 			_bottomWidget->moveToLeft(0, height - bottom);
 		}
+		updateHashtagAutocompleteGeometry();
 	}, _comment->lifetime());
 
 	const auto field = _comment->entity();
@@ -412,6 +413,15 @@ void ShareBox::prepareCommentField() {
 		}
 	}, field->lifetime());
 
+	_hashtagAutocomplete = object_ptr<ChatHelpers::HashtagAutocomplete>(
+		this,
+		field,
+		_descriptor.session);
+	_comment->toggledValue() | rpl::on_next([=](bool shown) {
+		_hashtagAutocomplete->setAllowed(shown);
+	}, _hashtagAutocomplete->lifetime());
+	updateHashtagAutocompleteGeometry();
+
 	Ui::SendPendingMoveResizeEvents(_comment);
 	if (_bottomWidget) {
 		Ui::SendPendingMoveResizeEvents(_bottomWidget);
@@ -423,13 +433,6 @@ void ShareBox::prepare() {
 
 	_select->resizeToWidth(st::boxWideWidth);
 	Ui::SendPendingMoveResizeEvents(_select);
-
-	_hashtagAutocomplete = object_ptr<ChatHelpers::HashtagAutocomplete>(
-		this,
-		_select->queryField(),
-		_descriptor.session);
-	_hashtagAutocomplete->setTitle(tr::lng_hashtag_suggestions());
-	updateHashtagAutocompleteGeometry();
 
 	setTitle(header);
 
@@ -653,12 +656,10 @@ void ShareBox::setInnerFocus() {
 
 void ShareBox::updateHashtagAutocompleteGeometry() {
 	if (_hashtagAutocomplete) {
-		const auto top = _select->y() + _select->height();
-		_hashtagAutocomplete->setTargetRect(QRect(
-			0,
-			top,
-			width(),
-			std::max(height() - top - getBottomScrollSkip(), 0)));
+		const auto top = getTopScrollSkip();
+		_hashtagAutocomplete->setTargetRect(
+			QRect(0, top, width(), std::max(_comment->y() - top, 0)),
+			ChatHelpers::HashtagAutocomplete::Direction::Up);
 	}
 }
 
@@ -667,7 +668,7 @@ void ShareBox::resizeEvent(QResizeEvent *e) {
 
 	_select->resizeToWidth(width());
 	_select->moveToLeft(0, 0);
-	updateHashtagAutocompleteGeometry();
+	_comment->resizeToWidth(width());
 
 	updateScrollSkips();
 
@@ -675,7 +676,7 @@ void ShareBox::resizeEvent(QResizeEvent *e) {
 }
 
 void ShareBox::keyPressEvent(QKeyEvent *e) {
-	if (_hashtagAutocomplete->handleKeyPress(e)) {
+	if (_hashtagAutocomplete && _hashtagAutocomplete->handleKeyPress(e)) {
 		return;
 	}
 	auto focused = focusWidget();
@@ -1029,7 +1030,7 @@ void ShareBox::selectedChanged() {
 		_hasSelected = hasSelected;
 		createButtons();
 		_comment->toggle(_hasSelected, anim::type::normal);
-		_comment->resizeToWidth(st::boxWideWidth);
+		_comment->resizeToWidth(width());
 	}
 	computeStarsCount();
 	update();

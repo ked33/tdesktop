@@ -15,7 +15,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_account.h"
 #include "ui/text/text_utilities.h"
 #include "ui/widgets/fields/input_field.h"
-#include "ui/widgets/labels.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/painter.h"
 #include "settings.h"
@@ -27,7 +26,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "styles/style_basic.h"
 #include "styles/style_chat_helpers.h"
-#include "styles/style_dialogs.h"
 
 namespace ChatHelpers {
 namespace {
@@ -268,18 +266,9 @@ HashtagAutocomplete::HashtagAutocomplete(
 
 HashtagAutocomplete::~HashtagAutocomplete() = default;
 
-void HashtagAutocomplete::setTitle(rpl::producer<QString> title) {
-	_title = object_ptr<Ui::FlatLabel>(
-		this,
-		std::move(title),
-		st::searchedBarLabel);
-	_title->setAttribute(Qt::WA_TransparentForMouseEvents);
-	_title->show();
-	updateQuery();
-}
-
-void HashtagAutocomplete::setTargetRect(QRect rect) {
+void HashtagAutocomplete::setTargetRect(QRect rect, Direction direction) {
 	_target = rect;
+	_direction = direction;
 	updateQuery();
 }
 
@@ -343,45 +332,31 @@ void HashtagAutocomplete::paintEvent(QPaintEvent *e) {
 	auto p = Painter(this);
 
 	p.fillRect(rect(), st::mentionBg);
-	const auto line = st::lineWidth;
-	if (_title) {
-		p.fillRect(
-			0,
-			line,
-			width(),
-			st::searchedBarHeight,
-			st::searchedBarBg);
+	if (_source == Source::SearchHistory) {
+		const auto line = st::lineWidth;
+		p.fillRect(0, 0, width(), line, st::shadowFg);
+		p.fillRect(0, height() - line, width(), line, st::shadowFg);
 	}
-	p.fillRect(0, 0, width(), line, st::shadowFg);
-	p.fillRect(0, height() - line, width(), line, st::shadowFg);
 }
 
 void HashtagAutocomplete::resizeEvent(QResizeEvent *e) {
 	RpWidget::resizeEvent(e);
 
-	const auto titleHeight = _title ? st::searchedBarHeight : 0;
-	const auto line = st::lineWidth;
-	if (_title) {
-		_title->resizeToWidth(std::max(
-			width() - 2 * st::searchedBarPosition.x(),
-			0));
-		_title->moveToLeft(
-			st::searchedBarPosition.x(),
-			line + st::searchedBarPosition.y());
-	}
+	const auto line = (_source == Source::SearchHistory) ? st::lineWidth : 0;
 	_scroll->setGeometry(
 		0,
-		titleHeight + line,
+		line,
 		width(),
-		std::max(height() - titleHeight - 2 * line, 0));
+		std::max(height() - 2 * line, 0));
 }
 
 void HashtagAutocomplete::updateQuery() {
-	const auto headerHeight = (_title ? st::searchedBarHeight : 0)
-		+ 2 * st::lineWidth;
+	const auto borderHeight = (_source == Source::SearchHistory)
+		? 2 * st::lineWidth
+		: 0;
 	if (!_allowed || !_field->isVisible()
 		|| (_source == Source::Sent && !_field->rawTextEdit()->hasFocus())
-		|| _target.width() <= 0 || _target.height() <= headerHeight) {
+		|| _target.width() <= 0 || _target.height() <= borderHeight) {
 		hideFast();
 		return;
 	}
@@ -475,22 +450,24 @@ bool HashtagAutocomplete::updateFiltered(const QString &filter) {
 }
 
 void HashtagAutocomplete::updateListGeometry() {
-	const auto headerHeight = (_title ? st::searchedBarHeight : 0)
-		+ 2 * st::lineWidth;
 	const auto listHeight = (_source == Source::SearchHistory)
-		? kSearchHistoryVisibleRows * st::mentionHeight
+		? kSearchHistoryVisibleRows * st::mentionHeight + 2 * st::lineWidth
 		: std::min(
 			int(_rows.size()) * st::mentionHeight,
 			FieldAutocomplete::MaxHeight());
 	const auto width = _target.width();
+	const auto height = std::min(_target.height(), listHeight);
+	const auto top = _target.y() + ((_direction == Direction::Up)
+		? _target.height() - height
+		: 0);
 	if (_inner) {
 		_inner->resize(width, int(_rows.size()) * st::mentionHeight);
 	}
 	setGeometry(
 		_target.x(),
-		_target.y(),
+		top,
 		width,
-		std::min(_target.height(), headerHeight + listHeight));
+		height);
 }
 
 void HashtagAutocomplete::hideFast() {
