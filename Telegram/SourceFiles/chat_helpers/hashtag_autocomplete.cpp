@@ -10,10 +10,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "settings.h"
 #include "storage/localstorage.h"
+#include "storage/storage_account.h"
 #include "ui/painter.h"
 #include "ui/text/text_utilities.h"
 #include "ui/widgets/fields/input_field.h"
 #include "ui/widgets/scroll_area.h"
+
+#include <QtWidgets/QTextEdit>
+
 #include "styles/style_basic.h"
 #include "styles/style_chat_helpers.h"
 
@@ -42,20 +46,22 @@ private:
 
 };
 
-Inner::Inner(QWidget *parent, not_null<HashtagAutocomplete*> owner)
+HashtagAutocomplete::Inner::Inner(
+	QWidget *parent,
+	not_null<HashtagAutocomplete*> owner)
 : RpWidget(parent)
 , _owner(owner) {
 	setMouseTracking(true);
 }
 
-int Inner::rowIndexAt(QPoint position) const {
+int HashtagAutocomplete::Inner::rowIndexAt(QPoint position) const {
 	const auto index = position.y() / st::mentionHeight;
 	return (index >= 0 && index < int(_owner->_rows.size()))
 		? index
 		: -1;
 }
 
-void Inner::paintEvent(QPaintEvent *e) {
+void HashtagAutocomplete::Inner::paintEvent(QPaintEvent *e) {
 	auto p = Painter(this);
 
 	const auto clip = e->rect();
@@ -114,18 +120,18 @@ void Inner::paintEvent(QPaintEvent *e) {
 	}
 }
 
-void Inner::mouseMoveEvent(QMouseEvent *e) {
+void HashtagAutocomplete::Inner::mouseMoveEvent(QMouseEvent *e) {
 	_owner->setSelected(rowIndexAt(e->pos()));
 }
 
-void Inner::mousePressEvent(QMouseEvent *e) {
+void HashtagAutocomplete::Inner::mousePressEvent(QMouseEvent *e) {
 	_pressed = rowIndexAt(e->pos());
 	if (_pressed >= 0) {
 		_owner->setSelected(_pressed);
 	}
 }
 
-void Inner::mouseReleaseEvent(QMouseEvent *e) {
+void HashtagAutocomplete::Inner::mouseReleaseEvent(QMouseEvent *e) {
 	const auto index = rowIndexAt(e->pos());
 	if (index >= 0 && index == _pressed) {
 		_owner->chooseSelected();
