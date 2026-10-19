@@ -43,6 +43,7 @@ struct BoostProfile {
 	int smartDownloadTargetPercent = 125;
 	bool smartAdaptivePacing = false;
 	bool smartManualPacing = false;
+	bool smartGradualRecovery = true;
 
 	[[nodiscard]] bool manualPacingEnabled() const {
 		return smartDownloadBurstParts > 0

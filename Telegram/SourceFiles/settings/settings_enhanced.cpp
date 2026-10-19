@@ -1882,6 +1882,7 @@ void ImportEnhancedSettings() {
 				tr::lng_online_playback_profile_manual_pacing(tr::now),
 				tr::lng_online_playback_profile_target_percent(tr::now),
 				tr::lng_online_playback_profile_adaptive_pacing(tr::now),
+				tr::lng_online_playback_profile_gradual_recovery(tr::now),
 			});
 		addButton(
 			u"enhanced/media_preview_parameters"_q,

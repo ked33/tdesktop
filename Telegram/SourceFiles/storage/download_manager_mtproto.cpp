@@ -859,7 +859,12 @@ void DownloadManagerMtproto::notifyNonPremiumDelay(
 	if (smartNonPremiumEnabled()) {
 		auto &limiter = smartRequestState(dcId, now).rateLimiter;
 		if (limiter.rate() > 0 && newWindow) {
-			limiter.penalize(state.limitedUntil, state.recoveryUntil);
+			limiter.penalize(
+				state.limitedUntil,
+				state.recoveryUntil,
+				SmartProfile().smartGradualRecovery
+					? DownloadRateLimiter::Recovery::Gradual
+					: DownloadRateLimiter::Recovery::Immediate);
 		} else if (limiter.rate() > 0) {
 			limiter.suspend(state.limitedUntil, state.recoveryUntil);
 		}
@@ -990,7 +995,7 @@ crl::time DownloadManagerMtproto::downloadRateDelay(
 		LOG(("Video Playback: download pacing dc=%1 rateBps=%2 "
 			"ceilingBps=%3 burstParts=%4 delayMs=%5 playbackBps=%6 "
 			"adaptive=%7 catchUp=%8 pressure=%9 readWaiting=%10 "
-			"manual=%11 targetPercent=%12.")
+			"manual=%11 targetPercent=%12 gradualRecovery=%13.")
 			.arg(dcId)
 			.arg(limiter.rate())
 			.arg(limiter.ceiling())
@@ -1002,7 +1007,8 @@ crl::time DownloadManagerMtproto::downloadRateDelay(
 			.arg(demand.bufferPressure)
 			.arg(demand.readWaiting)
 			.arg(profile.manualPacingEnabled())
-			.arg(profile.smartDownloadTargetPercent));
+			.arg(profile.smartDownloadTargetPercent)
+			.arg(profile.smartGradualRecovery));
 	}
 	return delay;
 }

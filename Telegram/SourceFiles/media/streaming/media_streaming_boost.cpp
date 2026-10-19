@@ -82,6 +82,7 @@ void WriteProfile(QJsonObject &object, const BoostProfile &profile) {
 	object.insert("smartDownloadTargetPercent", profile.smartDownloadTargetPercent);
 	object.insert("smartAdaptivePacing", profile.smartAdaptivePacing);
 	object.insert("smartManualPacing", profile.smartManualPacing);
+	object.insert("smartGradualRecovery", profile.smartGradualRecovery);
 	object.insert(
 		"smartCapacityMinimumRequestLimit",
 		profile.smartCapacityMinimumRequestLimit);
@@ -394,6 +395,10 @@ BoostProfiles LoadBoostProfiles() {
 			object,
 			"smartAdaptivePacing",
 			defaults.smartAdaptivePacing);
+		profile.smartGradualRecovery = ReadBool(
+			object,
+			"smartGradualRecovery",
+			defaults.smartGradualRecovery);
 		profile.maxWaitedParts = std::max(profile.maxWaitedParts, profile.startWaitedParts);
 		profile.maxSessions = std::max(profile.maxSessions, profile.startSessions);
 		profile.mpvCacheBackMb = std::min(
@@ -490,6 +495,7 @@ void LogOnlinePlaybackProfile() {
 		u"smartDownloadBurstParts=%1"_q.arg(profile.smartDownloadBurstParts),
 		u"smartAdaptivePacing=%1"_q.arg(profile.smartAdaptivePacing),
 		u"smartManualPacing=%1"_q.arg(profile.smartManualPacing),
+		u"smartGradualRecovery=%1"_q.arg(profile.smartGradualRecovery),
 		u"smartDownloadTargetPercent=%1"_q.arg(profile.smartDownloadTargetPercent),
 	};
 	LOG(("Online playback profile: level=%1 (%2); %3").arg(

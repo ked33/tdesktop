@@ -440,6 +440,11 @@ void DownloadBoostProfilesBox::prepare() {
 		_adaptivePacing,
 		tr::lng_online_playback_profile_adaptive_pacing(tr::now),
 		tr::lng_online_playback_profile_adaptive_pacing_about(tr::now));
+	_recoveryAbout = addCheck(
+		smartContent,
+		_gradualRecovery,
+		tr::lng_online_playback_profile_gradual_recovery(tr::now),
+		tr::lng_online_playback_profile_gradual_recovery_about(tr::now));
 	addGroup(smartContent, tr::lng_online_playback_group_smart_preload());
 	addField(
 		smartContent,
@@ -590,6 +595,9 @@ void DownloadBoostProfilesBox::loadProfile(int profile) {
 	_manualPacing->setChecked(
 		value.smartManualPacing,
 		Ui::Checkbox::NotifyAboutChange::DontNotify);
+	_gradualRecovery->setChecked(
+		value.smartGradualRecovery,
+		Ui::Checkbox::NotifyAboutChange::DontNotify);
 	_smartSection->toggle(profile == 6, anim::type::instant);
 	_loadingProfile = false;
 	updateControlStates();
@@ -637,6 +645,9 @@ void DownloadBoostProfilesBox::updateControlStates() {
 	_adaptivePacing->setEnabled(enabled && !manual);
 	_adaptiveAbout->setOpacity(
 		(enabled && !manual) ? 1. : st::defaultBoxCheckbox.disabledOpacity);
+	_gradualRecovery->setEnabled(enabled);
+	_recoveryAbout->setOpacity(
+		enabled ? 1. : st::defaultBoxCheckbox.disabledOpacity);
 	const auto rate = _fields[kDownloadRateFieldIndex]->getLastText()
 		.trimmed().toDouble();
 	_pacingStatus->setText(!enabled
@@ -763,6 +774,7 @@ bool DownloadBoostProfilesBox::saveCurrentProfile() {
 	value.seekCancelEnabled = _seekCancel->checked();
 	value.smartAdaptivePacing = _adaptivePacing->checked();
 	value.smartManualPacing = _manualPacing->checked();
+	value.smartGradualRecovery = _gradualRecovery->checked();
 	if (_editingProfile == 6
 		&& value.smartDownloadBurstParts > 0
 		&& value.smartManualPacing

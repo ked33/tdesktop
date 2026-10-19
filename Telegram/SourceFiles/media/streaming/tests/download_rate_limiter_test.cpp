@@ -216,6 +216,108 @@ void TestWaitAndRecovery() {
 	Require(limiter.rate() == 1024, "manual ceiling survives penalty");
 }
 
+void TestImmediateRecovery() {
+	using Limiter = Storage::DownloadRateLimiter;
+	auto limiter = Limiter();
+	const auto target = Limiter::Target(1196775, 3613, false, true);
+	auto now = std::int64_t(0);
+	limiter.configure(target, 2 * kPart, now);
+	for (auto round = 0; round != 3; ++round) {
+		const auto until = now + 6000;
+		const auto extended = until + 3000;
+		limiter.penalize(
+			until,
+			until + 120000,
+			Limiter::Recovery::Immediate);
+		Require(
+			limiter.rate() == target && limiter.ceiling() == 0,
+			"immediate recovery preserves the configured target");
+		limiter.configure(target, 2 * kPart, until - 1);
+		Require(
+			limiter.delay(kPart, until - 1) > 1,
+			"immediate recovery cannot dispatch before the server deadline");
+		limiter.suspend(extended, extended + 120000);
+		limiter.configure(target, 2 * kPart, until);
+		Require(
+			limiter.delay(kPart, until) > extended - until,
+			"coalesced waits extend the deadline without bypassing it");
+		limiter.configure(target, 2 * kPart, extended);
+		Require(
+			limiter.delay(kPart, extended) > 0,
+			"waiting cannot accumulate a free burst");
+		auto sent = std::int64_t(0);
+		for (now = extended; now <= extended + 2000; ++now) {
+			limiter.configure(target, 2 * kPart, now);
+			for (auto loader = 0; loader != 8; ++loader) {
+				if (!limiter.delay(kPart, now)) {
+					limiter.consume(kPart, now);
+					sent += kPart;
+				}
+			}
+			Require(
+				sent * 1000 <= std::int64_t(target) * (now - extended),
+				"shared downloads stay within the manual ceiling after a wait");
+			Require(
+				limiter.rate() == target && limiter.ceiling() == 0,
+				"repeated server waits do not compound a disabled rate penalty");
+		}
+		Require(
+			sent >= std::int64_t(target) * 2 - kPart,
+			"pending data reaches the manual target without a recovery hold");
+	}
+	limiter.configure(target, 2 * kPart, now + 180000);
+	Require(
+		limiter.rate() == target && limiter.ceiling() == 0,
+		"an expired recovery period cannot raise the manual target");
+}
+
+void TestImmediateAutomaticRecovery() {
+	using Limiter = Storage::DownloadRateLimiter;
+	for (const auto maximumKiB : { 0, 1, 1024 }) {
+		auto limiter = Limiter();
+		const auto target = Limiter::Target(1196775, maximumKiB);
+		const auto peak = Limiter::Target(1196775, maximumKiB, true);
+		limiter.configure(target, 2 * kPart, 0, peak, true);
+		limiter.penalize(6000, 126000, Limiter::Recovery::Immediate);
+		limiter.configure(target, 2 * kPart, 6000, peak, true);
+		Require(
+			limiter.rate() == target && limiter.ceiling() == 0,
+			"automatic recovery keeps its normal playback-based target");
+		Require(
+			!limiter.catchingUp() && limiter.delay(kPart, 6000) > 0,
+			"immediate recovery keeps boost cooldown and an empty budget");
+		limiter.configure(1024, 2 * kPart, 6001);
+		Require(
+			limiter.rate() == 1024,
+			"a lower target remains effective after immediate recovery");
+	}
+}
+
+void TestRecoveryPolicySwitch() {
+	using Limiter = Storage::DownloadRateLimiter;
+	auto limiter = Limiter();
+	constexpr auto target = 4 * kPart;
+	limiter.configure(target, 2 * kPart, 0);
+	limiter.penalize(3000, 63000);
+	limiter.configure(target, 2 * kPart, 4000);
+	Require(
+		limiter.rate() < target,
+		"gradual policy starts with a rate penalty");
+	limiter.penalize(7000, 127000, Limiter::Recovery::Immediate);
+	limiter.configure(target, 2 * kPart, 7000);
+	Require(
+		limiter.rate() == target && limiter.ceiling() == 0,
+		"immediate policy clears a previous rate penalty");
+	Require(
+		limiter.delay(kPart, 7000) > 0,
+		"changing recovery policy does not refill the budget");
+	limiter.penalize(10000, 130000, Limiter::Recovery::Gradual);
+	limiter.configure(target, 2 * kPart, 10000);
+	Require(
+		limiter.rate() == target * 3 / 4,
+		"gradual recovery remains available independently of the target");
+}
+
 void TestLongIdleAndIndependentServers() {
 	auto first = Storage::DownloadRateLimiter();
 	auto second = Storage::DownloadRateLimiter();
@@ -380,6 +482,9 @@ int main() {
 	TestDisabled();
 	TestBurstAndSeek();
 	TestWaitAndRecovery();
+	TestImmediateRecovery();
+	TestImmediateAutomaticRecovery();
+	TestRecoveryPolicySwitch();
 	TestLongIdleAndIndependentServers();
 	TestCatchUpTargets();
 	TestCatchUpWindowAndTaper();
@@ -387,5 +492,5 @@ int main() {
 	TestCatchUpPreservesCredit();
 	TestCatchUpServerLimits();
 	TestSharedBudget();
-	std::cout << "PASS: targets, automatic percentages, manual throughput, disable, large burst, seek, wait, recovery, idle, catch-up, shared/DC budgets\n";
+	std::cout << "PASS: targets, automatic percentages, manual throughput, disable, large burst, seek, wait, gradual/immediate recovery, idle, catch-up, shared/DC budgets\n";
 }

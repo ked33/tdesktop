@@ -95,10 +95,12 @@ private:
 	Ui::FlatLabel *_pacingStatus = nullptr;
 	Ui::FlatLabel *_manualAbout = nullptr;
 	Ui::FlatLabel *_adaptiveAbout = nullptr;
+	Ui::FlatLabel *_recoveryAbout = nullptr;
 	Ui::Checkbox *_seekCancel = nullptr;
 	Ui::Checkbox *_tailPrefetch = nullptr;
 	Ui::Checkbox *_adaptivePacing = nullptr;
 	Ui::Checkbox *_manualPacing = nullptr;
+	Ui::Checkbox *_gradualRecovery = nullptr;
 	int _radioHeight = 0;
 	int _editingProfile = 0;
 	bool _revertingProfile = false;

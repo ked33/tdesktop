@@ -7,6 +7,11 @@ namespace Storage {
 
 class DownloadRateLimiter final {
 public:
+	enum class Recovery {
+		Gradual,
+		Immediate,
+	};
+
 	void configure(
 		int target,
 		std::int64_t burstBytes,
@@ -15,7 +20,10 @@ public:
 		bool catchUpRequested = false);
 	void consume(int bytes, std::int64_t now);
 	void suspend(std::int64_t until, std::int64_t recoverAt);
-	void penalize(std::int64_t until, std::int64_t recoverAt);
+	void penalize(
+		std::int64_t until,
+		std::int64_t recoverAt,
+		Recovery recovery = Recovery::Gradual);
 	[[nodiscard]] std::int64_t delay(int bytes, std::int64_t now);
 	[[nodiscard]] int rate() const { return _rate; }
 	[[nodiscard]] int ceiling() const { return _ceiling; }
@@ -177,12 +185,17 @@ inline void DownloadRateLimiter::consume(int bytes, std::int64_t now) {
 
 inline void DownloadRateLimiter::penalize(
 		std::int64_t until,
-		std::int64_t recoverAt) {
+		std::int64_t recoverAt,
+		Recovery recovery) {
 	if (!_rate) {
 		return;
 	}
-	_ceiling = std::max(16 * 1024, std::min(_rate, _steadyRate) * 3 / 4);
-	_rate = std::min(_rate, _ceiling);
+	if (recovery == Recovery::Gradual) {
+		_ceiling = std::max(16 * 1024, std::min(_rate, _steadyRate) * 3 / 4);
+		_rate = std::min(_rate, _ceiling);
+	} else {
+		_ceiling = 0;
+	}
 	suspend(until, recoverAt);
 }
 
