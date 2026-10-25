@@ -55,7 +55,6 @@ private:
 	[[nodiscard]] Ui::ChatsFiltersTabsMode tabsMode() const;
 	[[nodiscard]] const style::SideBarButton &buttonStyle() const;
 	[[nodiscard]] base::unique_qptr<Ui::SideBarButton> prepareSetupButton();
-	[[nodiscard]] base::unique_qptr<Ui::SideBarButton> prepareAll();
 	[[nodiscard]] base::unique_qptr<Ui::SideBarButton> prepareButton(
 		not_null<Ui::VerticalLayout*> container,
 		FilterId id,

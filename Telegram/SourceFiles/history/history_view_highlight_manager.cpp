@@ -70,6 +70,11 @@ Ui::ChatPaintHighlight ElementHighlighter::state(
 		result.todoItemId = _highlighted.todoListId;
 		result.pollOption = _highlighted.pollOption;
 		result.searchQuery = _highlighted.searchQuery;
+		result.richQuote = {
+			.page = _highlighted.richPage,
+			.from = _highlighted.richFrom,
+			.till = _highlighted.richTill,
+		};
 		return result;
 	}
 	return {};
@@ -114,6 +119,21 @@ ElementHighlighter::Highlight ElementHighlighter::computeHighlight(
 			quote.highlight.pollOption,
 			searchQuery,
 		};
+	} else if (quote.highlight.richQuote) {
+		auto result = Highlight{
+			item->fullId(),
+			{},
+			quote.highlight.todoItemId,
+			quote.highlight.pollOption,
+		};
+		if (const auto view = _viewForItem(item)) {
+			if (const auto rich = view->richSelectionFromQuote(quote)) {
+				result.richPage = rich.page;
+				result.richFrom = rich.from;
+				result.richTill = rich.till;
+			}
+		}
+		return result;
 	} else if (quote.highlight.quote.empty()) {
 		return {
 			item->fullId(),
@@ -153,7 +173,8 @@ void ElementHighlighter::highlight(Highlight data) {
 			_highlighted = data;
 			_animation.start((!data.part.empty()
 					|| data.todoListId
-					|| !data.pollOption.isEmpty())
+					|| !data.pollOption.isEmpty()
+					|| data.richPage)
 				&& !IsSubGroupSelection(data.part));
 
 			repaintHighlightedItem(view);
@@ -235,7 +256,7 @@ void ElementHighlighter::AnimationManager::start(bool withTextPart) {
 	const auto finish = [=] {
 		cancel();
 		_parent._lastHighlightedMessageId = base::take(
-			_parent._highlighted.itemId);
+			_parent._highlighted).itemId;
 		_parent.checkNextHighlight();
 	};
 	cancel();

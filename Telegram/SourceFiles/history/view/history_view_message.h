@@ -238,6 +238,8 @@ public:
 		TextSelection selection) const override;
 	TextSelection selectionForEditTextByClickHandler(
 		const ClickHandlerPtr &handler) const override;
+	HighlightYRange richQuoteHighlightYRange(
+		const Ui::ChatPaintRichQuote &quote) const override;
 	TextSelection adjustSelection(
 		TextSelection selection,
 		TextSelectType type) const override;

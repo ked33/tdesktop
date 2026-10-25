@@ -11,6 +11,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 class QKeyEvent;
 class QShortcutEvent;
+class QString;
+class QKeySequence;
 
 namespace Shortcuts {
 
@@ -157,6 +159,10 @@ void ResetChatSwitchState();
 [[nodiscard]] rpl::producer<> GlobalSearchShortcutRequests();
 [[nodiscard]] rpl::producer<QString> SelectedActionShortcutRequests();
 
+[[nodiscard]] bool MatchesCommand(
+	not_null<QKeyEvent*> event,
+	Command command);
+
 struct ChatSwitchRequest {
 	Qt::Key action = Qt::Key_Tab; // Key_Tab, Key_Backtab, Key_Escape or empty.
 	bool started = false;
@@ -190,5 +196,7 @@ void Change(
 void ResetToDefaults();
 
 [[nodiscard]] bool AllowWithoutModifiers(int key);
+
+[[nodiscard]] QString ToDisplayString(const QKeySequence &sequence);
 
 } // namespace Shortcuts

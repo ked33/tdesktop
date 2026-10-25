@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/view/media_view_overlay_rhi.h"
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0) && !defined DESKTOP_APP_DISABLE_PRIVATE_QT_API
 
 #include "ui/rhi/rhi_shader.h"
 #include "ui/painter.h"
@@ -159,6 +159,11 @@ void OverlayWidget::RendererRhi::initialize(
 		return;
 	}
 	releaseResources();
+	const auto guard = gsl::finally([&] {
+		if (!_initialized) {
+			releaseResources();
+		}
+	});
 
 	_rhi = rhi;
 	_rt = rt;
@@ -168,19 +173,25 @@ void OverlayWidget::RendererRhi::initialize(
 		QRhiBuffer::Dynamic,
 		QRhiBuffer::VertexBuffer,
 		kMaxDraws * kVertexSize);
-	_vertexBuffer->create();
+	if (!_vertexBuffer->create()) {
+		return;
+	}
 
 	_fillVertexBuffer = rhi->newBuffer(
 		QRhiBuffer::Dynamic,
 		QRhiBuffer::VertexBuffer,
 		4 * 4 * 2 * sizeof(float));
-	_fillVertexBuffer->create();
+	if (!_fillVertexBuffer->create()) {
+		return;
+	}
 
 	_uniformBuffer = rhi->newBuffer(
 		QRhiBuffer::Dynamic,
 		QRhiBuffer::UniformBuffer,
 		kMaxDraws * 256);
-	_uniformBuffer->create();
+	if (!_uniformBuffer->create()) {
+		return;
+	}
 
 	_sampler = rhi->newSampler(
 		QRhiSampler::Linear,
@@ -188,12 +199,18 @@ void OverlayWidget::RendererRhi::initialize(
 		QRhiSampler::None,
 		QRhiSampler::ClampToEdge,
 		QRhiSampler::ClampToEdge);
-	_sampler->create();
+	if (!_sampler->create()) {
+		return;
+	}
 
 	_placeholderTexture = rhi->newTexture(QRhiTexture::RGBA8, QSize(1, 1));
-	_placeholderTexture->create();
+	if (!_placeholderTexture->create()) {
+		return;
+	}
 
-	createPipelines();
+	if (!createPipelines()) {
+		return;
+	}
 	_initialized = true;
 
 	LOG(("[RENDERER_TEST] component=overlay backend=%1 device=%2 status=OK")
@@ -201,7 +218,7 @@ void OverlayWidget::RendererRhi::initialize(
 		.arg(rhi->driverInfo().deviceName));
 }
 
-void OverlayWidget::RendererRhi::createPipelines() {
+bool OverlayWidget::RendererRhi::createPipelines() {
 	const auto rpDesc = _rt->renderPassDescriptor();
 
 	const auto argb32Vert = LoadShader(u"argb32.vert"_q);
@@ -223,7 +240,10 @@ void OverlayWidget::RendererRhi::createPipelines() {
 			_placeholderTexture,
 			_sampler),
 	});
-	sampleSrb->create();
+	if (!sampleSrb->create()) {
+		delete sampleSrb;
+		return false;
+	}
 	_perDrawSrbs.push_back(sampleSrb);
 
 	auto *imagePipeline = _rhi->newGraphicsPipeline();
@@ -241,7 +261,10 @@ void OverlayWidget::RendererRhi::createPipelines() {
 	imagePipeline->setTopology(QRhiGraphicsPipeline::TriangleStrip);
 	imagePipeline->setShaderResourceBindings(sampleSrb);
 	imagePipeline->setRenderPassDescriptor(rpDesc);
-	imagePipeline->create();
+	if (!imagePipeline->create()) {
+		delete imagePipeline;
+		return false;
+	}
 	_imagePipeline = imagePipeline;
 
 	auto *imageBlendPipeline = _rhi->newGraphicsPipeline();
@@ -260,7 +283,10 @@ void OverlayWidget::RendererRhi::createPipelines() {
 	imageBlendPipeline->setTopology(QRhiGraphicsPipeline::TriangleStrip);
 	imageBlendPipeline->setShaderResourceBindings(sampleSrb);
 	imageBlendPipeline->setRenderPassDescriptor(rpDesc);
-	imageBlendPipeline->create();
+	if (!imageBlendPipeline->create()) {
+		delete imageBlendPipeline;
+		return false;
+	}
 	_imageBlendPipeline = imageBlendPipeline;
 
 	const auto staticContentFrag = LoadShader(u"static_content.frag"_q);
@@ -287,7 +313,10 @@ void OverlayWidget::RendererRhi::createPipelines() {
 			_placeholderTexture,
 			_sampler),
 	});
-	contentSrb->create();
+	if (!contentSrb->create()) {
+		delete contentSrb;
+		return false;
+	}
 	_perDrawSrbs.push_back(contentSrb);
 
 	auto *staticPipeline = _rhi->newGraphicsPipeline();
@@ -299,7 +328,10 @@ void OverlayWidget::RendererRhi::createPipelines() {
 	staticPipeline->setTopology(QRhiGraphicsPipeline::TriangleStrip);
 	staticPipeline->setShaderResourceBindings(contentSrb);
 	staticPipeline->setRenderPassDescriptor(rpDesc);
-	staticPipeline->create();
+	if (!staticPipeline->create()) {
+		delete staticPipeline;
+		return false;
+	}
 	_staticContentPipeline = staticPipeline;
 
 	auto *staticBlendPipeline = _rhi->newGraphicsPipeline();
@@ -312,7 +344,10 @@ void OverlayWidget::RendererRhi::createPipelines() {
 	staticBlendPipeline->setTopology(QRhiGraphicsPipeline::TriangleStrip);
 	staticBlendPipeline->setShaderResourceBindings(contentSrb);
 	staticBlendPipeline->setRenderPassDescriptor(rpDesc);
-	staticBlendPipeline->create();
+	if (!staticBlendPipeline->create()) {
+		delete staticBlendPipeline;
+		return false;
+	}
 	_staticContentBlendPipeline = staticBlendPipeline;
 
 	auto *transparentSrb = _rhi->newShaderResourceBindings();
@@ -335,7 +370,10 @@ void OverlayWidget::RendererRhi::createPipelines() {
 			_placeholderTexture,
 			_sampler),
 	});
-	transparentSrb->create();
+	if (!transparentSrb->create()) {
+		delete transparentSrb;
+		return false;
+	}
 	_perDrawSrbs.push_back(transparentSrb);
 
 	auto *transparentPipeline = _rhi->newGraphicsPipeline();
@@ -348,7 +386,10 @@ void OverlayWidget::RendererRhi::createPipelines() {
 	transparentPipeline->setTopology(QRhiGraphicsPipeline::TriangleStrip);
 	transparentPipeline->setShaderResourceBindings(transparentSrb);
 	transparentPipeline->setRenderPassDescriptor(rpDesc);
-	transparentPipeline->create();
+	if (!transparentPipeline->create()) {
+		delete transparentPipeline;
+		return false;
+	}
 	_transparentContentPipeline = transparentPipeline;
 
 	const auto fillVert = LoadShader(u"fill.vert"_q);
@@ -364,7 +405,10 @@ void OverlayWidget::RendererRhi::createPipelines() {
 			0,
 			sizeof(RoundedCornersUniforms)),
 	});
-	roundedSrb->create();
+	if (!roundedSrb->create()) {
+		delete roundedSrb;
+		return false;
+	}
 	_perDrawSrbs.push_back(roundedSrb);
 
 	QRhiVertexInputLayout fillInputLayout;
@@ -390,7 +434,10 @@ void OverlayWidget::RendererRhi::createPipelines() {
 	roundedPipeline->setTopology(QRhiGraphicsPipeline::TriangleStrip);
 	roundedPipeline->setShaderResourceBindings(roundedSrb);
 	roundedPipeline->setRenderPassDescriptor(rpDesc);
-	roundedPipeline->create();
+	if (!roundedPipeline->create()) {
+		delete roundedPipeline;
+		return false;
+	}
 	_roundedCornersPipeline = roundedPipeline;
 
 	const auto yuv420Frag = LoadShader(u"yuv420_content.frag"_q);
@@ -426,7 +473,10 @@ void OverlayWidget::RendererRhi::createPipelines() {
 			_placeholderTexture,
 			_sampler),
 	});
-	yuv420Srb->create();
+	if (!yuv420Srb->create()) {
+		delete yuv420Srb;
+		return false;
+	}
 	_perDrawSrbs.push_back(yuv420Srb);
 
 	auto createYuvPipeline = [&](const QShader &frag, bool blending,
@@ -443,7 +493,10 @@ void OverlayWidget::RendererRhi::createPipelines() {
 		pipeline->setTopology(QRhiGraphicsPipeline::TriangleStrip);
 		pipeline->setShaderResourceBindings(srb);
 		pipeline->setRenderPassDescriptor(rpDesc);
-		pipeline->create();
+		if (!pipeline->create()) {
+			delete pipeline;
+			return static_cast<QRhiGraphicsPipeline*>(nullptr);
+		}
 		return pipeline;
 	};
 
@@ -475,17 +528,34 @@ void OverlayWidget::RendererRhi::createPipelines() {
 			_placeholderTexture,
 			_sampler),
 	});
-	nv12Srb->create();
+	if (!nv12Srb->create()) {
+		delete nv12Srb;
+		return false;
+	}
 	_perDrawSrbs.push_back(nv12Srb);
 
 	_nv12Pipeline = createYuvPipeline(nv12Frag, false, nv12Srb);
 	_nv12BlendPipeline = createYuvPipeline(nv12Frag, true, nv12Srb);
+	return _yuv420Pipeline && _yuv420BlendPipeline
+		&& _nv12Pipeline && _nv12BlendPipeline;
 }
 
 void OverlayWidget::RendererRhi::render(
 		QRhi *rhi,
 		QRhiRenderTarget *rt,
 		QRhiCommandBuffer *cb) {
+	if (!rhi || rhi->isDeviceLost() || !rt || !cb) {
+		return;
+	}
+	initialize(rhi, rt, cb);
+	if (!_initialized) {
+		return;
+	}
+	const auto guard = gsl::finally([&] {
+		if (!_initialized && _rub) {
+			base::take(_rub)->release();
+		}
+	});
 	if (_owner->_hideWorkaround) {
 		cb->beginPass(rt, QColor(0, 0, 0, 0), { 1.0f, 0 });
 		cb->endPass();
@@ -520,6 +590,9 @@ void OverlayWidget::RendererRhi::render(
 	_pendingVideoStream = nullptr;
 
 	_owner->paint(this);
+	if (!_initialized) {
+		return;
+	}
 
 	if (_pendingVideoStream) {
 		_pendingVideoStream->borrowedPaintOffscreen(_rhi, _rt, _cb);
@@ -529,6 +602,9 @@ void OverlayWidget::RendererRhi::render(
 		auto blackImage = QImage(1, 1, QImage::Format_ARGB32_Premultiplied);
 		blackImage.fill(Qt::black);
 		auto *blackTex = acquirePoolTexture(QSize(1, 1));
+		if (!blackTex) {
+			return;
+		}
 		_rub->uploadTexture(
 			blackTex,
 			QRhiTextureUploadDescription(
@@ -585,18 +661,28 @@ QRhiTexture *OverlayWidget::RendererRhi::acquirePoolTexture(QSize size) {
 		}
 		delete entry.texture;
 		entry.texture = _rhi->newTexture(QRhiTexture::BGRA8, size);
-		entry.texture->create();
+		if (!entry.texture->create()) {
+			_initialized = false;
+			return nullptr;
+		}
 		entry.size = size;
 		return entry.texture;
 	}
 	auto *tex = _rhi->newTexture(QRhiTexture::BGRA8, size);
-	tex->create();
+	if (!tex->create()) {
+		delete tex;
+		_initialized = false;
+		return nullptr;
+	}
 	_texturePool.push_back({ tex, size });
 	_nextPoolIndex++;
 	return tex;
 }
 
 void OverlayWidget::RendererRhi::releaseResources() {
+	if (const auto rub = base::take(_rub)) {
+		rub->release();
+	}
 	_drawCommands.clear();
 
 	for (auto &entry : _texturePool) {
@@ -669,7 +755,7 @@ void OverlayWidget::RendererRhi::releaseResources() {
 	_chromaSize = QSize();
 	_chromaNV12 = false;
 	_usingExternalVideoTextures = false;
-	_trackFrameIndex = 0;
+	_trackFrameIndex = -1;
 	_streamedIndex = 0;
 #ifdef Q_OS_MAC
 	_metalTextureCache.flush();
@@ -719,6 +805,9 @@ void OverlayWidget::RendererRhi::drawTexturedQuad(
 		const float *coords,
 		float opacity,
 		bool blend) {
+	if (!_initialized) {
+		return;
+	}
 	if (_nextVertexSlot >= kMaxDraws || !texture) {
 		return;
 	}
@@ -752,7 +841,11 @@ void OverlayWidget::RendererRhi::drawTexturedQuad(
 			texture,
 			_sampler),
 	});
-	srb->create();
+	if (!srb->create()) {
+		delete srb;
+		_initialized = false;
+		return;
+	}
 	_perDrawSrbs.push_back(srb);
 
 	_drawCommands.push_back({
@@ -771,6 +864,9 @@ void OverlayWidget::RendererRhi::paintUsingRaster(
 		float64 rasterOpacity) {
 	Expects(cacheIndex >= -1 && cacheIndex < int(_rasterCaches.size()));
 
+	if (!_initialized) {
+		return;
+	}
 	if (!_imagePipeline || rect.isEmpty()) {
 		return;
 	}
@@ -801,7 +897,12 @@ void OverlayWidget::RendererRhi::paintUsingRaster(
 			}
 			if (!texture) {
 				texture = _rhi->newTexture(QRhiTexture::BGRA8, size);
-				texture->create();
+				if (!texture->create()) {
+					delete texture;
+					*cache = {};
+					_initialized = false;
+					return;
+				}
 			}
 			*cache = {
 				.texture = texture,
@@ -813,6 +914,9 @@ void OverlayWidget::RendererRhi::paintUsingRaster(
 			};
 		} else {
 			texture = acquirePoolTexture(size);
+			if (!texture) {
+				return;
+			}
 		}
 		_rub->uploadTexture(
 			texture,
@@ -884,7 +988,10 @@ void OverlayWidget::RendererRhi::validateControlsFade() {
 		_controlsFadeTexture = _rhi->newTexture(
 			QRhiTexture::BGRA8,
 			size);
-		_controlsFadeTexture->create();
+		if (!_controlsFadeTexture->create()) {
+			_initialized = false;
+			return;
+		}
 		_controlsFadeSize = size;
 	}
 	_rub->uploadTexture(
@@ -936,11 +1043,17 @@ void OverlayWidget::RendererRhi::drawContentQuad(
 		ContentGeometry geometry,
 		bool fillTransparentBackground,
 		bool blend) {
+	if (!_initialized) {
+		return;
+	}
 	if (_nextVertexSlot >= kMaxDraws || !contentTexture) {
 		return;
 	}
 
 	validateControlsFade();
+	if (!_initialized) {
+		return;
+	}
 
 	const auto slot = _nextVertexSlot++;
 	const auto vOffset = slot * kVertexSize;
@@ -1041,7 +1154,11 @@ void OverlayWidget::RendererRhi::drawContentQuad(
 				: _placeholderTexture,
 			_sampler),
 	});
-	srb->create();
+	if (!srb->create()) {
+		delete srb;
+		_initialized = false;
+		return;
+	}
 	_perDrawSrbs.push_back(srb);
 
 	_drawCommands.push_back({
@@ -1052,6 +1169,9 @@ void OverlayWidget::RendererRhi::drawContentQuad(
 }
 
 void OverlayWidget::RendererRhi::paintBackground() {
+	if (!_initialized) {
+		return;
+	}
 	const auto &bg = _owner->_fullScreenVideo
 		? st::mediaviewVideoBg
 		: st::mediaviewBg;
@@ -1063,6 +1183,9 @@ void OverlayWidget::RendererRhi::paintBackground() {
 	bgImage.fill(c);
 
 	auto *tex = acquirePoolTexture(QSize(1, 1));
+	if (!tex) {
+		return;
+	}
 	_rub->uploadTexture(
 		tex,
 		QRhiTextureUploadDescription(
@@ -1079,11 +1202,17 @@ void OverlayWidget::RendererRhi::paintBackground() {
 }
 
 void OverlayWidget::RendererRhi::paintVideoStream() {
+	if (!_initialized) {
+		return;
+	}
 	_pendingVideoStream = _owner->_videoStream.get();
 }
 
 void OverlayWidget::RendererRhi::paintTransformedVideoFrame(
 		ContentGeometry geometry) {
+	if (!_initialized) {
+		return;
+	}
 	const auto data = _owner->videoFrameWithInfo();
 	if (data.format == Streaming::FrameFormat::None) {
 		return;
@@ -1133,10 +1262,9 @@ void OverlayWidget::RendererRhi::paintTransformedVideoFrame(
 	const auto nv12changed = !nativeTexture && (_chromaNV12 != nv12);
 
 	const auto upload = (_trackFrameIndex != data.index)
-		|| (_streamedIndex != _owner->streamedIndex());
-
-	_trackFrameIndex = data.index;
-	_streamedIndex = _owner->streamedIndex();
+		|| (_streamedIndex != _owner->streamedIndex())
+		|| !_yTexture
+		|| (nv12 ? !_uvTexture : (!_uTexture || !_vTexture));
 
 	if (upload) {
 		auto zeroCopied = false;
@@ -1179,7 +1307,10 @@ void OverlayWidget::RendererRhi::paintTransformedVideoFrame(
 		if (!_yTexture || _lumaSize != yuv->size) {
 			delete _yTexture;
 			_yTexture = _rhi->newTexture(QRhiTexture::R8, yuv->size);
-			_yTexture->create();
+			if (!_yTexture->create()) {
+				_initialized = false;
+				return;
+			}
 			_lumaSize = yuv->size;
 		}
 		auto yDesc = QRhiTextureSubresourceUploadDescription(
@@ -1198,7 +1329,10 @@ void OverlayWidget::RendererRhi::paintTransformedVideoFrame(
 				_uvTexture = _rhi->newTexture(
 					QRhiTexture::RG8,
 					yuv->chromaSize);
-				_uvTexture->create();
+				if (!_uvTexture->create()) {
+					_initialized = false;
+					return;
+				}
 				_chromaSize = yuv->chromaSize;
 			}
 			auto uvDesc = QRhiTextureSubresourceUploadDescription(
@@ -1216,12 +1350,18 @@ void OverlayWidget::RendererRhi::paintTransformedVideoFrame(
 				_uTexture = _rhi->newTexture(
 					QRhiTexture::R8,
 					yuv->chromaSize);
-				_uTexture->create();
+				if (!_uTexture->create()) {
+					_initialized = false;
+					return;
+				}
 				delete _vTexture;
 				_vTexture = _rhi->newTexture(
 					QRhiTexture::R8,
 					yuv->chromaSize);
-				_vTexture->create();
+				if (!_vTexture->create()) {
+					_initialized = false;
+					return;
+				}
 				_chromaSize = yuv->chromaSize;
 			}
 			auto uDesc = QRhiTextureSubresourceUploadDescription(
@@ -1244,9 +1384,14 @@ void OverlayWidget::RendererRhi::paintTransformedVideoFrame(
 		_chromaNV12 = nv12;
 		} // if (!zeroCopied)
 		_usingExternalVideoTextures = zeroCopied;
+		_trackFrameIndex = data.index;
+		_streamedIndex = _owner->streamedIndex();
 	}
 
 	validateControlsFade();
+	if (!_initialized) {
+		return;
+	}
 
 	if (_nextVertexSlot >= kMaxDraws) {
 		return;
@@ -1385,7 +1530,11 @@ void OverlayWidget::RendererRhi::paintTransformedVideoFrame(
 				_sampler),
 		});
 	}
-	srb->create();
+	if (!srb->create()) {
+		delete srb;
+		_initialized = false;
+		return;
+	}
 	_perDrawSrbs.push_back(srb);
 
 	auto *pipeline = nv12
@@ -1410,6 +1559,9 @@ void OverlayWidget::RendererRhi::paintTransformedVideoFrame(
 void OverlayWidget::RendererRhi::paintRecognitionOverlay(
 		const QImage &image,
 		ContentGeometry geometry) {
+	if (!_initialized) {
+		return;
+	}
 	if (!_owner->_recognitionResult.success
 		|| _owner->_recognitionResult.items.empty()) {
 		return;
@@ -1463,6 +1615,9 @@ void OverlayWidget::RendererRhi::paintRecognitionOverlay(
 	}
 
 	auto *tex = acquirePoolTexture(overlaySize);
+	if (!tex) {
+		return;
+	}
 	_rub->uploadTexture(
 		tex,
 		QRhiTextureUploadDescription(
@@ -1560,6 +1715,9 @@ void OverlayWidget::RendererRhi::paintTransformedStaticContent(
 		bool semiTransparent,
 		bool fillTransparentBackground,
 		int index) {
+	if (!_initialized) {
+		return;
+	}
 	Expects(index >= 0 && index < 3);
 
 	if (image.isNull() || geometry.rect.isEmpty() || !_imagePipeline) {
@@ -1569,14 +1727,16 @@ void OverlayWidget::RendererRhi::paintTransformedStaticContent(
 	const auto cacheKey = image.cacheKey();
 	const auto upload = (_cacheKeys[index] != cacheKey);
 	if (upload) {
-		_cacheKeys[index] = cacheKey;
 		if (!_rgbaTextures[index]
 			|| _rgbaSizes[index] != image.size()) {
 			delete _rgbaTextures[index];
 			_rgbaTextures[index] = _rhi->newTexture(
 				QRhiTexture::BGRA8,
 				image.size());
-			_rgbaTextures[index]->create();
+			if (!_rgbaTextures[index]->create()) {
+				_initialized = false;
+				return;
+			}
 			_rgbaSizes[index] = image.size();
 		}
 		_rub->uploadTexture(
@@ -1584,6 +1744,7 @@ void OverlayWidget::RendererRhi::paintTransformedStaticContent(
 			QRhiTextureUploadDescription(
 				QRhiTextureUploadEntry(0, 0,
 					QRhiTextureSubresourceUploadDescription(image))));
+		_cacheKeys[index] = cacheKey;
 	}
 	paintTextureContent(
 		_rgbaTextures[index],
@@ -1598,6 +1759,9 @@ void OverlayWidget::RendererRhi::paintRadialLoading(
 		QRect inner,
 		bool radial,
 		float64 radialOpacity) {
+	if (!_initialized) {
+		return;
+	}
 	paintUsingRaster(inner, [&](Painter &p) {
 		const auto newInner = QRect(QPoint(), inner.size());
 		_owner->paintRadialLoadingContent(p, newInner, radial, radialOpacity);
@@ -1605,6 +1769,9 @@ void OverlayWidget::RendererRhi::paintRadialLoading(
 }
 
 void OverlayWidget::RendererRhi::paintThemePreview(QRect outer) {
+	if (!_initialized) {
+		return;
+	}
 	paintUsingRaster(outer, [&](Painter &p) {
 		const auto newOuter = QRect(QPoint(), outer.size());
 		_owner->paintThemePreviewContent(p, newOuter, newOuter);
@@ -1614,6 +1781,9 @@ void OverlayWidget::RendererRhi::paintThemePreview(QRect outer) {
 void OverlayWidget::RendererRhi::paintDocumentBubble(
 		QRect outer,
 		QRect icon) {
+	if (!_initialized) {
+		return;
+	}
 	paintUsingRaster(outer, [&](Painter &p) {
 		const auto newOuter = QRect(QPoint(), outer.size());
 		const auto newIcon = icon.translated(-outer.topLeft());
@@ -1622,6 +1792,9 @@ void OverlayWidget::RendererRhi::paintDocumentBubble(
 }
 
 void OverlayWidget::RendererRhi::paintSaveMsg(QRect outer) {
+	if (!_initialized) {
+		return;
+	}
 	paintUsingRaster(outer, [&](Painter &p) {
 		const auto newOuter = QRect(QPoint(), outer.size());
 		_owner->paintSaveMsgContent(p, newOuter, newOuter);
@@ -1629,6 +1802,9 @@ void OverlayWidget::RendererRhi::paintSaveMsg(QRect outer) {
 }
 
 void OverlayWidget::RendererRhi::paintChapter(QRect outer) {
+	if (!_initialized) {
+		return;
+	}
 	paintUsingRaster(outer, [&](Painter &p) {
 		const auto newOuter = QRect(QPoint(), outer.size());
 		_owner->paintChapterContent(p, newOuter, newOuter);
@@ -1636,6 +1812,9 @@ void OverlayWidget::RendererRhi::paintChapter(QRect outer) {
 }
 
 void OverlayWidget::RendererRhi::paintSpeedBoost(QRect outer) {
+	if (!_initialized) {
+		return;
+	}
 	paintUsingRaster(outer, [&](Painter &p) {
 		const auto newOuter = QRect(QPoint(), outer.size());
 		_owner->paintSpeedBoostContent(p, newOuter, newOuter);
@@ -1728,7 +1907,10 @@ void OverlayWidget::RendererRhi::validateControls() {
 
 	const auto size = image.size();
 	_controlsAtlasTexture = _rhi->newTexture(QRhiTexture::BGRA8, size);
-	_controlsAtlasTexture->create();
+	if (!_controlsAtlasTexture->create()) {
+		_initialized = false;
+		return;
+	}
 	_controlsAtlasSize = size;
 	_rub->uploadTexture(
 		_controlsAtlasTexture,
@@ -1744,7 +1926,13 @@ void OverlayWidget::RendererRhi::invalidateControls() {
 }
 
 void OverlayWidget::RendererRhi::paintControlsStart() {
+	if (!_initialized) {
+		return;
+	}
 	validateControls();
+	if (!_initialized) {
+		return;
+	}
 }
 
 void OverlayWidget::RendererRhi::paintControl(
@@ -1754,6 +1942,9 @@ void OverlayWidget::RendererRhi::paintControl(
 		QRect inner,
 		float64 innerOpacity,
 		const style::icon &icon) {
+	if (!_initialized) {
+		return;
+	}
 	if (!_controlsAtlasTexture) {
 		return;
 	}
@@ -1814,6 +2005,9 @@ void OverlayWidget::RendererRhi::paintControl(
 void OverlayWidget::RendererRhi::paintFooter(
 		QRect outer,
 		float64 opacity) {
+	if (!_initialized) {
+		return;
+	}
 	if (outer.isEmpty() || opacity <= 0.) {
 		return;
 	}
@@ -1826,6 +2020,9 @@ void OverlayWidget::RendererRhi::paintFooter(
 void OverlayWidget::RendererRhi::paintCaption(
 		QRect outer,
 		float64 opacity) {
+	if (!_initialized) {
+		return;
+	}
 	if (outer.isEmpty() || opacity <= 0.) {
 		return;
 	}
@@ -1838,6 +2035,9 @@ void OverlayWidget::RendererRhi::paintCaption(
 void OverlayWidget::RendererRhi::paintGroupThumbs(
 		QRect outer,
 		float64 opacity) {
+	if (!_initialized) {
+		return;
+	}
 	if (outer.isEmpty() || opacity <= 0.) {
 		return;
 	}
@@ -1848,6 +2048,9 @@ void OverlayWidget::RendererRhi::paintGroupThumbs(
 }
 
 void OverlayWidget::RendererRhi::paintRoundedCorners(int radius) {
+	if (!_initialized) {
+		return;
+	}
 	if (!_roundedCornersPipeline || radius <= 0) {
 		return;
 	}
@@ -1923,7 +2126,11 @@ void OverlayWidget::RendererRhi::paintRoundedCorners(int radius) {
 				uOffset,
 				sizeof(RoundedCornersUniforms)),
 		});
-		srb->create();
+		if (!srb->create()) {
+			delete srb;
+			_initialized = false;
+			return;
+		}
 		_perDrawSrbs.push_back(srb);
 
 		_drawCommands.push_back({
@@ -1941,6 +2148,9 @@ void OverlayWidget::RendererRhi::paintStoriesSiblingPart(
 		const QImage &image,
 		QRect rect,
 		float64 opacity) {
+	if (!_initialized) {
+		return;
+	}
 	Expects(index >= 0 && index < kStoriesSiblingPartsCount);
 
 	if (image.isNull() || rect.isEmpty()) {
@@ -1951,18 +2161,21 @@ void OverlayWidget::RendererRhi::paintStoriesSiblingPart(
 	if (_storiesSiblingCacheKeys[index] != cacheKey
 		|| !_storiesSiblingTextures[index]
 		|| _storiesSiblingSizes[index] != image.size()) {
-		_storiesSiblingCacheKeys[index] = cacheKey;
 		delete _storiesSiblingTextures[index];
 		_storiesSiblingTextures[index] = _rhi->newTexture(
 			QRhiTexture::BGRA8,
 			image.size());
-		_storiesSiblingTextures[index]->create();
+		if (!_storiesSiblingTextures[index]->create()) {
+			_initialized = false;
+			return;
+		}
 		_storiesSiblingSizes[index] = image.size();
 		_rub->uploadTexture(
 			_storiesSiblingTextures[index],
 			QRhiTextureUploadDescription(
 				QRhiTextureUploadEntry(0, 0,
 					QRhiTextureSubresourceUploadDescription(image))));
+		_storiesSiblingCacheKeys[index] = cacheKey;
 	}
 
 	const auto rRect = transformRect(rect);
@@ -2007,4 +2220,4 @@ Rect OverlayWidget::RendererRhi::scaleRect(
 
 } // namespace Media::View
 
-#endif // Qt >= 6.7
+#endif // Qt >= 6.7 && !DESKTOP_APP_DISABLE_PRIVATE_QT_API

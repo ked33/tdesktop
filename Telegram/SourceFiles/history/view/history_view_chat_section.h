@@ -328,6 +328,7 @@ private:
 	void onScroll();
 	void scrollToCurrentVoiceMessage(FullMsgId fromId, FullMsgId toId);
 	void closeCurrent();
+	void sublistDestroyed();
 	void unreadCountUpdated();
 	void updateInnerVisibleArea();
 	void updateControlsGeometry();
@@ -346,7 +347,7 @@ private:
 		Data::MessagePosition position,
 		FullMsgId originItemId,
 		const Window::SectionShow &params);
-	void finishSending();
+	void finishSending(const Api::SendOptions &options);
 
 	void setupComposeControls();
 	void setupSwipeReplyAndBack();
