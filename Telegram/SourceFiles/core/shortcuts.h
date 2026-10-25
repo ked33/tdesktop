@@ -7,8 +7,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "data/data_peer_id.h"
-
 class QKeyEvent;
 class QShortcutEvent;
 class QString;
