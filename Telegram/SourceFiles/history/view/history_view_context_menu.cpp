@@ -2161,6 +2161,12 @@ bool AddEditMessageAction(
 		|| !HasEditMessageAction(request, list)) {
 		return false;
 	}
+	if (request.overSelection
+		&& request.view
+		&& !request.view->textItem()
+		&& !request.quote.item) {
+		return false;
+	}
 	const auto item = [&]() -> HistoryItem* {
 		const auto base = request.item;
 		const auto view = (request.overSelection && base->groupId())
@@ -3198,7 +3204,8 @@ void FillContextMenuItems(
 				}, &st::menuIconCopy);
 			}
 
-			const auto translate = mediaHasTextForCopy
+			const auto transcribed = mediaHasTextForCopy && view->textItem();
+			const auto translate = transcribed
 				? (HistoryView::TransribedText(item)
 					.append('\n')
 					.append(item->originalText()))
@@ -3213,7 +3220,7 @@ void FillContextMenuItems(
 							list->controller()->show(Box(
 								Ui::TranslateBox,
 								item->history()->peer,
-								mediaHasTextForCopy
+								transcribed
 									? MsgId()
 									: item->fullId().msg,
 								translate,
@@ -3230,7 +3237,8 @@ void FillContextMenuItems(
 	AddRateTranscribeAction(result, item);
 
 	const auto wasAmount = result->actions().size();
-	if (const auto textItem = view ? view->textItem() : item) {
+	const auto textItem = (view && view->textItem()) ? view->textItem() : item;
+	if (textItem) {
 		AddEmojiPacksAction(
 			result,
 			textItem,

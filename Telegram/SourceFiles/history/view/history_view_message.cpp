@@ -5585,6 +5585,14 @@ TextForMimeData Message::selectedText(
 }
 
 SelectedQuote Message::selectedQuote(TextSelection selection) const {
+	if (!textItem()) {
+		if (const auto media = this->media()) {
+			return media->isDisplayed()
+				? media->selectedQuote(selection)
+				: SelectedQuote();
+		}
+		return {};
+	}
 	const auto textItem = this->textItem();
 	const auto item = textItem ? textItem : data().get();
 	const auto &translated = item->translatedText();
@@ -5644,6 +5652,14 @@ TextSelection Message::selectionFromQuote(
 }
 
 TextSelection Message::selectionForEditText(TextSelection selection) const {
+	if (!textItem()) {
+		if (const auto media = this->media()) {
+			return media->isDisplayed()
+				? media->selectionForEditText(selection)
+				: TextSelection();
+		}
+		return {};
+	}
 	const auto textItem = this->textItem();
 	const auto item = textItem ? textItem : data().get();
 	const auto &translated = item->translatedText();

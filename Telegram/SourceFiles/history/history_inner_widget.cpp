@@ -3136,6 +3136,12 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			return viewByItem(item);
 		}();
 		if (view) {
+			if (_selectedTextItem == view->data()
+				&& !view->textItem()
+				&& view->selectedQuote(_selectedTextSelection).item == item) {
+				return view->selectionForEditText(
+					_selectedTextSelection.flatRangeForEdit());
+			}
 			const auto selection = getSelectedTextRange(item);
 			if (!selection.empty()) {
 				return selection;
@@ -3334,7 +3340,15 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				: item->allowsEdit(t)
 				? item
 				: nullptr;
-			if (editItem && GetEnhancedBool("show_message_context_edit")) {
+			const auto selectionView = (isUponSelected == 1 && _selectedTextItem)
+				? viewByItem(_selectedTextItem)
+				: nullptr;
+			const auto ambiguousSelection = selectionView
+				&& !selectionView->textItem()
+				&& !selectionView->selectedQuote(_selectedTextSelection).item;
+			if (editItem
+				&& !ambiguousSelection
+				&& GetEnhancedBool("show_message_context_edit")) {
 				const auto editItemId = editItem->fullId();
 				const auto editSelection = editSelectionByContext(editItem);
 				HistoryView::ApplyContextMenuShortcut(_menu, _menu->addAction(
@@ -4102,7 +4116,14 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				: nullptr;
 			return result ? groupLeaderOrSelf(result) : nullptr;
 		}();
-		const auto partItemOrLeader = (asGroup || !albumPartItem)
+		const auto view = viewByItem(item);
+		const auto captionPart = albumPartItem
+			&& view
+			&& !view->textItem()
+			&& view->media()
+			&& view->media()->hasTextForCopy();
+		const auto useLeader = (asGroup && !captionPart) || !albumPartItem;
+		const auto partItemOrLeader = useLeader
 			? item
 			: albumPartItem;
 			const auto itemId = item ? item->fullId() : FullMsgId();
@@ -4112,7 +4133,6 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			const auto canForward = item && item->allowsForward() && !IsAnchoredEphemeral(item);
 			const auto canReport = item && item->suggestReport();
 			const auto canBlockSender = item && item->history()->peer->isRepliesChat();
-			const auto view = viewByItem(item);
 			const auto detailsItem = partItemOrLeader;
 			const auto detailsView = detailsItem ? viewByItem(detailsItem) : nullptr;
 			const auto mpvItem = partItemOrLeader;
@@ -4261,15 +4281,17 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 							[=] { copyContextText(itemId); },
 							&st::menuIconCopy);
 					}
-					if ((!item->translation() || !_history->translatedTo())
+					const auto translateItem = captionPart ? albumPartItem : item;
+					if ((!translateItem->translation() || !_history->translatedTo())
 						&& (view->hasVisibleText() || mediaHasTextForCopy)) {
-						const auto peer = item->history()->peer;
-						const auto itemId = item->id;
-						const auto translate = mediaHasTextForCopy
+						const auto peer = translateItem->history()->peer;
+						const auto itemId = translateItem->id;
+						const auto transcribed = mediaHasTextForCopy && !captionPart;
+						const auto translate = transcribed
 							? (HistoryView::TransribedText(item)
 								.append('\n')
 								.append(item->originalText()))
-							: item->originalText();
+							: translateItem->originalText();
 						if (!translate.text.isEmpty()
 							&& !Ui::SkipTranslate(translate)) {
 							HistoryView::ApplyContextMenuShortcut(
@@ -4280,7 +4302,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 										_controller->show(Box(
 											Ui::TranslateBox,
 											peer,
-											mediaHasTextForCopy
+											transcribed
 												? MsgId()
 												: itemId,
 											translate,

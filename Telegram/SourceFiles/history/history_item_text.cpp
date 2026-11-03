@@ -606,20 +606,17 @@ TextForMimeData HistoryGroupText(not_null<const Data::Group*> group) {
 			return result;
 		}
 	}
-	return [&] {
-		auto &&nonempty = ranges::views::all(
-			group->items
-		) | ranges::views::filter(
-			hasCaption
-		) | ranges::views::take(2);
-		auto first = nonempty.begin();
-		auto end = nonempty.end();
-		if (first == end) {
-			return TextForMimeData();
+	auto result = TextForMimeData();
+	for (const auto &item : group->items) {
+		auto text = item->clipboardText();
+		if (!text.empty()) {
+			if (!result.empty()) {
+				result.append(u"\n\n"_q);
+			}
+			result.append(std::move(text));
 		}
-		auto result = (*first)->clipboardText();
-		return (++first == end) ? result : TextForMimeData();
-	}();
+	}
+	return result;
 }
 
 namespace {

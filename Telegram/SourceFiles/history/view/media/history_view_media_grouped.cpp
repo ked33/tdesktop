@@ -31,6 +31,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace HistoryView {
 namespace {
 
+constexpr auto kCaptionSelectionLimit = 0xFFFE;
+
 [[nodiscard]] bool IsHostedInstantViewMedia(not_null<const Element*> parent) {
 	return parent->Get<InstantViewMediaRuntime>() != nullptr;
 }
@@ -104,30 +106,53 @@ GroupedMedia::~GroupedMedia() {
 HistoryItem *GroupedMedia::itemForText() const {
 	if (_mode == Mode::Column) {
 		return Media::itemForText();
-	} else if (!_captionItem) {
-		_captionItem = [&]() -> HistoryItem* {
-			auto result = (HistoryItem*)nullptr;
-			for (const auto &part : _parts) {
-				if (!part.item->emptyText()) {
-					if (result == part.item) {
-						// All parts are from the same message, that means
-						// this is an album with a single item, single text.
-						return result;
-					} else if (result) {
-						return nullptr;
-					} else {
-						result = part.item;
-					}
-				}
-			}
-			return result;
-		}();
 	}
+	validateCaptionItems();
 	return *_captionItem;
 }
 
+void GroupedMedia::validateCaptionItems() const {
+	if (_captionItem || _mode != Mode::Grid) {
+		return;
+	}
+	auto items = std::vector<not_null<HistoryItem*>>();
+	for (const auto &part : _parts) {
+		if (!part.item->emptyText() && !ranges::contains(items, part.item)) {
+			items.push_back(part.item);
+		}
+	}
+	_captionItem = (items.size() == 1) ? items.front().get() : nullptr;
+	if (items.size() < 2) {
+		return;
+	}
+	auto offset = 0;
+	for (const auto item : items) {
+		auto text = createCaption(item);
+		text.removeSkipBlock();
+		const auto length = int(text.length());
+		if (!length) {
+			continue;
+		}
+		if (const auto next = text.nextFormattedDateUpdate()) {
+			history()->owner().registerFormattedDateUpdate(next, _parent);
+		}
+		_captions.push_back({
+			.item = item,
+			.text = std::move(text),
+			.offset = offset,
+			.partIndex = int(ranges::find(_parts, item, &Part::item)
+				- _parts.begin()),
+		});
+		offset += length;
+	}
+}
+
+bool GroupedMedia::captionsAbove() const {
+	return !_captions.empty() && _captions.front().item->invertMedia();
+}
+
 bool GroupedMedia::hideMessageText() const {
-	return (_mode == Mode::Column);
+	return (_mode == Mode::Column) || !_captions.empty();
 }
 
 GroupedMedia::Mode GroupedMedia::DetectMode(not_null<Data::Media*> media) {
@@ -140,6 +165,7 @@ GroupedMedia::Mode GroupedMedia::DetectMode(not_null<Data::Media*> media) {
 }
 
 QSize GroupedMedia::countOptimalSize() {
+	validateCaptionItems();
 	_purchasedPriceTag = hasPurchasedTag();
 
 	std::vector<QSize> sizes;
@@ -202,6 +228,7 @@ QSize GroupedMedia::countOptimalSize() {
 
 	const auto groupPadding = groupedPadding();
 	minHeight += groupPadding.top() + groupPadding.bottom();
+	minHeight = layoutCaptions(maxWidth, minHeight);
 
 	return { maxWidth, minHeight };
 }
@@ -214,6 +241,7 @@ QSize GroupedMedia::countCurrentSize(int newWidth) {
 	}
 	auto newHeight = 0;
 	if (_mode == Mode::Grid && newWidth < st::historyGroupWidthMin) {
+		_mediaTop = _mediaHeight = 0;
 		return { newWidth, newHeight };
 	} else if (_mode == Mode::Column) {
 		auto top = 0;
@@ -272,8 +300,43 @@ QSize GroupedMedia::countCurrentSize(int newWidth) {
 
 	const auto groupPadding = groupedPadding();
 	newHeight += groupPadding.top() + groupPadding.bottom();
+	newHeight = layoutCaptions(newWidth, newHeight);
 
 	return { newWidth, newHeight };
+}
+
+int GroupedMedia::layoutCaptions(int width, int mediaHeight) {
+	_mediaTop = 0;
+	_mediaHeight = mediaHeight;
+	if (_captions.empty()) {
+		return mediaHeight;
+	}
+	const auto above = captionsAbove();
+	const auto captionWidth = std::max(1, width
+		- st::msgPadding.left() - st::msgPadding.right());
+	auto top = above ? st::msgPadding.top() : st::mediaCaptionSkip;
+	for (auto &caption : _captions) {
+		if (!above && &caption == &_captions.back() && isBubbleBottom()) {
+			caption.text.updateSkipBlock(
+				_parent->skipBlockWidth(),
+				_parent->skipBlockHeight());
+		} else {
+			caption.text.removeSkipBlock();
+		}
+		const auto height = caption.text.countHeight(captionWidth);
+		caption.geometry = QRect(
+			st::msgPadding.left(),
+			top + (above ? 0 : mediaHeight),
+			captionWidth,
+			height);
+		top += height + st::mediaCaptionSkip;
+	}
+	if (above) {
+		_mediaTop = top;
+	} else {
+		top += st::msgPadding.bottom() - st::mediaCaptionSkip;
+	}
+	return mediaHeight + top;
 }
 
 void GroupedMedia::refreshParentId(
@@ -323,7 +386,7 @@ QRect GroupedMedia::groupItemRect(int index) const {
 	if (index >= 0 && index < int(_parts.size())) {
 		return _parts[index].geometry.translated(
 			0,
-			groupedPadding().top());
+			_mediaTop + groupedPadding().top());
 	}
 	return {};
 }
@@ -355,7 +418,8 @@ QImage GroupedMedia::generateSpoilerTagBackground(QRect full) const {
 	const auto skip2 = st::historyGroupSkip - skip1;
 	for (const auto &part : _parts) {
 		auto background = part.content->spoilerTagBackground();
-		const auto extended = part.geometry.translated(shift).marginsAdded(
+		const auto extended = part.geometry.translated(
+			shift + QPoint(0, _mediaTop)).marginsAdded(
 			{ skip1, skip1, skip2, skip2 });
 		if (background.isNull()) {
 			p.fillRect(extended, Qt::black);
@@ -379,7 +443,20 @@ void GroupedMedia::drawHighlight(
 	}
 	auto selection = context.highlight.range;
 	if (_mode != Mode::Column) {
-		if (!selection.empty() && !IsSubGroupSelection(selection)) {
+		if (!_captions.empty() && !IsSubGroupSelection(selection)) {
+			for (const auto &caption : _captions) {
+				if (!captionSelection(caption, selection).empty()) {
+					auto copy = context;
+					copy.highlight.range = {};
+					_parent->paintCustomHighlight(
+						p,
+						copy,
+						top + caption.geometry.y(),
+						caption.geometry.height(),
+						caption.item);
+				}
+			}
+		} else if (!selection.empty() && !IsSubGroupSelection(selection)) {
 			_parent->paintCustomHighlight(
 				p,
 				context,
@@ -427,9 +504,18 @@ void GroupedMedia::draw(Painter &p, const PaintContext &context) const {
 		&& !IsSubGroupSelection(selection);
 	const auto inWebPage = (_parent->media() != this);
 	constexpr auto kSmall = Ui::BubbleCornerRounding::Small;
-	const auto rounding = (inWebPage && !IsHostedInstantViewMedia(_parent))
+	auto rounding = (inWebPage && !IsHostedInstantViewMedia(_parent))
 		? Ui::BubbleRounding{ kSmall, kSmall, kSmall, kSmall }
 		: adjustedBubbleRounding();
+	if (!_captions.empty()) {
+		if (captionsAbove()) {
+			rounding.topLeft = rounding.topRight
+				= Ui::BubbleCornerRounding::None;
+		} else {
+			rounding.bottomLeft = rounding.bottomRight
+				= Ui::BubbleCornerRounding::None;
+		}
+	}
 	auto highlight = context.highlight.range;
 	const auto tagged = lookupSpoilerTagMedia();
 	auto fullRect = QRect();
@@ -463,7 +549,7 @@ void GroupedMedia::draw(Painter &p, const PaintContext &context) const {
 		part.content->drawGrouped(
 			p,
 			partContext,
-			part.geometry.translated(0, groupPadding.top()),
+			part.geometry.translated(0, _mediaTop + groupPadding.top()),
 			part.sides,
 			applyRoundingSides(rounding, part.sides),
 			highlightOpacity,
@@ -473,7 +559,7 @@ void GroupedMedia::draw(Painter &p, const PaintContext &context) const {
 			nowCache = true;
 		}
 		if (tagged || _purchasedPriceTag) {
-			fullRect = fullRect.united(part.geometry);
+			fullRect = fullRect.united(part.geometry.translated(0, _mediaTop));
 		}
 	}
 	if (nowCache && !wasCache) {
@@ -487,6 +573,7 @@ void GroupedMedia::draw(Painter &p, const PaintContext &context) const {
 	} else if (_purchasedPriceTag) {
 		drawPurchasedTag(p, fullRect, context);
 	}
+	drawCaptions(p, context);
 
 	// date
 	if (_parent->media() == this && (!_parent->hasBubble() || isBubbleBottom())) {
@@ -509,6 +596,82 @@ void GroupedMedia::draw(Painter &p, const PaintContext &context) const {
 			_parent->drawRightAction(p, context, fastShareLeft, fastShareTop, width());
 		}
 	}
+}
+
+void GroupedMedia::drawCaptions(
+		Painter &p,
+		const PaintContext &context) const {
+	const auto stm = context.messageStyle();
+	for (const auto &caption : _captions) {
+		auto local = context;
+		local.selection = captionSelection(caption, context.selection);
+		local.highlight.range = captionSelection(caption, context.highlight.range);
+		p.setPen(stm->historyTextFg);
+		_parent->prepareCustomEmojiPaint(p, context, caption.text);
+		auto highlight = local.computeHighlightCache();
+		caption.text.draw(p, {
+			.position = caption.geometry.topLeft(),
+			.availableWidth = caption.geometry.width(),
+			.clip = context.clip,
+			.palette = &stm->textPalette,
+			.pre = stm->preCache.get(),
+			.blockquote = context.quoteCache(
+				parent()->contentColorCollectible(),
+				parent()->contentColorIndex()),
+			.colors = context.st->highlightColors(),
+			.spoiler = Ui::Text::DefaultSpoilerCache(),
+			.now = context.now,
+			.pausedEmoji = context.paused || On(PowerSaving::kEmojiChat),
+			.pausedSpoiler = context.paused || On(PowerSaving::kChatSpoiler),
+			.selection = local.selection,
+			.highlight = highlight ? &*highlight : nullptr,
+			.useFullWidth = true,
+		});
+	}
+}
+
+TextSelection GroupedMedia::captionSelection(
+		const Caption &caption,
+		TextSelection selection) const {
+	if (selection == FullSelection
+		|| IsGroupItemSelection(selection, caption.partIndex)) {
+		return { 0, uint16(caption.text.length()) };
+	} else if (IsSubGroupSelection(selection)) {
+		return {};
+	}
+	const auto length = std::min(
+		int(caption.text.length()),
+		std::max(0, kCaptionSelectionLimit - caption.offset));
+	return {
+		uint16(std::clamp(int(selection.from) - caption.offset, 0, length)),
+		uint16(std::clamp(int(selection.to) - caption.offset, 0, length)),
+	};
+}
+
+const GroupedMedia::Caption *GroupedMedia::captionForSelection(
+		TextSelection selection) const {
+	if (selection.empty() || selection.from == 0xFFFF) {
+		return nullptr;
+	}
+	for (const auto &caption : _captions) {
+		if (selection.from >= caption.offset
+			&& selection.to <= caption.offset + caption.text.length()) {
+			return &caption;
+		}
+	}
+	return nullptr;
+}
+
+TextSelection GroupedMedia::captionEditSelection(
+		const Caption &caption,
+		TextSelection selection) const {
+	const auto &original = caption.item->originalText();
+	return (&caption.item->translatedText() == &original)
+		? Element::FindSelectionInOriginalText(
+			caption.text,
+			selection,
+			int(original.text.size()))
+		: TextSelection();
 }
 
 TextState GroupedMedia::getPartState(
@@ -536,7 +699,7 @@ PointState GroupedMedia::pointState(QPoint point) const {
 		return PointState::Outside;
 	}
 	const auto groupPadding = groupedPadding();
-	point -= QPoint(0, groupPadding.top());
+	point -= QPoint(0, _mediaTop + groupPadding.top());
 	for (const auto &part : _parts) {
 		if (part.geometry.contains(point)) {
 			return PointState::GroupPart;
@@ -546,16 +709,49 @@ PointState GroupedMedia::pointState(QPoint point) const {
 }
 
 TextState GroupedMedia::textState(QPoint point, StateRequest request) const {
+	if (!_captions.empty()) {
+		const auto inCaptions = captionsAbove()
+			? (point.y() < _mediaTop)
+			: (point.y() >= _mediaHeight);
+		if (inCaptions) {
+			for (const auto &caption : _captions) {
+				if (point.y() < caption.geometry.y() + caption.geometry.height()
+					|| &caption == &_captions.back()) {
+					auto result = TextState(caption.item, caption.text.getState(
+						point - caption.geometry.topLeft(),
+						caption.geometry.width(),
+						request.forText()));
+					const auto position = caption.offset + result.symbol;
+					SetTextStatePosition(
+						&result,
+						uint16(std::min(position, kCaptionSelectionLimit)),
+						position < kCaptionSelectionLimit && result.afterSymbol);
+					if (position >= kCaptionSelectionLimit) {
+						result.cursor = CursorState::None;
+					}
+					result.overMessageText = true;
+					return result;
+				}
+			}
+		}
+	}
 	const auto groupPadding = groupedPadding();
-	auto result = getPartState(point - QPoint(0, groupPadding.top()), request);
+	auto result = getPartState(
+		point - QPoint(0, _mediaTop + groupPadding.top()),
+		request);
+	if (!_captions.empty() && captionsAbove()) {
+		SetTextStatePosition(&result, fullSelectionLength(), false);
+	}
 	if (const auto tagged = lookupSpoilerTagMedia()) {
-		if (QRect(0, 0, width(), height()).contains(point)) {
+		if (QRect(0, _mediaTop, width(), _mediaHeight).contains(point)) {
 			if (auto link = tagged->spoilerTagLink()) {
 				result.link = std::move(link);
 			}
 		}
 	}
-	if (_parent->media() == this && (!_parent->hasBubble() || isBubbleBottom())) {
+	if (customInfoLayout()
+		&& _parent->media() == this
+		&& (!_parent->hasBubble() || isBubbleBottom())) {
 		auto fullRight = width();
 		auto fullBottom = height();
 		const auto bottomInfoResult = _parent->bottomInfoTextState(
@@ -604,6 +800,40 @@ bool GroupedMedia::dragItemByHandler(const ClickHandlerPtr &p) const {
 TextSelection GroupedMedia::adjustSelection(
 		TextSelection selection,
 		TextSelectType type) const {
+	if (!_captions.empty()) {
+		if (selection.from == 0xFFFF) {
+			return selection;
+		}
+		const auto original = selection;
+		for (const auto &caption : _captions) {
+			const auto from = caption.offset;
+			const auto till = from + caption.text.length();
+			const auto startsHere = original.from >= from
+				&& (original.from < till
+					|| (&caption == &_captions.back() && original.from == till));
+			const auto endsHere = original.empty()
+				? startsHere
+				: (original.to > from && original.to <= till);
+			if (!startsHere && !endsHere) {
+				continue;
+			}
+			const auto adjusted = caption.text.adjustSelection(
+				captionSelection(caption, original),
+				type);
+			if (startsHere) {
+				selection.from = uint16(std::min(
+					from + adjusted.from,
+					kCaptionSelectionLimit));
+			}
+			if (endsHere) {
+				selection.to = uint16(std::min(
+					from + adjusted.to,
+					kCaptionSelectionLimit));
+				break;
+			}
+		}
+		return selection;
+	}
 	if (_mode != Mode::Column) {
 		return {};
 	}
@@ -628,6 +858,12 @@ TextSelection GroupedMedia::adjustSelection(
 }
 
 uint16 GroupedMedia::fullSelectionLength() const {
+	if (!_captions.empty()) {
+		const auto &last = _captions.back();
+		return uint16(std::min(
+			last.offset + last.text.length(),
+			kCaptionSelectionLimit));
+	}
 	if (_mode != Mode::Column) {
 		return {};
 	}
@@ -639,6 +875,9 @@ uint16 GroupedMedia::fullSelectionLength() const {
 }
 
 bool GroupedMedia::hasTextForCopy() const {
+	if (!_captions.empty()) {
+		return true;
+	}
 	if (_mode != Mode::Column) {
 		return {};
 	}
@@ -652,6 +891,20 @@ bool GroupedMedia::hasTextForCopy() const {
 
 TextForMimeData GroupedMedia::selectedText(
 		TextSelection selection) const {
+	if (!_captions.empty()) {
+		auto result = TextForMimeData();
+		for (const auto &caption : _captions) {
+			auto text = caption.text.toTextForMimeData(
+				captionSelection(caption, selection));
+			if (!text.empty()) {
+				if (!result.empty()) {
+					result.append(u"\n\n"_q);
+				}
+				result.append(std::move(text));
+			}
+		}
+		return result;
+	}
 	if (_mode != Mode::Column) {
 		return {};
 	}
@@ -671,6 +924,17 @@ TextForMimeData GroupedMedia::selectedText(
 }
 
 SelectedQuote GroupedMedia::selectedQuote(TextSelection selection) const {
+	if (!_captions.empty()) {
+		const auto caption = captionForSelection(selection);
+		if (!caption
+			|| &caption->item->translatedText() != &caption->item->originalText()) {
+			return {};
+		}
+		return Element::FindSelectedQuote(
+			caption->text,
+			captionSelection(*caption, selection),
+			caption->item);
+	}
 	if (_mode != Mode::Column) {
 		return {};
 	}
@@ -693,6 +957,22 @@ TextSelection GroupedMedia::selectionFromQuote(
 		const SelectedQuote &quote) const {
 	Expects(quote.item != nullptr);
 
+	if (!_captions.empty()) {
+		for (const auto &caption : _captions) {
+			if (caption.item != quote.item) {
+				continue;
+			}
+			const auto selection = Element::FindSelectionFromQuote(
+				caption.text,
+				quote);
+			if (selection.empty()
+				|| caption.offset + selection.to > kCaptionSelectionLimit) {
+				return AddGroupItemSelection({}, caption.partIndex);
+			}
+			return ShiftItemSelection(selection, uint16(caption.offset));
+		}
+		return {};
+	}
 	if (_mode != Mode::Column) {
 		return {};
 	}
@@ -713,6 +993,12 @@ TextSelection GroupedMedia::selectionFromQuote(
 
 TextSelection GroupedMedia::selectionForEditText(
 		TextSelection selection) const {
+	if (!_captions.empty()) {
+		const auto caption = captionForSelection(selection);
+		return caption
+			? captionEditSelection(*caption, captionSelection(*caption, selection))
+			: TextSelection();
+	}
 	if (_mode != Mode::Column) {
 		return {};
 	}
@@ -730,6 +1016,17 @@ TextSelection GroupedMedia::selectionForEditText(
 
 TextSelection GroupedMedia::selectionForEditTextByClickHandler(
 		const ClickHandlerPtr &handler) const {
+	if (!_captions.empty()) {
+		if (handler) {
+			for (const auto &caption : _captions) {
+				const auto selection = caption.text.linkRangeFor(handler);
+				if (!selection.empty()) {
+					return captionEditSelection(caption, selection);
+				}
+			}
+		}
+		return {};
+	}
 	if (_mode != Mode::Column) {
 		return {};
 	}
@@ -850,6 +1147,9 @@ not_null<Media*> GroupedMedia::main() const {
 }
 
 void GroupedMedia::hideSpoilers() {
+	for (auto &caption : _captions) {
+		caption.text.setSpoilerRevealed(false, anim::type::instant);
+	}
 	for (const auto &part : _parts) {
 		part.content->hideSpoilers();
 	}
@@ -904,6 +1204,9 @@ bool GroupedMedia::hasHeavyPart() const {
 }
 
 void GroupedMedia::unloadHeavyPart() {
+	for (auto &caption : _captions) {
+		caption.text.unloadPersistentAnimation();
+	}
 	for (const auto &part : _parts) {
 		part.content->unloadHeavyPart();
 		part.cacheKey = 0;
@@ -919,6 +1222,7 @@ void GroupedMedia::parentTextUpdated() {
 			}
 		} else {
 			_captionItem = std::nullopt;
+			_captions.clear();
 		}
 	}
 }
@@ -947,6 +1251,13 @@ bool GroupedMedia::enforceBubbleWidth() const {
 }
 
 int GroupedMedia::contributedMaxMonospaceWidth() const {
+	if (!_captions.empty()) {
+		auto result = 0;
+		for (const auto &caption : _captions) {
+			accumulate_max(result, caption.text.countMaxMonospaceWidth());
+		}
+		return result;
+	}
 	if (_mode != Mode::Column) {
 		return 0;
 	}
@@ -962,7 +1273,7 @@ int GroupedMedia::contributedMaxMonospaceWidth() const {
 bool GroupedMedia::computeNeedBubble() const {
 	Expects(_mode == Mode::Column || _captionItem.has_value());
 
-	if (_mode == Mode::Column || *_captionItem) {
+	if (_mode == Mode::Column || *_captionItem || !_captions.empty()) {
 		return true;
 	}
 	if (const auto item = _parent->data()) {
@@ -981,7 +1292,7 @@ bool GroupedMedia::computeNeedBubble() const {
 
 bool GroupedMedia::needInfoDisplay() const {
 	const auto item = _parent->data();
-	return (_mode != Mode::Column)
+	return customInfoLayout()
 		&& (item->isSending()
 			|| item->awaitingVideoProcessing()
 			|| item->hasFailed()

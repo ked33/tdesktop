@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/media/history_view_media.h"
 #include "data/data_document.h"
 #include "data/data_photo.h"
+#include "ui/text/text.h"
 
 namespace Data {
 class Media;
@@ -85,12 +86,13 @@ public:
 	HistoryMessageEdited *displayedEditBadge() const override;
 
 	bool skipBubbleTail() const override {
-		return (_mode == Mode::Grid) && isRoundedInBubbleBottom();
+		return customInfoLayout() && isRoundedInBubbleBottom();
 	}
 	void updateNeedBubbleState() override;
 	bool needsBubble() const override;
 	bool customInfoLayout() const override {
-		return (_mode != Mode::Column);
+		return (_mode == Mode::Grid)
+			&& (_captions.empty() || captionsAbove());
 	}
 	QPoint resolveCustomInfoRightBottom() const override;
 
@@ -132,6 +134,13 @@ private:
 		mutable QPixmap cache;
 
 	};
+	struct Caption {
+		not_null<HistoryItem*> item;
+		Ui::Text::String text;
+		QRect geometry;
+		int offset = 0;
+		int partIndex = 0;
+	};
 
 	[[nodiscard]] static Mode DetectMode(not_null<Data::Media*> media);
 
@@ -143,6 +152,18 @@ private:
 
 	QSize countOptimalSize() override;
 	QSize countCurrentSize(int newWidth) override;
+	void validateCaptionItems() const;
+	[[nodiscard]] bool captionsAbove() const;
+	[[nodiscard]] int layoutCaptions(int width, int mediaHeight);
+	void drawCaptions(Painter &p, const PaintContext &context) const;
+	[[nodiscard]] const Caption *captionForSelection(
+		TextSelection selection) const;
+	[[nodiscard]] TextSelection captionSelection(
+		const Caption &caption,
+		TextSelection selection) const;
+	[[nodiscard]] TextSelection captionEditSelection(
+		const Caption &caption,
+		TextSelection selection) const;
 
 	bool needInfoDisplay() const;
 	bool computeNeedBubble() const;
@@ -160,7 +181,10 @@ private:
 	[[nodiscard]] QImage generateSpoilerTagBackground(QRect full) const;
 
 	mutable std::optional<HistoryItem*> _captionItem;
+	mutable std::vector<Caption> _captions;
 	std::vector<Part> _parts;
+	int _mediaTop = 0;
+	int _mediaHeight = 0;
 	Mode _mode = Mode::Grid;
 	bool _needBubble : 1 = false;
 	bool _purchasedPriceTag : 1 = false;
