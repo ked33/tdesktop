@@ -154,7 +154,9 @@ void CheckPainting() {
 	auto image = QImage(240, 64, QImage::Format_ARGB32_Premultiplied);
 	image.fill(Qt::white);
 	auto painter = QPainter(&image);
-	const auto font = QFont(u"Arial"_q, 12);
+	auto font = QFont(u"Arial"_q, 12);
+	// Subpixel fringes on black glyphs must not count as red highlights.
+	font.setStyleStrategy(QFont::NoAntialias);
 	for (const auto width : { 0, 1, 15, 40, 200 }) {
 		const auto used = PaintHashtagMatch(
 			painter, font, { u"abcd"_q, 1, 2 }, { 0, 32 }, width,
