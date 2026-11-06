@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/object_ptr.h"
+#include "chat_helpers/hashtag_suggestions.h"
 #include "ui/rp_widget.h"
 
 #include <rpl/event_stream.h>
@@ -57,7 +58,7 @@ private:
 	friend class Inner;
 
 	struct Row {
-		QString tag;
+		HashtagMatch match;
 		quint64 count = 0;
 
 		friend inline bool operator==(const Row&, const Row&) = default;
@@ -79,6 +80,7 @@ private:
 	const not_null<Ui::InputField*> _field;
 	const not_null<Main::Session*> _session;
 	const Source _source;
+	HashtagSuggestions _suggestions;
 	Direction _direction = Direction::Down;
 	object_ptr<Ui::ScrollArea> _scroll;
 	QPointer<Inner> _inner;

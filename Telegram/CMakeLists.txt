@@ -47,6 +47,22 @@ if (DESKTOP_APP_TEST_APPS)
     include(cmake/tests.cmake)
 endif()
 
+add_executable(test_hashtag_suggestions EXCLUDE_FROM_ALL)
+init_target(test_hashtag_suggestions "(tests)")
+target_include_directories(test_hashtag_suggestions PRIVATE ${src_loc})
+target_sources(test_hashtag_suggestions PRIVATE
+    ${src_loc}/chat_helpers/hashtag_suggestions.cpp
+    ${src_loc}/test/test_hashtag_suggestions.cpp
+)
+target_link_libraries(test_hashtag_suggestions PRIVATE
+    desktop-app::lib_ui
+    desktop-app::external_qt
+    desktop-app::external_qt_static_plugins
+)
+set_target_properties(test_hashtag_suggestions PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
 if (WIN32)
     include(cmake/generate_midl.cmake)
     generate_midl(Telegram ${src_loc}
@@ -543,6 +559,8 @@ PRIVATE
     chat_helpers/gifs_list_widget.h
     chat_helpers/hashtag_autocomplete.cpp
     chat_helpers/hashtag_autocomplete.h
+    chat_helpers/hashtag_suggestions.cpp
+    chat_helpers/hashtag_suggestions.h
     chat_helpers/message_field.cpp
     chat_helpers/message_field.h
     chat_helpers/rich_paste_toast.cpp

@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/object_ptr.h"
 #include "base/timer.h"
 #include "base/unique_qptr.h"
+#include "chat_helpers/hashtag_suggestions.h"
 #include "ui/effects/animations.h"
 #include "ui/rp_widget.h"
 
@@ -142,7 +143,7 @@ private:
 	struct MentionRow;
 	struct BotCommandRow;
 
-	using HashtagRows = std::vector<QString>;
+	using HashtagRows = HashtagMatches;
 	using BotCommandRows = std::vector<BotCommandRow>;
 	using StickerRows = std::vector<StickerSuggestion>;
 	using MentionRows = std::vector<MentionRow>;
@@ -161,6 +162,7 @@ private:
 	const std::shared_ptr<Show> _show;
 	const not_null<Main::Session*> _session;
 	const style::EmojiPan &_st;
+	HashtagSuggestions _hashtagSuggestions;
 	QPixmap _cache;
 	MentionRows _mrows;
 	HashtagRows _hrows;

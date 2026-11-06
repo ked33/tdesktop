@@ -32,7 +32,7 @@ namespace EnhancedSettings {
 	inline constexpr auto kTrayIdleMemoryMinutesMaximum = 1440;
 	inline constexpr auto kHashtagAutocompleteLimitMinimum = 1;
 	inline constexpr auto kHashtagAutocompleteLimitDefault = 1000;
-	inline constexpr auto kHashtagAutocompleteLimitMaximum = 5000;
+	inline constexpr auto kHashtagAutocompleteLimitMaximum = 10000;
 
 	enum class DownloadLimitToastMode {
 		Fixed = 0,

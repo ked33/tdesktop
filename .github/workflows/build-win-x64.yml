@@ -252,6 +252,15 @@ jobs:
             -D CMAKE_COMPILE_WARNING_AS_ERROR=OFF ^
             -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= %SCCACHE_LAUNCHER_FLAGS%
 
+      - name: Check hashtag matching, highlighting and 10k history
+        shell: cmd
+        run: |
+          cd /d %TBUILD%\%REPO_NAME%\out
+          cmake --build . --config Release --target test_hashtag_suggestions --parallel
+          if errorlevel 1 exit /b %errorlevel%
+          Release\test_hashtag_suggestions.exe
+          exit /b %errorlevel%
+
       - name: Build Telegram (Release)
         shell: cmd
         run: |

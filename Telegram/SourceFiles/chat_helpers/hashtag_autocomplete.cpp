@@ -96,9 +96,6 @@ void HashtagAutocomplete::Inner::paintEvent(QPaintEvent *e) {
 	const auto till = clip.bottom() / st::mentionHeight + 1;
 	const auto last = int(_owner->_rows.size());
 	const auto &font = st::mentionFont;
-	const auto &filter = _owner->_filter;
-	const auto filterSize = int(filter.size());
-	const auto filterIsEmpty = filter.isEmpty();
 	const auto left = st::mentionPadding.left();
 
 	for (auto i = from; i < till && i < last; ++i) {
@@ -109,43 +106,24 @@ void HashtagAutocomplete::Inner::paintEvent(QPaintEvent *e) {
 			p.fillRect(0, top, width(), st::mentionHeight, st::mentionBgOver);
 		}
 
-		auto first = filterIsEmpty
-			? QString()
-			: ('#' + row.tag.mid(0, filterSize));
-		auto second = filterIsEmpty
-			? ('#' + row.tag)
-			: row.tag.mid(filterSize);
 		const auto history = (_owner->_source == Source::SearchHistory);
 		const auto count = history ? u" (%1)"_q.arg(row.count) : QString();
 		const auto available = std::max(
 			width() - left - font->width(count)
 				- (history ? st::mentionHeight : st::mentionPadding.right()),
 			0);
-		if (available < font->width(first) + font->width(second)) {
-			if (available < font->width(first) + font->elidew) {
-				first = font->elided(first + second, available);
-				second = QString();
-			} else {
-				second = font->elided(second, available - font->width(first));
-			}
-		}
-		const auto firstWidth = font->width(first);
-		const auto secondWidth = font->width(second);
-
 		p.setFont(font);
 		const auto textTop = top + st::mentionTop + font->ascent;
-		if (!first.isEmpty()) {
-			p.setPen(selected
-				? st::mentionFgOverActive
-				: st::mentionFgActive);
-			p.drawText(left, textTop, first);
-		}
-		if (!second.isEmpty()) {
-			p.setPen(selected ? st::mentionFgOver : st::mentionFg);
-			p.drawText(left + firstWidth, textTop, second);
-		}
+		const auto textWidth = PaintHashtagMatch(
+			p,
+			font->f,
+			row.match,
+			QPoint(left, textTop),
+			available,
+			(selected ? st::mentionFgOver : st::mentionFg)->c,
+			(selected ? st::mentionFgOverActive : st::mentionFgActive)->c);
 		p.setPen(selected ? st::mentionFgOver : st::mentionFg);
-		p.drawText(left + firstWidth + secondWidth, textTop, count);
+		p.drawText(left + textWidth, textTop, count);
 		if (history && selected) {
 			const auto &icon = st::smallCloseIconOver;
 			const auto skip = (st::mentionHeight - icon.width()) / 2;
@@ -180,7 +158,7 @@ void HashtagAutocomplete::Inner::mousePressEvent(QMouseEvent *e) {
 	_pressed = rowIndexAt(e->pos());
 	_deletePressed = deleteAt(e->pos());
 	if (_pressed >= 0) {
-		_pressedTag = _owner->_rows[_pressed].tag;
+		_pressedTag = _owner->_rows[_pressed].match.tag;
 		_owner->_mouseSelection = true;
 		_owner->setSelected(_pressed);
 	}
@@ -192,7 +170,7 @@ void HashtagAutocomplete::Inner::mouseReleaseEvent(QMouseEvent *e) {
 	}
 	const auto index = rowIndexAt(e->pos());
 	if (index >= 0 && index == _pressed
-		&& _pressedTag == _owner->_rows[index].tag
+		&& _pressedTag == _owner->_rows[index].match.tag
 		&& _deletePressed == deleteAt(e->pos())) {
 		_owner->setSelected(index);
 		if (_deletePressed) {
@@ -213,6 +191,7 @@ HashtagAutocomplete::HashtagAutocomplete(
 , _field(field)
 , _session(session)
 , _source(source)
+, _suggestions(source == Source::Sent ? TextUtilities::RemoveAccents : nullptr)
 , _scroll(this) {
 	hide();
 
@@ -260,6 +239,7 @@ HashtagAutocomplete::HashtagAutocomplete(
 	_session->local().recentHashtagsChanges(
 	) | rpl::on_next([=] {
 		_rowsDirty = true;
+		_suggestions.invalidate();
 		crl::on_main(this, [=] { updateQuery(); });
 	}, lifetime());
 }
@@ -402,45 +382,38 @@ bool HashtagAutocomplete::updateFiltered(const QString &filter) {
 	if (!_rowsDirty && normalized == _filter) {
 		return resetScroll;
 	}
+	_session->local().readRecentHashtagsAndBots();
 	_rowsDirty = false;
 	_filter = normalized;
 
-	_session->local().readRecentHashtagsAndBots();
 	const auto &recent = history
 		? cRecentSearchHashtags()
 		: cRecentWriteHashtags();
 	const auto limit = history
 		? 64
 		: EnhancedSettings::HashtagAutocompleteLimit();
-	const auto listAllSuggestions = _filter.isEmpty();
+	const auto &matches = _suggestions.filter(recent, filter, limit);
 	auto rows = std::vector<Row>();
-	for (const auto &item : recent) {
-		const auto &tag = item.first;
-		const auto match = history ? tag : TextUtilities::RemoveAccents(tag);
-		if (!listAllSuggestions
-			&& (tag.size() == _filter.size()
-				|| !match.startsWith(_filter, Qt::CaseInsensitive))) {
-			continue;
-		}
+	rows.reserve(matches.size());
+	for (const auto &match : matches) {
 		rows.push_back({
-			tag,
-			history ? _session->local().recentSearchHashtagCount(tag) : 0,
+			match,
+			history ? _session->local().recentSearchHashtagCount(match.tag) : 0,
 		});
-		if (int(rows.size()) >= limit) {
-			break;
-		}
 	}
 	if (!resetScroll && rows == _rows) {
 		return false;
 	}
 	const auto selected = (_selected >= 0 && _selected < int(_rows.size()))
-		? _rows[_selected].tag
+		? _rows[_selected].match.tag
 		: QString();
 	_rows = std::move(rows);
 	if (resetScroll) {
 		setSelected(-1);
 	} else {
-		const auto i = ranges::find(_rows, selected, &Row::tag);
+		const auto i = ranges::find(_rows, selected, [](const Row &row) {
+			return row.match.tag;
+		});
 		setSelected(i == end(_rows) ? -1 : int(i - begin(_rows)));
 	}
 	if (_inner) {
@@ -527,7 +500,7 @@ bool HashtagAutocomplete::chooseSelected() {
 	if (!selectedVisible() || computeQuery().isEmpty()) {
 		return false;
 	}
-	const auto tag = _rows[_selected].tag;
+	const auto tag = _rows[_selected].match.tag;
 	_field->insertTag('#' + tag);
 	hideFast();
 	_chosen.fire_copy(tag);
@@ -539,7 +512,7 @@ void HashtagAutocomplete::removeSelected() {
 		|| _selected < 0 || _selected >= int(_rows.size())) {
 		return;
 	}
-	const auto tag = _rows[_selected].tag;
+	const auto tag = _rows[_selected].match.tag;
 	auto recent = cRecentSearchHashtags();
 	for (auto i = recent.begin(); i != recent.end();) {
 		if (i->first == tag) {

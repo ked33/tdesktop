@@ -250,6 +250,7 @@ FieldAutocomplete::FieldAutocomplete(
 , _show(std::move(show))
 , _session(&_show->session())
 , _st(stOverride ? *stOverride : st::defaultEmojiPan)
+, _hashtagSuggestions(TextUtilities::RemoveAccents)
 , _scroll(this)
 , _ephemeralHintTimer([=] { showPendingEphemeralHint(); }) {
 	hide();
@@ -300,6 +301,15 @@ FieldAutocomplete::FieldAutocomplete(
 			return;
 		}
 		updateFiltered();
+	}, lifetime());
+	_session->local().recentHashtagsChanges(
+	) | rpl::on_next([=] {
+		_hashtagSuggestions.invalidate();
+		crl::on_main(this, [=] {
+			if (_type == Type::Hashtags && !isHidden() && !_hiding) {
+				updateFiltered();
+			}
+		});
 	}, lifetime());
 }
 
@@ -415,10 +425,11 @@ void FieldAutocomplete::showFiltered(
 		plainQuery = base::StringViewMid(query, 1);
 		break;
 	}
-	const auto resetScroll = (_type != type || _filter != plainQuery);
+	const auto normalized = TextUtilities::RemoveAccents(plainQuery.toString());
+	const auto resetScroll = (_type != type || _filter != normalized);
 	if (resetScroll) {
 		_type = type;
-		_filter = TextUtilities::RemoveAccents(plainQuery.toString());
+		_filter = normalized;
 	}
 	_addInlineBots = addInlineBots;
 
@@ -657,19 +668,11 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 			}
 		}
 	} else if (_type == Type::Hashtags) {
-		const auto listAllSuggestions = _filter.isEmpty();
+		_session->local().readRecentHashtagsAndBots();
 		const auto &recent = cRecentWriteHashtags();
-		hrows.reserve(recent.size());
-		for (const auto &item : recent) {
-			const auto &tag = item.first;
-			if (!listAllSuggestions
-				&& (tag.size() == _filter.size()
-					|| !TextUtilities::RemoveAccents(tag).startsWith(
-						_filter,
-						Qt::CaseInsensitive))) {
-				continue;
-			}
-			hrows.push_back(tag);
+		hrows = _hashtagSuggestions.filter(recent, _filter, int(recent.size()));
+		if (!resetScroll && hrows == _hrows && !_hiding && !isHidden()) {
+			return;
 		}
 	} else if (_type == Type::BotCommands) {
 		const auto listAllSuggestions = _filter.isEmpty();
@@ -1351,37 +1354,15 @@ void FieldAutocomplete::Inner::paintRows(Painter &p, QRect clip) {
 			}
 		} else if (!_hrows->empty()) {
 			const auto &hashtag = _hrows->at(i);
-			auto first = filterIsEmpty
-				? QString()
-				: ('#' + hashtag.mid(0, filterSize));
-			auto second = filterIsEmpty
-				? ('#' + hashtag)
-				: hashtag.mid(filterSize);
-			const auto firstWidth = font->width(first);
-			const auto secondWidth = font->width(second);
-			if (hashtagWidth < firstWidth + secondWidth) {
-				if (hashtagWidth < firstWidth + font->elidew) {
-					first = font->elided(first + second, hashtagWidth);
-					second = QString();
-				} else {
-					second = font->elided(second, hashtagWidth - firstWidth);
-				}
-			}
-
 			p.setFont(font);
-			if (!first.isEmpty()) {
-				p.setPen(selected
-					? st::mentionFgOverActive
-					: st::mentionFgActive);
-				p.drawText(hashtagLeft, textTop + font->ascent, first);
-			}
-			if (!second.isEmpty()) {
-				p.setPen(selected ? st::mentionFgOver : st::mentionFg);
-				p.drawText(
-					hashtagLeft + firstWidth,
-					textTop + font->ascent,
-					second);
-			}
+			PaintHashtagMatch(
+				p,
+				font->f,
+				hashtag,
+				QPoint(hashtagLeft, textTop + font->ascent),
+				hashtagWidth,
+				(selected ? st::mentionFgOver : st::mentionFg)->c,
+				(selected ? st::mentionFgOverActive : st::mentionFgActive)->c);
 		} else {
 			auto &row = _brows->at(i);
 			const auto user = row.user;
@@ -1607,7 +1588,7 @@ bool FieldAutocomplete::Inner::chooseAtIndex(
 		}
 	} else if (!_hrows->empty()) {
 		if (index < _hrows->size()) {
-			_hashtagChosen.fire({ '#' + _hrows->at(index), method });
+			_hashtagChosen.fire({ '#' + _hrows->at(index).tag, method });
 			return true;
 		}
 	} else if (!_brows->empty()) {
@@ -1641,7 +1622,7 @@ void FieldAutocomplete::Inner::mousePressEvent(QMouseEvent *e) {
 				: isRemovableMentionRow(_sel))) {
 			auto writeRecent = false;
 			if (_mrows->empty()) {
-				const auto toRemove = _hrows->at(_sel);
+				const auto toRemove = _hrows->at(_sel).tag;
 				auto &recent = cRefRecentWriteHashtags();
 				for (auto i = recent.begin(); i != recent.cend();) {
 					if (i->first == toRemove) {

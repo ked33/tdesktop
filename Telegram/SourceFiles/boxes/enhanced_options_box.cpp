@@ -1411,7 +1411,7 @@ void HashtagAutocompleteLimitBox::prepare() {
 	addButton(tr::lng_cancel(), [=] { closeBox(); });
 	_limit->setText(QString::number(
 		EnhancedSettings::HashtagAutocompleteLimit()));
-	_limit->setMaxLength(4);
+	_limit->setMaxLength(5);
 	_limit->submits() | rpl::on_next([=] { save(); }, lifetime());
 	setDimensions(
 		st::boxWidth,
