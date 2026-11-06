@@ -7,6 +7,9 @@
 #include <QtGui/QImage>
 #include <QtGui/QPainter>
 
+#include <crl/crl_on_main.h>
+#include <rpl/never.h>
+
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
@@ -192,6 +195,15 @@ void CheckPainting() {
 }
 
 } // namespace
+
+namespace crl {
+
+rpl::producer<> on_main_update_requests() {
+	// This QImage-only test has no widget update events.
+	return rpl::never<>();
+}
+
+} // namespace crl
 
 int main(int argc, char *argv[]) {
 	const auto app = QGuiApplication(argc, argv);

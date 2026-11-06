@@ -253,13 +253,13 @@ jobs:
             -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= %SCCACHE_LAUNCHER_FLAGS%
 
       - name: Check hashtag matching, highlighting and 10k history
-        shell: cmd
+        shell: pwsh
         run: |
-          cd /d %TBUILD%\%REPO_NAME%\out
+          Set-Location "$env:TBUILD\$env:REPO_NAME\out"
           cmake --build . --config Release --target test_hashtag_suggestions --parallel
-          if errorlevel 1 exit /b %errorlevel%
-          Release\test_hashtag_suggestions.exe
-          exit /b %errorlevel%
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & '.\Release\test_hashtag_suggestions.exe'
+          exit $LASTEXITCODE
 
       - name: Build Telegram (Release)
         shell: cmd
