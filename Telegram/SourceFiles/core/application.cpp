@@ -866,6 +866,14 @@ void Application::dropIdleMemoryCaches() {
 		).arg((after.workingSet + mb / 2) / mb
 		).arg((before.privateBytes + mb / 2) / mb
 		).arg((after.privateBytes + mb / 2) / mb));
+	if (before.heapUsed || after.heapUsed) {
+		LOG(("Tray idle memory: default heap used %1 -> %2 MB, "
+			"committed free %3 -> %4 MB."
+			).arg((before.heapUsed + mb / 2) / mb
+			).arg((after.heapUsed + mb / 2) / mb
+			).arg((before.heapFree + mb / 2) / mb
+			).arg((after.heapFree + mb / 2) / mb));
+	}
 }
 
 void Application::restoreTrayIdleChats() {

@@ -76,6 +76,8 @@ void LaunchMaps(const Data::LocationPoint &point, Fn<void()> fail);
 struct ProcessMemory {
 	uint64 workingSet = 0;
 	uint64 privateBytes = 0;
+	uint64 heapUsed = 0; // Default process heap busy bytes, if known.
+	uint64 heapFree = 0; // Default process heap committed free bytes.
 };
 void TrimProcessHeaps();
 [[nodiscard]] ProcessMemory CurrentProcessMemory();

@@ -794,8 +794,48 @@ void LaunchMaps(const Data::LocationPoint &point, Fn<void()> fail) {
 	}
 }
 
+namespace {
+
+// HeapOptimizeResources (Windows 8.1+), declared locally to not depend
+// on the SDK target version macros.
+constexpr auto kHeapOptimizeResources = HEAP_INFORMATION_CLASS(3);
+constexpr auto kHeapOptimizeResourcesVersion = DWORD(1);
+
+struct HeapOptimizeResourcesInformation {
+	DWORD version = kHeapOptimizeResourcesVersion;
+	DWORD flags = 0;
+};
+
+void CollectDefaultHeapStats(ProcessMemory &result) {
+	const auto heap = GetProcessHeap();
+	if (!heap || !HeapLock(heap)) {
+		return;
+	}
+	auto entry = PROCESS_HEAP_ENTRY{};
+	while (HeapWalk(heap, &entry)) {
+		if (entry.wFlags & PROCESS_HEAP_ENTRY_BUSY) {
+			result.heapUsed += entry.cbData;
+		} else if (!(entry.wFlags
+			& (PROCESS_HEAP_REGION | PROCESS_HEAP_UNCOMMITTED_RANGE))) {
+			result.heapFree += entry.cbData;
+		}
+	}
+	HeapUnlock(heap);
+}
+
+} // namespace
+
 void TrimProcessHeaps() {
 	_heapmin();
+
+	// Decommits free pages and trims LFH caches in all process heaps.
+	// Fails harmlessly on Windows versions before 8.1.
+	auto optimize = HeapOptimizeResourcesInformation();
+	HeapSetInformation(
+		nullptr,
+		kHeapOptimizeResources,
+		&optimize,
+		sizeof(optimize));
 
 	auto count = GetProcessHeaps(0, nullptr);
 	if (!count) {
@@ -823,6 +863,7 @@ ProcessMemory CurrentProcessMemory() {
 		result.workingSet = data.WorkingSetSize;
 		result.privateBytes = data.PrivateUsage;
 	}
+	CollectDefaultHeapStats(result);
 	return result;
 }
 
