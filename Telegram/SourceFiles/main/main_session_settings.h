@@ -13,6 +13,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_message_reaction_id.h"
 #include "ui/rect_part.h"
 
+class QJsonObject;
+
+namespace Storage::SettingsBackup {
+class Archive;
+} // namespace Storage::SettingsBackup
+
 namespace Support {
 enum class SwitchSettings;
 } // namespace Support
@@ -32,6 +38,8 @@ public:
 	SessionSettings();
 
 	[[nodiscard]] QByteArray serialize() const;
+	[[nodiscard]] QJsonObject exportBackup();
+	[[nodiscard]] bool importBackup(const QJsonObject &data, bool apply);
 	void addFromSerialized(const QByteArray &serialized);
 
 	void setSupportSwitch(Support::SwitchSettings value) {
@@ -203,6 +211,7 @@ public:
 	-> const std::vector<Data::ReactionId> &;
 
 private:
+	void visitBackup(Storage::SettingsBackup::Archive &archive);
 	static constexpr auto kDefaultSupportChatsLimitSlice = 7 * 24 * 60 * 60;
 	static constexpr auto kPhotoEditorHintMaxShowsCount = 5;
 	static constexpr auto kDisableSharingBoxMaxShowsCount = 3;

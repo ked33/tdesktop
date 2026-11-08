@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "main/main_session_settings.h"
 
+#include "storage/settings_backup_archive.h"
+
 #include "chat_helpers/tabbed_selector.h"
 #include "ui/widgets/fields/input_field.h"
 #include "ui/chat/attach/attach_send_files_way.h"
@@ -1079,6 +1081,215 @@ void SessionSettings::setExtraFavoriteReactions(
 auto SessionSettings::extraFavoriteReactions() const
 -> const std::vector<Data::ReactionId> & {
 	return _extraFavoriteReactions;
+}
+
+QJsonObject SessionSettings::exportBackup() {
+	auto archive = Storage::SettingsBackup::Archive();
+	visitBackup(archive);
+	return archive.object();
+}
+
+bool SessionSettings::importBackup(const QJsonObject &data, bool apply) {
+	if (!apply) {
+		auto scratch = SessionSettings();
+		auto archive = Storage::SettingsBackup::Archive(data, false);
+		scratch.visitBackup(archive);
+		return archive.ok();
+	}
+	if (!importBackup(data, false)) {
+		return false;
+	}
+	auto archive = Storage::SettingsBackup::Archive(data, true);
+	visitBackup(archive);
+	return archive.ok();
+}
+
+void SessionSettings::visitBackup(Storage::SettingsBackup::Archive &a) {
+	a.bounded("selectorTab", _selectorTab, 0, 3);
+	a.field("archiveCollapsed", _archiveCollapsed);
+	a.field("archiveInMainMenu", _archiveInMainMenu);
+	a.field("dialogsFiltersEnabled", _dialogsFiltersEnabled);
+	a.field("supportFixChatsOrder", _supportFixChatsOrder);
+	a.field("supportTemplatesAutocomplete", _supportTemplatesAutocomplete);
+	a.field("supportAllSilent", _supportAllSilent);
+	a.field("supportAllSearchResults", _supportAllSearchResults);
+	a.field("phoneNumberHidden", _phoneNumberHidden);
+	a.bounded("supportSwitch", _supportSwitch, 0, 2);
+	a.bounded("supportChatsTimeSlice", _supportChatsTimeSlice, 0, 31536000);
+	for (auto source = 0; source != Data::AutoDownload::kSourcesCount;
+	    ++source) {
+		for (auto type = 0; type != Data::AutoDownload::kTypesCount; ++type) {
+			const auto s = Data::AutoDownload::Source(source);
+			const auto t = Data::AutoDownload::Type(type);
+			auto limit = _autoDownload.backupLimit(s, t);
+			const auto key
+			    = u"autoDownload.%1.%2"_q.arg(source).arg(type).toLatin1();
+			a.bounded(
+			    key.constData(), limit, -1, Data::AutoDownload::kMaxBytesLimit);
+			if (a.applying()) {
+				_autoDownload.setBackupLimit(s, t, limit);
+			}
+		}
+	}
+	for (const auto kind : { Data::DefaultNotify::User,
+	         Data::DefaultNotify::Group,
+	         Data::DefaultNotify::Broadcast }) {
+		auto volume = ringtoneVolume(kind);
+		const auto key = u"ringtoneVolume.%1"_q.arg(int(kind)).toLatin1();
+		a.bounded(key.constData(), volume, 0, 100);
+		if (a.applying()) {
+			setRingtoneVolume(kind, volume);
+		}
+	}
+	auto overrides = std::vector<QString>();
+	_autoDownload.enumeratePeerOverrides(
+	    [&](PeerId peer, Data::AutoDownload::Override value) {
+		    overrides.push_back(QString::number(SerializePeerId(peer)) + ':'
+		                        + QString::number(int(value)));
+	    });
+	a.field("autoDownloadOverrides", overrides, [](const auto &values) {
+		return ranges::all_of(values, [](const auto &value) {
+			const auto parts = value.split(':');
+			auto ok = false;
+			const auto id = parts.front().toULongLong(&ok);
+			return ok && id && parts.size() == 2
+			       && (parts[1] == u"1"_q || parts[1] == u"2"_q);
+		});
+	});
+	if (a.applying()) {
+		auto old = std::vector<PeerId>();
+		_autoDownload.enumeratePeerOverrides(
+		    [&](PeerId peer, auto) { old.push_back(peer); });
+		for (const auto peer : old) {
+			_autoDownload.setPeerOverride(
+			    peer, Data::AutoDownload::Override::Default);
+		}
+		for (const auto &value : overrides) {
+			const auto parts = value.split(':');
+			_autoDownload.setPeerOverride(
+			    DeserializePeerId(parts[0].toULongLong()),
+			    Data::AutoDownload::Override(parts[1].toInt()));
+		}
+	}
+	const auto peerSet = [&](const char* key, base::flat_set<PeerId> &target) {
+		auto ids = std::vector<uint64>();
+		for (const auto id : target) {
+			ids.push_back(SerializePeerId(id));
+		}
+		a.field(key, ids, [](const auto &values) {
+			return ranges::all_of(values, [](uint64 id) { return id != 0; });
+		});
+		if (a.applying()) {
+			target.clear();
+			for (const auto id : ids) {
+				target.emplace(DeserializePeerId(id));
+			}
+		}
+	};
+	peerSet("groupStickersSectionHidden", _groupStickersSectionHidden);
+	peerSet("groupEmojiSectionHidden", _groupEmojiSectionHidden);
+	auto reactions = std::vector<QString>();
+	for (const auto &id : _extraFavoriteReactions) {
+		reactions.push_back(id.custom()
+		                        ? u"custom:"_q + QString::number(id.custom())
+								: u"emoji:"_q + id.emoji());
+	}
+	a.field("extraFavoriteReactions", reactions, [](const auto &values) {
+		return ranges::all_of(values, [](const QString &value) {
+			if (value.startsWith(u"emoji:"_q)) {
+				return value.size() > 6 && value.size() < 128;
+			}
+			auto ok = false;
+			const auto id = value.mid(7).toULongLong(&ok);
+			return value.startsWith(u"custom:"_q) && ok && id;
+		});
+	});
+	if (a.applying()) {
+		_extraFavoriteReactions.clear();
+		for (const auto &value : reactions) {
+			_extraFavoriteReactions.push_back(
+			    value.startsWith(u"custom:"_q)
+			        ? Data::ReactionId{ value.mid(7).toULongLong() }
+					: Data::ReactionId{ value.mid(6) });
+		}
+	}
+	auto volumes = QJsonObject();
+	for (const auto &[id, volume] : _ringtoneVolumes) {
+		const auto key = QString::number(SerializePeerId(id.peerId)) + '/'
+		                 + QString::number(id.topicRootId.bare) + '/'
+		                 + QString::number(SerializePeerId(id.monoforumPeerId));
+		volumes.insert(key, int(volume));
+	}
+	a.field("ringtoneVolumes", volumes, [](const QJsonObject &values) {
+		for (auto i = values.begin(); i != values.end(); ++i) {
+			const auto parts = i.key().split('/');
+			if (parts.size() != 3) {
+				return false;
+			}
+			auto ok = false;
+			if (!parts[0].toULongLong(&ok) || !ok) {
+				return false;
+			}
+			const auto topic = parts[1].toLongLong(&ok);
+			if (!ok || topic < 0) {
+				return false;
+			}
+			const auto monoforum = parts[2].toULongLong(&ok);
+			if (!ok || QString::number(monoforum) != parts[2]) {
+				return false;
+			}
+			auto volume = int();
+			if (!Storage::SettingsBackup::Codec<int>::Decode(*i, volume)
+			    || volume < 0 || volume > 100) {
+				return false;
+			}
+		}
+		return true;
+	});
+	if (a.applying()) {
+		_ringtoneVolumes.clear();
+		for (auto i = volumes.begin(); i != volumes.end(); ++i) {
+			const auto parts = i.key().split('/');
+			_ringtoneVolumes.emplace(
+			    ThreadId{
+			        DeserializePeerId(parts[0].toULongLong()),
+			        MsgId(parts[1].toLongLong()),
+			        DeserializePeerId(parts[2].toULongLong()),
+			    },
+			    ushort(i->toInt()));
+		}
+	}
+	auto tabs = QJsonObject();
+	for (const auto &[peer, mode] : _subsectionTabsModes) {
+		tabs.insert(QString::number(SerializePeerId(peer)), mode);
+	}
+	a.field("subsectionTabsModes", tabs, [](const QJsonObject &values) {
+		for (auto i = values.begin(); i != values.end(); ++i) {
+			auto ok = false;
+			const auto id = i.key().toULongLong(&ok);
+			auto mode = int();
+			if (!ok || !id
+			    || !Storage::SettingsBackup::Codec<int>::Decode(*i, mode)
+			    || mode < 0 || mode > 7) {
+				return false;
+			}
+		}
+		return true;
+	});
+	if (a.applying()) {
+		_subsectionTabsModes.clear();
+		for (auto i = tabs.begin(); i != tabs.end(); ++i) {
+			_subsectionTabsModes.emplace(
+			    DeserializePeerId(i.key().toULongLong()), i->toInt());
+		}
+	}
+	a.field("mutePeriods", _mutePeriods, [](const auto &values) {
+		return ranges::all_of(values, [](TimeId value) { return value >= 0; });
+	});
+	a.field(
+	    "moderateCommonGroups", _moderateCommonGroups, [](const auto &values) {
+		    return ranges::all_of(values, [](int value) { return value >= 0; });
+	    });
 }
 
 } // namespace Main

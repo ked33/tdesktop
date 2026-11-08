@@ -95,8 +95,8 @@ This atlas divides Telegram Desktop's sources into named areas, ordered from fou
 - DC options and config, auth keys, sessions and resending, TCP, HTTP and TLS connections, proxies and checks, special-config fallback, dedicated loaders, the TL schemes and the tde2e end-to-end binding. It knows nothing about messages, peers or UI.
 
 ### storage/local — encrypted local persistence
-- Paths: `SourceFiles/storage/storage_account*`, `SourceFiles/storage/storage_domain*`, `SourceFiles/storage/localstorage*`, `SourceFiles/storage/details/`, `SourceFiles/storage/serialize_*`, `SourceFiles/storage/storage_file_lock*`
-- The tdata of accounts and the domain, the settings scheme, serializers and file locks. It must not own file transfer.
+- Paths: `SourceFiles/storage/storage_account*`, `SourceFiles/storage/storage_domain*`, `SourceFiles/storage/localstorage*`, `SourceFiles/storage/details/`, `SourceFiles/storage/serialize_*`, `SourceFiles/storage/settings_backup*`, `SourceFiles/storage/storage_file_lock*`
+- The tdata of accounts and the domain, the settings scheme, portable settings archive validation, rollback snapshots, serializers and file locks. It must not own file transfer.
 
 ### storage/transfer — downloads and uploads
 - Paths: `SourceFiles/storage/`, `SourceFiles/ui/image/image_location*`
@@ -317,8 +317,8 @@ This atlas divides Telegram Desktop's sources into named areas, ordered from fou
 ## Features: settings and sign-in
 
 ### settings/sections — Settings pages
-- Paths: `SourceFiles/settings/sections/`, `SourceFiles/settings/cloud_password/`, `SourceFiles/settings/settings_privacy_controllers*`, `SourceFiles/settings/settings_experimental*`, `SourceFiles/settings/settings_power_saving*`, `SourceFiles/settings/settings_scale_preview*`, `SourceFiles/settings/settings_notifications_common.h`, `SourceFiles/settings/settings_intro*`, `SourceFiles/settings/settings_codes*`, `SourceFiles/ui/boxes/choose_font_box*`
-- Main, account info, privacy and security with per-rule pages, two-step verification steps, notifications, chat settings, folders, advanced, data and storage, local passcode, sessions, websites, passkeys, calls, shortcuts, experimental options and the Stars page. It must not own the framework or Business pages.
+- Paths: `SourceFiles/settings/sections/`, `SourceFiles/settings/cloud_password/`, `SourceFiles/settings/settings_privacy_controllers*`, `SourceFiles/settings/settings_experimental*`, `SourceFiles/settings/settings_enhanced*`, `SourceFiles/settings/settings_power_saving*`, `SourceFiles/settings/settings_scale_preview*`, `SourceFiles/settings/settings_notifications_common.h`, `SourceFiles/settings/settings_intro*`, `SourceFiles/settings/settings_codes*`, `SourceFiles/ui/boxes/choose_font_box*`
+- Main, account info, privacy and security with per-rule pages, two-step verification steps, notifications, chat settings, folders, advanced, data and storage, local passcode, sessions, websites, passkeys, calls, shortcuts, experimental and enhanced options, settings backup selection and preview, and the Stars page. It must not own the framework or Business pages.
 
 ### settings/business — Telegram Business pages
 - Paths: `SourceFiles/settings/business/`, `SourceFiles/settings/sections/settings_business*`

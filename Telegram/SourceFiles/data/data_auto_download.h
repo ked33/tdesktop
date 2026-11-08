@@ -90,6 +90,8 @@ private:
 
 class Full {
 public:
+	[[nodiscard]] int64 backupLimit(Source source, Type type) const;
+	void setBackupLimit(Source source, Type type, int64 value);
 	void setBytesLimit(Source source, Type type, int64 bytesLimit);
 
 	[[nodiscard]] bool shouldDownload(

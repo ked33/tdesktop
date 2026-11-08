@@ -41,6 +41,8 @@ class AuthKey;
 using AuthKeyPtr = std::shared_ptr<AuthKey>;
 } // namespace MTP
 
+class QJsonObject;
+
 namespace Storage {
 namespace details {
 struct ReadSettingsContext;
@@ -97,6 +99,9 @@ public:
 	}
 
 	void writeSessionSettings();
+	[[nodiscard]] bool writeSessionSettingsChecked();
+	[[nodiscard]] QJsonObject exportCacheBackup() const;
+	[[nodiscard]] bool importCacheBackup(const QJsonObject &data, bool apply);
 	void writeMtpData();
 	void writeMtpConfig();
 
@@ -285,7 +290,7 @@ private:
 	void writePrefsDelayed();
 
 	std::unique_ptr<Main::SessionSettings> readSessionSettings();
-	void writeSessionSettings(Main::SessionSettings *stored);
+	bool writeSessionSettings(Main::SessionSettings* stored, bool sync = false);
 
 	std::unique_ptr<MTP::Config> readMtpConfig();
 	void readMtpData();

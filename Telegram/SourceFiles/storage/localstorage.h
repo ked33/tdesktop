@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtNetwork/QNetworkReply>
 
 class History;
+class QJsonObject;
 
 namespace Data {
 class WallPaper;
@@ -55,6 +56,7 @@ void sync();
 void finish();
 
 void writeSettings();
+[[nodiscard]] bool writeSettingsChecked();
 void rewriteSettingsIfNeeded();
 
 void writeAutoupdatePrefix(const QString &prefix);
@@ -83,6 +85,14 @@ void countVoiceWaveform(not_null<Data::DocumentMedia*> media);
 
 void cancelTask(TaskId id);
 
+[[nodiscard]] QJsonObject ExportThemeBackup();
+[[nodiscard]] bool ValidateThemeBackup(const QJsonObject &data);
+[[nodiscard]] bool ImportThemeBackup(const QJsonObject &data);
+[[nodiscard]] bool WriteSettingsBackupJournal(const QByteArray &data);
+[[nodiscard]] QByteArray ReadSettingsBackupJournal();
+[[nodiscard]] bool HasSettingsBackupJournal();
+[[nodiscard]] bool ClearSettingsBackupJournal();
+
 void writeTheme(const Window::Theme::Saved &saved);
 void clearTheme();
 [[nodiscard]] Window::Theme::Saved readThemeAfterSwitch();
@@ -90,6 +100,7 @@ void clearTheme();
 [[nodiscard]] Window::Theme::Object ReadThemeContent();
 
 void writeLangPack();
+[[nodiscard]] bool writeLangPackChecked();
 void pushRecentLanguage(const Lang::Language &language);
 std::vector<Lang::Language> readRecentLanguages();
 void saveRecentLanguages(const std::vector<Lang::Language> &list);

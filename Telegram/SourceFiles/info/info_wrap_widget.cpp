@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/sections/settings_chat.h"
 #include "settings/sections/settings_information.h"
 #include "settings/sections/settings_main.h"
+#include "settings/sections/settings_backup.h"
 #include "settings/sections/settings_premium.h"
 #include "settings/sections/settings_shortcuts.h"
 #include "settings/settings_search.h"
@@ -455,6 +456,34 @@ void WrapWidget::setupTopBarMenuToggle() {
 	} else if (section.type() == Section::Type::Settings) {
 		addTopBarMenuButton();
 		if (section.settingsType() == ::Settings::MainId()) {
+			for (const auto importing : {true, false}) {
+				const auto &style
+					= (wrap() == Wrap::Layer)
+						  ? (importing ? st::infoLayerTopBarImport
+									   : st::infoLayerTopBarExport)
+						  : (importing ? st::infoTopBarImport
+									   : st::infoTopBarExport);
+				const auto action = _topBar->addButton(
+					base::make_unique_q<Ui::IconButton>(_topBar, style));
+				const auto name = importing ? tr::lng_backup_import()
+											: tr::lng_backup_export();
+				name
+					| rpl::on_next(
+						[=](const QString &text) {
+							action->setAccessibleName(text);
+							action->setToolTip(text);
+						},
+						action->lifetime());
+				action->addClickHandler([=] {
+					const auto controller = _controller->parentController();
+					if (importing) {
+						::Settings::ImportConfiguration(controller);
+					} else {
+						::Settings::ExportConfiguration(controller);
+					}
+				});
+			}
+
 			const auto &st = (wrap() == Wrap::Layer)
 				? st::infoLayerTopBarSearch
 				: st::infoTopBarSearch;

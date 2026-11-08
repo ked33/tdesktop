@@ -136,6 +136,8 @@ nice_target_sources(Telegram ${src_loc}
 PRIVATE
     ${style_files}
 
+    api/api_settings_backup.cpp
+    api/api_settings_backup.h
     api/api_attached_stickers.cpp
     api/api_attached_stickers.h
     api/api_authorizations.cpp
@@ -2012,6 +2014,8 @@ PRIVATE
     settings/sections/settings_credits.h
     settings/settings_credits_graphics.cpp
     settings/settings_credits_graphics.h
+    settings/sections/settings_backup.cpp
+    settings/sections/settings_backup.h
     settings/settings_enhanced.cpp
     settings/settings_enhanced.h
     settings/settings_experimental.cpp
@@ -2061,6 +2065,9 @@ PRIVATE
     settings/sections/settings_shortcuts.h
     settings/sections/settings_websites.cpp
     settings/sections/settings_websites.h
+    storage/settings_backup.cpp
+    storage/settings_backup.h
+    storage/settings_backup_archive.h
     storage/details/storage_file_utilities.cpp
     storage/details/storage_file_utilities.h
     storage/details/storage_settings_scheme.cpp

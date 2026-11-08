@@ -27,14 +27,23 @@ namespace Settings {
 
 	private:
 		void setupContent(not_null<Window::SessionController *> controller);
-		void SetupEnhancedBackup(not_null<Ui::VerticalLayout *> container);
-		void SetupEnhancedNetwork(not_null<Ui::VerticalLayout *> container);
-		void SetupEnhancedMessages(
+		void setupAppearance(
 			not_null<Window::SessionController*> controller,
-			not_null<Ui::VerticalLayout *> container);
-		void SetupEnhancedButton(not_null<Ui::VerticalLayout *> container);
-		void SetupEnhancedVoiceChat(not_null<Ui::VerticalLayout *> container);
-		void SetupEnhancedOthers(not_null<Window::SessionController*> controller, not_null<Ui::VerticalLayout *> container);
+			not_null<Ui::VerticalLayout*> container);
+		void setupMessages(
+			not_null<Window::SessionController*> controller,
+			not_null<Ui::VerticalLayout*> container);
+		void setupFiltering(
+			not_null<Window::SessionController*> controller,
+			not_null<Ui::VerticalLayout*> container);
+		void setupSearch(not_null<Ui::VerticalLayout*> container);
+		void setupShortcuts(not_null<Ui::VerticalLayout*> container);
+		void setupInput(not_null<Ui::VerticalLayout*> container);
+		void setupContextMenu(not_null<Ui::VerticalLayout*> container);
+		void setupMedia(not_null<Ui::VerticalLayout*> container);
+		void setupNetwork(not_null<Ui::VerticalLayout*> container);
+		void setupVoiceChat(not_null<Ui::VerticalLayout*> container);
+		void setupPerformance(not_null<Ui::VerticalLayout*> container);
 		void reqBlocked(int offset);
 		void writeBlocklistFile();
 

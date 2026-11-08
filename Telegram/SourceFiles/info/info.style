@@ -1399,3 +1399,31 @@ peerQrEmojiStripSkip: 34px;
 peerQrEmojiStripSize: 26px;
 peerQrEmojiStripPadding: 9px;
 peerQrEmojiStripBottom: 18px;
+
+infoTopBarImport: IconButton(infoTopBarSearch) {
+	width: 44px;
+	icon: icon {{ "menu/import_theme", boxTitleCloseFg }};
+	iconOver: icon {{ "menu/import_theme", boxTitleCloseFgOver }};
+	iconPosition: point(10px, -1px);
+}
+
+infoTopBarExport: IconButton(infoTopBarSearch) {
+	width: 44px;
+	icon: icon {{ "menu/export_theme", boxTitleCloseFg }};
+	iconOver: icon {{ "menu/export_theme", boxTitleCloseFgOver }};
+	iconPosition: point(10px, -1px);
+}
+
+infoLayerTopBarImport: IconButton(infoLayerTopBarSearch) {
+	width: 44px;
+	icon: icon {{ "menu/import_theme", boxTitleCloseFg }};
+	iconOver: icon {{ "menu/import_theme", boxTitleCloseFgOver }};
+	iconPosition: point(10px, -1px);
+}
+
+infoLayerTopBarExport: IconButton(infoLayerTopBarSearch) {
+	width: 44px;
+	icon: icon {{ "menu/export_theme", boxTitleCloseFg }};
+	iconOver: icon {{ "menu/export_theme", boxTitleCloseFgOver }};
+	iconPosition: point(10px, -1px);
+}

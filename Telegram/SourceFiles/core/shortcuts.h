@@ -12,6 +12,8 @@ class QShortcutEvent;
 class QString;
 class QKeySequence;
 
+class QJsonObject;
+
 namespace Shortcuts {
 
 enum class Command {
@@ -140,6 +142,10 @@ private:
 };
 
 [[nodiscard]] rpl::producer<not_null<Request*>> Requests();
+
+[[nodiscard]] QJsonObject ExportBackup();
+[[nodiscard]] bool ValidateBackup(const QJsonObject &data);
+[[nodiscard]] bool WriteBackup(const QJsonObject &data);
 
 void Start();
 void Finish();

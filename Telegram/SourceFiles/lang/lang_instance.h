@@ -11,6 +11,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/const_string.h"
 #include "base/weak_ptr.h"
 
+#include <QtCore/QJsonObject>
+
 namespace Lang {
 
 inline constexpr auto kChoosingStickerReplacement = "oo"_cs;
@@ -71,6 +73,8 @@ public:
 	bool isCustom() const;
 	int version(Pack pack) const;
 
+	[[nodiscard]] QJsonObject exportBackup() const;
+	[[nodiscard]] bool importBackup(const QJsonObject &data, bool apply);
 	QByteArray serialize() const;
 	void fillFromSerialized(const QByteArray &data, int dataAppVersion);
 	void applyValue(const QByteArray &key, const QByteArray &value);

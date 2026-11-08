@@ -212,6 +212,22 @@ const Set &Full::setOrDefault(Source source, Type type) const {
 	return result;
 }
 
+int64 Full::backupLimit(Source source, Type type) const {
+	const auto &value = set(source);
+	return value.hasValue(type) ? value.bytesLimit(type) : -1;
+}
+
+void Full::setBackupLimit(Source source, Type type, int64 value) {
+	Expects(value >= -1 && value <= kMaxBytesLimit);
+	if (value == -1) {
+		if (!set(source).setFromSerialized(type, -1)) {
+			Unexpected("Invalid default limit");
+		}
+	} else {
+		setBytesLimit(source, type, value);
+	}
+}
+
 void Full::setBytesLimit(Source source, Type type, int64 bytesLimit) {
 	set(source).setBytesLimit(type, bytesLimit);
 }

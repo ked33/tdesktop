@@ -18,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_user.h"
 #include "mtproto/mtproto_config.h"
 #include "mtproto/mtproto_dc_options.h"
+#include "settings/sections/settings_backup.h"
 #include "storage/storage_domain.h"
 #include "storage/storage_account.h"
 #include "storage/localstorage.h"
@@ -195,6 +196,7 @@ void Domain::activateAfterStarting() {
 	}
 
 	activate(toActivate);
+	crl::on_main(&Core::App(), [] { Settings::OfferSettingsRecovery(); });
 	removePasscodeIfEmpty();
 }
 

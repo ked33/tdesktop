@@ -5,6 +5,8 @@ For license and copyright information please follow this link:
 https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 */
 #include "core/enhanced_settings.h"
+
+#include <QtCore/QSaveFile>
 #include "core/message_folding.h"
 
 #include "mainwindow.h"
@@ -1248,7 +1250,7 @@ namespace EnhancedSettings {
 	} // namespace
 
 	bool Manager::writeCurrentSettings() {
-		auto file = QFile(CustomFilePath());
+		auto file = QSaveFile(CustomFilePath());
 		if (!file.open(QIODevice::WriteOnly)) {
 			return false;
 		}
@@ -1256,7 +1258,7 @@ namespace EnhancedSettings {
 			writing();
 		}
 		const auto bytes = CurrentSettingsDocument();
-		return file.write(bytes) == qint64(bytes.size());
+		return file.write(bytes) == qint64(bytes.size()) && file.commit();
 	}
 
 	bool Manager::writeNow() {

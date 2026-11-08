@@ -19,6 +19,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 enum class RectPart;
 struct LanguageId;
 
+class QJsonObject;
+
+namespace Storage::SettingsBackup {
+class Archive;
+} // namespace Storage::SettingsBackup
+
 namespace Ui {
 enum class InputSubmitSettings;
 } // namespace Ui
@@ -143,6 +149,8 @@ public:
 	}
 
 	[[nodiscard]] QByteArray serialize() const;
+	[[nodiscard]] QJsonObject exportBackup();
+	[[nodiscard]] bool importBackup(const QJsonObject &data, bool apply);
 	void addFromSerialized(const QByteArray &serialized);
 
 	[[nodiscard]] bool adaptiveForWide() const {
@@ -1061,6 +1069,7 @@ public:
 	void resetOnLastLogout();
 
 private:
+	void visitBackup(Storage::SettingsBackup::Archive &archive);
 	void resolveRecentEmoji() const;
 
 	template <typename Type>

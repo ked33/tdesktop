@@ -9929,3 +9929,48 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_selected_action_fallback_cleanup" = "兜底：合并成功，正在清理临时消息";
 "lng_selected_action_fallback_batches" = "已触发兜底：{amount} 个批次";
 "lng_selected_action_temporary_kept" = "兜底未完成，目标对话保留了 {amount} 条临时复制消息";
+
+"lng_enhanced_group_appearance" = "Chats and appearance";
+"lng_enhanced_group_messages" = "Message actions";
+"lng_enhanced_group_filtering" = "Message filtering and links";
+"lng_enhanced_group_search" = "Search and translation";
+"lng_enhanced_group_shortcuts" = "Navigation and shortcuts";
+"lng_enhanced_group_input" = "Input and compose buttons";
+"lng_enhanced_group_context_menu" = "Message context menu";
+"lng_enhanced_group_media" = "Media and playback";
+"lng_enhanced_group_network" = "Network and downloads";
+"lng_enhanced_group_performance" = "Performance and diagnostics";
+
+"lng_backup_export" = "Export settings";
+"lng_backup_import" = "Import settings";
+"lng_backup_application" = "General preferences";
+"lng_backup_accounts" = "Local preferences for signed-in accounts";
+"lng_backup_experimental" = "Experimental settings";
+"lng_backup_appearance" = "Day/night themes and backgrounds";
+"lng_backup_system" = "Language, scale, updates and power saving";
+"lng_backup_proxy" = "Proxies, including credentials (encrypted)";
+"lng_backup_failed" = "Could not complete the settings backup operation.";
+"lng_backup_password_title" = "Backup password";
+"lng_backup_password_about" = "Use a separate password for this backup. Export passwords must have at least 8 characters.";
+"lng_backup_password" = "Password";
+"lng_backup_password_repeat" = "Repeat password";
+"lng_backup_password_invalid" = "Incorrect password or damaged backup.";
+"lng_backup_exported" = "Settings exported.";
+"lng_backup_export_about" = "Choose the settings to include. Sign-in credentials, messages and caches are excluded. Account settings are restored only to matching signed-in accounts.";
+"lng_backup_import_about" = "Choose the categories to restore. Counts show changed entries. Missing settings keep their current values. Telegram will restart after saving.";
+"lng_backup_skipped" = "Unavailable or unknown entries (not applied):";
+"lng_backup_apply" = "Import and restart";
+"lng_backup_encrypt" = "Encrypt backup with a password";
+"lng_backup_recovery" = "An interrupted settings import has a recovery snapshot. Restore the previous settings before importing another backup.";
+"lng_backup_recover" = "Restore and restart";
+"lng_backup_cloud" = "Cloud privacy, notifications and folders (same account)";
+"lng_backup_cloud_about" = "Cloud changes affect all devices on the same account. Review them before restoring.";
+"lng_backup_changes" = "Review changes";
+
+"lng_backup_cloud_partial" = "Some cloud settings could not be processed.";
+"lng_backup_loading" = "Processing settings…";
+"lng_backup_unknown_count" = "Unavailable entries are skipped.";
+"lng_backup_device_about" = "Startup registration and device paths are specific to this computer. Check them after importing on another computer.";
+
+"lng_backup_autostart_failed" = "The operating system did not accept the startup setting. Other settings have been saved.";
+"lng_backup_quit" = "Quit Telegram";

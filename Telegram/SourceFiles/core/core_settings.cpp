@@ -14,8 +14,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_notifications_manager.h"
 #include "spellcheck/spellcheck_types.h"
 #include "storage/serialize_common.h"
+#include "storage/settings_backup_archive.h"
 #include "ui/gl/gl_detection.h"
 #include "ui/widgets/fields/input_field.h"
+#include "ui/rect_part.h"
 #include "webrtc/webrtc_create_adm.h"
 #include "webrtc/webrtc_device_common.h"
 #include "window/section_widget.h"
@@ -2005,6 +2007,272 @@ Dialogs::Ui::QuickDialogAction Settings::quickDialogAction() const {
 
 void Settings::setQuickDialogAction(Dialogs::Ui::QuickDialogAction action) {
 	_quickDialogAction = action;
+}
+
+QJsonObject Settings::exportBackup() {
+	auto archive = Storage::SettingsBackup::Archive();
+	visitBackup(archive);
+	return archive.object();
+}
+
+bool Settings::importBackup(const QJsonObject &data, bool apply) {
+	if (data.contains(u"recentEmojiIds"_q)
+	    != data.contains(u"recentEmojiRatings"_q)) {
+		return false;
+	}
+	if (!apply) {
+		auto scratch = Settings();
+		auto archive = Storage::SettingsBackup::Archive(data, false);
+		scratch.visitBackup(archive);
+		return archive.ok();
+	}
+	if (!importBackup(data, false)) {
+		return false;
+	}
+	auto archive = Storage::SettingsBackup::Archive(data, true);
+	visitBackup(archive);
+	return archive.ok();
+}
+
+void Settings::visitBackup(Storage::SettingsBackup::Archive &a) {
+	a.field("adaptiveForWide", _adaptiveForWide);
+	a.field("moderateModeEnabled", _moderateModeEnabled);
+	a.field("askDownloadPath", _askDownloadPath);
+	a.field("soundNotify", _soundNotify);
+	a.field("desktopNotify", _desktopNotify);
+	a.field("flashBounceNotify", _flashBounceNotify);
+	a.field("skipToastsInFocus", _skipToastsInFocus);
+	a.field("includeMutedCounter", _includeMutedCounter);
+	a.field("includeMutedCounterFolders", _includeMutedCounterFolders);
+	a.field("countUnreadMessages", _countUnreadMessages);
+	a.field("notifyAboutPinned", _notifyAboutPinned);
+	a.field("callAudioDuckingEnabled", _callAudioDuckingEnabled);
+	a.field("groupCallPushToTalk", _groupCallPushToTalk);
+	a.field("groupCallNoiseSuppression", _groupCallNoiseSuppression);
+	a.field("ipRevealWarning", _ipRevealWarning);
+	a.field("loopAnimatedStickers", _loopAnimatedStickers);
+	a.field("largeEmoji", _largeEmoji);
+	a.field("replaceEmoji", _replaceEmoji);
+	a.field("systemTextReplace", _systemTextReplace);
+	a.field("suggestEmoji", _suggestEmoji);
+	a.field("suggestStickersByEmoji", _suggestStickersByEmoji);
+	a.field("suggestAnimatedEmoji", _suggestAnimatedEmoji);
+	a.field("cornerReply", _cornerReply);
+	a.field("cornerReaction", _cornerReaction);
+	a.field("pullToNextChannel", _pullToNextChannel);
+	a.field("spellcheckerEnabled", _spellcheckerEnabled);
+	a.field("autoDownloadDictionaries", _autoDownloadDictionaries);
+	a.field("mainMenuAccountsShown", _mainMenuAccountsShown);
+	a.field("tabbedSelectorSectionEnabled", _tabbedSelectorSectionEnabled);
+	a.field("thirdSectionInfoEnabled", _thirdSectionInfoEnabled);
+	a.field("notifyFromAll", _notifyFromAll);
+	a.field("nativeWindowFrame", _nativeWindowFrame);
+	a.field("systemDarkModeEnabled", _systemDarkModeEnabled);
+	a.field("systemAccentColorEnabled", _systemAccentColorEnabled);
+	a.field("disableOpenGL", _disableOpenGL);
+	a.field("trayIconMonochrome", _trayIconMonochrome);
+	a.field("macWarnBeforeQuit", _macWarnBeforeQuit);
+	a.field("hardwareAcceleratedVideo", _hardwareAcceleratedVideo);
+	a.field("translateButtonEnabled", _translateButtonEnabled);
+	a.field("usePlatformTranslation", _usePlatformTranslation);
+	a.field("translateChatEnabled", _translateChatEnabled);
+	a.field("rememberedDeleteMessageOnlyForYou",
+	    _rememberedDeleteMessageOnlyForYou);
+	a.field("ignoreBatterySaving", _ignoreBatterySaving);
+	a.field("chatFiltersHorizontal", _chatFiltersHorizontal);
+	a.field("recordVideoMessages", _recordVideoMessages);
+	a.field("downloadPath", _downloadPath);
+	a.field("playbackDeviceId", _playbackDeviceId);
+	a.field("captureDeviceId", _captureDeviceId);
+	a.field("cameraDeviceId", _cameraDeviceId);
+	a.field("callPlaybackDeviceId", _callPlaybackDeviceId);
+	a.field("callCaptureDeviceId", _callCaptureDeviceId);
+	a.field("customDeviceModel", _customDeviceModel);
+	a.field("customFontFamily", _customFontFamily);
+	a.field("nativeNotifications", _nativeNotifications);
+	a.field("weatherInCelsius", _weatherInCelsius);
+	a.field("groupCallPushToTalkShortcut", _groupCallPushToTalkShortcut);
+	a.field("photoEditorBrush", _photoEditorBrush);
+	const auto position = [&](const char* prefix, WindowPosition &value) {
+		const auto field
+		    = [&](const char* suffix, auto &target, auto min, auto max) {
+			      const auto key = QByteArray(prefix) + suffix;
+			      a.bounded(key.constData(), target, min, max);
+		      };
+		field(".monitor", value.moncrc, INT_MIN, INT_MAX);
+		field(".maximized", value.maximized, 0, 2);
+		field(".scale", value.scale, 0, 1000);
+		field(".x", value.x, -100000, 100000);
+		field(".y", value.y, -100000, 100000);
+		field(".width", value.w, 0, 100000);
+		field(".height", value.h, 0, 100000);
+	};
+	position("window", _windowPosition);
+	position("mediaWindow", _mediaViewPosition);
+	position("articleWindow", _ivPosition);
+	position("callWindow", _callPanelPosition);
+	a.field("videoPipGeometry", _videoPipGeometry);
+	a.field("notificationsDisplayChecksum", _notificationsDisplayChecksum);
+	a.field("accountsOrder", _accountsOrder);
+	a.field("soundOverrides", _soundOverrides);
+	a.field("noWarningExtensions", _noWarningExtensions);
+	a.field("emojiVariants", _emojiVariants);
+	a.field("recentEmojiSkip", _recentEmojiSkip);
+	auto recent = _recentEmojiPreload;
+	if (recent.empty()) {
+		for (const auto &[id, rating] : _recentEmoji) {
+			if (const auto document
+			    = std::get_if<RecentEmojiDocument>(&id.data)) {
+				recent.push_back({ Serialize(*document), rating });
+			} else if (const auto emoji = std::get_if<EmojiPtr>(&id.data)) {
+				recent.push_back({ (*emoji)->id(), rating });
+			}
+		}
+	}
+	auto recentIds = std::vector<QString>();
+	auto recentRatings = std::vector<ushort>();
+	for (const auto &[id, rating] : recent) {
+		recentIds.push_back(id);
+		recentRatings.push_back(rating);
+	}
+	a.field("recentEmojiIds", recentIds);
+	a.field("recentEmojiRatings", recentRatings, [&](const auto &values) {
+		const auto encoded = a.object().value(u"recentEmojiIds"_q);
+		return encoded.isArray()
+		       && values.size() == size_t(encoded.toArray().size());
+	});
+	if (a.applying() && a.contains("recentEmojiIds")
+	    && a.contains("recentEmojiRatings")) {
+		_recentEmoji.clear();
+		_recentEmojiPreload.clear();
+		for (auto i = size_t(); i != recentIds.size(); ++i) {
+			_recentEmojiPreload.push_back({ recentIds[i], recentRatings[i] });
+		}
+		_recentEmojiResolved = false;
+	}
+	a.bounded("songVolume", _songVolume, 0, 1);
+	a.bounded("videoVolume", _videoVolume, 0, 1);
+	a.bounded("notifyView", _notifyView, 0, 2);
+	a.bounded("notificationsCount", _notificationsCount, 1, INT_MAX);
+	a.bounded("notificationsCorner", _notificationsCorner, 0, 3);
+	a.bounded("autoLock", _autoLock, 0, 2147483647);
+	a.bounded("callOutputVolume", _callOutputVolume, 0, 200);
+	a.bounded("callInputVolume", _callInputVolume, 0, 200);
+	a.bounded("groupCallPushToTalkDelay", _groupCallPushToTalkDelay, 0, 10000);
+	a.bounded("sendSubmitWay", _sendSubmitWay, 0, 3);
+	a.bounded("floatPlayerColumn", _floatPlayerColumn, 0, 2);
+	a.field("floatPlayerCorner", _floatPlayerCorner, [](RectPart value) {
+		return IsTopCorner(value) || IsBottomCorner(value);
+	});
+	a.bounded("thirdSectionExtendedBy", _thirdSectionExtendedBy, -1, 10000);
+	a.bounded("dialogsWithChatWidthRatio", _dialogsWithChatWidthRatio, 0, 1);
+	a.bounded("dialogsNoChatWidthRatio", _dialogsNoChatWidthRatio, 0, 1);
+	a.bounded("thirdColumnWidth", _thirdColumnWidth, 0, 10000);
+	a.bounded("workMode", _workMode, 0, 2);
+	a.bounded("closeBehavior", _closeBehavior, 0, 2);
+	a.bounded("playerRepeatMode", _playerRepeatMode, 0, 2);
+	a.bounded("playerOrderMode", _playerOrderMode, 0, 2);
+	a.bounded("translateToRaw", _translateToRaw, 0, int(QLocale::LastLanguage));
+	a.bounded("chatQuickAction", _chatQuickAction, 0, 2);
+	a.bounded("ivZoom", _ivZoom, 0, 400);
+	a.bounded("chatFiltersTabsMode", _chatFiltersTabsMode, 0, 3);
+	a.bounded("quickDialogAction", _quickDialogAction, 0, 5);
+	a.bounded("notificationsVolume", _notificationsVolume, 0, 100);
+	a.bounded("mediaGridZoomStep", _mediaGridZoomStep, -20, 20);
+	a.field(
+	    "dictionariesEnabled", _dictionariesEnabled, [](const auto &values) {
+		    return ranges::all_of(
+		        values, [](int id) { return id >= 0 && id < 10000; });
+	    });
+	auto title = _windowTitleContent.current();
+	auto hideChat = bool(title.hideChatName);
+	auto hideAccount = bool(title.hideAccountName);
+	auto hideUnread = bool(title.hideTotalUnread);
+	a.field("windowTitleHideChat", hideChat);
+	a.field("windowTitleHideAccount", hideAccount);
+	a.field("windowTitleHideUnread", hideUnread);
+	if (a.applying()) {
+		_windowTitleContent = { hideChat, hideAccount, hideUnread };
+	}
+	auto files = _sendFilesWay.serialize();
+	a.field("sendFilesWay", files, [](int value) {
+		return Ui::SendFilesWay::FromSerialized(value).has_value();
+	});
+	if (const auto parsed = Ui::SendFilesWay::FromSerialized(files)) {
+		if (a.applying()) {
+			_sendFilesWay = *parsed;
+		}
+	}
+	const auto speed = [&](const char* valueKey,
+	                       const char* enabledKey,
+	                       PlaybackSpeed current) {
+		a.bounded(valueKey, current.value, 0.5, 2.5);
+		a.field(enabledKey, current.enabled);
+		return current;
+	};
+	const auto videoPlaybackSpeedBackup
+	    = speed("videoSpeed", "videoSpeedEnabled", _videoPlaybackSpeed);
+	if (a.applying()) {
+		_videoPlaybackSpeed = videoPlaybackSpeedBackup;
+	}
+	const auto voicePlaybackSpeedBackup = speed(
+	    "voiceSpeed", "voiceSpeedEnabled", _voicePlaybackSpeed.current());
+	if (a.applying()) {
+		_voicePlaybackSpeed = voicePlaybackSpeedBackup;
+	}
+	const auto audioPlaybackSpeedBackup = speed(
+	    "audioSpeed", "audioSpeedEnabled", _audioPlaybackSpeed.current());
+	if (a.applying()) {
+		_audioPlaybackSpeed = audioPlaybackSpeedBackup;
+	}
+	auto skip = std::vector<int>();
+	for (const auto id : _skipTranslationLanguages.current()) {
+		skip.push_back(int(id.value));
+	}
+	a.field("skipTranslationLanguages", skip, [](const auto &ids) {
+		return ranges::all_of(
+		    ids, [](int id) { return id >= 0 && id <= QLocale::LastLanguage; });
+	});
+	auto languages = std::vector<LanguageId>();
+	for (const auto id : skip) {
+		languages.push_back({ QLocale::Language(id) });
+	}
+	if (a.applying()) {
+		_skipTranslationLanguages = std::move(languages);
+	}
+	auto height = int(_videoQuality.height);
+	auto manual = bool(_videoQuality.manual);
+	auto original = bool(_videoQuality.original);
+	a.bounded("videoQualityHeight", height, 0, (1 << 30) - 1);
+	a.field("videoQualityManual", manual);
+	a.field("videoQualityOriginal", original);
+	if (a.applying()) {
+		_videoQuality = { uint32(manual), uint32(height), uint32(original) };
+	}
+	for (auto i = 0; i != 4; ++i) {
+		const auto type = Window::Theme::EmbeddedType(i);
+		auto color = _themesAccentColors.get(type);
+		auto name = color ? color->name(QColor::HexArgb) : QString();
+		a.field(
+		    qPrintable(u"themeAccent%1"_q.arg(i)), name, [](const auto &value) {
+			    return value.isEmpty() || QColor(value).isValid();
+		    });
+		if (a.applying()) {
+			if (name.isEmpty()) {
+				_themesAccentColors.clear(type);
+			} else {
+				_themesAccentColors.set(type, QColor(name));
+			}
+		}
+	}
+	for (const auto key :
+	    { "screen-reader-mode-disabled", "windows_state.restore" }) {
+		auto value = readPref<bool>(key);
+		a.field(key, value);
+		if (a.applying()) {
+			writePref<bool>(key, value);
+		}
+	}
 }
 
 } // namespace Core

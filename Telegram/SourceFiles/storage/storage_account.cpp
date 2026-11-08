@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "storage/storage_account.h"
 
+#include "storage/settings_backup_archive.h"
+
 #include "storage/localstorage.h"
 #include "storage/storage_domain.h"
 #include "storage/storage_encryption.h"
@@ -1073,10 +1075,10 @@ void Account::writeSessionSettings() {
 	writeSessionSettings(nullptr);
 }
 
-void Account::writeSessionSettings(Main::SessionSettings *stored) {
+bool Account::writeSessionSettings(Main::SessionSettings* stored, bool sync) {
 	if (_readingUserSettings) {
 		LOG(("App Error: attempt to write settings while reading them!"));
-		return;
+		return false;
 	}
 	LOG(("App Info: writing encrypted user settings..."));
 
@@ -1118,8 +1120,16 @@ void Account::writeSessionSettings(Main::SessionSettings *stored) {
 	}
 	data.stream << quint32(dbiRecentStickers) << recentStickers;
 
-	FileWriteDescriptor file(_settingsKey, _basePath);
+	FileWriteDescriptor file(_settingsKey, _basePath, sync);
 	file.writeEncrypted(data, _localKey);
+	return file.finish();
+}
+bool Account::writeSessionSettingsChecked() {
+	Local::sync();
+	const auto written = writeSessionSettings(nullptr, true);
+	writeMap();
+	Local::sync();
+	return written;
 }
 
 ReadSettingsContext Account::prepareReadSettingsContext() const {
@@ -1904,6 +1914,37 @@ Cache::Database::Settings Account::cacheSettings() const {
 	result.totalTimeLimit = _cacheTotalTimeLimit;
 	result.maxDataSize = kMaxFileInMemory;
 	return result;
+}
+
+QJsonObject Account::exportCacheBackup() const {
+	return {
+		{u"size"_q, QString::number(_cacheTotalSizeLimit)},
+		{u"time"_q, _cacheTotalTimeLimit},
+		{u"mediaSize"_q, QString::number(_cacheBigFileTotalSizeLimit)},
+		{u"mediaTime"_q, _cacheBigFileTotalTimeLimit},
+	};
+}
+
+bool Account::importCacheBackup(const QJsonObject &data, bool apply) {
+	auto size = _cacheTotalSizeLimit;
+	auto time = _cacheTotalTimeLimit;
+	auto mediaSize = _cacheBigFileTotalSizeLimit;
+	auto mediaTime = _cacheBigFileTotalTimeLimit;
+	auto archive = SettingsBackup::Archive(data, true);
+	archive.bounded("size", size, Cache::Database::Settings().maxDataSize + 1, 1LL << 50);
+	archive.bounded("mediaSize", mediaSize, Cache::Database::Settings().maxDataSize + 1, 1LL << 50);
+	archive.bounded("time", time, 0, INT_MAX);
+	archive.bounded("mediaTime", mediaTime, 0, INT_MAX);
+	if (!archive.ok()) {
+		return false;
+	}
+	if (apply) {
+		_cacheTotalSizeLimit = size;
+		_cacheTotalTimeLimit = time;
+		_cacheBigFileTotalSizeLimit = mediaSize;
+		_cacheBigFileTotalTimeLimit = mediaTime;
+	}
+	return true;
 }
 
 void Account::updateCacheSettings(

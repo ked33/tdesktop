@@ -7,7 +7,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "storage/localstorage.h"
 
+#include <QtCore/QJsonObject>
+#include <QtGui/QImageReader>
+#include "window/themes/window_themes_chat.h"
+#include "main/main_domain.h"
+#include "main/main_account.h"
+#include "main/main_session.h"
+
 #include "storage/serialize_common.h"
+#include "storage/settings_backup.h"
 #include "storage/storage_account.h"
 #include "storage/details/storage_file_utilities.h"
 #include "storage/details/storage_settings_scheme.h"
@@ -26,15 +34,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/audio/media_audio.h"
 #include "mtproto/mtproto_config.h"
 #include "mtproto/mtproto_dc_options.h"
-#include "main/main_domain.h"
-#include "main/main_account.h"
-#include "main/main_session.h"
 #include "window/themes/window_theme.h"
 #include "lang/lang_instance.h"
 
 #include <QtCore/QDirIterator>
 #include <QtCore/QJsonDocument>
-#include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonValue>
 #include <QtCore/QStringList>
@@ -432,19 +436,19 @@ void start() {
 	readLangPack();
 }
 
-void writeSettings() {
+bool WriteSettings(bool sync) {
 	if (!_settingsWriteAllowed) {
 		_settingsRewriteNeeded = true;
 
 		// We need to generate SettingsKey anyway,
 		// for the moveLegacyBackground to work.
 		if (SettingsKey) {
-			return;
+			return false;
 		}
 	}
 	if (_basePath.isEmpty()) {
 		LOG(("App Error: _basePath is empty in writeSettings()"));
-		return;
+		return false;
 	}
 
 	if (!QDir().exists(_basePath)) QDir().mkpath(_basePath);
@@ -452,7 +456,7 @@ void writeSettings() {
 	// We dropped old test authorizations when migrated to multi auth.
 	//const auto name = cTestMode() ? u"settings_test"_q : u"settings"_q;
 	const auto name = u"settings"_q;
-	FileWriteDescriptor settings(name, _basePath);
+	FileWriteDescriptor settings(name, _basePath, sync);
 	if (_settingsSalt.isEmpty() || !SettingsKey) {
 		_settingsSalt.resize(LocalEncryptSaltSize);
 		base::RandomFill(_settingsSalt.data(), _settingsSalt.size());
@@ -463,7 +467,7 @@ void writeSettings() {
 	if (!_settingsWriteAllowed) {
 		EncryptedDescriptor data(0);
 		settings.writeEncrypted(data, SettingsKey);
-		return;
+		return false;
 	}
 	const auto configSerialized = LookupFallbackConfig().serialize();
 	const auto applicationSettings = Core::App().settings().serialize();
@@ -519,6 +523,15 @@ void writeSettings() {
 	}
 
 	settings.writeEncrypted(data, SettingsKey);
+	return settings.finish();
+}
+void writeSettings() {
+	WriteSettings(false);
+}
+
+bool writeSettingsChecked() {
+	Local::sync();
+	return WriteSettings(true);
 }
 
 void rewriteSettingsIfNeeded() {
@@ -1195,6 +1208,320 @@ void writeTheme(const Window::Theme::Saved &saved) {
 	file.writeEncrypted(data, SettingsKey);
 }
 
+QJsonObject ExportThemeBackup() {
+	auto result = QJsonObject();
+	for (const auto night : { false, true }) {
+		const auto key = night ? _themeKeyNight : _themeKeyDay;
+		auto saved = key ? readThemeUsingKey(key) : Window::Theme::Saved();
+		if (!saved.object.cloud.settings.empty()) {
+			if (const auto preview = Window::Theme::PreviewFromChatTheme(
+			        saved.object.cloud, night)) {
+				saved.object.content = preview->object.content;
+			}
+		}
+		auto entry = QJsonObject{
+			{ u"content"_q,
+			    QString::fromLatin1(saved.object.content.toBase64()) },
+			{ u"embedded"_q,
+			    Window::Theme::IsEmbeddedTheme(saved.object.pathAbsolute)
+		            ? saved.object.pathAbsolute
+			        : QString() },
+			{ u"tile"_q,
+			    night ? Window::Theme::Background()->tileNight()
+				      : Window::Theme::Background()->tileDay() },
+		};
+		const auto backgroundKey
+		    = night ? _backgroundKeyNight : _backgroundKeyDay;
+		auto background = FileReadDescriptor();
+		if (backgroundKey
+		    && ReadEncryptedFile(
+		        background, backgroundKey, _basePath, SettingsKey)) {
+			auto tag = qint32();
+			auto paper = QByteArray();
+			auto pixels = QByteArray();
+			background.stream >> tag >> paper >> pixels;
+			if (tag == kWallPaperSerializeTagId
+			    && background.stream.status() == QDataStream::Ok) {
+				entry.insert(u"paper"_q, QString::fromLatin1(paper.toBase64()));
+				entry.insert(
+				    u"pixels"_q, QString::fromLatin1(pixels.toBase64()));
+			}
+		}
+		auto image = QImage();
+		if (night == Window::Theme::IsNightMode()) {
+			entry.insert(u"paper"_q,
+			    QString::fromLatin1(Window::Theme::Background()
+			            ->paper()
+			            .serialize()
+			            .toBase64()));
+			image = Window::Theme::Background()->backupImage();
+		} else {
+			const auto pixels = QByteArray::fromBase64(
+			    entry.value(u"pixels"_q).toString().toLatin1());
+			if (pixels.size() >= 8) {
+				auto width = qint32();
+				auto height = qint32();
+				memcpy(&width, pixels.constData(), 4);
+				memcpy(&height, pixels.constData() + 4, 4);
+				if (width > 0 && height > 0
+				    && int64(width) * height * 4 == pixels.size() - 8
+				    && int64(width) + height <= kWallPaperSidesLimit) {
+					image = QImage(
+					    reinterpret_cast<const uchar*>(pixels.constData() + 8),
+					    width,
+					    height,
+					    QImage::Format_ARGB32_Premultiplied)
+					            .copy();
+				}
+			}
+		}
+		entry.remove(u"pixels"_q);
+		auto png = QByteArray();
+		if (!image.isNull()) {
+			auto buffer = QBuffer(&png);
+			if (!buffer.open(QIODevice::WriteOnly)) {
+				return {};
+			}
+			if (!image.save(&buffer, "PNG")) {
+				return {};
+			}
+		}
+		entry.insert(u"image"_q, QString::fromLatin1(png.toBase64()));
+		result.insert(night ? u"night"_q : u"day"_q, entry);
+	}
+	result.insert(u"nightMode"_q, Window::Theme::IsNightMode());
+	return result;
+}
+
+bool ValidateThemeBackup(const QJsonObject &data) {
+	if (!data.value(u"nightMode"_q).isBool()) {
+		return false;
+	}
+	for (const auto name : { u"day"_q, u"night"_q }) {
+		if (!data.value(name).isObject()) {
+			return false;
+		}
+		const auto entry = data.value(name).toObject();
+		for (const auto key : { u"content"_q, u"embedded"_q }) {
+			if (!entry.value(key).isString()) {
+				return false;
+			}
+		}
+		if (!entry.value(u"tile"_q).isBool()) {
+			return false;
+		}
+		const auto encoded = entry.value(u"content"_q).toString().toLatin1();
+		const auto content = QByteArray::fromBase64(encoded);
+		if (content.toBase64() != encoded
+		    || content.size() > kThemeFileSizeLimit) {
+			return false;
+		}
+		const auto path = entry.value(u"embedded"_q).toString();
+		if (!path.isEmpty() && !Window::Theme::IsEmbeddedTheme(path)) {
+			return false;
+		}
+		if (!content.isEmpty()) {
+			auto parsed = Window::Theme::Instance();
+			if (!Window::Theme::LoadFromContent(content, &parsed, nullptr)) {
+				return false;
+			}
+		}
+		if (!entry.contains(u"paper"_q)) {
+			continue;
+		}
+		if (!entry.value(u"paper"_q).isString()
+		    || !entry.value(u"image"_q).isString()) {
+			return false;
+		}
+		const auto paperText = entry.value(u"paper"_q).toString().toLatin1();
+		const auto paper = QByteArray::fromBase64(paperText);
+		if (paper.size() > 65536 || paper.toBase64() != paperText
+		    || !Data::WallPaper::FromSerialized(paper)) {
+			return false;
+		}
+		const auto text = entry.value(u"image"_q).toString().toLatin1();
+		auto png = QByteArray::fromBase64(text);
+		if (png.toBase64() != text || png.size() > 64 * 1024 * 1024) {
+			return false;
+		}
+		if (!png.isEmpty()) {
+			auto buffer = QBuffer(&png);
+			if (!buffer.open(QIODevice::ReadOnly)) {
+				return false;
+			}
+			auto reader = QImageReader(&buffer, "PNG");
+			const auto size = reader.size();
+			if (size.width() <= 0 || size.height() <= 0
+			    || int64(size.width()) + size.height() > kWallPaperSidesLimit
+			    || int64(size.width()) * size.height() > 16 * 1024 * 1024
+			    || reader.read().isNull()) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+bool ImportThemeBackup(const QJsonObject &data) {
+	if (!ValidateThemeBackup(data)) {
+		return false;
+	}
+	for (const auto night : { false, true }) {
+		const auto entry = data.value(night ? u"night"_q : u"day"_q).toObject();
+		auto content = QByteArray::fromBase64(
+		    entry.value(u"content"_q).toString().toLatin1());
+		const auto path = entry.value(u"embedded"_q).toString();
+		if (content.isEmpty() && !path.isEmpty()) {
+			auto file = QFile(path);
+			if (!file.open(QIODevice::ReadOnly)) {
+				return false;
+			}
+			content = file.readAll();
+		}
+		auto &key = night ? _themeKeyNight : _themeKeyDay;
+		if (content.isEmpty()) {
+			if (key) {
+				ClearKey(key, _basePath);
+			}
+			key = 0;
+		} else {
+			if (!key) {
+				key = GenerateKey(_basePath);
+			}
+			auto value = EncryptedDescriptor(0);
+			value.stream << content << QString(kThemeNewPathRelativeTag) << path
+			             << QString() << quint64(0) << quint64(0) << QString()
+			             << QString() << quint64(0) << qint32(0) << qint32(0)
+			             << qint32(0) << QByteArray() << QByteArray()
+			             << quint32(entry.value(u"tile"_q).toBool() ? 1 : 0)
+			             << QByteArray();
+			auto file = FileWriteDescriptor(key, _basePath, true);
+			file.writeEncrypted(value, SettingsKey);
+			if (!file.finish()) {
+				return false;
+			}
+		}
+		auto &backgroundKey = night ? _backgroundKeyNight : _backgroundKeyDay;
+		if (!entry.contains(u"paper"_q) && backgroundKey) {
+			ClearKey(backgroundKey, _basePath);
+			backgroundKey = 0;
+		}
+		if (entry.contains(u"paper"_q)) {
+			if (!backgroundKey) {
+				backgroundKey = GenerateKey(_basePath);
+			}
+			const auto png = QByteArray::fromBase64(
+			    entry.value(u"image"_q).toString().toLatin1());
+			const auto image
+			    = QImage::fromData(png, "PNG")
+			          .convertToFormat(QImage::Format_ARGB32_Premultiplied);
+			auto pixels = QByteArray();
+			if (!image.isNull()) {
+				const auto width = qint32(image.width());
+				const auto height = qint32(image.height());
+				pixels.resize(8 + width * height * 4);
+				memcpy(pixels.data(), &width, 4);
+				memcpy(pixels.data() + 4, &height, 4);
+				for (auto y = 0; y != height; ++y) {
+					memcpy(pixels.data() + 8 + y * width * 4,
+					    image.constScanLine(y),
+					    width * 4);
+				}
+			}
+			auto value = EncryptedDescriptor(0);
+			value.stream << qint32(kWallPaperSerializeTagId)
+			             << QByteArray::fromBase64(
+			                    entry.value(u"paper"_q).toString().toLatin1())
+			             << pixels;
+			auto file = FileWriteDescriptor(backgroundKey, _basePath, true);
+			file.writeEncrypted(value, SettingsKey);
+			if (!file.finish()) {
+				return false;
+			}
+		}
+		if (night) {
+			Window::Theme::Background()->setTileNightValue(
+			    entry.value(u"tile"_q).toBool());
+		} else {
+			Window::Theme::Background()->setTileDayValue(
+			    entry.value(u"tile"_q).toBool());
+		}
+	}
+	_useGlobalBackgroundKeys = true;
+	_themeKeyLegacy = 0;
+	Window::Theme::SetNightModeValue(data.value(u"nightMode"_q).toBool());
+	return writeSettingsChecked();
+}
+
+namespace {
+
+MTP::AuthKeyPtr BackupJournalKey() {
+	for (const auto &entry : Core::App().domain().accounts()) {
+		if (const auto key = entry.account->local().peekLegacyLocalKey()) {
+			return key;
+		}
+	}
+	return nullptr;
+}
+
+} // namespace
+
+bool WriteSettingsBackupJournal(const QByteArray &data) {
+	if (data.isEmpty() || data.size() > Storage::SettingsBackup::kMaximumFileSize) {
+		return false;
+	}
+	const auto key = BackupJournalKey();
+	if (!key) {
+		return false;
+	}
+	auto value = EncryptedDescriptor(0);
+	value.stream << data;
+	auto file
+	    = FileWriteDescriptor(u"settings-import-rollback"_q, _basePath, true);
+	file.writeEncrypted(value, key);
+	return file.finish();
+}
+
+QByteArray ReadSettingsBackupJournal() {
+	for (const auto suffix : { u"s"_q, u"0"_q, u"1"_q }) {
+		const auto file = QFileInfo(_basePath + u"settings-import-rollback"_q + suffix);
+		if (file.size() > Storage::SettingsBackup::kMaximumFileSize + 1024) {
+			return {};
+		}
+	}
+	const auto key = BackupJournalKey();
+	if (!key) {
+		return {};
+	}
+	auto file = FileReadDescriptor();
+	if (!ReadEncryptedFile(
+	        file, u"settings-import-rollback"_q, _basePath, key)) {
+		return {};
+	}
+	auto result = QByteArray();
+	file.stream >> result;
+	return file.stream.status() == QDataStream::Ok ? result : QByteArray();
+}
+
+bool HasSettingsBackupJournal() {
+	for (const auto suffix : { u"s"_q, u"0"_q, u"1"_q }) {
+		if (QFile::exists(_basePath + u"settings-import-rollback"_q + suffix)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ClearSettingsBackupJournal() {
+	auto ok = true;
+	for (const auto suffix : { u"s"_q, u"0"_q, u"1"_q }) {
+		auto file = QFile(_basePath + u"settings-import-rollback"_q + suffix);
+		if (file.exists() && !file.remove()) {
+			ok = false;
+		}
+	}
+	return ok;
+}
 void clearTheme() {
 	writeTheme(Window::Theme::Saved());
 }
@@ -1281,7 +1608,7 @@ void readLangPack() {
 	CustomLangPack::currentInstance()->fetchCustomLangPack(langPackId, langPackBaseId);
 }
 
-void writeLangPack() {
+bool WriteLangPack(bool sync) {
 	auto langpack = Lang::GetInstance().serialize();
 	if (!_langPackKey) {
 		_langPackKey = GenerateKey(_basePath);
@@ -1291,8 +1618,18 @@ void writeLangPack() {
 	EncryptedDescriptor data(Serialize::bytearraySize(langpack));
 	data.stream << langpack;
 
-	FileWriteDescriptor file(_langPackKey, _basePath);
+	FileWriteDescriptor file(_langPackKey, _basePath, sync);
 	file.writeEncrypted(data, SettingsKey);
+	return file.finish();
+}
+
+void writeLangPack() {
+	WriteLangPack(false);
+}
+
+bool writeLangPackChecked() {
+	Local::sync();
+	return WriteLangPack(true);
 }
 
 void saveRecentLanguages(const std::vector<Lang::Language> &list) {

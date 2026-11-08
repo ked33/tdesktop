@@ -376,6 +376,77 @@ QString Instance::langPackName() const {
 	return isCustom() ? QString() : CloudLangPackName();
 }
 
+QJsonObject Instance::exportBackup() const {
+	auto values = QJsonObject();
+	for (const auto& [key, value] : _nonDefaultValues) {
+		values.insert(QString::fromUtf8(key), QString::fromUtf8(value));
+	}
+	return {
+		{u"id"_q, _id},
+		{u"pluralId"_q, _pluralId},
+		{u"name"_q, _name},
+		{u"nativeName"_q, _nativeName},
+		{u"values"_q, values},
+		{u"base"_q, _base ? _base->exportBackup() : QJsonObject()},
+	};
+}
+
+bool Instance::importBackup(const QJsonObject &data, bool apply) {
+	for (const auto key :
+		 {u"id"_q, u"pluralId"_q, u"name"_q, u"nativeName"_q}) {
+		if (!data.value(key).isString()
+			|| data.value(key).toString().size() > 256) {
+			return false;
+		}
+	}
+	if (!data.value(u"values"_q).isObject()
+		|| !data.value(u"base"_q).isObject()) {
+		return false;
+	}
+	const auto values = data.value(u"values"_q).toObject();
+	if (values.size() > kLangValuesLimit) {
+		return false;
+	}
+	for (auto i = values.begin(); i != values.end(); ++i) {
+		if (i.key().size() > 256 || !i->isString()
+			|| i->toString().size() > 65536) {
+			return false;
+		}
+	}
+	const auto base = data.value(u"base"_q).toObject();
+	if (!base.isEmpty()) {
+		if (!base.value(u"base"_q).toObject().isEmpty()) {
+			return false;
+		}
+		auto scratch = Instance();
+		if (!scratch.importBackup(base, false)) {
+			return false;
+		}
+	}
+	if (!apply) {
+		return true;
+	}
+	reset({
+		.id = data.value(u"id"_q).toString(),
+		.pluralId = data.value(u"pluralId"_q).toString(),
+		.baseId = base.value(u"id"_q).toString(),
+		.name = data.value(u"name"_q).toString(),
+		.nativeName = data.value(u"nativeName"_q).toString(),
+	});
+	_base = nullptr;
+	if (!base.isEmpty()) {
+		_base = std::make_unique<Instance>(this, PrivateTag{});
+		if (!_base->importBackup(base, true)) {
+			return false;
+		}
+	}
+	for (auto i = values.begin(); i != values.end(); ++i) {
+		applyValue(i.key().toUtf8(), i->toString().toUtf8());
+	}
+	updatePluralRules();
+	return true;
+}
+
 QByteArray Instance::serialize() const {
 	auto size = Serialize::stringSize(kSerializeVersionTag)
 		+ sizeof(qint32) // serializeVersion

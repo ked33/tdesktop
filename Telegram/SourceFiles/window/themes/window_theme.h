@@ -200,6 +200,9 @@ public:
 	[[nodiscard]] WallPaperId id() const {
 		return _paper.id();
 	}
+	[[nodiscard]] const QImage &backupImage() const {
+		return _original;
+	}
 	[[nodiscard]] const QImage &prepared() const {
 		return _prepared;
 	}

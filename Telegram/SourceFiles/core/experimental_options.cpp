@@ -63,4 +63,65 @@ QString MigrateExperimentalOptions(const QString &json) {
 	return json;
 }
 
+QJsonObject ExportExperimentalBackup() {
+	auto result = QJsonObject();
+	const auto names = std::vector<const char*>{
+		"forum-hide-chats-list",
+		"dialogs-unread-on-top",
+		"ctrl-click-chat-new-window",
+		"dialogs-mute-icon",
+		"use-new-chat-view",
+		"auto-scroll-inactive-chat",
+		"moderate-common-groups",
+		"classic-profile-scroll",
+		"use-small-msg-bubble-radius",
+		"uncolored_quote",
+		"unlimited-message-width",
+		"mac-cmd-reply-immediately",
+		"hide-ai-button",
+		"force-compose-search-one-column",
+		"view-profile-in-chats-list-context-menu",
+		"show-peer-id-below-about",
+		"show-channel-joined-below-about",
+		"profile-media-tabs",
+		"profile-media-tabs-expanded",
+		"tabbed-panel-show-on-click",
+		"unlimited-recent-stickers",
+		"disable-autoplay-next",
+		"external-media-viewer",
+		"ffmpeg-multithread",
+		"hide-reply-button",
+		"custom-notification",
+		"gnotification",
+		"mac-modern-notifications",
+		"fractional-scaling-enabled",
+		"high-dpi-downscale",
+		"use-qt-rhi",
+		"force-angle",
+		"enable-vulkan-rhi",
+		"freetype",
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && !defined DESKTOP_APP_DISABLE_PRIVATE_QT_API
+		"kinetic-scroller",
+#endif
+		"touchbar-disabled",
+		"new-windows-size-as-first",
+		"prefer-ipv6",
+		"skip-url-scheme-register",
+		"deadlock-detector",
+		"webview-debug-enabled",
+		"webview-legacy-edge",
+		"fast-buttons-mode",
+	};
+	for (const auto name : names) {
+		const auto &option = base::options::lookup<bool>(name);
+		if (option.relevant()) {
+			result.insert(option.id(), option.value());
+		}
+	}
+	const auto &favorite
+		= base::options::lookup<QString>("folder-favorite-link");
+	result.insert(favorite.id(), favorite.value());
+	return result;
+}
+
 } // namespace Core

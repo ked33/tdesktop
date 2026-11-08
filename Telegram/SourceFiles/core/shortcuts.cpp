@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/shortcuts.h"
 
+#include <QtCore/QSaveFile>
+
 #include "base/platform/base_platform_info.h"
 #include "base/event_filter.h"
 #include "base/parse_helper.h"
@@ -547,7 +549,8 @@ bool Manager::readCustomFile() {
 				if (removed != entry.constEnd() && removed->toBool()) {
 					remove((*keys).toString(), i->second);
 				} else {
-					set((*keys).toString(), i->second, true);
+					set((*keys).toString(), i->second,
+						!entry.value(u"additive"_q).toBool());
 				}
 			} else {
 				LOG(("Shortcut Warning: "
@@ -1367,6 +1370,98 @@ void Finish() {
 
 void Listen(not_null<QWidget*> widget) {
 	Data.listen(widget);
+}
+
+QJsonObject ExportBackup() {
+	auto result = QJsonObject();
+	for (const auto& [name, command] : CommandByName) {
+		auto sequences = QJsonArray();
+		for (const auto& [sequence, commands] : KeysCurrents()) {
+			if (commands.contains(command)) {
+				sequences.push_back(
+					sequence.toString(QKeySequence::PortableText));
+			}
+		}
+		result.insert(name, sequences);
+	}
+	return result;
+}
+
+bool ValidateBackup(const QJsonObject &data) {
+	if (data.size() > 300) {
+		return false;
+	}
+	for (auto i = data.begin(); i != data.end(); ++i) {
+		if (!CommandByName.contains(i.key())) {
+			continue;
+		}
+		if (!i->isArray() || i->toArray().size() > 16) {
+			return false;
+		}
+		for (const auto &value : i->toArray()) {
+			if (!value.isString() || value.toString().size() > 128) {
+				return false;
+			}
+			const auto sequence = QKeySequence::fromString(
+				value.toString(), QKeySequence::PortableText);
+			if (sequence.isEmpty()
+				|| sequence.toString(QKeySequence::PortableText)
+					   != value.toString()) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+bool WriteBackup(const QJsonObject &data) {
+	if (!ValidateBackup(data)) {
+		return false;
+	}
+	auto merged = ExportBackup();
+	for (auto i = data.begin(); i != data.end(); ++i) {
+		if (CommandByName.contains(i.key())) {
+			merged.insert(i.key(), *i);
+		}
+	}
+	auto desired = base::flat_map<QKeySequence, base::flat_set<Command>>();
+	for (auto i = merged.begin(); i != merged.end(); ++i) {
+		const auto command = CommandByName.find(i.key())->second;
+		for (const auto &value : i->toArray()) {
+			desired[QKeySequence::fromString(value.toString(), QKeySequence::PortableText)].emplace(command);
+		}
+	}
+	auto entries = QJsonArray();
+	const auto defaults = KeysDefaults();
+	for (const auto &[name, command] : CommandByName) {
+		for (const auto &[sequence, commands] : defaults) {
+			const auto found = desired.find(sequence);
+			if (commands.contains(command)
+				&& (found == end(desired) || !found->second.contains(command))) {
+				entries.push_back(QJsonObject{
+					{u"keys"_q, sequence.toString()},
+					{u"command"_q, name}, {u"removed"_q, true},
+				});
+			}
+		}
+		for (const auto &[sequence, commands] : desired) {
+			const auto found = defaults.find(sequence);
+			if (commands.contains(command)
+				&& (found == end(defaults) || !found->second.contains(command))) {
+				entries.push_back(QJsonObject{
+					{u"keys"_q, sequence.toString()},
+					{u"command"_q, name}, {u"additive"_q, true},
+				});
+			}
+		}
+	}
+	if (entries.size() >= kCountLimit) {
+		return false;
+	}
+	auto file = QSaveFile(CustomFilePath());
+	const auto bytes = QJsonDocument(entries).toJson();
+	return file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size()
+		   && file.commit();
 }
 
 } // namespace Shortcuts
