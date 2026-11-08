@@ -703,6 +703,17 @@ Widget::Widget(
 		&session(),
 		ChatHelpers::HashtagAutocomplete::Source::SearchHistory);
 	_hashtagSearchHistory->setAllowed(!_searchState.inChat);
+	_hashtagAutocomplete = object_ptr<ChatHelpers::HashtagAutocomplete>(
+		hashtagPanelParent,
+		_search.data(),
+		&session());
+	rpl::merge(
+		_hashtagAutocomplete->chosen(),
+		_hashtagSearchHistory->chosen()
+	) | rpl::on_next([=] {
+		_hashtagAutocomplete->dismiss();
+		_hashtagSearchHistory->dismiss();
+	}, lifetime());
 	_hashtagSearchHistory->chosen(
 	) | rpl::on_next([=](const QString &tag) {
 		session().local().saveRecentSearchHashtags('#' + tag);
@@ -711,11 +722,6 @@ Widget::Widget(
 		copy.query = validateSearchQuery();
 		applySearchState(std::move(copy));
 	}, lifetime());
-
-	_hashtagAutocomplete = object_ptr<ChatHelpers::HashtagAutocomplete>(
-		hashtagPanelParent,
-		_search.data(),
-		&session());
 	_hashtagAutocomplete->shownValue(
 	) | rpl::on_next([=](bool shown) {
 		_hashtagSearchHistory->setKeyboardEnabled(!shown);

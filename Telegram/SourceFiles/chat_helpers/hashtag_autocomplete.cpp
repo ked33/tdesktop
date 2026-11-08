@@ -263,6 +263,11 @@ void HashtagAutocomplete::setKeyboardEnabled(bool enabled) {
 	_keyboardEnabled = enabled;
 }
 
+void HashtagAutocomplete::dismiss() {
+	_dismissedQuery = computeQuery();
+	hideFast();
+}
+
 bool HashtagAutocomplete::acceptsKeyboard() const {
 	return !isHidden()
 		&& _keyboardEnabled
@@ -288,8 +293,7 @@ bool HashtagAutocomplete::handleKeyPress(not_null<QKeyEvent*> e) {
 	} else if (key == Qt::Key_Enter || key == Qt::Key_Return) {
 		return !_mouseSelection && chooseSelected();
 	} else if (key == Qt::Key_Escape && _source == Source::Sent) {
-		_dismissedQuery = computeQuery();
-		hideFast();
+		dismiss();
 		return true;
 	}
 	return false;
@@ -311,7 +315,7 @@ bool HashtagAutocomplete::eventFilter(QObject *obj, QEvent *e) {
 void HashtagAutocomplete::paintEvent(QPaintEvent *e) {
 	auto p = Painter(this);
 
-	p.fillRect(rect(), st::mentionBg);
+	p.fillRect(rect(), st::filterInputActiveBg);
 	if (_source == Source::SearchHistory) {
 		const auto line = st::lineWidth;
 		p.fillRect(0, 0, width(), line, st::shadowFg);
@@ -508,8 +512,7 @@ bool HashtagAutocomplete::chooseSelected() {
 		return false;
 	}
 	_field->setTextCursor(cursor);
-	_dismissedQuery = '#' + tag;
-	hideFast();
+	dismiss();
 	_chosen.fire_copy(tag);
 	return true;
 }
