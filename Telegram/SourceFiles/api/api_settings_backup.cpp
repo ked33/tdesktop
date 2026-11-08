@@ -197,17 +197,22 @@ template <typename T>
 	if (data.vstories_other_sound()) {
 		flags |= Flag::f_stories_sound;
 	}
-	return MTP_inputPeerNotifySettings(MTP_flags(flags),
-	    (data.vshow_previews() ? *data.vshow_previews() : MTP_bool(false)),
-	    (data.vsilent() ? *data.vsilent() : MTP_bool(false)),
-	    (data.vmute_until() ? *data.vmute_until() : MTP_int(0)),
-	    (data.vother_sound() ? *data.vother_sound()
-		                     : MTP_notificationSoundDefault()),
-	    (data.vstories_muted() ? *data.vstories_muted() : MTP_bool(false)),
-	    (data.vstories_hide_sender() ? *data.vstories_hide_sender()
-		                             : MTP_bool(false)),
-	    (data.vstories_other_sound() ? *data.vstories_other_sound()
-		                             : MTP_notificationSoundDefault()));
+	const auto fallbackBool = MTPBool(MTP_bool(false));
+	const auto fallbackSound = MTPNotificationSound(
+		MTP_notificationSoundDefault());
+	return MTP_inputPeerNotifySettings(
+		MTP_flags(flags),
+		(data.vshow_previews() ? *data.vshow_previews() : fallbackBool),
+		(data.vsilent() ? *data.vsilent() : fallbackBool),
+		(data.vmute_until() ? *data.vmute_until() : MTP_int(0)),
+		(data.vother_sound() ? *data.vother_sound() : fallbackSound),
+		(data.vstories_muted() ? *data.vstories_muted() : fallbackBool),
+		(data.vstories_hide_sender()
+			? *data.vstories_hide_sender()
+			: fallbackBool),
+		(data.vstories_other_sound()
+			? *data.vstories_other_sound()
+			: fallbackSound));
 }
 
 void Next(const std::shared_ptr<Job> &job);
@@ -457,14 +462,14 @@ void Next(const std::shared_ptr<Job> &job) {
 					        [&](const MTPDnotifyPeer &v) -> MTPInputNotifyPeer {
 						        return MTP_inputNotifyPeer(session->data()
 						                .peer(peerFromMTP(v.vpeer()))
-						                ->input);
+						                ->input());
 					        },
 					        [&](const MTPDnotifyForumTopic &v)
 					            -> MTPInputNotifyPeer {
 						        return MTP_inputNotifyForumTopic(
 						            session->data()
 						                .peer(peerFromMTP(v.vpeer()))
-						                ->input,
+						                ->input(),
 						            v.vtop_msg_id());
 					        },
 					        [](const auto &) -> MTPInputNotifyPeer {
