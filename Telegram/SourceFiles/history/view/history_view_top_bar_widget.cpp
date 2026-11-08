@@ -1595,6 +1595,10 @@ void TopBarWidget::updateControlsGeometry() {
 		_infoToggle->moveToRight(_rightTaken, otherButtonsTop);
 		_rightTaken += _infoToggle->width();
 	}
+	_linkedChat->moveToRight(_rightTaken, otherButtonsTop);
+	if (!_linkedChat->isHidden()) {
+		_rightTaken += _linkedChat->width() + st::topBarCallSkip;
+	}
 	_admins->moveToRight(_rightTaken, otherButtonsTop);
 	if (!_admins->isHidden()) {
 		_rightTaken += _admins->width() + st::topBarSkip;
@@ -1607,10 +1611,6 @@ void TopBarWidget::updateControlsGeometry() {
 		_call->moveToRight(_rightTaken, otherButtonsTop);
 		_groupCall->moveToRight(_rightTaken, otherButtonsTop);
 		_rightTaken += _call->width();
-	}
-	_linkedChat->moveToRight(_rightTaken, otherButtonsTop);
-	if (!_linkedChat->isHidden()) {
-		_rightTaken += _linkedChat->width() + st::topBarCallSkip;
 	}
 	_search->moveToRight(_rightTaken, otherButtonsTop);
 	if (!_search->isHidden()) {
