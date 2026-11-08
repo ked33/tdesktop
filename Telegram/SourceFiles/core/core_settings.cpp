@@ -2162,7 +2162,7 @@ void Settings::visitBackup(Storage::SettingsBackup::Archive &a) {
 	a.bounded("sendSubmitWay", _sendSubmitWay, 0, 3);
 	a.bounded("floatPlayerColumn", _floatPlayerColumn, 0, 2);
 	a.field("floatPlayerCorner", _floatPlayerCorner, [](RectPart value) {
-		return IsTopCorner(value) || IsBottomCorner(value);
+		return ::IsTopCorner(value) || ::IsBottomCorner(value);
 	});
 	a.bounded("thirdSectionExtendedBy", _thirdSectionExtendedBy, -1, 10000);
 	a.bounded("dialogsWithChatWidthRatio", _dialogsWithChatWidthRatio, 0, 1);
@@ -2192,7 +2192,11 @@ void Settings::visitBackup(Storage::SettingsBackup::Archive &a) {
 	a.field("windowTitleHideAccount", hideAccount);
 	a.field("windowTitleHideUnread", hideUnread);
 	if (a.applying()) {
-		_windowTitleContent = { hideChat, hideAccount, hideUnread };
+		_windowTitleContent = WindowTitleContent{
+			.hideChatName = hideChat,
+			.hideAccountName = hideAccount,
+			.hideTotalUnread = hideUnread,
+		};
 	}
 	auto files = _sendFilesWay.serialize();
 	a.field("sendFilesWay", files, [](int value) {
