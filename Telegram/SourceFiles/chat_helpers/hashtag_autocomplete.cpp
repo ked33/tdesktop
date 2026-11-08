@@ -101,7 +101,8 @@ void HashtagAutocomplete::Inner::paintEvent(QPaintEvent *e) {
 	for (auto i = from; i < till && i < last; ++i) {
 		const auto &row = _owner->_rows[i];
 		const auto top = i * st::mentionHeight;
-		const auto selected = (i == _owner->_selected);
+		const auto selected = (i == _owner->_selected)
+			&& (_owner->_keyboardEnabled || _owner->_mouseSelection);
 		if (selected) {
 			p.fillRect(0, top, width(), st::mentionHeight, st::mentionBgOver);
 		}
@@ -141,7 +142,10 @@ void HashtagAutocomplete::Inner::mouseMoveEvent(QMouseEvent *e) {
 		return;
 	}
 	_owner->_lastMousePosition = position;
-	_owner->_mouseSelection = true;
+	if (!_owner->_mouseSelection) {
+		_owner->_mouseSelection = true;
+		update();
+	}
 	_owner->setSelected(rowIndexAt(e->pos()));
 }
 
@@ -161,6 +165,7 @@ void HashtagAutocomplete::Inner::mousePressEvent(QMouseEvent *e) {
 		_pressedTag = _owner->_rows[_pressed].match.tag;
 		_owner->_mouseSelection = true;
 		_owner->setSelected(_pressed);
+		update();
 	}
 }
 
@@ -261,6 +266,18 @@ void HashtagAutocomplete::setAllowed(bool allowed) {
 
 void HashtagAutocomplete::setKeyboardEnabled(bool enabled) {
 	_keyboardEnabled = enabled;
+	_mouseSelection = false;
+	_lastMousePosition = QCursor::pos();
+	_inner->update();
+}
+
+bool HashtagAutocomplete::keyboardEnabled() const {
+	return _keyboardEnabled;
+}
+
+void HashtagAutocomplete::activateKeyboardSelection() {
+	setKeyboardEnabled(true);
+	moveSelection(0);
 }
 
 void HashtagAutocomplete::dismiss() {
@@ -488,7 +505,7 @@ void HashtagAutocomplete::moveSelection(int delta) {
 	_mouseSelection = false;
 	_lastMousePosition = QCursor::pos();
 	if (_selected < 0 || _selected >= count) {
-		setSelected((delta > 0) ? 0 : (count - 1));
+		setSelected((delta >= 0) ? 0 : (count - 1));
 	} else {
 		const auto next = _selected + delta;
 		setSelected((next < 0 || next >= count) ? -1 : next);

@@ -45,6 +45,8 @@ public:
 	void setTargetRect(QRect rect, Direction direction = Direction::Down);
 	void setAllowed(bool allowed);
 	void setKeyboardEnabled(bool enabled);
+	[[nodiscard]] bool keyboardEnabled() const;
+	void activateKeyboardSelection();
 	void dismiss();
 	bool handleKeyPress(not_null<QKeyEvent*> e);
 	[[nodiscard]] rpl::producer<QString> chosen() const;

@@ -690,6 +690,28 @@ Widget::Widget(
 		return false;
 	});
 
+	// Switch panels before their Tab completion handlers run.
+	_search->tabbed(
+	) | rpl::on_next([=](not_null<Ui::InputField::TabbedRequest*> request) {
+		if (request->handled
+			|| !_hashtagAutocomplete
+			|| !_hashtagSearchHistory
+			|| _hashtagAutocomplete->isHidden()
+			|| _hashtagSearchHistory->isHidden()) {
+			return;
+		}
+		const auto toHistory = _hashtagAutocomplete->keyboardEnabled();
+		const auto from = toHistory
+			? _hashtagAutocomplete.get()
+			: _hashtagSearchHistory.get();
+		const auto to = toHistory
+			? _hashtagSearchHistory.get()
+			: _hashtagAutocomplete.get();
+		request->handled = true;
+		from->setKeyboardEnabled(false);
+		to->activateKeyboardSelection();
+	}, lifetime());
+
 	auto hashtagPanelParent = parentWidget();
 	if (_layout == Layout::Child && hashtagPanelParent) {
 		hashtagPanelParent = hashtagPanelParent->parentWidget();
@@ -722,9 +744,16 @@ Widget::Widget(
 		copy.query = validateSearchQuery();
 		applySearchState(std::move(copy));
 	}, lifetime());
-	_hashtagAutocomplete->shownValue(
-	) | rpl::on_next([=](bool shown) {
-		_hashtagSearchHistory->setKeyboardEnabled(!shown);
+	rpl::combine(
+		_hashtagAutocomplete->shownValue(),
+		_hashtagSearchHistory->shownValue()
+	) | rpl::on_next([=](bool autocompleteShown, bool historyShown) {
+		if (!_hashtagAutocomplete || !_hashtagSearchHistory) {
+			return;
+		}
+		_hashtagAutocomplete->setKeyboardEnabled(autocompleteShown);
+		_hashtagSearchHistory->setKeyboardEnabled(
+			!autocompleteShown && historyShown);
 	}, lifetime());
 	rpl::combine(
 		_hashtagSearchHistory->shownValue(),
