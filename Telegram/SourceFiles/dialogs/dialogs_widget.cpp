@@ -690,8 +690,15 @@ Widget::Widget(
 		return false;
 	});
 
+	auto hashtagPanelParent = parentWidget();
+	if (_layout == Layout::Child && hashtagPanelParent) {
+		hashtagPanelParent = hashtagPanelParent->parentWidget();
+	}
+	if (!hashtagPanelParent) {
+		hashtagPanelParent = this;
+	}
 	_hashtagSearchHistory = object_ptr<ChatHelpers::HashtagAutocomplete>(
-		this,
+		hashtagPanelParent,
 		_search.data(),
 		&session(),
 		ChatHelpers::HashtagAutocomplete::Source::SearchHistory);
@@ -705,11 +712,8 @@ Widget::Widget(
 		applySearchState(std::move(copy));
 	}, lifetime());
 
-	const auto hashtagPanelParent = (_layout == Layout::Child)
-		? static_cast<QWidget*>(this)
-		: parentWidget();
 	_hashtagAutocomplete = object_ptr<ChatHelpers::HashtagAutocomplete>(
-		hashtagPanelParent ? hashtagPanelParent : static_cast<QWidget*>(this),
+		hashtagPanelParent,
 		_search.data(),
 		&session());
 	_hashtagAutocomplete->shownValue(
@@ -5247,7 +5251,7 @@ void Widget::updateControlsGeometry() {
 		if (_chatFilters) {
 			_chatFilters->move(0, chatFiltersTop);
 		}
-		auto scrollTop = chatFiltersTop
+		const auto scrollTop = chatFiltersTop
 			+ ((_chatFilters
 				&& _searchState.query.isEmpty()
 				&& !_openedForum
@@ -5255,39 +5259,26 @@ void Widget::updateControlsGeometry() {
 				&& !searchInPeer())
 				? (_chatFilters->height() * (1. - narrowRatio))
 				: 0);
-		if (_hashtagSearchHistory) {
-			_hashtagSearchHistory->setTargetRect(QRect(
+		if (_hashtagAutocomplete && _hashtagSearchHistory) {
+			const auto panelHost = _hashtagAutocomplete->parentWidget();
+			const auto fieldRightTop = _search->mapTo(
+				panelHost,
+				QPoint(_search->width(), 0));
+			const auto panelWidth = std::min(scrollWidth, panelHost->width());
+			const auto left = std::clamp(
+				fieldRightTop.x(),
 				0,
-				int(scrollTop),
-				scrollWidth,
-				std::max(int(height() - scrollTop - bottomSkip), 0)));
-			if (!_hashtagSearchHistory->isHidden()) {
-				scrollTop += _hashtagSearchHistory->height();
+				panelHost->width() - panelWidth);
+			auto target = QRect(
+				left,
+				fieldRightTop.y(),
+				panelWidth,
+				std::max(panelHost->height() - fieldRightTop.y(), 0));
+			_hashtagAutocomplete->setTargetRect(target);
+			if (!_hashtagAutocomplete->isHidden()) {
+				target.adjust(0, _hashtagAutocomplete->height(), 0, 0);
 			}
-		}
-		if (_hashtagAutocomplete) {
-			if (_layout == Layout::Child) {
-				_hashtagAutocomplete->setTargetRect(QRect(
-					0,
-					int(scrollTop),
-					scrollWidth,
-					std::max(int(height() - scrollTop - bottomSkip), 0)));
-				if (!_hashtagAutocomplete->isHidden()) {
-					scrollTop += _hashtagAutocomplete->height();
-				}
-			} else if (const auto panelHost = parentWidget()) {
-				const auto fieldRightTop = _search->mapTo(
-					panelHost,
-					QPoint(_search->width(), 0));
-				const auto left = std::min(
-					fieldRightTop.x(),
-					std::max(panelHost->width() - scrollWidth, 0));
-				_hashtagAutocomplete->setTargetRect(QRect(
-					left,
-					fieldRightTop.y(),
-					scrollWidth,
-					std::max(panelHost->height() - fieldRightTop.y(), 0)));
-			}
+			_hashtagSearchHistory->setTargetRect(target);
 		}
 		const auto scrollHeight = std::max(
 			int(height() - scrollTop - bottomSkip),
@@ -5696,6 +5687,8 @@ Widget::~Widget() {
 		commitRecentSearchDraft();
 	}
 	cancelSearchRequest();
+	_hashtagAutocomplete.destroy();
+	_hashtagSearchHistory.destroy();
 
 	// Destructor may hide the bar and attempt to double-destroy it.
 	base::take(_downloadBar);
