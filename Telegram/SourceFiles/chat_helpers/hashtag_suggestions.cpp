@@ -2,12 +2,103 @@
 
 #include <QtGui/QFontMetricsF>
 #include <QtGui/QPainter>
+#include <QtGui/QTextBlock>
+#include <QtGui/QTextCursor>
 #include <QtGui/QTextLayout>
 
 #include <algorithm>
 #include <cmath>
 
 namespace ChatHelpers {
+namespace {
+
+constexpr auto kMaxHashtagLength = 64;
+
+bool IsHashtagCharacter(char32_t ch) {
+	const auto category = QChar::category(ch);
+	return QChar::isLetterOrNumber(ch)
+		|| ch == '_'
+		|| category == QChar::Mark_NonSpacing
+		|| category == QChar::Mark_SpacingCombining
+		|| category == QChar::Mark_Enclosing;
+}
+
+int PreviousCharacter(const QString &text, int position) {
+	return (position > 1
+		&& text[position - 1].isLowSurrogate()
+		&& text[position - 2].isHighSurrogate())
+		? position - 2
+		: position - 1;
+}
+
+char32_t CharacterAt(const QString &text, int position) {
+	const auto ch = text[position];
+	return (ch.isHighSurrogate()
+		&& position + 1 < text.size()
+		&& text[position + 1].isLowSurrogate())
+		? QChar::surrogateToUcs4(ch, text[position + 1])
+		: ch.unicode();
+}
+
+} // namespace
+
+std::optional<HashtagCompletion> FindHashtagCompletion(
+		const QTextCursor &cursor) {
+	if (cursor.isNull() || cursor.hasSelection()) {
+		return {};
+	}
+	const auto block = cursor.block();
+	const auto text = block.text();
+	const auto position = cursor.positionInBlock();
+	if (!position
+		|| (position < text.size() && text[position].isLowSurrogate())) {
+		return {};
+	}
+	auto from = position;
+	while (from > 0) {
+		const auto previous = PreviousCharacter(text, from);
+		if (!IsHashtagCharacter(CharacterAt(text, previous))) {
+			break;
+		}
+		from = previous;
+		if (position - from > kMaxHashtagLength) {
+			return {};
+		}
+	}
+	if (!from || text[from - 1] != '#') {
+		return {};
+	}
+	--from;
+	if (from && IsHashtagCharacter(
+			CharacterAt(text, PreviousCharacter(text, from)))) {
+		return {};
+	}
+	auto till = position;
+	while (till < text.size() && IsHashtagCharacter(CharacterAt(text, till))) {
+		till += text[till].isHighSurrogate() ? 2 : 1;
+		if (till - from > kMaxHashtagLength + 1) {
+			return {};
+		}
+	}
+	return HashtagCompletion{
+		text.mid(from, till - from),
+		block.position() + from,
+		block.position() + till,
+	};
+}
+
+bool CompleteHashtag(QTextCursor &cursor, const QString &tag) {
+	const auto range = FindHashtagCompletion(cursor);
+	if (!range || tag.size() < 2 || tag.front() != '#') {
+		return false;
+	}
+	cursor.beginEditBlock();
+	cursor.setPosition(range->from);
+	cursor.setPosition(range->till, QTextCursor::KeepAnchor);
+	cursor.insertText(tag);
+	cursor.endEditBlock();
+	return true;
+}
 
 HashtagSuggestions::HashtagSuggestions(Normalize normalize)
 : _normalize(normalize) {
@@ -81,6 +172,7 @@ const HashtagMatches &HashtagSuggestions::filter(
 	_query = normalized;
 	_limit = limit;
 	_matches.clear();
+	_prefix.clear();
 	_infix.clear();
 	if (!limit) {
 		return _matches;
@@ -88,32 +180,37 @@ const HashtagMatches &HashtagSuggestions::filter(
 	const auto size = std::min(limit, int(_entries.size()));
 	_matches.reserve(size);
 	if (!_query.isEmpty()) {
+		_prefix.reserve(size);
 		_infix.reserve(size);
 	}
 	for (const auto &entry : _entries) {
 		const auto offset = _query.isEmpty()
 			? 0
 			: int(entry.key.indexOf(_query, 0, Qt::CaseInsensitive));
-		if (offset < 0 || (!_query.isEmpty()
-			&& entry.key.size() == _query.size())) {
+		if (offset < 0) {
 			continue;
 		}
-		if (offset == 0) {
+		if (offset == 0
+			&& (_query.isEmpty() || entry.key.size() == _query.size())) {
 			_matches.push_back(match(entry, offset, int(_query.size())));
 			if (_matches.size() == limit) {
 				break;
 			}
-		} else if (_infix.size() < limit) {
+		} else if (offset == 0 && _prefix.size() < limit) {
+			_prefix.push_back(match(entry, offset, int(_query.size())));
+		} else if (offset > 0 && _infix.size() < limit) {
 			_infix.push_back(match(entry, offset, int(_query.size())));
 		}
 	}
-	const auto remaining = std::min(
-		limit - int(_matches.size()),
-		int(_infix.size()));
-	for (auto i = 0; i < remaining; ++i) {
-		_matches.push_back(_infix[i]);
+	for (const auto list : { &_prefix, &_infix }) {
+		const auto remaining = std::min(
+			limit - int(_matches.size()),
+			int(list->size()));
+		for (auto i = 0; i < remaining; ++i) {
+			_matches.push_back((*list)[i]);
+		}
+		list->clear();
 	}
-	_infix.clear();
 	return _matches;
 }
 

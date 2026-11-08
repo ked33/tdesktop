@@ -41,6 +41,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_document.h"
 #include "data/stickers/data_custom_emoji.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
+#include "chat_helpers/hashtag_suggestions.h"
 #include "ui/emoji_config.h"
 #include "history/view/controls/compose_controls_common.h"
 #include "window/window_session_controller.h"
@@ -967,6 +968,12 @@ AutocompleteQuery ParseMentionHashtagBotCommandQuery(
 		return result;
 	}
 
+	if (features.autocompleteHashtags) {
+		if (const auto hashtag = ChatHelpers::FindHashtagCompletion(cursor)) {
+			return { hashtag->query, hashtag->from == 0 };
+		}
+	}
+
 	const auto position = cursor.position();
 	const auto document = field->document();
 	const auto block = document->findBlock(position);
@@ -1004,14 +1011,7 @@ AutocompleteQuery ParseMentionHashtagBotCommandQuery(
 				}
 				return result;
 			} else if (text[i - 1] == '#') {
-				if (!features.autocompleteHashtags) {
-					return {};
-				}
-				if (i < 2 || !(text[i - 2].isLetterOrNumber() || text[i - 2] == '_')) {
-					result.fromStart = (i == 1) && (fragmentPosition == 0);
-					result.query = text.mid(i - 1, position - fragmentPosition - i + 1);
-				}
-				return result;
+				return {};
 			} else if (text[i - 1] == '/') {
 				if (!features.autocompleteCommands) {
 					return {};

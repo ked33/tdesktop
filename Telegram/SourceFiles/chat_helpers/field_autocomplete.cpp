@@ -2004,9 +2004,18 @@ void InitFieldAutocomplete(
 	const auto sendCommand = descriptor.sendBotCommand;
 	const auto setText = descriptor.setText;
 
+	const auto completedHashtag = raw->lifetime().make_state<QString>();
 	raw->hashtagChosen(
 	) | rpl::on_next([=](FieldAutocomplete::HashtagChosen data) {
-		field->insertTag(data.hashtag);
+		auto cursor = field->textCursor();
+		*completedHashtag = data.hashtag;
+		if (CompleteHashtag(cursor, data.hashtag)) {
+			field->setTextCursor(cursor);
+			*completedHashtag = data.hashtag;
+			raw->hideFast();
+		} else {
+			completedHashtag->clear();
+		}
 	}, raw->lifetime());
 
 	const auto peer = descriptor.peer;
@@ -2062,6 +2071,14 @@ void InitFieldAutocomplete(
 
 	const auto check = [=] {
 		auto parsed = ParseMentionHashtagBotCommandQuery(field, features());
+		if (!completedHashtag->isEmpty()) {
+			if (parsed.query == *completedHashtag) {
+				parsed = {};
+			} else {
+				completedHashtag->clear();
+			}
+		}
+
 		if (parsed.query.isEmpty()) {
 		} else if (parsed.query[0] == '#'
 			&& cRecentWriteHashtags().isEmpty()

@@ -501,7 +501,14 @@ bool HashtagAutocomplete::chooseSelected() {
 		return false;
 	}
 	const auto tag = _rows[_selected].match.tag;
-	_field->insertTag('#' + tag);
+	auto cursor = _field->textCursor();
+	_dismissedQuery = '#' + tag;
+	if (!CompleteHashtag(cursor, '#' + tag)) {
+		_dismissedQuery.clear();
+		return false;
+	}
+	_field->setTextCursor(cursor);
+	_dismissedQuery = '#' + tag;
 	hideFast();
 	_chosen.fire_copy(tag);
 	return true;

@@ -5,12 +5,14 @@
 #include <QtCore/QString>
 #include <QtCore/QVector>
 
+#include <optional>
 #include <vector>
 
 class QColor;
 class QFont;
 class QPainter;
 class QPoint;
+class QTextCursor;
 
 namespace ChatHelpers {
 
@@ -23,6 +25,16 @@ struct HashtagMatch {
 };
 
 using HashtagMatches = QVector<HashtagMatch>;
+
+struct HashtagCompletion {
+	QString query;
+	int from = 0;
+	int till = 0;
+};
+
+[[nodiscard]] std::optional<HashtagCompletion> FindHashtagCompletion(
+	const QTextCursor &cursor);
+[[nodiscard]] bool CompleteHashtag(QTextCursor &cursor, const QString &tag);
 
 class HashtagSuggestions final {
 public:
@@ -56,6 +68,7 @@ private:
 	const Normalize _normalize;
 	std::vector<Entry> _entries;
 	HashtagMatches _matches;
+	HashtagMatches _prefix;
 	HashtagMatches _infix;
 	QString _query;
 	int _limit = 0;
