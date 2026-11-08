@@ -9974,3 +9974,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_backup_autostart_failed" = "The operating system did not accept the startup setting. Other settings have been saved.";
 "lng_backup_quit" = "Quit Telegram";
+
+"lng_filters_recent_chats" = "Recent chats";
+"lng_settings_show_recent_chats_button" = "Show recent chats button in the folders sidebar";

@@ -539,5 +539,7 @@
     "lng_backup_unknown_count": "不适用的项目会跳过。",
     "lng_backup_device_about": "开机启动注册及设备路径与当前电脑有关，换机导入后请检查这些设置。",
     "lng_backup_autostart_failed": "操作系统未接受开机启动设置，其他设置已保存。",
-    "lng_backup_quit": "退出 Telegram"
+    "lng_backup_quit": "退出 Telegram",
+    "lng_filters_recent_chats": "最近对话",
+    "lng_settings_show_recent_chats_button": "在文件夹栏显示最近对话按钮"
 }

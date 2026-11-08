@@ -283,6 +283,7 @@ private:
 	object_ptr<Ui::IconButton> _groupCall;
 	object_ptr<Ui::IconButton> _noForwardsLock;
 	object_ptr<Ui::IconButton> _search;
+	object_ptr<Ui::IconButton> _linkedChat;
 	object_ptr<Ui::FlatLabel> _messagesProgress;
 	object_ptr<Ui::FlatLabel> _messagesProgressCount;
 	int _messagesProgressCurrent = 0;

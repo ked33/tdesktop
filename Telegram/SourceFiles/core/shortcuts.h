@@ -159,6 +159,7 @@ void ReloadCustomChatShortcuts();
 
 bool HandlePossibleChatSwitch(not_null<QKeyEvent*> event);
 void ResetChatSwitchState();
+void ShowPersistentChatSwitch();
 [[nodiscard]] rpl::producer<> JumpToDialogRequests();
 [[nodiscard]] rpl::producer<> GlobalSearchShortcutRequests();
 [[nodiscard]] rpl::producer<QString> SelectedActionShortcutRequests();

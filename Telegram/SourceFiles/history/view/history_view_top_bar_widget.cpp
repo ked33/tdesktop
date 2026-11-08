@@ -172,6 +172,7 @@ TopBarWidget::TopBarWidget(
 , _groupCall(this, st::topBarGroupCall)
 , _noForwardsLock(this, st::topBarNoForwardsLock)
 , _search(this, st::topBarSearch)
+, _linkedChat(this, st::topBarLinkedChat)
 , _messagesProgress(this, st::topBarMessagesProgress)
 , _messagesProgressCount(this, st::topBarMessagesProgress)
 , _recentActions(this, st::topBarRecentActions)
@@ -219,6 +220,19 @@ TopBarWidget::TopBarWidget(
 		}
 	});
 	_groupCall->setClickedCallback([=] { groupCall(); });
+	_linkedChat->setClickedCallback([=] {
+		const auto peer = _activeChat.key.peer();
+		const auto channel = peer ? peer->asChannel() : nullptr;
+		const auto linked = channel ? channel->discussionLink() : nullptr;
+		if (!linked) {
+			return;
+		}
+		if (channel->invitePeekExpires()) {
+			_controller->showToast(tr::lng_channel_invite_private(tr::now));
+			return;
+		}
+		_controller->showPeerHistory(linked, Window::SectionShow::Way::Forward);
+	});
 	_noForwardsLock->setClickedCallback([=] {
 		Ui::Toast::Show(tr::lng_chat_no_forwards_lock_toast(tr::now));
 	});
@@ -289,7 +303,12 @@ TopBarWidget::TopBarWidget(
 		| UpdateFlag::Rights
 		| UpdateFlag::EmojiStatus
 		| UpdateFlag::Name
+		| UpdateFlag::DiscussionLink
 	) | rpl::on_next([=](const Data::PeerUpdate &update) {
+		if ((update.flags & UpdateFlag::DiscussionLink)
+			&& update.peer == _activeChat.key.peer()) {
+			updateControlsVisibility();
+		}
 		if ((update.flags & UpdateFlag::Name)
 			&& (update.peer == titleNamePeer())) {
 			TopBarWidget::update();
@@ -401,6 +420,7 @@ void TopBarWidget::refreshLang() {
 	_mergeForward->setToolTip(tr::lng_selected_merge_forward(tr::now));
 	_mergeAlbum->setToolTip(tr::lng_selected_merge_here(tr::now));
 	_delete->setToolTip(tr::lng_selected_delete_tooltip(tr::now));
+	updateSearchVisibility();
 	refreshMessagesProgress();
 	InvokeQueued(this, [this] { updateControlsGeometry(); });
 }
@@ -1132,6 +1152,9 @@ void TopBarWidget::setActiveChat(
 			}
 
 			if (const auto channel = peer->asChannel()) {
+				if (!channel->discussionLinkKnown()) {
+					session().api().requestFullPeer(channel);
+				}
 				if (channel->canEditStories()
 					&& !channel->owner().stories().albumIdsCountKnown(
 						channel->id,
@@ -1302,7 +1325,8 @@ void TopBarWidget::refreshInfoButton() {
 		}
 	}
 	if (_search && _noForwardsLock) {
-		QWidget::setTabOrder(_search.data(), _noForwardsLock.data());
+		QWidget::setTabOrder(_search.data(), _linkedChat.data());
+		QWidget::setTabOrder(_linkedChat.data(), _noForwardsLock.data());
 	}
 }
 
@@ -1326,6 +1350,21 @@ void TopBarWidget::updateSearchVisibility() {
 		|| (_activeChat.section == Section::SavedSublist
 			&& _activeChat.key.sublist());
 	_search->setVisible(searchAllowedMode && !_chooseForReportReason);
+	const auto peer = _activeChat.key.peer();
+	const auto channel = peer ? peer->asChannel() : nullptr;
+	_linkedChat->setVisible(searchAllowedMode
+		&& !_chooseForReportReason
+		&& !showSelectedState()
+		&& !_searchMode
+		&& channel
+		&& channel->discussionLink());
+	if (channel && channel->discussionLink()) {
+		const auto text = channel->isMegagroup()
+			? tr::lng_profile_view_channel(tr::now)
+			: tr::lng_profile_view_discussion(tr::now);
+		_linkedChat->setAccessibleName(text);
+		_linkedChat->setToolTip(text);
+	}
 	_noForwardsLock->setVisible(
 		searchAllowedMode
 		&& !_chooseForReportReason
@@ -1568,6 +1607,10 @@ void TopBarWidget::updateControlsGeometry() {
 		_call->moveToRight(_rightTaken, otherButtonsTop);
 		_groupCall->moveToRight(_rightTaken, otherButtonsTop);
 		_rightTaken += _call->width();
+	}
+	_linkedChat->moveToRight(_rightTaken, otherButtonsTop);
+	if (!_linkedChat->isHidden()) {
+		_rightTaken += _linkedChat->width() + st::topBarCallSkip;
 	}
 	_search->moveToRight(_rightTaken, otherButtonsTop);
 	if (!_search->isHidden()) {

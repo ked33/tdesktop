@@ -1072,12 +1072,16 @@ bool StartPersistentChatSwitch(not_null<QKeyEvent*> event) {
 	if (!MatchesPersistentChatSwitch(event)) {
 		return false;
 	}
+	ShowPersistentChatSwitch();
+	return true;
+}
+
+void ShowPersistentChatSwitch() {
 	CancelChatSwitch(Qt::Key_Escape);
 	ChatSwitchStream.fire({
 		.action = Qt::Key(),
 		.started = true,
 	});
-	return true;
 }
 
 bool StartJumpToDialog(not_null<QKeyEvent*> event) {

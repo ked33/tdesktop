@@ -19,6 +19,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/options.h"
 #include "core/application.h"
 #include "core/core_settings.h"
+#include "core/enhanced_settings.h"
+#include "core/shortcuts.h"
 #include "core/ui_integration.h"
 #include "data/data_session.h"
 #include "data/data_chat_filters.h"
@@ -190,12 +192,21 @@ void FiltersMenu::setup() {
 		_session->widget()->showMainMenu();
 	});
 
+	EnhancedSettings::RecentChatsButtonChanges(
+	) | rpl::on_next([=] {
+		if (_list) {
+			updateRecentChats();
+		}
+	}, _outer.lifetime());
+
 	Core::App().settings().chatFiltersTabsModeValue(
 	) | rpl::skip(1) | rpl::on_next([=] {
 		if (!_list) {
 			return;
 		}
+		_recentChats = nullptr;
 		_setup = prepareSetupButton();
+		updateRecentChats();
 		if (_favorite) {
 			_favorite = nullptr;
 			updateFavorite();
@@ -439,6 +450,7 @@ void FiltersMenu::setupList() {
 	_list->setAccessibleName(tr::lng_filters_title(tr::now));
 
 	_setup = prepareSetupButton();
+	updateRecentChats();
 
 	_reorder = std::make_unique<Ui::VerticalLayoutReorder>(_list, &_scroll);
 
@@ -462,6 +474,23 @@ void FiltersMenu::setupList() {
 		updateFavorite();
 	}, _outer.lifetime());
 	updateFavorite();
+}
+
+void FiltersMenu::updateRecentChats() {
+	_recentChats = nullptr;
+	if (!GetEnhancedBool("show_recent_chats_button")) {
+		return;
+	}
+	_recentChats = prepareButton(
+		_container,
+		-2,
+		{ tr::marked(tr::lng_filters_recent_chats(tr::now)) },
+		Ui::FilterIcon::All);
+	_recentChats->setAccessibleName(tr::lng_filters_recent_chats(tr::now));
+	_recentChats->setToolTip(tr::lng_settings_chat_switch_shortcut_title(tr::now));
+	_recentChats->setClickedCallback([] {
+		Shortcuts::ShowPersistentChatSwitch();
+	});
 }
 
 void FiltersMenu::updateFavorite() {
@@ -490,7 +519,7 @@ void FiltersMenu::updateFavorite() {
 void FiltersMenu::createFavorite() {
 	_favorite = base::unique_qptr<Ui::SlideWrap<FolderFavoriteButton>>(
 		_container->insert(
-			_container->count() - 1,
+			_container->count() - 1 - (_recentChats ? 1 : 0),
 			object_ptr<Ui::SlideWrap<FolderFavoriteButton>>(
 				_container,
 				object_ptr<FolderFavoriteButton>(
@@ -563,8 +592,8 @@ base::unique_qptr<Ui::SideBarButton> FiltersMenu::prepareButton(
 		return On(PowerSaving::kEmojiChat)
 			|| _session->isGifPausedAtLeastFor(Window::GifPauseReason::Any);
 	};
-	// A real folder (id >= 0), locked or not, is a selectable list item; only
-	// the "Edit" button (id < 0) stays a plain button. Establish this before
+	// A real folder (id >= 0), locked or not, is a selectable list item;
+	// action buttons (id < 0) stay plain buttons. Establish this before
 	// inserting the widget - insertion shows the child immediately, so
 	// configuring the role up front avoids a transient or separately-announced
 	// role change.

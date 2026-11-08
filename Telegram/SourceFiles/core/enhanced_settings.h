@@ -73,6 +73,8 @@ namespace EnhancedSettings {
 	[[nodiscard]] int TrayIdleMemoryMinutes();
 	[[nodiscard]] rpl::producer<int> TrayIdleMemoryMinutesChanges();
 	void SetTrayIdleMemoryMinutes(int value);
+	[[nodiscard]] rpl::producer<bool> RecentChatsButtonChanges();
+	void SetRecentChatsButtonShown(bool shown);
 	[[nodiscard]] int HashtagAutocompleteLimit();
 	[[nodiscard]] rpl::producer<int> HashtagAutocompleteLimitChanges();
 	void SetHashtagAutocompleteLimit(int value);

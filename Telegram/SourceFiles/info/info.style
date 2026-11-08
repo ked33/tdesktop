@@ -941,6 +941,11 @@ topBarSearch: IconButton {
 	rippleAreaSize: 40px;
 	ripple: defaultRippleAnimationBgOver;
 }
+topBarLinkedChat: IconButton(topBarSearch) {
+	icon: icon {{ "menu/discussion", menuIconFg }};
+	iconOver: icon {{ "menu/discussion", menuIconFgOver }};
+	iconPosition: point(8px, 15px);
+}
 topBarMessagesProgress: FlatLabel(defaultSubTextLabel) {
 	textFg: historyStatusFg;
 	style: dialogsTextStyle;

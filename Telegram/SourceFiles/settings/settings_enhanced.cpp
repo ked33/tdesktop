@@ -826,6 +826,20 @@ namespace Settings {
 			AddSubsectionTitle(container, tr::lng_enhanced_group_shortcuts()),
 			u"enhanced/section_shortcuts"_q);
 
+		trackSearch(
+			AddButtonWithIcon(
+				container,
+				tr::lng_settings_show_recent_chats_button(),
+				st::settingsButtonNoIcon),
+			u"enhanced/show_recent_chats_button"_q
+		)->toggleOn(
+			rpl::single(GetEnhancedBool("show_recent_chats_button"))
+				| rpl::then(EnhancedSettings::RecentChatsButtonChanges())
+		)->toggledChanges(
+		) | rpl::on_next([](bool enabled) {
+			EnhancedSettings::SetRecentChatsButtonShown(enabled);
+		}, container->lifetime());
+
 		const auto currentChatSwitchShortcutLabel = [] {
 			return ChatSwitchShortcutBox::ShortcutLabel(
 				GetEnhancedString("chat_switch_persistent_shortcut"));
@@ -2072,6 +2086,9 @@ namespace Settings {
 		addButton(
 			u"enhanced/section_other"_q,
 			tr::lng_enhanced_group_appearance(tr::now));
+		addBool(
+			"show_recent_chats_button",
+			tr::lng_settings_show_recent_chats_button(tr::now));
 		addButton(
 			u"enhanced/chat_switch_persistent_shortcut"_q,
 			tr::lng_settings_chat_switch_shortcut_title(tr::now));

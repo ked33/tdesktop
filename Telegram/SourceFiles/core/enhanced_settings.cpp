@@ -139,6 +139,11 @@ namespace EnhancedSettings {
 			return events;
 		}
 
+		rpl::event_stream<bool> &RecentChatsButtonEvents() {
+			static auto events = rpl::event_stream<bool>();
+			return events;
+		}
+
 		rpl::event_stream<int> &HashtagAutocompleteLimitEvents() {
 			static auto events = rpl::event_stream<int>();
 			return events;
@@ -238,6 +243,7 @@ namespace EnhancedSettings {
 			ensureString(qsl("shortcut_selected_quick_copy"), QString());
 			ensureString(qsl("shortcut_selected_merge_forward"), QString());
 			ensureString(qsl("shortcut_selected_merge_album"), QString());
+			ensureBool(u"show_recent_chats_button"_q, true);
 			ensureString(qsl("chat_switch_persistent_shortcut"), QString());
 			ensureString(qsl("jump_to_dialog_shortcut"), qsl("alt+e"));
 			ensureString(qsl("global_search_shortcut"), qsl("ctrl+alt+f"));
@@ -595,6 +601,19 @@ namespace EnhancedSettings {
 		}
 	}
 
+	rpl::producer<bool> RecentChatsButtonChanges() {
+		return RecentChatsButtonEvents().events();
+	}
+
+	void SetRecentChatsButtonShown(bool shown) {
+		if (GetEnhancedBool("show_recent_chats_button") == shown) {
+			return;
+		}
+		SetEnhancedValue("show_recent_chats_button", shown);
+		Write();
+		RecentChatsButtonEvents().fire_copy(shown);
+	}
+
 	int HashtagAutocompleteLimit() {
 		auto valid = false;
 		const auto value = gEnhancedOptions.value(
@@ -926,6 +945,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("shortcut_selected_quick_copy"), "");
 		settings.insert(qsl("shortcut_selected_merge_forward"), "");
 		settings.insert(qsl("shortcut_selected_merge_album"), "");
+		settings.insert(u"show_recent_chats_button"_q, true);
 		settings.insert(qsl("chat_switch_persistent_shortcut"), "");
 		settings.insert(qsl("jump_to_dialog_shortcut"), "alt+e");
 		settings.insert(qsl("global_search_shortcut"), "ctrl+alt+f");
@@ -1115,6 +1135,9 @@ namespace EnhancedSettings {
 		settings.insert(
 			qsl("shortcut_selected_merge_album"),
 			GetEnhancedString("shortcut_selected_merge_album"));
+		settings.insert(
+			u"show_recent_chats_button"_q,
+			GetEnhancedBool("show_recent_chats_button"));
 		settings.insert(
 			qsl("chat_switch_persistent_shortcut"),
 			GetEnhancedString("chat_switch_persistent_shortcut"));
@@ -1327,6 +1350,8 @@ namespace EnhancedSettings {
 			return false;
 		}
 		MessageFolding::Reload();
+		RecentChatsButtonEvents().fire_copy(
+			GetEnhancedBool("show_recent_chats_button"));
 		MediaPreviewDownloadLimitsEvents().fire({});
 		if (chineseSearchBefore != SearchChineseKeywordsEnabled()) {
 			SearchChineseKeywordsEvents().fire_copy(
