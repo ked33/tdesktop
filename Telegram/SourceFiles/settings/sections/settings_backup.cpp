@@ -2,6 +2,7 @@
 
 #include "api/api_settings_backup.h"
 #include "base/parse_helper.h"
+#include "boxes/abstract_box.h"
 #include "core/application.h"
 #include "core/file_utilities.h"
 #include "lang/lang_keys.h"
@@ -12,7 +13,9 @@
 #include "storage/settings_backup.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/layers/generic_box.h"
+#include "ui/qt_object_factory.h"
 #include "ui/toast/toast.h"
+#include "ui/vertical_list.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/fields/password_input.h"
 #include "ui/wrap/vertical_layout.h"
@@ -127,14 +130,25 @@ void ShowError(const QString &details = {}) {
 void RequestPassword(bool exporting, Fn<void(QString)> done) {
 	Ui::show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setTitle(tr::lng_backup_password_title());
-		AddDividerText(box->verticalLayout(), tr::lng_backup_password_about());
-		const auto password = box->addRow(object_ptr<Ui::PasswordInput>(
-		    box, st::defaultInputField, tr::lng_backup_password()));
-		const auto confirmation
-		    = exporting ? box->addRow(object_ptr<Ui::PasswordInput>(box,
-		                      st::defaultInputField,
-		                      tr::lng_backup_password_repeat()))
-		                : nullptr;
+		Ui::AddDividerText(
+			box->verticalLayout(),
+			tr::lng_backup_password_about());
+		const auto addPassword = [&](rpl::producer<QString> placeholder) {
+			const auto row = box->addRow(object_ptr<Ui::RpWidget>(box));
+			row->resize(row->width(), st::defaultInputField.heightMin);
+			const auto field = Ui::CreateChild<Ui::PasswordInput>(
+				row,
+				st::defaultInputField,
+				std::move(placeholder));
+			row->widthValue() | rpl::on_next([=](int width) {
+				field->resize(width, field->height());
+			}, row->lifetime());
+			return field;
+		};
+		const auto password = addPassword(tr::lng_backup_password());
+		const auto confirmation = exporting
+			? addPassword(tr::lng_backup_password_repeat())
+			: nullptr;
 		box->addButton(tr::lng_continue(), [=] {
 			const auto text = password->getLastText();
 			if (text.isEmpty() || (exporting && text.size() < 8)) {
@@ -196,7 +210,9 @@ void ShowPreview(QJsonObject document, std::shared_ptr<int> operation) {
 	}
 	Ui::show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setTitle(tr::lng_backup_import());
-		AddDividerText(box->verticalLayout(), tr::lng_backup_import_about());
+		Ui::AddDividerText(
+			box->verticalLayout(),
+			tr::lng_backup_import_about());
 		const auto selected = box->lifetime().make_state<Selection>();
 		const auto sections = preview.document.value(u"sections"_q).toObject();
 		for (const auto category : kCategories) {
@@ -222,7 +238,7 @@ void ShowPreview(QJsonObject document, std::shared_ptr<int> operation) {
 			        checkbox->lifetime());
 		}
 		if (!preview.skipped.isEmpty()) {
-			AddDividerText(box->verticalLayout(),
+			Ui::AddDividerText(box->verticalLayout(),
 			    rpl::single(tr::lng_backup_unknown_count(tr::now)
 			                + u" (%1)"_q.arg(preview.skipped.size())));
 		}
@@ -242,7 +258,9 @@ void ShowPreview(QJsonObject document, std::shared_ptr<int> operation) {
 			Ui::show(Ui::MakeInformBox(lines.join(u"\n"_q)),
 				Ui::LayerOption::KeepOther);
 		});
-		AddDividerText(box->verticalLayout(), tr::lng_backup_cloud_about());
+		Ui::AddDividerText(
+			box->verticalLayout(),
+			tr::lng_backup_cloud_about());
 		box->addButton(tr::lng_backup_apply(), [=] {
 			auto chosen = preview.document;
 			auto filtered = sections;
@@ -324,7 +342,9 @@ void OfferSettingsRecovery() {
 		box->setTitle(tr::lng_backup_recover());
 		box->setCloseByEscape(false);
 		box->setCloseByOutsideClick(false);
-		AddDividerText(box->verticalLayout(), tr::lng_backup_recovery());
+		Ui::AddDividerText(
+			box->verticalLayout(),
+			tr::lng_backup_recovery());
 		box->addButton(tr::lng_backup_recover(), [=] {
 			auto error = QString();
 			if (!Recover(error)) {
@@ -349,8 +369,12 @@ void ExportConfiguration(not_null<Window::SessionController*> controller) {
 	}
 	Ui::show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setTitle(tr::lng_backup_export());
-		AddDividerText(box->verticalLayout(), tr::lng_backup_export_about());
-		AddDividerText(box->verticalLayout(), tr::lng_backup_device_about());
+		Ui::AddDividerText(
+			box->verticalLayout(),
+			tr::lng_backup_export_about());
+		Ui::AddDividerText(
+			box->verticalLayout(),
+			tr::lng_backup_device_about());
 		const auto selected = box->lifetime().make_state<Selection>();
 		for (const auto category : kCategories) {
 			const auto checkbox = box->addRow(object_ptr<Ui::Checkbox>(box,

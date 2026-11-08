@@ -265,7 +265,7 @@ jobs:
         shell: cmd
         run: |
           cd /d %TBUILD%\%REPO_NAME%\out
-          cmake --build . --config Release --target Telegram --parallel
+          cmake --build . --config Release --target Telegram --parallel -- -k 0
 
       - name: Show sccache statistics
         if: always()
