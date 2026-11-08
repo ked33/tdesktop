@@ -465,15 +465,13 @@ void WrapWidget::setupTopBarMenuToggle() {
 									   : st::infoTopBarExport);
 				const auto action = _topBar->addButton(
 					base::make_unique_q<Ui::IconButton>(_topBar, style));
-				const auto name = importing ? tr::lng_backup_import()
-											: tr::lng_backup_export();
-				name
-					| rpl::on_next(
-						[=](const QString &text) {
-							action->setAccessibleName(text);
-							action->setToolTip(text);
-						},
-						action->lifetime());
+				auto name = importing
+					? tr::lng_backup_import()
+					: tr::lng_backup_export();
+				std::move(name) | rpl::on_next([=](const QString &text) {
+					action->setAccessibleName(text);
+					action->setToolTip(text);
+				}, action->lifetime());
 				action->addClickHandler([=] {
 					const auto controller = _controller->parentController();
 					if (importing) {
