@@ -187,11 +187,11 @@ const HashtagMatches &HashtagSuggestions::filter(
 		const auto offset = _query.isEmpty()
 			? 0
 			: int(entry.key.indexOf(_query, 0, Qt::CaseInsensitive));
-		if (offset < 0) {
+		if (offset < 0 || (!_query.isEmpty()
+			&& entry.key.size() == _query.size())) {
 			continue;
 		}
-		if (offset == 0
-			&& (_query.isEmpty() || entry.key.size() == _query.size())) {
+		if (_query.isEmpty()) {
 			_matches.push_back(match(entry, offset, int(_query.size())));
 			if (_matches.size() == limit) {
 				break;

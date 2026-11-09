@@ -55,8 +55,8 @@ void CheckMatching() {
 	Check(suggestions.filter(tags, u"cd"_q, 10)[0].tag == u"abcd"_q,
 		"suffix match");
 	Check(suggestions.filter(tags, u"ac"_q, 10).empty(), "no subsequence match");
-	Check(suggestions.filter(tags, u"abcd"_q, 10)[0].tag == u"abcd"_q,
-		"completed tag remains available");
+	Check(suggestions.filter(tags, u"abcd"_q, 10).empty(),
+		"completed tag is omitted");
 	Check(suggestions.filter(tags, u"bc"_q, 1)[0].tag == u"bcdef"_q,
 		"early infix cannot displace later prefix at limit");
 	const auto all = suggestions.filter(tags, QString(), 10);
@@ -102,8 +102,8 @@ void CheckUnicode() {
 	const auto chinese = sent.filter(tags, u"文标"_q, 10);
 	Check(chinese.size() == 1 && chinese[0].offset == 1,
 		"Chinese substring");
-	Check(sent.filter(tags, u"cafes"_q, 10).size() == 2,
-		"completed normalized tags remain available");
+	Check(sent.filter(tags, u"cafes"_q, 10).empty(),
+		"completed normalized tags are omitted");
 	auto search = HashtagSuggestions();
 	Check(search.filter(tags, u"fes"_q, 10).empty(),
 		"search history retains accent-sensitive behavior");
@@ -117,11 +117,11 @@ void CheckExactAndCompletion() {
 	};
 	auto suggestions = HashtagSuggestions();
 	const auto matches = suggestions.filter(tags, u"测试效果"_q, 10);
-	Check(matches.size() == 3 && matches[0].tag == u"测试效果"_q
-		&& matches[1].tag == u"测试效果abc"_q,
-		"pasted complete hashtag precedes longer and infix matches");
-	Check(suggestions.filter(tags, u"测试效果"_q, 1)[0].tag == u"测试效果"_q,
-		"exact match survives limit even when later in history");
+	Check(matches.size() == 2 && matches[0].tag == u"测试效果abc"_q
+		&& matches[1].tag == u"其他测试效果"_q,
+		"pasted complete hashtag leaves only longer and infix matches");
+	Check(suggestions.filter(tags, u"测试效果"_q, 1)[0].tag == u"测试效果abc"_q,
+		"exact match does not consume the result limit");
 
 	const auto original = u"#测试效果"_q;
 	for (auto position = 1; position <= original.size(); ++position) {
