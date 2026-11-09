@@ -186,6 +186,12 @@
     "lng_settings_experimental_kinetic_scroller_desc": "Continue touchpad scrolling with smooth inertia after you lift your fingers.",
     "lng_settings_experimental_ffmpeg_multithread": "Multi-thread video decoding",
     "lng_settings_experimental_ffmpeg_multithread_desc": "Allow FFmpeg to use a thread pool for decoding, typically one thread per CPU thread.",
+    "lng_settings_experimental_force_angle": "Force ANGLE renderer",
+    "lng_settings_experimental_force_angle_desc": "Use ANGLE for accelerated media and calls. Render the main window on the CPU.",
+    "lng_translate_settings_telegram": "Telegram translation (Premium)",
+    "lng_translate_settings_telegram_about": "Default is Google (no Premium). Telegram official translation requires Premium.",
+    "lng_translate_settings_preserve_format": "Preserve links & code (Google)",
+    "lng_translate_settings_preserve_format_about": "Protects URLs and code blocks in Google translations. Long messages may fall back to plain text.",
 
     "lng_net_speed_boost_title": "Network speed boost",
     "lng_net_speed_boost_desc": "Warning: changing this parameter to high values on slow networks can make it even worse. Use it at your own risk.",

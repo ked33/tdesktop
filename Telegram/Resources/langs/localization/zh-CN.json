@@ -226,6 +226,8 @@
     "lng_settings_experimental_new_chat_view": "新聊天视图",
     "lng_settings_experimental_new_chat_view_desc": "通过新的界面分区打开聊天。",
     "lng_settings_experimental_use_qt_rhi_desc": "使用 GPU 而不是 CPU 渲染主窗口。",
+    "lng_settings_experimental_force_angle": "强制使用 ANGLE 渲染器",
+    "lng_settings_experimental_force_angle_desc": "使用 ANGLE 加速媒体和通话，主窗口则由 CPU 渲染。",
     "lng_settings_experimental_enable_vulkan": "启用 Vulkan 渲染器",
     "lng_settings_experimental_enable_vulkan_desc": "在可用时使用 Vulkan 进行 GPU 渲染，而不是 OpenGL。",
     "lng_settings_experimental_mac_modern_notifications": "现代 macOS 通知",
@@ -541,5 +543,18 @@
     "lng_backup_autostart_failed": "操作系统未接受开机启动设置，其他设置已保存。",
     "lng_backup_quit": "退出 Telegram",
     "lng_filters_recent_chats": "最近对话",
-    "lng_settings_show_recent_chats_button": "在文件夹栏显示最近对话按钮"
+    "lng_settings_show_recent_chats_button": "在文件夹栏显示最近对话按钮",
+    "lng_translate_settings_subtitle": "消息翻译",
+    "lng_translate_settings_show": "显示翻译按钮",
+    "lng_translate_settings_telegram": "Telegram 翻译（需高级会员）",
+    "lng_translate_settings_telegram_about": "默认使用 Google 翻译，无需高级会员。Telegram 官方翻译需要高级会员。",
+    "lng_translate_settings_preserve_format": "保留链接和代码（Google）",
+    "lng_translate_settings_preserve_format_about": "使用 Google 翻译时保留网址和代码块。较长消息可能会回退为纯文本翻译。",
+    "lng_translate_settings_use_platform_mac": "使用 Apple 翻译",
+    "lng_translate_settings_use_platform_mac_about": "需先在系统设置中下载本地语言包，才能使用 macOS 翻译。",
+    "lng_translate_settings_use_platform_linux": "使用 KDE 的 Crow Translate",
+    "lng_translate_settings_chat": "翻译整个对话",
+    "lng_translate_settings_choose": "不翻译的语言",
+    "lng_translate_settings_about": "含有文本的消息会在右键菜单中显示“翻译”按钮。",
+    "lng_translate_settings_one": "请至少选择一种语言，以便作为翻译的目标语言。"
 }

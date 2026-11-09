@@ -157,6 +157,8 @@ namespace {
 		return tr::lng_settings_experimental_dialogs_mute_icon(tr::now);
 	} else if (id == Ui::GL::kOptionUseQtRhi) {
 		return tr::lng_settings_experimental_use_qt_rhi(tr::now);
+	} else if (id == Ui::GL::kOptionForceANGLE) {
+		return tr::lng_settings_experimental_force_angle(tr::now);
 	} else if (id == Window::kOptionExternalMediaViewer) {
 		return tr::lng_settings_experimental_external_media_viewer(tr::now);
 	} else if (id == Ui::kOptionHideAiButton) {
@@ -293,6 +295,8 @@ namespace {
 		return tr::lng_settings_experimental_new_chat_view_desc(tr::now);
 	} else if (id == Ui::GL::kOptionUseQtRhi) {
 		return tr::lng_settings_experimental_use_qt_rhi_desc(tr::now);
+	} else if (id == Ui::GL::kOptionForceANGLE) {
+		return tr::lng_settings_experimental_force_angle_desc(tr::now);
 	} else if (id == Ui::GL::kOptionEnableVulkanRhi) {
 		return tr::lng_settings_experimental_enable_vulkan_desc(tr::now);
 	} else if (id == Window::Notifications::kOptionMacModernNotifications) {

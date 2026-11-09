@@ -798,6 +798,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_experimental_new_chat_view" = "New chat view";
 "lng_settings_experimental_new_chat_view_desc" = "Open chats through the new section.";
 "lng_settings_experimental_use_qt_rhi_desc" = "Render the main window on the GPU instead of the CPU.";
+"lng_settings_experimental_force_angle" = "Force ANGLE renderer";
+"lng_settings_experimental_force_angle_desc" = "Use ANGLE for accelerated media and calls. Render the main window on the CPU.";
 "lng_settings_experimental_enable_vulkan" = "Enable Vulkan renderer";
 "lng_settings_experimental_enable_vulkan_desc" = "Use Vulkan for GPU rendering instead of OpenGL when it is available.";
 "lng_settings_experimental_mac_modern_notifications" = "Modern macOS notifications";
@@ -7773,6 +7775,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_translate_settings_subtitle" = "Translate Messages";
 "lng_translate_settings_show" = "Show Translate Button";
+"lng_translate_settings_telegram" = "Telegram translation (Premium)";
+"lng_translate_settings_telegram_about" = "Default is Google (no Premium). Telegram official translation requires Premium.";
+"lng_translate_settings_preserve_format" = "Preserve links & code (Google)";
+"lng_translate_settings_preserve_format_about" = "Protects URLs and code blocks in Google translations. Long messages may fall back to plain text.";
 "lng_translate_settings_use_platform_mac" = "Use Apple Translations";
 "lng_translate_settings_use_platform_mac_about" = "Translation on macOS won't work until you download local language packs in System Settings.";
 "lng_translate_settings_use_platform_linux" = "Use KDE's Crow Translate";

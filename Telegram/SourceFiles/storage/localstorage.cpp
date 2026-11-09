@@ -1605,6 +1605,7 @@ void readLangPack() {
 		return;
 	}
 	CustomLangPack::initInstance();
+	CustomLangPack::currentInstance()->loadDefaultLangFile();
 	CustomLangPack::currentInstance()->fetchCustomLangPack(langPackId, langPackBaseId);
 }
 
