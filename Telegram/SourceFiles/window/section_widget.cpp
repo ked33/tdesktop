@@ -551,6 +551,12 @@ auto ChatThemeValueFromPeer(
 	not_null<SessionController*> controller,
 	not_null<PeerData*> peer)
 -> rpl::producer<std::shared_ptr<Ui::ChatTheme>> {
+	const auto defaultTheme = controller->defaultChatTheme();
+	auto solidBackground = rpl::single(rpl::empty) | rpl::then(
+		defaultTheme->repaintBackgroundRequests()
+	) | rpl::map([=] {
+		return defaultTheme->background().colorForFill.has_value();
+	}) | rpl::distinct_until_changed();
 	auto cloud = MaybeCloudThemeValueFromPeer(
 		peer
 	) | rpl::map([=](ResolvedTheme resolved)
@@ -577,10 +583,15 @@ auto ChatThemeValueFromPeer(
 
 	return rpl::combine(
 		std::move(cloud),
-		controller->peerThemeOverrideValue()
+		controller->peerThemeOverrideValue(),
+		std::move(solidBackground)
 	) | rpl::map([=](
 			std::shared_ptr<Ui::ChatTheme> &&cloud,
-			PeerThemeOverride &&overriden) {
+			PeerThemeOverride &&overriden,
+			bool solid) {
+		if (solid) {
+			return defaultTheme;
+		}
 		return (overriden.peer == peer.get()
 			&& peer->themeToken() != overriden.token)
 			? std::move(overriden.theme)
