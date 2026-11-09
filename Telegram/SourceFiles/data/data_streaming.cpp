@@ -279,6 +279,13 @@ void Streaming::keepAlive(not_null<PhotoData*> photo) {
 	keepAlive(_photoDocuments, photo);
 }
 
+int Streaming::releaseIdleMemory() {
+	const auto released = int(_keptAlive.size());
+	_keptAliveTimer.cancel();
+	_keptAlive.clear();
+	return released;
+}
+
 void Streaming::clearKeptAlive() {
 	const auto now = crl::now();
 	auto min = std::numeric_limits<crl::time>::max();

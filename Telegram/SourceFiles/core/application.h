@@ -401,6 +401,10 @@ private:
 		const char *source,
 		Platform::ProcessMemory before,
 		Fn<void(bool)> done);
+	void finishIdleMemoryHeaps(
+		const char *source,
+		Platform::ProcessMemory before,
+		Fn<void(bool)> done);
 	void restoreTrayIdleChats();
 	void attachTrayIdleMediaView();
 	[[nodiscard]] bool trayIdleWindowsHidden() const;

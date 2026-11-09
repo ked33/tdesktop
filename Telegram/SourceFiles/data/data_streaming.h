@@ -61,6 +61,7 @@ public:
 
 	void keepAlive(not_null<DocumentData*> document);
 	void keepAlive(not_null<PhotoData*> photo);
+	[[nodiscard]] int releaseIdleMemory();
 
 private:
 	void clearKeptAlive();

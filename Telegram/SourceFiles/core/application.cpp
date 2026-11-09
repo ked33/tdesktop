@@ -928,12 +928,6 @@ void Application::finishIdleMemoryCleanup(
 		"objects_released",
 		before,
 		Platform::CurrentProcessMemory());
-	Platform::OptimizeProcessHeaps();
-	LogIdleMemoryCleanup(
-		source,
-		"heaps_optimized",
-		before,
-		Platform::CurrentProcessMemory());
 	enumerateWindows([&](not_null<Window::Controller*> window) {
 		if (window->widget()->isHidden()) {
 			return;
@@ -942,6 +936,54 @@ void Application::finishIdleMemoryCleanup(
 			controller->content()->reloadUnloadedHistory();
 		}
 	});
+	crl::on_main(this, [=] {
+		if (Quitting()) {
+			return;
+		}
+		InvokeQueued(this, [=] {
+			finishIdleMemoryHeaps(source, before, done);
+		});
+	});
+}
+
+void Application::finishIdleMemoryHeaps(
+		const char *source,
+		Platform::ProcessMemory before,
+		Fn<void(bool)> done) {
+	if (Quitting()) {
+		return;
+	}
+	LogIdleMemoryCleanup(
+		source,
+		"queued_media_released",
+		before,
+		Platform::CurrentProcessMemory());
+	const auto busy = trayIdleMemoryBusy();
+	if (!busy) {
+		auto releasedStreaming = 0;
+		for (const auto &account : _domain->orderedAccounts()) {
+			if (account->sessionExists()) {
+				releasedStreaming += account->session()
+					.data().releaseIdleStreamingMemory();
+			}
+		}
+		LOG(("Memory cleanup: source=%1 released_streaming_keepalives=%2."
+			).arg(source).arg(releasedStreaming));
+		LogIdleMemoryCleanup(
+			source,
+			"streaming_keepalives_released",
+			before,
+			Platform::CurrentProcessMemory());
+		Platform::OptimizeProcessHeaps();
+	} else {
+		LOG(("Memory cleanup: source=%1 heap optimization skipped while busy."
+			).arg(source));
+	}
+	LogIdleMemoryCleanup(
+		source,
+		busy ? "heaps_skipped_busy" : "heaps_optimized",
+		before,
+		Platform::CurrentProcessMemory());
 	QTimer::singleShot(kIdleMemorySampleDelay, this, [=] {
 		if (Quitting()) {
 			return;

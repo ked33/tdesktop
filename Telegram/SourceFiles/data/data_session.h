@@ -507,6 +507,7 @@ public:
 		int from,
 		int till);
 	[[nodiscard]] int releaseIdleMemory();
+	[[nodiscard]] int releaseIdleStreamingMemory();
 
 	void registerShownSpoiler(not_null<ViewElement*> view);
 	void hideShownSpoilers();

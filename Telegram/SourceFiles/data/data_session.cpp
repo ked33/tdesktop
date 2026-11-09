@@ -2741,6 +2741,10 @@ int Session::releaseIdleMemory() {
 	return _histories->releaseIdleSlices();
 }
 
+int Session::releaseIdleStreamingMemory() {
+	return _streaming->releaseIdleMemory();
+}
+
 void Session::unloadHeavyViewParts(
 		not_null<HistoryView::ElementDelegate*> delegate,
 		int from,
