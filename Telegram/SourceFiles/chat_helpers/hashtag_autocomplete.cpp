@@ -277,7 +277,8 @@ bool HashtagAutocomplete::keyboardEnabled() const {
 
 void HashtagAutocomplete::activateKeyboardSelection() {
 	setKeyboardEnabled(true);
-	moveSelection(0);
+	setSelected(-1);
+	moveSelection(1);
 }
 
 void HashtagAutocomplete::dismiss() {
@@ -505,7 +506,7 @@ void HashtagAutocomplete::moveSelection(int delta) {
 	_mouseSelection = false;
 	_lastMousePosition = QCursor::pos();
 	if (_selected < 0 || _selected >= count) {
-		setSelected((delta >= 0) ? 0 : (count - 1));
+		setSelected((delta > 0) ? 0 : (count - 1));
 	} else {
 		const auto next = _selected + delta;
 		setSelected((next < 0 || next >= count) ? -1 : next);
