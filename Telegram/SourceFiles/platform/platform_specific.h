@@ -78,6 +78,7 @@ struct ProcessMemory {
 	uint64 privateBytes = 0;
 };
 void TrimProcessHeaps();
+void OptimizeProcessHeaps();
 [[nodiscard]] ProcessMemory CurrentProcessMemory();
 
 #if QT_VERSION < QT_VERSION_CHECK(6, 5, 0)

@@ -868,6 +868,10 @@ void TrimProcessHeaps() {
 #endif // __GLIBC__
 }
 
+void OptimizeProcessHeaps() {
+	TrimProcessHeaps();
+}
+
 ProcessMemory CurrentProcessMemory() {
 	auto result = ProcessMemory();
 	auto file = std::fopen("/proc/self/status", "r");

@@ -1641,17 +1641,23 @@ namespace Settings {
 			u"enhanced/tray_idle_memory"_q)->addClickHandler([] {
 			Ui::show(Box<TrayIdleMemoryBox>());
 		});
-		trackSearch(
+		const auto cleanupButton = trackSearch(
 			AddButtonWithIcon(
 				container,
 				tr::lng_settings_tray_idle_memory_clear(),
 				st::settingsButtonNoIcon
 			),
-			u"enhanced/tray_idle_memory_clear"_q)->addClickHandler([] {
-			if (Core::App().cleanupIdleMemory()) {
-				Ui::Toast::Show(
-					tr::lng_settings_tray_idle_memory_cleared(tr::now));
-			} else {
+			u"enhanced/tray_idle_memory_clear"_q);
+		cleanupButton->addClickHandler([=] {
+			cleanupButton->setDisabled(true);
+			const auto done = crl::guard(cleanupButton, [=](bool cleaned) {
+				cleanupButton->setDisabled(false);
+				Ui::Toast::Show(cleaned
+					? tr::lng_settings_tray_idle_memory_cleared(tr::now)
+					: tr::lng_settings_tray_idle_memory_busy(tr::now));
+			});
+			if (!Core::App().cleanupIdleMemory(done)) {
+				cleanupButton->setDisabled(false);
 				Ui::Toast::Show(
 					tr::lng_settings_tray_idle_memory_busy(tr::now));
 			}

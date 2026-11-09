@@ -128,7 +128,7 @@ public:
 	};
 	void clear(ClearType type, bool markEmpty = false);
 	void clearUpTill(MsgId availableMinId);
-	void releaseIdleSlice();
+	[[nodiscard]] int releaseIdleSlice();
 	[[nodiscard]] bool takeIdleUnloaded();
 
 	void applyGroupAdminChanges(const base::flat_set<UserId> &changes);

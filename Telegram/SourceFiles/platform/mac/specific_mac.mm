@@ -530,6 +530,10 @@ void TrimProcessHeaps() {
 	malloc_zone_pressure_relief(nullptr, 0);
 }
 
+void OptimizeProcessHeaps() {
+	TrimProcessHeaps();
+}
+
 ProcessMemory CurrentProcessMemory() {
 	auto result = ProcessMemory();
 	mach_task_basic_info info;

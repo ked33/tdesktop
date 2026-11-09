@@ -9576,7 +9576,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_tray_idle_memory_invalid" = "请输入 0 到 1440 的整数。";
 "lng_settings_tray_idle_memory_clear" = "清理";
 "lng_settings_tray_idle_memory_cleared" = "已清理内存缓存";
-"lng_settings_tray_idle_memory_busy" = "通话或播放中，请稍后再清理。";
+"lng_settings_tray_idle_memory_busy" = "正在通话、播放或清理内存，请稍后重试。";
 "lng_search_porn_scanning" = "Checking chats…";
 "lng_search_porn_progress" = "Chats searched: {progress}";
 "lng_search_porn_loading" = "Loading more messages…";

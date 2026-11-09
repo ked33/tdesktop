@@ -2734,11 +2734,11 @@ void Session::unloadHeavyViewParts(
 	}
 }
 
-void Session::releaseIdleMemory() {
+int Session::releaseIdleMemory() {
 	for (const auto &view : base::take(_heavyViewParts)) {
 		view->unloadHeavyPart();
 	}
-	_histories->releaseIdleSlices();
+	return _histories->releaseIdleSlices();
 }
 
 void Session::unloadHeavyViewParts(

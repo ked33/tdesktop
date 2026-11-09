@@ -4658,7 +4658,7 @@ bool History::takeIdleUnloaded() {
 	return blocks.empty() && !_loadedAtTop && !_loadedAtBottom;
 }
 
-void History::releaseIdleSlice() {
+int History::releaseIdleSlice() {
 	auto keep = base::flat_set<not_null<HistoryItem*>>();
 	const auto keepItem = [&](HistoryItem *item) {
 		if (item) {
@@ -4727,7 +4727,7 @@ void History::releaseIdleSlice() {
 		ids.push_back(item->fullId());
 	}
 	if (!hadViews && ids.empty()) {
-		return;
+		return 0;
 	}
 
 	clear(ClearType::Unload);
@@ -4746,6 +4746,7 @@ void History::releaseIdleSlice() {
 		item->destroy();
 	}
 	_idleUnloaded = true;
+	return int(remove.size());
 }
 
 void History::applyGroupAdminChanges(const base::flat_set<UserId> &changes) {

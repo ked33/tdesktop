@@ -811,6 +811,27 @@ void TrimProcessHeaps() {
 	}
 }
 
+void OptimizeProcessHeaps() {
+	TrimProcessHeaps();
+	if (!IsWindows8Point1OrGreater()) {
+		LOG(("Memory cleanup: heap optimization requires Windows 8.1."));
+		return;
+	}
+	auto info = HEAP_OPTIMIZE_RESOURCES_INFORMATION{};
+	info.Version = HEAP_OPTIMIZE_RESOURCES_CURRENT_VERSION;
+	const auto optimized = HeapSetInformation(
+		nullptr,
+		HeapOptimizeResources,
+		&info,
+		sizeof(info));
+	if (!optimized) {
+		const auto error = GetLastError();
+		LOG(("Memory cleanup: heap optimization failed, error %1.").arg(error));
+		return;
+	}
+	LOG(("Memory cleanup: heap optimization succeeded."));
+}
+
 ProcessMemory CurrentProcessMemory() {
 	auto result = ProcessMemory();
 	auto data = PROCESS_MEMORY_COUNTERS_EX{};

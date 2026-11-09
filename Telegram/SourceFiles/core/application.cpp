@@ -108,8 +108,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/cached_webview_availability.h"
 #include "test/test_agent.h"
 
-#include <QtCore/QStandardPaths>
 #include <QtCore/QMimeDatabase>
+#include <QtCore/QStandardPaths>
+#include <QtCore/QTimer>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QScreen>
 
@@ -121,6 +122,21 @@ namespace {
 constexpr auto kQuitPreventTimeoutMs = crl::time(1500);
 constexpr auto kAutoLockTimeoutLateMs = crl::time(3000);
 constexpr auto kClearEmojiImageSourceTimeout = 10 * crl::time(1000);
+constexpr auto kIdleMemorySampleDelay = crl::time(2000);
+
+void LogIdleMemoryCleanup(
+		const char *source,
+		const char *stage,
+		Platform::ProcessMemory before,
+		Platform::ProcessMemory current) {
+	LOG(("Memory cleanup: source=%1 stage=%2 working_set_kb=%3 "
+		"private_kb=%4 released_private_kb=%5."
+		).arg(source
+		).arg(stage
+		).arg(current.workingSet / 1024
+		).arg(current.privateBytes / 1024
+		).arg((int64(before.privateBytes) - int64(current.privateBytes)) / 1024));
+}
 
 LaunchState GlobalLaunchState/* = LaunchState::Running*/;
 
@@ -721,10 +737,24 @@ auto Application::prepareEmojiSourceImages()
 	return std::make_shared<Ui::Emoji::UniversalImages>(images->id());
 }
 
-void Application::clearEmojiSourceImages() {
-	_emojiImageLoader.with([](Stickers::EmojiImageLoader &loader) {
-		crl::on_main([images = loader.releaseImages()]{
+void Application::clearEmojiSourceImages(Fn<void()> done) {
+	if (Quitting()) {
+		return;
+	}
+	const auto weak = QPointer<Application>(this);
+	_emojiImageLoader.with([
+		weak,
+		done = std::move(done)
+	](Stickers::EmojiImageLoader &loader) {
+		crl::on_main(weak, [images = loader.releaseImages(), done]() mutable {
+			if (Quitting()) {
+				return;
+			}
 			Ui::Emoji::ClearSourceImages(images);
+			images.reset();
+			if (done) {
+				done();
+			}
 		});
 	});
 }
@@ -749,7 +779,9 @@ bool Application::trayIdleWindowsHidden() const {
 }
 
 bool Application::trayIdleMemoryBusy() const {
-	if (calls().inCall() || calls().inGroupCall()) {
+	if (Quitting()
+		|| calls().inCall()
+		|| calls().inGroupCall()) {
 		return true;
 	}
 	const auto player = Media::Player::instance();
@@ -776,7 +808,7 @@ void Application::refreshTrayIdleMemory() {
 		}
 		return;
 	}
-	if (_trayIdleMemoryFired) {
+	if (_trayIdleMemoryFired || _idleMemoryCleanupInProgress) {
 		return;
 	}
 	if (_trayIdleMemoryDeferBusy) {
@@ -802,6 +834,9 @@ void Application::refreshTrayIdleMemory() {
 }
 
 void Application::trayIdleMemoryTimedOut() {
+	if (_idleMemoryCleanupInProgress) {
+		return;
+	}
 	const auto minutes = EnhancedSettings::TrayIdleMemoryMinutes();
 	if (minutes <= 0 || !trayIdleWindowsHidden()) {
 		_trayIdleMemoryFired = false;
@@ -821,6 +856,7 @@ void Application::trayIdleMemoryTimedOut() {
 
 void Application::releaseTrayIdleMemory() {
 	if (_trayIdleMemoryFired
+		|| _idleMemoryCleanupInProgress
 		|| EnhancedSettings::TrayIdleMemoryMinutes() <= 0
 		|| !trayIdleWindowsHidden()
 		|| trayIdleMemoryBusy()) {
@@ -830,42 +866,97 @@ void Application::releaseTrayIdleMemory() {
 	_trayIdleMemoryDeferBusy = false;
 	_trayIdleMemoryArmedMinutes = 0;
 	_trayIdleMemoryTimer.cancel();
-	dropIdleMemoryCaches();
+	dropIdleMemoryCaches("tray_idle");
 }
 
-bool Application::cleanupIdleMemory() {
-	if (trayIdleMemoryBusy()) {
+bool Application::cleanupIdleMemory(Fn<void(bool)> done) {
+	Expects(done != nullptr);
+
+	if (_idleMemoryCleanupInProgress || trayIdleMemoryBusy()) {
 		return false;
 	}
-	dropIdleMemoryCaches();
+	dropIdleMemoryCaches("manual", std::move(done));
+	return true;
+}
+
+void Application::dropIdleMemoryCaches(
+		const char *source,
+		Fn<void(bool)> done) {
+	Expects(!_idleMemoryCleanupInProgress);
+
+	_idleMemoryCleanupInProgress = true;
+	const auto before = Platform::CurrentProcessMemory();
+	LogIdleMemoryCleanup(source, "before", before, before);
+	clearEmojiSourceImages([=] {
+		InvokeQueued(this, [=] {
+			finishIdleMemoryCleanup(source, before, done);
+		});
+	});
+}
+
+void Application::finishIdleMemoryCleanup(
+		const char *source,
+		Platform::ProcessMemory before,
+		Fn<void(bool)> done) {
+	if (Quitting()) {
+		return;
+	}
+	if (trayIdleMemoryBusy()
+		|| (!done && (EnhancedSettings::TrayIdleMemoryMinutes() <= 0
+			|| !trayIdleWindowsHidden()))) {
+		_idleMemoryCleanupInProgress = false;
+		_trayIdleMemoryFired = false;
+		LOG(("Memory cleanup: source=%1 cancelled, conditions changed."
+			).arg(source));
+		refreshTrayIdleMemory();
+		if (done) {
+			done(false);
+		}
+		return;
+	}
+	auto removed = 0;
+	for (const auto &account : _domain->orderedAccounts()) {
+		if (account->sessionExists()) {
+			removed += account->session().data().releaseIdleMemory();
+		}
+	}
+	LOG(("Memory cleanup: source=%1 removed_history_messages=%2."
+		).arg(source).arg(removed));
+	QPixmapCache::clear();
+	LogIdleMemoryCleanup(
+		source,
+		"objects_released",
+		before,
+		Platform::CurrentProcessMemory());
+	Platform::OptimizeProcessHeaps();
+	LogIdleMemoryCleanup(
+		source,
+		"heaps_optimized",
+		before,
+		Platform::CurrentProcessMemory());
 	enumerateWindows([&](not_null<Window::Controller*> window) {
-		if (!window->widget()->isVisible()) {
+		if (window->widget()->isHidden()) {
 			return;
 		}
 		if (const auto controller = window->sessionController()) {
 			controller->content()->reloadUnloadedHistory();
 		}
 	});
-	return true;
-}
-
-void Application::dropIdleMemoryCaches() {
-	const auto before = Platform::CurrentProcessMemory();
-	for (const auto &account : _domain->orderedAccounts()) {
-		if (account->sessionExists()) {
-			account->session().data().releaseIdleMemory();
+	QTimer::singleShot(kIdleMemorySampleDelay, this, [=] {
+		if (Quitting()) {
+			return;
 		}
-	}
-	QPixmapCache::clear();
-	clearEmojiSourceImages();
-	Platform::TrimProcessHeaps();
-	const auto after = Platform::CurrentProcessMemory();
-	const auto mb = uint64(1024 * 1024);
-	LOG(("Tray idle memory: working set %1 -> %2 MB, private %3 -> %4 MB."
-		).arg((before.workingSet + mb / 2) / mb
-		).arg((after.workingSet + mb / 2) / mb
-		).arg((before.privateBytes + mb / 2) / mb
-		).arg((after.privateBytes + mb / 2) / mb));
+		LogIdleMemoryCleanup(
+			source,
+			"after_2s",
+			before,
+			Platform::CurrentProcessMemory());
+		_idleMemoryCleanupInProgress = false;
+		refreshTrayIdleMemory();
+		if (done) {
+			done(true);
+		}
+	});
 }
 
 void Application::restoreTrayIdleChats() {

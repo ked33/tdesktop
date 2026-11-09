@@ -180,10 +180,12 @@ void Histories::unloadAll() {
 	}
 }
 
-void Histories::releaseIdleSlices() {
+int Histories::releaseIdleSlices() {
+	auto removed = 0;
 	for (const auto &[peerId, history] : _map) {
-		history->releaseIdleSlice();
+		removed += history->releaseIdleSlice();
 	}
+	return removed;
 }
 
 void Histories::clearAll() {
