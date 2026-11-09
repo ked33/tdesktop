@@ -357,7 +357,7 @@ void HashtagAutocomplete::updateQuery() {
 		? 2 * st::lineWidth
 		: 0;
 	if (!_allowed || !_field->isVisible()
-		|| (_source == Source::Sent && !_field->rawTextEdit()->hasFocus())
+		|| !_field->rawTextEdit()->hasFocus()
 		|| _target.width() <= 0 || _target.height() <= borderHeight) {
 		hideFast();
 		return;
