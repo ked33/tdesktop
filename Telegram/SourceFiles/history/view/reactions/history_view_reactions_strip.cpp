@@ -104,8 +104,54 @@ void Strip::applyList(
 	if (_button != AddedButton::None) {
 		_icons.push_back({ .added = _button });
 	}
+	for (auto i = begin(_loadCache); i != end(_loadCache);) {
+		const auto used = ranges::any_of(_icons, [&](const auto &icon) {
+			return icon.appearAnimation == i->first
+				|| icon.selectAnimation == i->first;
+		});
+		if (used) {
+			++i;
+		} else {
+			i = _loadCache.erase(i);
+		}
+	}
+	if (_loadCache.empty()) {
+		_loadCacheLifetime.destroy();
+	}
 	setSelected((selected < _icons.size()) ? selected : -1);
-	resolveMainReactionIcon();
+	if (!_animationsUnloaded) {
+		resolveMainReactionIcon();
+	}
+}
+
+void Strip::unloadAnimations() {
+	if (_animationsUnloaded) {
+		return;
+	}
+	_animationsUnloaded = true;
+	_loadCacheLifetime.destroy();
+	_mainReactionLifetime.destroy();
+	_selectedIcon = -1;
+	for (auto &icon : _icons) {
+		icon.selectedScale.stop();
+		icon.selected = false;
+		icon.appearAnimated = false;
+		icon.selectAnimated = false;
+		icon.appear = nullptr;
+		icon.select = nullptr;
+	}
+	_loadCache.clear();
+	_mainReactionMedia = nullptr;
+	_mainReactionIcon = nullptr;
+	_mainReactionImage = QImage();
+	_emojiParts = QImage();
+	ranges::fill(_validEmoji, false);
+}
+
+void Strip::prepareAnimations() {
+	if (base::take(_animationsUnloaded)) {
+		resolveMainReactionIcon();
+	}
 }
 
 void Strip::paint(
@@ -589,6 +635,24 @@ IconFactory CachedIconFactory::createMethod() {
 		}
 		return result;
 	};
+}
+
+int CachedIconFactory::releaseUnused() {
+	_releaseRequests.fire({});
+	auto removed = 0;
+	for (auto i = begin(_cache); i != end(_cache);) {
+		if (i->second.use_count() == 1) {
+			i = _cache.erase(i);
+			++removed;
+		} else {
+			++i;
+		}
+	}
+	return removed;
+}
+
+rpl::producer<> CachedIconFactory::releaseRequests() const {
+	return _releaseRequests.events();
 }
 
 std::shared_ptr<Ui::AnimatedIcon> DefaultIconFactory(

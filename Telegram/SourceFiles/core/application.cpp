@@ -42,6 +42,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_specific.h"
 #include "platform/platform_integration.h"
 #include "history/history.h"
+#include "history/view/reactions/history_view_reactions_strip.h"
 #include "apiwrap.h"
 #include "api/api_updates.h"
 #include "calls/calls_instance.h"
@@ -78,6 +79,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/themes/window_theme.h"
 #include "ui/widgets/tooltip.h"
 #include "ui/gl/gl_detection.h"
+#include "ui/text/text.h"
 #include "ui/text/text_options.h"
 
 #include <QtGui/QPixmapCache>
@@ -915,14 +917,20 @@ void Application::finishIdleMemoryCleanup(
 		return;
 	}
 	auto removed = 0;
+	auto releasedReactionIcons = 0;
 	for (const auto &account : _domain->orderedAccounts()) {
 		if (account->sessionExists()) {
 			removed += account->session().data().releaseIdleMemory();
+			releasedReactionIcons += account->session()
+				.cachedReactionIconFactory().releaseUnused();
 		}
 	}
 	LOG(("Memory cleanup: source=%1 removed_history_messages=%2."
 		).arg(source).arg(removed));
+	LOG(("Memory cleanup: source=%1 released_reaction_icons=%2."
+		).arg(source).arg(releasedReactionIcons));
 	QPixmapCache::clear();
+	Ui::Text::DefaultSpoilerCache()->reset();
 	LogIdleMemoryCleanup(
 		source,
 		"objects_released",

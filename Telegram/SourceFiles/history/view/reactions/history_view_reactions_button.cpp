@@ -414,6 +414,7 @@ void Manager::updateButton(ButtonParameters parameters) {
 	if (!_buttonContext || !parameters.reactionsCount) {
 		return;
 	} else if (_button) {
+		_strip.prepareAnimations();
 		_button->applyParameters(parameters);
 		if (_button->geometry().height() == _outer.height()) {
 			clearAppearAnimations();
@@ -436,6 +437,7 @@ void Manager::updateButton(ButtonParameters parameters) {
 }
 
 void Manager::showButtonDelayed() {
+	_strip.prepareAnimations();
 	clearAppearAnimations();
 	_button = std::make_unique<Button>(
 		_buttonUpdate,
@@ -451,6 +453,17 @@ void Manager::applyList(const Data::PossibleItemReactionsRef &reactions) {
 			? Button::Expand
 			: */Button::None));
 	_tagsStrip = reactions.tags;
+}
+
+void Manager::releaseIdleMemory() {
+	removeStaleButtons();
+	if (_menu
+		|| _buttonShowTimer.isActive()
+		|| (_button && !_button->isHidden())
+		|| !_buttonHiding.empty()) {
+		return;
+	}
+	_strip.unloadAnimations();
 }
 
 QMargins Manager::innerMargins() const {
@@ -867,6 +880,10 @@ void SetupManagerList(
 		if (sessionChanged) {
 			state->sessionLifetime.destroy();
 			state->session = session;
+			session->cachedReactionIconFactory().releaseRequests(
+			) | rpl::on_next([=] {
+				manager->releaseIdleMemory();
+			}, state->sessionLifetime);
 			Data::AmPremiumValue(
 				session
 			) | rpl::skip(

@@ -146,6 +146,7 @@ public:
 	using ReactionId = ::Data::ReactionId;
 
 	void applyList(const Data::PossibleItemReactionsRef &reactions);
+	void releaseIdleMemory();
 
 	void updateButton(ButtonParameters parameters);
 	void paint(QPainter &p, const PaintContext &context);

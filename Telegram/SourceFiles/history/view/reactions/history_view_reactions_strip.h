@@ -7,9 +7,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "data/data_message_reaction_id.h"
+#include "rpl/event_stream.h"
 #include "ui/effects/animations.h"
 #include "ui/effects/round_area_with_shadow.h"
-#include "data/data_message_reaction_id.h"
 
 namespace style {
 struct EmojiPan;
@@ -62,6 +63,8 @@ public:
 	void applyList(
 		const std::vector<not_null<const Data::Reaction*>> &list,
 		AddedButton button);
+	void unloadAnimations();
+	void prepareAnimations();
 
 	void paint(
 		QPainter &p,
@@ -137,6 +140,7 @@ private:
 
 	std::vector<ReactionIcons> _icons;
 	AddedButton _button = AddedButton::None;
+	bool _animationsUnloaded = false;
 	base::flat_map<not_null<DocumentData*>, ReactionDocument> _loadCache;
 	std::optional<ReactionIcons> _premiumIcon;
 	rpl::lifetime _loadCacheLifetime;
@@ -162,11 +166,14 @@ public:
 	CachedIconFactory &operator=(const CachedIconFactory &other) = delete;
 
 	[[nodiscard]] IconFactory createMethod();
+	[[nodiscard]] int releaseUnused();
+	[[nodiscard]] rpl::producer<> releaseRequests() const;
 
 private:
 	base::flat_map<
 		std::shared_ptr<Data::DocumentMedia>,
 		std::shared_ptr<Ui::AnimatedIcon>> _cache;
+	rpl::event_stream<> _releaseRequests;
 
 };
 
