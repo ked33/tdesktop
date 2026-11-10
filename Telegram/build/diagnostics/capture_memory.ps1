@@ -164,7 +164,11 @@ function Assert-BuildPair($Executable, $Symbols) {
             throw "Missing or invalid SHA256 for $name in build-info.json."
         }
         $file = Get-Item -LiteralPath $path
-        if ($file.Length -ne $expected.size -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $expected.sha256) {
+        if ($file.Length -ne $expected.size) {
+            throw "$name does not match build-info.json. Download both artifacts from the same Actions run."
+        }
+        Write-Host ("正在校验 {0} 的 SHA256（{1:N0} MiB），请等待……" -f $name, ($file.Length / 1MB))
+        if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $expected.sha256) {
             throw "$name does not match build-info.json. Download both artifacts from the same Actions run."
         }
     }
@@ -173,6 +177,20 @@ function Assert-BuildPair($Executable, $Symbols) {
 
 function Get-ClientProcesses {
     return @(Get-Process -Name Telegram -ErrorAction SilentlyContinue)
+}
+
+function Assert-ClientsStopped([string] $Phase) {
+    $processes = @(Get-ClientProcesses)
+    if (!$processes.Count) { return }
+    $details = foreach ($process in $processes) {
+        $path = '<无法读取路径>'
+        $started = '<无法读取启动时间>'
+        try { if ($process.Path) { $path = $process.Path } } catch {}
+        try { $started = $process.StartTime.ToString('yyyy-MM-dd HH:mm:ss') } catch {}
+        "PID=$($process.Id) started=$started path=$path"
+    }
+    throw ("${Phase}检测到 Telegram.exe：`n" + ($details -join "`n") +
+        "`n请从托盘菜单正常退出这些客户端，再运行采集命令。文件校验期间保持客户端关闭，直到看到【跟踪已就绪，现在可以启动 Telegram】。脚本不会结束客户端。")
 }
 
 function Assert-NormalPrivilege([int] $ProcessId) {
@@ -232,16 +250,22 @@ function Assert-RecordingBudget {
     if ($null -ne $script:Target) { $null = Assert-TargetProcess }
 }
 
+function Read-CaptureKey {
+    if ([Console]::KeyAvailable) { return [Console]::ReadKey($true).Key }
+    return $null
+}
+
 function Wait-Stage([string] $Message) {
+    while ($null -ne ($key = Read-CaptureKey)) {
+        if ($key -eq [ConsoleKey]::Q) { throw 'Capture cancelled by the operator.' }
+    }
     Write-Host $Message -ForegroundColor Cyan
-    Write-Host 'Press Enter when ready, or Q to cancel and restore tracing.'
+    Write-Host '完成当前提示的操作后按 Enter；按 Q 取消并恢复跟踪设置。'
     while ($true) {
         Assert-RecordingBudget
-        if ([Console]::KeyAvailable) {
-            $key = [Console]::ReadKey($true)
-            if ($key.Key -eq [ConsoleKey]::Q) { throw 'Capture cancelled by the operator.' }
-            if ($key.Key -eq [ConsoleKey]::Enter) { return }
-        }
+        $key = Read-CaptureKey
+        if ($key -eq [ConsoleKey]::Q) { throw 'Capture cancelled by the operator.' }
+        if ($key -eq [ConsoleKey]::Enter) { return }
         Start-Sleep -Milliseconds 250
     }
 }
@@ -294,6 +318,11 @@ if ($PSCmdlet.ParameterSetName -eq 'Recover') {
 $script:Executable = (Resolve-Path -LiteralPath $ExePath).ProviderPath
 if ([IO.Path]::GetFileName($script:Executable) -cne 'Telegram.exe') { throw 'This collector supports Telegram.exe only.' }
 $symbols = (Resolve-Path -LiteralPath $SymbolsDirectory).ProviderPath
+if (-not $CheckOnly) {
+    if ([Console]::IsInputRedirected) { throw 'Run in an interactive administrator terminal.' }
+    Assert-ClientsStopped '文件校验前'
+    Write-Host '【预检中，请勿启动 Telegram】正在校验 EXE/PDB；较大的 PDB 可能需要数分钟，期间无需按 Enter。' -ForegroundColor Yellow
+}
 $manifest = Assert-BuildPair $script:Executable $symbols
 $original = Get-TracingSetting
 if (($original.flags -band 1L) -ne 0) { throw 'Heap tracing is already enabled for Telegram.exe. Finish that recording first.' }
@@ -301,10 +330,8 @@ if ($CheckOnly) {
     Write-Host "Build pair verified: $($manifest.commit). No tracing or settings changed."
     return
 }
-if ([Console]::IsInputRedirected) { throw 'Run in an interactive administrator terminal.' }
-if (@(Get-ClientProcesses).Count) {
-    throw 'Exit every Telegram.exe normally using Quit in its tray menu, then rerun. The script will not terminate clients.'
-}
+Assert-ClientsStopped '文件校验后'
+Write-Host '【正在启用跟踪，请继续保持 Telegram 关闭】准备完成后会明确提示启动。' -ForegroundColor Yellow
 $outputRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
 $script:CaptureDirectory = Join-Path $outputRoot ('capture-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N'))
 $null = New-Item -ItemType Directory -Path $script:CaptureDirectory
@@ -329,6 +356,7 @@ Write-Host 'VirtualAllocation records system activity. Keep the trace local and 
 $captureLock = Enter-CaptureLock
 try {
     Assert-RecordingBudget
+    Assert-ClientsStopped '启用跟踪前'
     $current = Get-TracingSetting
     if ($current.exists -ne $original.exists -or $current.flags -ne $original.flags) {
         throw 'TracingFlags changed during preflight. Rerun after the other tracing operation finishes.'
@@ -340,7 +368,7 @@ try {
     Write-JsonFile $statePath $script:State
     $null = Invoke-Wpr @('-start', 'Heap', '-start', 'VirtualAllocation', '-filemode', '-recordtempto', $script:CaptureDirectory, '-instancename', $script:State.instance)
     $traceStarted = [DateTime]::UtcNow
-    Wait-Stage "Start $script:Executable from your NORMAL desktop/Explorer (not this administrator terminal). Let the chat list settle."
+    Wait-Stage "【跟踪已就绪，现在可以启动 Telegram】请从普通桌面/资源管理器启动 $script:Executable。不要从管理员终端启动；等聊天列表稳定后，再回此终端按 Enter。"
     $processes = @(Get-ClientProcesses)
     if ($processes.Count -ne 1 -or $processes[0].Path -ne $script:Executable) {
         throw 'Expected exactly one Telegram.exe at the specified path.'
@@ -349,6 +377,7 @@ try {
     $script:TargetStarted = $script:Target.StartTime.ToUniversalTime()
     if ($script:TargetStarted -lt $traceStarted) { throw 'Telegram started before recording was ready. Repeat the capture.' }
     Assert-NormalPrivilege $script:Target.Id
+    Write-Host '已确认客户端身份，正在复核文件配对；请保持当前聊天列表，复核完成后再按下一步提示操作。' -ForegroundColor Cyan
     $null = Assert-BuildPair $script:Executable $symbols
     Save-Stage 'startup_stable'
     Wait-Stage 'Browse the same chats and media that increase memory. Stop playback and close media viewers. Return here before clicking Clean.'

@@ -39,6 +39,46 @@ $temporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $fixture = Join-Path $temporaryRoot ('td-memory-test-' + [guid]::NewGuid().ToString('N'))
 $null = New-Item -ItemType Directory -Path $fixture
 try {
+    function Get-ClientProcesses { return $script:FakeClients }
+    $script:FakeClients = @()
+    Assert-Equal @(Assert-ClientsStopped '文件校验前').Count 0
+    $script:FakeClients = @([pscustomobject]@{
+        Id = 123
+        Path = 'D:\Client One\Telegram.exe'
+        StartTime = [datetime]'2026-11-10T21:26:03'
+    })
+    Assert-Throws { Assert-ClientsStopped '文件校验前' } '文件校验前检测到'
+    Assert-Throws { Assert-ClientsStopped '文件校验前' } 'PID=123 started=2026-11-10 21:26:03 path=D:\Client One\Telegram.exe'
+    $script:FakeClients += [pscustomobject]@{
+        Id = 456
+        Path = 'D:\Client Two\Telegram.exe'
+        StartTime = [datetime]'2026-11-10T21:27:00'
+    }
+    Assert-Throws { Assert-ClientsStopped '文件校验后' } 'PID=123*PID=456'
+    $inaccessible = [pscustomobject]@{ Id = 789 }
+    $inaccessible | Add-Member ScriptProperty Path { throw 'Access denied' }
+    $inaccessible | Add-Member ScriptProperty StartTime { throw 'Process exited' }
+    $script:FakeClients = @($inaccessible)
+    Assert-Throws { Assert-ClientsStopped '启用跟踪前' } 'PID=789*<无法读取启动时间>*<无法读取路径>'
+    $script:FakeClients = @()
+    Assert-Equal @(Assert-ClientsStopped '文件校验后').Count 0
+
+    function Read-CaptureKey { return $script:FakeKeys.Dequeue() }
+    function Assert-RecordingBudget { $script:BudgetChecks++ }
+    $script:FakeKeys = [Collections.Generic.Queue[object]]::new()
+    foreach ($key in @([ConsoleKey]::Enter, $null, [ConsoleKey]::Enter)) { $script:FakeKeys.Enqueue($key) }
+    $script:BudgetChecks = 0
+    Wait-Stage 'Fixture stage: discard Enter buffered before this prompt.'
+    Assert-Equal $script:FakeKeys.Count 0
+    Assert-Equal $script:BudgetChecks 1
+    $script:FakeKeys.Enqueue([ConsoleKey]::Q)
+    Assert-Throws { Wait-Stage 'Fixture buffered cancellation.' } 'cancelled by the operator'
+    Assert-Equal $script:BudgetChecks 1
+    $script:FakeKeys.Enqueue($null)
+    $script:FakeKeys.Enqueue([ConsoleKey]::Q)
+    Assert-Throws { Wait-Stage 'Fixture cancellation after prompt.' } 'cancelled by the operator'
+    Assert-Equal $script:BudgetChecks 2
+
     $state = New-State
     Assert-CaptureState $state
     Assert-Equal (Get-RestoreAction $state @{ exists = $false; flags = [long]0 }) 'None'
@@ -152,7 +192,7 @@ try {
     Restore-Capture $state $journal
     Assert-Equal $script:FakeTracing.exists $true
     Assert-Equal $script:FakeTracing.flags 2147483650
-    Write-Host 'Capture checks passed: build pairing, command failures, recovery ownership, conflicts and retry state.'
+    Write-Host 'Capture checks passed: process preflight, stage input, build pairing, command failures, recovery ownership, conflicts and retry state.'
 } finally {
     $resolved = (Resolve-Path -LiteralPath $fixture).ProviderPath
     if ($resolved -ne $fixture -or -not $resolved.StartsWith($temporaryRoot, [StringComparison]::OrdinalIgnoreCase)) {
