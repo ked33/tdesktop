@@ -236,6 +236,56 @@ jobs:
             !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*d.prl
           key: ${{ steps.cache_qt.outputs.cache-primary-key }}
 
+      - name: Select paging disk for full-symbol linking
+        id: paging_disk
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pagefiles = @(Get-CimInstance Win32_PageFileUsage)
+          $disks = @(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType = 3')
+          $memory = Get-CimInstance Win32_PerfFormattedData_PerfOS_Memory
+          $pagefiles | Format-Table Name, AllocatedBaseSize, CurrentUsage, PeakUsage
+          $disks | Format-Table DeviceID, FreeSpace, Size
+          $memory | Format-List CommittedBytes, CommitLimit, AvailableBytes
+          $workspaceDrive = [IO.Path]::GetPathRoot($env:GITHUB_WORKSPACE).TrimEnd('\')
+          $candidates = $disks | Sort-Object @{ Expression = { $_.DeviceID -eq $workspaceDrive } }, @{ Expression = 'FreeSpace'; Descending = $true }
+          foreach ($disk in $candidates) {
+            $pagefilePath = $disk.DeviceID + '\pagefile.sys'
+            $existing = $pagefiles | Where-Object Name -EQ $pagefilePath | Select-Object -First 1
+            $allocated = if ($existing) { [long]$existing.AllocatedBaseSize * 1MB } else { 0L }
+            $additional = [Math]::Max(0L, 32GB - $allocated)
+            if ([long]$disk.FreeSpace - $additional -lt 16GB) { continue }
+            "drive=$($disk.DeviceID)" >> $env:GITHUB_OUTPUT
+            "configure=$($allocated -lt 32GB)".ToLowerInvariant() >> $env:GITHUB_OUTPUT
+            Write-Host "Paging disk: $($disk.DeviceID); additional allocation: $additional bytes"
+            exit 0
+          }
+          throw 'No paging disk can provide 32 GiB while retaining 16 GiB of free space.'
+
+      - name: Increase active pagefile for full-symbol linking
+        if: steps.paging_disk.outputs.configure == 'true'
+        uses: al-cheb/configure-pagefile-action@9b6da52fb72a3c6147c1aad2df22d8d905681adc # v1.5
+        with:
+          minimum-size: 32GB
+          maximum-size: 32GB
+          disk-root: ${{ steps.paging_disk.outputs.drive }}
+
+      - name: Verify active paging capacity
+        shell: pwsh
+        env:
+          PAGING_DISK: ${{ steps.paging_disk.outputs.drive }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pagefiles = @(Get-CimInstance Win32_PageFileUsage)
+          $pagefiles | Format-Table Name, AllocatedBaseSize, CurrentUsage, PeakUsage
+          $pagefilePath = $env:PAGING_DISK + '\pagefile.sys'
+          $active = $pagefiles | Where-Object Name -EQ $pagefilePath | Select-Object -First 1
+          $memory = Get-CimInstance Win32_PerfFormattedData_PerfOS_Memory
+          $memory | Format-List CommittedBytes, CommitLimit, AvailableBytes
+          if (!$active -or [long]$active.AllocatedBaseSize -lt 32768 -or [long]$memory.CommitLimit -lt 32GB) {
+            throw 'The active pagefile and commit limit do not meet the full-symbol linking budget.'
+          }
+
       - name: Configure project
         shell: cmd
         env:
@@ -271,6 +321,15 @@ jobs:
         run: |
           cd /d %TBUILD%\%REPO_NAME%\out
           cmake --build . --config Release --target Telegram --parallel -- -k 0
+
+      - name: Report build memory and disk usage
+        if: always()
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Get-CimInstance Win32_PerfFormattedData_PerfOS_Memory | Format-List CommittedBytes, CommitLimit, AvailableBytes
+          Get-CimInstance Win32_PageFileUsage | Format-Table Name, AllocatedBaseSize, CurrentUsage, PeakUsage
+          Get-CimInstance Win32_LogicalDisk -Filter 'DriveType = 3' | Format-Table DeviceID, FreeSpace, Size
 
       - name: Show sccache statistics
         if: always()
