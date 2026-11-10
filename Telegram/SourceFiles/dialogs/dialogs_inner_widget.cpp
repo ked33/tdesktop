@@ -125,6 +125,7 @@ namespace {
 constexpr auto kSearchNewerCount = 3;
 constexpr auto kAlbumNeighborSpan = 9;
 constexpr auto kMaxAlbumPreloadActive = 2;
+constexpr auto kSearchPreloadDelay = crl::time(200);
 constexpr auto kSearchLargePinLimit = 12;
 constexpr auto kSearchLargePinTtl = 5 * 60 * crl::time(1000);
 constexpr auto kSearchLargePinSweep = 30 * crl::time(1000);
@@ -481,6 +482,7 @@ InnerWidget::InnerWidget(
 , _narrowWidth(st::defaultDialogRow.padding.left()
 	+ st::defaultDialogRow.photoSize
 	+ st::defaultDialogRow.padding.left())
+, _searchPreloadTimer([=] { startPendingSearchPreload(); })
 , _searchLargePinTimer([=] { sweepSearchLargePins(); })
 , _pornSearchTimer([=] { repaintPornSearchHeader(); })
 , _searchResultClickTimer([=] { choosePendingSearchResultClick(); })
@@ -507,8 +509,12 @@ InnerWidget::InnerWidget(
 
 	session().downloaderTaskFinished(
 	) | rpl::on_next([=] {
-		invalidateLoadedUserpics();
-		update();
+		if (_state == WidgetState::Filtered) {
+			refreshLoadedSearchUserpics();
+		} else {
+			invalidateLoadedUserpics();
+			update();
+		}
 	}, lifetime());
 
 	Core::App().notifications().settingsChanged(
@@ -765,6 +771,7 @@ InnerWidget::InnerWidget(
 	}, lifetime());
 
 	_chosenRow.events() | rpl::on_next([=](const ChosenRow &row) {
+		resetSearchPreload();
 		refreshSearchResultSelection({ row.key, row.message.fullId });
 		if (row.message.fullId) {
 			const auto count = int(_searchResults.size());
@@ -4472,6 +4479,7 @@ void InnerWidget::applySearchState(SearchState state) {
 	if (_searchState == state) {
 		return;
 	}
+	resetSearchPreload();
 	auto withSameQuery = state;
 	withSameQuery.query = _searchState.query;
 	const auto otherChanged = (_searchState != withSameQuery);
@@ -4706,16 +4714,92 @@ void InnerWidget::appendToFiltered(Key key) {
 	trackResultsHistory(key.owningHistory());
 }
 
+void InnerWidget::refreshLoadedSearchUserpics() {
+	const auto ready = [](const Ui::PeerUserpicView &view) {
+		return view.cloud
+			&& !view.cloud->isNull()
+			&& (!view.empty.null() || view.cached.isNull());
+	};
+	const auto refreshRow = [&](const BasicRow &row, int top, int height) {
+		if (ready(row.userpicView()) || ready(row.userpicCornerView())) {
+			update(0, top, width(), height);
+		}
+	};
+	const auto offset = filteredOffset();
+	for (auto i = filteredIndex(_visibleTop - offset)
+		; i < int(_filterResults.size())
+		; ++i) {
+		const auto &result = _filterResults[i];
+		const auto top = offset + result.top;
+		if (top >= _visibleBottom) {
+			break;
+		}
+		refreshRow(*result.row, top, result.row->height());
+	}
+	const auto refreshRows = [&](const auto &rows, int top, int height, auto get) {
+		const auto [from, till] = Ui::RowsInRange(
+			_visibleTop - top,
+			_visibleBottom - top,
+			height,
+			rows.size());
+		for (auto i = from; i < till; ++i) {
+			refreshRow(get(rows[i]), top + i * height, height);
+		}
+	};
+	refreshRows(
+		_peerSearchResults,
+		peerSearchOffset(),
+		st::dialogsRowHeight,
+		[](const auto &row) -> const BasicRow& { return row->row; });
+	const auto getMessageRow = [](const auto &row) -> const BasicRow& {
+		return *row;
+	};
+	refreshRows(_previewResults, previewOffset(), _st->height, getMessageRow);
+	refreshRows(_searchResults, searchedOffset(), _st->height, getMessageRow);
+}
+
 void InnerWidget::preloadAdjacentSearchHits(int clickedIndex) {
 	if (!base::in_range(clickedIndex, 0, _searchResults.size())) {
 		return;
 	}
+	_searchPreloadItem = _searchResults[clickedIndex]->item()->fullId();
+	_searchPreloadTimer.callOnce(kSearchPreloadDelay);
+}
+
+void InnerWidget::startPendingSearchPreload() {
+	const auto id = base::take(_searchPreloadItem);
+	const auto found = ranges::find(
+		_searchResults,
+		id,
+		[](const auto &row) { return row->item()->fullId(); });
+	if (found == end(_searchResults)) {
+		return;
+	}
+	const auto clickedIndex = int(found - begin(_searchResults));
+	auto items = std::vector<not_null<HistoryItem*>>();
 	for (auto i = 1; i <= kSearchNewerCount; ++i) {
 		const auto index = clickedIndex - i;
 		if (base::in_range(index, 0, _searchResults.size())) {
-			enqueueSearchAlbumPreload(_searchResults[index]->item());
+			const auto item = _searchResults[index]->item();
+			items.push_back(item);
+			preloadSearchHitMedia(item);
 		}
 	}
+	for (const auto item : items) {
+		if (item->groupId()) {
+			enqueueSearchAlbumPreload(item);
+		}
+	}
+}
+
+void InnerWidget::resetSearchPreload() {
+	++_searchPreloadGeneration;
+	_searchPreloadTimer.cancel();
+	_searchPreloadItem = {};
+	_searchAlbumPreloaded.clear();
+	_searchAlbumPreloadQueue.clear();
+	_searchAlbumPreloadActive = 0;
+	clearSearchMediaPins();
 }
 
 void InnerWidget::enqueueSearchAlbumPreload(not_null<HistoryItem*> item) {
@@ -4736,6 +4820,9 @@ void InnerWidget::enqueueSearchAlbumPreload(not_null<HistoryItem*> item) {
 }
 
 void InnerWidget::startSearchAlbumPreload(not_null<HistoryItem*> item) {
+	if (_searchMediaPins.size() >= kSearchLargePinLimit) {
+		return;
+	}
 	const auto itemId = item->fullId();
 	const auto peer = item->history()->peer;
 	auto missing = std::vector<MsgId>();
@@ -4756,10 +4843,15 @@ void InnerWidget::startSearchAlbumPreload(not_null<HistoryItem*> item) {
 		return;
 	}
 	++_searchAlbumPreloadActive;
+	const auto generation = _searchPreloadGeneration;
 	const auto left = std::make_shared<int>(int(missing.size()));
 	for (const auto id : missing) {
 		session().api().requestMessageData(peer, id, crl::guard(this, [=] {
+			if (generation != _searchPreloadGeneration) {
+				return;
+			}
 			if (--*left == 0) {
+				Expects(_searchAlbumPreloadActive > 0);
 				--_searchAlbumPreloadActive;
 				finishSearchAlbumPreload(itemId);
 				while (_searchAlbumPreloadActive < kMaxAlbumPreloadActive
@@ -4813,26 +4905,26 @@ void InnerWidget::preloadSearchHitMedia(not_null<HistoryItem*> item) {
 		}
 		return false;
 	};
-	if (const auto photo = media->photo()) {
-		if (!hasPhotoPin(photo)) {
+	const auto preloadPhoto = [&](not_null<PhotoData*> photo) {
+		if (!hasPhotoPin(photo)
+			&& _searchMediaPins.size() < kSearchLargePinLimit) {
 			auto view = photo->createMediaView();
+			pinSearchLargePhoto(view);
 			view->wanted(Data::PhotoSize::Large, origin);
-			pinSearchLargePhoto(std::move(view));
 		}
+	};
+	if (const auto photo = media->photo()) {
+		preloadPhoto(photo);
 	}
 	if (const auto cover = media->videoCover()) {
-		if (!hasPhotoPin(cover)) {
-			auto view = cover->createMediaView();
-			view->wanted(Data::PhotoSize::Large, origin);
-			pinSearchLargePhoto(std::move(view));
-		}
-	}
-	if (const auto document = media->document()) {
-		if (document->isVideoFile() && !hasDocumentPin(document)) {
+		preloadPhoto(cover);
+	} else if (const auto document = media->document()) {
+		if (document->isVideoFile()
+			&& !hasDocumentPin(document)
+			&& _searchMediaPins.size() < kSearchLargePinLimit) {
 			auto view = document->createMediaView();
+			pinSearchLargeDocument(view);
 			view->thumbnailWanted(origin);
-			view->videoThumbnailWanted(origin);
-			pinSearchLargeDocument(std::move(view));
 		}
 	}
 }
@@ -4855,9 +4947,6 @@ void InnerWidget::pinSearchLargePhoto(std::shared_ptr<Data::PhotoMedia> view) {
 		.photo = std::move(view),
 		.when = crl::now(),
 	});
-	while (_searchMediaPins.size() > kSearchLargePinLimit) {
-		releaseSearchMediaPin();
-	}
 	if (!_searchLargePinTimer.isActive()) {
 		_searchLargePinTimer.callEach(kSearchLargePinSweep);
 	}
@@ -4882,9 +4971,6 @@ void InnerWidget::pinSearchLargeDocument(
 		.document = std::move(view),
 		.when = crl::now(),
 	});
-	while (_searchMediaPins.size() > kSearchLargePinLimit) {
-		releaseSearchMediaPin();
-	}
 	if (!_searchLargePinTimer.isActive()) {
 		_searchLargePinTimer.callEach(kSearchLargePinSweep);
 	}
@@ -4907,56 +4993,62 @@ void InnerWidget::clearSearchMediaPins() {
 }
 
 void InnerWidget::syncSearchMediaPins() {
-	if (_state != WidgetState::Filtered || _searchResults.empty()) {
+	if (_state != WidgetState::Filtered) {
+		_searchVisibleMedia.clear();
 		return;
 	}
-	const auto skip = searchedOffset();
-	const auto row = std::max(_st->height, 1);
-	auto from = (_visibleTop - skip) / row;
-	auto till = (_visibleBottom - skip + row - 1) / row;
-	from = std::clamp(from, 0, int(_searchResults.size()));
-	till = std::clamp(till, 0, int(_searchResults.size()));
-	auto keepPhotos = base::flat_set<not_null<PhotoData*>>();
-	auto keepDocuments = base::flat_set<not_null<DocumentData*>>();
+	auto visible = std::vector<SearchMediaPin>();
+	auto photos = base::flat_set<not_null<PhotoData*>>();
+	auto documents = base::flat_set<not_null<DocumentData*>>();
+	const auto rememberPhoto = [&](not_null<PhotoData*> photo) {
+		if (photos.emplace(photo).second) {
+			visible.push_back({ .photo = photo->createMediaView() });
+		}
+	};
 	const auto rememberItem = [&](not_null<HistoryItem*> item) {
-		if (const auto media = item->media()) {
-			if (const auto photo = media->photo()) {
-				keepPhotos.emplace(photo);
+		const auto media = item->media();
+		if (!media) {
+			return;
+		}
+		if (const auto photo = media->photo()) {
+			rememberPhoto(photo);
+		}
+		if (const auto cover = media->videoCover()) {
+			rememberPhoto(cover);
+		} else if (const auto document = media->document()) {
+			if (documents.emplace(document).second) {
+				visible.push_back({
+					.document = document->createMediaView(),
+				});
 			}
-			if (const auto cover = media->videoCover()) {
-				keepPhotos.emplace(cover);
-			}
-			if (const auto document = media->document()) {
-				if (document->isVideoFile()) {
-					keepDocuments.emplace(document);
+		}
+	};
+	const auto rememberRows = [&](const auto &rows, int offset) {
+		const auto [from, till] = Ui::RowsInRange(
+			_visibleTop - offset,
+			_visibleBottom - offset,
+			_st->height,
+			rows.size());
+		for (auto i = from; i < till; ++i) {
+			const auto item = rows[i]->item();
+			rememberItem(item);
+			if (const auto video = session().data().groups().findFirstVideo(item)) {
+				if (video != item.get()) {
+					rememberItem(video);
 				}
 			}
 		}
 	};
-	for (auto i = from; i < till; ++i) {
-		const auto item = _searchResults[i]->item();
-		preloadSearchHitMedia(item);
-		rememberItem(item);
-		if (const auto group = session().data().groups().find(item)) {
-			for (const auto &entry : group->items) {
-				rememberItem(entry);
-			}
-		}
-	}
-	for (auto i = begin(_searchMediaPins); i != end(_searchMediaPins);) {
-		const auto keep = (i->photo && keepPhotos.contains(i->photo->owner()))
-			|| (i->document
-				&& keepDocuments.contains(i->document->owner()));
-		if (keep) {
-			++i;
-			continue;
-		}
-		auto pin = std::move(*i);
-		i = _searchMediaPins.erase(i);
-		ForgetPinnedSearchPhoto(std::move(pin.photo));
-	}
-	if (_searchMediaPins.empty()) {
-		_searchLargePinTimer.cancel();
+	rememberRows(_previewResults, previewOffset());
+	rememberRows(_searchResults, searchedOffset());
+	const auto same = ranges::equal(
+		visible,
+		_searchVisibleMedia,
+		[](const auto &a, const auto &b) {
+			return a.photo == b.photo && a.document == b.document;
+		});
+	if (!same) {
+		_searchVisibleMedia = std::move(visible);
 	}
 }
 
@@ -4999,10 +5091,8 @@ void InnerWidget::clearSearchResults(bool alsoPeerSearchResults) {
 		clearPeerSearchResults();
 	}
 	_searchResults.clear();
-	_searchAlbumPreloaded.clear();
-	_searchAlbumPreloadQueue.clear();
-	clearSearchMediaPins();
-	_searchAlbumPreloadActive = 0;
+	_searchVisibleMedia.clear();
+	resetSearchPreload();
 	_nativeSearchResults.clear();
 	_nativeSearchCount = 0;
 	_nativeSearchLoadedCount = 0;
@@ -6413,6 +6503,8 @@ void InnerWidget::clearFilter() {
 		|| _searchState.inChat
 		|| archiveSearchActive()
 		|| communitySearchActive()) {
+		resetSearchPreload();
+		_searchVisibleMedia.clear();
 		if (_searchState.inChat
 			|| archiveSearchActive()
 			|| communitySearchActive()) {

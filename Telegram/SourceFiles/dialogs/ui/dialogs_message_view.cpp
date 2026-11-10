@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/ui/dialogs_message_view.h"
 
+#include "data/data_document_media.h"
+#include "data/data_photo_media.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/history_item_components.h"
@@ -31,6 +33,31 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace {
 
 constexpr auto kEmojiLoopCount = 2;
+
+[[nodiscard]] std::optional<int> CountLoadedPreviewMedia(
+		const std::any &context) {
+	if (const auto photo = std::any_cast<
+			std::shared_ptr<Data::PhotoMedia>>(&context)) {
+		return (*photo)->image(Data::PhotoSize::Small)
+			|| (*photo)->image(Data::PhotoSize::Thumbnail)
+			|| (*photo)->image(Data::PhotoSize::Large);
+	} else if (const auto document = std::any_cast<
+			std::shared_ptr<Data::DocumentMedia>>(&context)) {
+		return (*document)->thumbnail() != nullptr;
+	} else if (const auto group = std::any_cast<
+			std::vector<std::any>>(&context)) {
+		auto result = 0;
+		for (const auto &entry : *group) {
+			const auto loaded = CountLoadedPreviewMedia(entry);
+			if (!loaded) {
+				return std::nullopt;
+			}
+			result += *loaded;
+		}
+		return result;
+	}
+	return context.has_value() ? std::nullopt : std::optional(0);
+}
 
 template <ushort kTag>
 struct TextWithTagOffset {
@@ -120,6 +147,8 @@ TextWithEntities DialogsPreviewText(TextWithEntities text) {
 
 struct MessageView::LoadingContext {
 	std::any context;
+	std::optional<int> loaded;
+	Fn<void()> repaint;
 	rpl::lifetime lifetime;
 };
 
@@ -339,10 +368,22 @@ void MessageView::prepare(
 			_loadingContext = std::make_unique<LoadingContext>();
 			item->history()->session().downloaderTaskFinished(
 			) | rpl::on_next([=] {
+				const auto loaded = CountLoadedPreviewMedia(
+					_loadingContext->context);
+				if (loaded && loaded == _loadingContext->loaded) {
+					return;
+				}
+				_loadingContext->loaded = loaded;
 				_textCachedFor = nullptr;
+				if (const auto repaint = _loadingContext->repaint) {
+					repaint();
+				}
 			}, _loadingContext->lifetime);
 		}
 		_loadingContext->context = std::move(preview.loadingContext);
+		_loadingContext->loaded = CountLoadedPreviewMedia(
+			_loadingContext->context);
+		_loadingContext->repaint = std::move(customEmojiRepaint);
 	} else {
 		_loadingContext = nullptr;
 	}

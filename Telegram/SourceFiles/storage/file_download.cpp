@@ -303,10 +303,14 @@ void FileLoader::loadLocal(const Storage::Cache::Key &key) {
 	const auto trace = _loadTrace;
 	trace->setStage(Storage::DownloadTrace::Stage::CacheLookup);
 	const auto readImage = (_locationType != AudioFileLocation);
-	auto done = [=, guard = _localLoading.make_guard()](
+	auto done = [=](
+			base::binary_guard guard,
 			QByteArray &&value,
 			QImage &&image,
 			QByteArray &&format) mutable {
+		if (!guard) {
+			return;
+		}
 		trace->setStage(Storage::DownloadTrace::Stage::CacheDelivery);
 		crl::on_main(std::move(guard), [
 			=,
@@ -320,28 +324,39 @@ void FileLoader::loadLocal(const Storage::Cache::Key &key) {
 				std::move(image));
 		});
 	};
-	_session->data().cache().get(key, [=, callback = std::move(done)](
-			QByteArray &&value) mutable {
+	_session->data().cache().get(key, [
+		=,
+		guard = _localLoading.make_guard(),
+		callback = std::move(done)
+	](QByteArray &&value) mutable {
+		if (!guard) {
+			return;
+		}
 		trace->setStage(Storage::DownloadTrace::Stage::CacheDecodeQueued);
 		if (readImage && !value.startsWith("partial:")) {
 			crl::async([
 				trace,
+				guard = std::move(guard),
 				value = std::move(value),
 				done = std::move(callback)
 			]() mutable {
+				if (!guard) {
+					return;
+				}
 				trace->setStage(Storage::DownloadTrace::Stage::CacheDecode);
 				auto read = Images::Read({ .content = value });
 				if (!read.image.isNull()) {
 					done(
+						std::move(guard),
 						std::move(value),
 						std::move(read.image),
 						std::move(read.format));
 				} else {
-					done(std::move(value), {}, {});
+					done(std::move(guard), std::move(value), {}, {});
 				}
 			});
 		} else {
-			callback(std::move(value), {}, {});
+			callback(std::move(guard), std::move(value), {}, {});
 		}
 	});
 }
@@ -379,6 +394,7 @@ void FileLoader::cancel() {
 }
 
 void FileLoader::cancel(FailureReason fail, crl::time retryAt) {
+	_localLoading = nullptr;
 	if (_loadTrace) {
 		if (_loadTrace->error.isEmpty()) {
 			_loadTrace->setError(u"file_failure_%1"_q.arg(int(fail)));

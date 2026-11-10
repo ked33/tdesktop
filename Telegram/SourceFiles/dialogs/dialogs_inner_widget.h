@@ -380,7 +380,10 @@ private:
 	void clearIrrelevantState();
 	void selectByMouse(QPoint globalPosition);
 	void preloadRowsData();
+	void refreshLoadedSearchUserpics();
 	void preloadAdjacentSearchHits(int clickedIndex);
+	void startPendingSearchPreload();
+	void resetSearchPreload();
 	void enqueueSearchAlbumPreload(not_null<HistoryItem*> item);
 	void startSearchAlbumPreload(not_null<HistoryItem*> item);
 	void finishSearchAlbumPreload(FullMsgId itemId);
@@ -792,7 +795,11 @@ private:
 		crl::time when = 0;
 	};
 	std::deque<SearchMediaPin> _searchMediaPins;
+	std::vector<SearchMediaPin> _searchVisibleMedia;
+	base::Timer _searchPreloadTimer;
 	base::Timer _searchLargePinTimer;
+	FullMsgId _searchPreloadItem;
+	uint64 _searchPreloadGeneration = 0;
 	int _searchAlbumPreloadActive = 0;
 	MessageIdsList _nativeSearchResults;
 	Api::PornSearchResult _pornSearchResult;
