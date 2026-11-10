@@ -17,6 +17,8 @@ namespace Media::Streaming {
 
 struct NativeFrame;
 
+[[nodiscard]] bool ReleaseIdleD3D11Processor();
+
 // Copy a D3D11 decoder texture to a shared BGRA texture on the GPU.
 // `retained` is reused when the frame size has not changed.
 [[nodiscard]] bool RetainD3D11Frame(

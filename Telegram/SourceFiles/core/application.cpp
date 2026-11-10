@@ -118,6 +118,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <ksandbox.h>
 
+#ifdef Q_OS_WIN
+#include "media/streaming/media_streaming_d3d11_frame.h"
+#endif // Q_OS_WIN
+
 namespace Core {
 namespace {
 
@@ -982,6 +986,17 @@ void Application::finishIdleMemoryHeaps(
 			"streaming_keepalives_released",
 			before,
 			Platform::CurrentProcessMemory());
+#ifdef Q_OS_WIN
+		const auto releasedProcessor
+			= Media::Streaming::ReleaseIdleD3D11Processor();
+		LOG(("Memory cleanup: source=%1 released_d3d11_processor=%2."
+			).arg(source).arg(releasedProcessor ? 1 : 0));
+		LogIdleMemoryCleanup(
+			source,
+			"d3d11_processor_released",
+			before,
+			Platform::CurrentProcessMemory());
+#endif // Q_OS_WIN
 		Platform::OptimizeProcessHeaps();
 	} else {
 		LOG(("Memory cleanup: source=%1 heap optimization skipped while busy."

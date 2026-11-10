@@ -330,6 +330,7 @@ Manager::Manager(
 	_inner.width())
 , _buttonShowTimer([=] { showButtonDelayed(); })
 , _buttonUpdate(std::move(buttonUpdate)) {
+	_strip.unloadAnimations();
 	_inner.translate(QRect({}, _outer).center() - _inner.center());
 
 	_expandedBuffer = _cachedRound.PrepareImage(QSize(

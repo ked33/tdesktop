@@ -321,6 +321,16 @@ void ApplyColorSpace(
 
 } // namespace
 
+bool ReleaseIdleD3D11Processor() {
+	const std::lock_guard<std::mutex> lock(ProcessorMutex());
+	auto &processor = SharedProcessor();
+	const auto released = processor.device
+		|| processor.enumerator
+		|| processor.processor;
+	processor.reset();
+	return released;
+}
+
 bool RetainD3D11Frame(
 		AVFrame *decoded,
 		std::shared_ptr<void> retained,
