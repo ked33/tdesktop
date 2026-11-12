@@ -25,6 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/controls/userpic_button.h"
 #include "ui/painter.h"
 #include "ui/rp_widget.h"
+#include "window/window_lock_widgets.h"
 #include "window/window_separate_id.h"
 #include "window/window_session_controller.h"
 #include "styles/style_layers.h"
