@@ -25,6 +25,8 @@ struct ChatSwitchRequest;
 namespace Ui {
 class AbstractButton;
 class RpWidget;
+class ScrollArea;
+class FlatLabel;
 } // namespace Ui
 
 namespace Window {
@@ -54,13 +56,18 @@ private:
 	void setupView();
 
 	void layout(QSize size);
-	void remove(not_null<Data::Thread*> thread);
+	void refreshContent();
+	void scheduleRefresh();
+	void updateVisibleEntries();
 
-	void setSelected(int index);
+	void setSelected(int index, bool scroll = true);
 
 	const not_null<Main::Session*> _session;
 	const std::unique_ptr<Ui::RpWidget> _widget;
 	const not_null<Ui::RpWidget*> _view;
+	const not_null<Ui::ScrollArea*> _scroll;
+	const not_null<Ui::RpWidget*> _content;
+	const not_null<Ui::FlatLabel*> _empty;
 
 	QRect _shadowed;
 	QRect _outer;
@@ -68,18 +75,19 @@ private:
 	Ui::RoundRect _bg;
 
 	base::flat_map<not_null<PeerData*>, Ui::PeerUserpicView> _userpics;
-	std::vector<not_null<Data::Thread*>> _list;
 	std::vector<Entry> _entries;
 
 	int _selected = -1;
-	int _shownRows = 0;
-	int _shownCount = 0;
-	int _shownPerRow = 0;
+	int _shownPerRow = 1;
+	bool _refreshScheduled = false;
+	bool _layingOut = false;
+	bool _persistent = false;
 
 	rpl::event_stream<not_null<Data::Thread*>> _chosen;
 	rpl::event_stream<> _closeRequests;
 
 	rpl::lifetime _lifetime;
+	rpl::lifetime _contentLifetime;
 
 };
 

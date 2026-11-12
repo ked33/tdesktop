@@ -840,6 +840,20 @@ namespace Settings {
 			EnhancedSettings::SetRecentChatsButtonShown(enabled);
 		}, container->lifetime());
 
+		trackSearch(
+			AddButtonWithLabel(
+				container,
+				tr::lng_settings_recent_chats_limit(),
+				rpl::single(EnhancedSettings::RecentChatsLimit())
+					| rpl::then(EnhancedSettings::RecentChatsLimitChanges())
+					| rpl::map([](int value) { return QString::number(value); }),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/recent_chats_limit"_q)->addClickHandler([] {
+			Ui::show(Box<RecentChatsLimitBox>());
+		});
+		AddDividerText(container, tr::lng_settings_recent_chats_limit_about());
+
 		const auto currentChatSwitchShortcutLabel = [] {
 			return ChatSwitchShortcutBox::ShortcutLabel(
 				GetEnhancedString("chat_switch_persistent_shortcut"));
@@ -2095,6 +2109,10 @@ namespace Settings {
 		addBool(
 			"show_recent_chats_button",
 			tr::lng_settings_show_recent_chats_button(tr::now));
+		addButton(
+			u"enhanced/recent_chats_limit"_q,
+			tr::lng_settings_recent_chats_limit(tr::now),
+			{ tr::lng_settings_recent_chats_limit_about(tr::now) });
 		addButton(
 			u"enhanced/chat_switch_persistent_shortcut"_q,
 			tr::lng_settings_chat_switch_shortcut_title(tr::now));

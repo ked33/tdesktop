@@ -1444,6 +1444,53 @@ void HashtagAutocompleteLimitBox::save() {
 	closeBox();
 }
 
+RecentChatsLimitBox::RecentChatsLimitBox(QWidget *parent)
+: _limit(
+	this,
+	st::defaultInputField,
+	tr::lng_settings_recent_chats_limit_placeholder()) {
+	_limit->setInputMethodHints(Qt::ImhDigitsOnly | Qt::ImhNoPredictiveText);
+}
+
+void RecentChatsLimitBox::prepare() {
+	setTitle(tr::lng_settings_recent_chats_limit());
+	addButton(tr::lng_settings_save(), [=] { save(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
+	_limit->setText(QString::number(
+		EnhancedSettings::RecentChatsLimit()));
+	_limit->setMaxLength(3);
+	_limit->submits() | rpl::on_next([=] { save(); }, lifetime());
+	setDimensions(
+		st::boxWidth,
+		_limit->height() + st::boxPadding.top() + st::boxPadding.bottom());
+}
+
+void RecentChatsLimitBox::setInnerFocus() {
+	_limit->setFocusFast();
+}
+
+void RecentChatsLimitBox::resizeEvent(QResizeEvent *e) {
+	BoxContent::resizeEvent(e);
+	_limit->resizeToWidth(
+		width() - st::boxPadding.left() - st::boxPadding.right());
+	_limit->moveToLeft(st::boxPadding.left(), st::boxPadding.top());
+}
+
+void RecentChatsLimitBox::save() {
+	auto valid = false;
+	const auto value = _limit->getLastText().trimmed().toInt(&valid);
+	if (!valid
+		|| value < EnhancedSettings::kRecentChatsLimitMinimum
+		|| value > EnhancedSettings::kRecentChatsLimitMaximum) {
+		_limit->showError();
+		Ui::Toast::Show(
+			tr::lng_settings_recent_chats_limit_invalid(tr::now));
+		return;
+	}
+	EnhancedSettings::SetRecentChatsLimit(value);
+	closeBox();
+}
+
 TrayIdleMemoryBox::TrayIdleMemoryBox(QWidget *parent)
 : _minutes(
 	this,

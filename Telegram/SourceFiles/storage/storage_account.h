@@ -207,6 +207,7 @@ public:
 		writePrefImpl<Type>(key, std::forward<Other>(value));
 	}
 	void clearPref(std::string_view key);
+	void flushPrefs();
 
 	template <typename Type, typename Other = Type>
 	[[nodiscard]] Type readPref(

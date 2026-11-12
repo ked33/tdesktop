@@ -356,6 +356,10 @@ maxWidthSharedMediaWindow: 419px;
 chatSwitchMargins: margins(16px, 16px, 16px, 16px);
 chatSwitchPadding: margins(12px, 12px, 12px, 12px);
 chatSwitchSize: size(72px, 104px);
+chatSwitchEmptyWidth: 288px;
+chatSwitchEmptyLabel: FlatLabel(defaultFlatLabel) {
+	align: align(center);
+}
 chatSwitchUserpic: UserpicButton(defaultUserpicButton) {
 	size: size(56px, 56px);
 	photoSize: 56px;

@@ -144,6 +144,17 @@ namespace EnhancedSettings {
 			return events;
 		}
 
+		rpl::event_stream<int> &RecentChatsLimitEvents() {
+			static auto events = rpl::event_stream<int>();
+			return events;
+		}
+
+		bool ValidRecentChatsLimit(QJsonValue value) {
+			return value.isDouble()
+				&& value.toInt(-1) >= kRecentChatsLimitMinimum
+				&& value.toInt(-1) <= kRecentChatsLimitMaximum;
+		}
+
 		rpl::event_stream<int> &HashtagAutocompleteLimitEvents() {
 			static auto events = rpl::event_stream<int>();
 			return events;
@@ -244,6 +255,7 @@ namespace EnhancedSettings {
 			ensureString(qsl("shortcut_selected_merge_forward"), QString());
 			ensureString(qsl("shortcut_selected_merge_album"), QString());
 			ensureBool(u"show_recent_chats_button"_q, true);
+			ensureInt(u"recent_chats_limit"_q, kRecentChatsLimitDefault);
 			ensureString(qsl("chat_switch_persistent_shortcut"), QString());
 			ensureString(qsl("jump_to_dialog_shortcut"), qsl("alt+e"));
 			ensureString(qsl("global_search_shortcut"), qsl("ctrl+alt+f"));
@@ -614,6 +626,33 @@ namespace EnhancedSettings {
 		RecentChatsButtonEvents().fire_copy(shown);
 	}
 
+	int RecentChatsLimit() {
+		const auto value = QJsonValue::fromVariant(gEnhancedOptions.value(
+			u"recent_chats_limit"_q));
+		return ValidRecentChatsLimit(value)
+			? value.toInt()
+			: kRecentChatsLimitDefault;
+	}
+
+	rpl::producer<int> RecentChatsLimitChanges() {
+		return RecentChatsLimitEvents().events();
+	}
+
+	void SetRecentChatsLimit(int value) {
+		value = std::clamp(
+			value,
+			kRecentChatsLimitMinimum,
+			kRecentChatsLimitMaximum);
+		if (RecentChatsLimit() == value) {
+			return;
+		}
+		SetEnhancedValue(u"recent_chats_limit"_q, value);
+		if (!WriteNow()) {
+			Write();
+		}
+		RecentChatsLimitEvents().fire_copy(value);
+	}
+
 	int HashtagAutocompleteLimit() {
 		auto valid = false;
 		const auto value = gEnhancedOptions.value(
@@ -718,6 +757,10 @@ namespace EnhancedSettings {
 		}
 
 		loadSettings(settings);
+		if (settings.contains(u"recent_chats_limit"_q)
+			&& !ValidRecentChatsLimit(settings.value(u"recent_chats_limit"_q))) {
+			SetEnhancedValue(u"recent_chats_limit"_q, kRecentChatsLimitDefault);
+		}
 
 		ReadOption(settings, "net_speed_boost", [&](auto v) {
 			if (v.isDouble()) {
@@ -946,6 +989,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("shortcut_selected_merge_forward"), "");
 		settings.insert(qsl("shortcut_selected_merge_album"), "");
 		settings.insert(u"show_recent_chats_button"_q, true);
+		settings.insert(u"recent_chats_limit"_q, kRecentChatsLimitDefault);
 		settings.insert(qsl("chat_switch_persistent_shortcut"), "");
 		settings.insert(qsl("jump_to_dialog_shortcut"), "alt+e");
 		settings.insert(qsl("global_search_shortcut"), "ctrl+alt+f");
@@ -1135,6 +1179,7 @@ namespace EnhancedSettings {
 		settings.insert(
 			qsl("shortcut_selected_merge_album"),
 			GetEnhancedString("shortcut_selected_merge_album"));
+		settings.insert(u"recent_chats_limit"_q, RecentChatsLimit());
 		settings.insert(
 			u"show_recent_chats_button"_q,
 			GetEnhancedBool("show_recent_chats_button"));
@@ -1203,6 +1248,10 @@ namespace EnhancedSettings {
 		}
 		const auto incoming = document.object();
 		if (incoming.isEmpty()) {
+			return std::nullopt;
+		}
+		if (incoming.contains(u"recent_chats_limit"_q)
+			&& !ValidRecentChatsLimit(incoming.value(u"recent_chats_limit"_q))) {
 			return std::nullopt;
 		}
 		const auto foldingIds = incoming.value(u"message_folding_user_ids"_q);
@@ -1334,6 +1383,7 @@ namespace EnhancedSettings {
 		}
 		const auto backup = gEnhancedOptions;
 		const auto chineseSearchBefore = SearchChineseKeywordsEnabled();
+		const auto recentChatsLimitBefore = RecentChatsLimit();
 		const auto requests = cNetRequestsCount();
 		const auto uploadSessions = cNetUploadSessionsCount();
 		const auto uploadInterval = cNetUploadRequestInterval();
@@ -1348,6 +1398,9 @@ namespace EnhancedSettings {
 			InvalidateSearchDialogFilterCache();
 			Write();
 			return false;
+		}
+		if (recentChatsLimitBefore != RecentChatsLimit()) {
+			RecentChatsLimitEvents().fire_copy(RecentChatsLimit());
 		}
 		MessageFolding::Reload();
 		RecentChatsButtonEvents().fire_copy(

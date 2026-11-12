@@ -825,6 +825,9 @@ void Account::writeMap() {
 
 void Account::reset() {
 	_writeSearchSuggestionsTimer.cancel();
+	_writePrefsTimer.cancel();
+	_prefs.clear();
+	_prefsChanged = false;
 
 	auto names = collectGoodNames();
 	_draftsMap.clear();
@@ -4089,9 +4092,15 @@ std::optional<QByteArray> Account::readPrefGeneric(std::string_view key) {
 	return (i != end(_prefs)) ? i->second : std::optional<QByteArray>();
 }
 
+void Account::flushPrefs() {
+	writePrefs();
+}
+
 void Account::writePrefsDelayed() {
 	_prefsChanged = true;
-	_writePrefsTimer.callOnce(kDelayedWriteTimeout);
+	if (!_writePrefsTimer.isActive()) {
+		_writePrefsTimer.callOnce(kDelayedWriteTimeout);
+	}
 }
 
 void Account::writePrefs() {
@@ -4159,6 +4168,19 @@ void Account::readPrefs() {
 		map.emplace(std::move(key), std::move(value));
 	}
 	_prefs = std::move(map);
+}
+
+template <>
+std::optional<QByteArray> Account::readPrefImpl<QByteArray>(
+		std::string_view key) {
+	return readPrefGeneric(key);
+}
+
+template <>
+void Account::writePrefImpl<QByteArray>(
+		std::string_view key,
+		QByteArray value) {
+	writePrefGeneric(key, value);
 }
 
 // Define your own pref types in the similar way.

@@ -9983,3 +9983,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_filters_recent_chats" = "Recent chats";
 "lng_settings_show_recent_chats_button" = "Show recent chats button in the folders sidebar";
+
+"lng_settings_recent_chats_limit" = "Maximum recent chats";
+"lng_settings_recent_chats_limit_placeholder" = "1–500 (default: 50)";
+"lng_settings_recent_chats_limit_invalid" = "Enter a whole number from 1 to 500.";
+"lng_settings_recent_chats_limit_about" = "Keep chats in the order they were last opened and restore them after restarting. Reducing the limit removes the oldest entries.";
+"lng_recent_chats_empty" = "No recently opened chats.";

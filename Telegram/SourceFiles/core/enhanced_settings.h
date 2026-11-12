@@ -34,6 +34,10 @@ namespace EnhancedSettings {
 	inline constexpr auto kHashtagAutocompleteLimitDefault = 1000;
 	inline constexpr auto kHashtagAutocompleteLimitMaximum = 10000;
 
+	inline constexpr auto kRecentChatsLimitMinimum = 1;
+	inline constexpr auto kRecentChatsLimitDefault = 50;
+	inline constexpr auto kRecentChatsLimitMaximum = 500;
+
 	enum class DownloadLimitToastMode {
 		Fixed = 0,
 		Countdown = 1,
@@ -75,6 +79,9 @@ namespace EnhancedSettings {
 	void SetTrayIdleMemoryMinutes(int value);
 	[[nodiscard]] rpl::producer<bool> RecentChatsButtonChanges();
 	void SetRecentChatsButtonShown(bool shown);
+	[[nodiscard]] int RecentChatsLimit();
+	[[nodiscard]] rpl::producer<int> RecentChatsLimitChanges();
+	void SetRecentChatsLimit(int value);
 	[[nodiscard]] int HashtagAutocompleteLimit();
 	[[nodiscard]] rpl::producer<int> HashtagAutocompleteLimitChanges();
 	void SetHashtagAutocompleteLimit(int value);

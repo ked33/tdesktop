@@ -505,6 +505,10 @@ void SavedMessages::apply(const MTPDupdateSavedDialogPinned &update) {
 }
 
 void SavedMessages::applySublistDeleted(not_null<PeerData*> sublistPeer) {
+	session().recentPeers().chatOpenRemove(
+		owningHistory()->peer->id,
+		MsgId(),
+		sublistPeer->id);
 	const auto i = _sublists.find(sublistPeer);
 	if (i == end(_sublists)) {
 		return;
@@ -521,7 +525,6 @@ void SavedMessages::applySublistDeleted(not_null<PeerData*> sublistPeer) {
 	}
 
 	_sublistDestroyed.fire(raw);
-	_owner->session().recentPeers().chatOpenRemove(raw);
 	session().changes().sublistUpdated(
 		raw,
 		Data::SublistUpdate::Flag::Destroyed);

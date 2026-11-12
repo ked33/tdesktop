@@ -213,6 +213,7 @@ void Forum::requestTopics() {
 
 void Forum::applyTopicDeleted(MsgId rootId) {
 	_topicsDeleted.emplace(rootId);
+	session().recentPeers().chatOpenRemove(peer()->id, rootId, PeerId());
 
 	const auto i = _topics.find(rootId);
 	if (i == end(_topics)) {
@@ -236,7 +237,6 @@ void Forum::applyTopicDeleted(MsgId rootId) {
 		_activeSubsectionTopic = nullptr;
 	}
 	_topicDestroyed.fire(raw);
-	_history->session().recentPeers().chatOpenRemove(raw);
 	session().changes().topicUpdated(
 		raw,
 		Data::TopicUpdate::Flag::Destroyed);
