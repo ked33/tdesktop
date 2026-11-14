@@ -192,7 +192,152 @@ try {
     Restore-Capture $state $journal
     Assert-Equal $script:FakeTracing.exists $true
     Assert-Equal $script:FakeTracing.flags 2147483650
-    Write-Host 'Capture checks passed: process preflight, stage input, build pairing, command failures, recovery ownership, conflicts and retry state.'
+    $script:SnapshotProcess = [pscustomobject]@{
+        Id = 123
+        Path = $exe
+        StartTime = [datetime]::UtcNow.AddMinutes(1)
+        PrivateMemorySize64 = 123456L
+        WorkingSet64 = 12345L
+    }
+    $script:Executable = $exe
+    $script:FakeClients = @($script:SnapshotProcess)
+    function Assert-NormalPrivilege([int] $ProcessId) { Assert-Equal $ProcessId 123 }
+    Set-RunningTarget 123
+    Assert-Equal $script:Target.Id 123
+    Assert-Throws { Set-RunningTarget 456 } 'specified running'
+    $script:SnapshotProcess.StartTime = [datetime]::UtcNow.AddDays(-1)
+    Assert-Throws { Set-RunningTarget 123 } 'changed after this process started'
+    $script:SnapshotProcess.StartTime = [datetime]::UtcNow.AddMinutes(1)
+    Set-RunningTarget 123
+
+    function New-SnapshotState {
+        $result = New-State
+        $result.schema_version = 2
+        $result.target_id = 123
+        $result.target_path = $script:Executable
+        $result.target_started_utc = $script:TargetStarted.ToString('o')
+        $result.target_started_ticks = $script:TargetStarted.Ticks
+        return $result
+    }
+    $state = New-SnapshotState
+    Assert-CaptureState $state
+    Assert-Equal (Test-SnapshotTarget $state $script:SnapshotProcess) $true
+    Assert-Equal (Test-SnapshotTarget $state $null) $false
+    $roundtrip = $state | ConvertTo-Json | ConvertFrom-Json -AsHashtable
+    Assert-CaptureState $roundtrip
+    Assert-Equal (Test-SnapshotTarget $roundtrip $script:SnapshotProcess) $true
+    $state.target_id = '123'
+    Assert-Throws { Assert-CaptureState $state } 'target PID'
+    $state.target_id = 0
+    Assert-Throws { Assert-CaptureState $state } 'target PID'
+    $state = New-SnapshotState
+    $state.target_path = 'Other.exe'
+    Assert-Throws { Assert-CaptureState $state } 'target identity'
+    $state = New-SnapshotState
+    $state.target_started_ticks = 'invalid'
+    Assert-Throws { Assert-CaptureState $state } 'target identity'
+
+    function Get-CaptureProcess([int] $ProcessId) { return $script:SnapshotProcess }
+    function Invoke-Wpr([string[]] $Arguments, [switch] $AllowFailure) {
+        $script:SnapshotCalls.Add(($Arguments -join ' '))
+        if ($Arguments[0] -eq '-snapshotconfig' -and $Arguments[-1] -eq 'disable' -and $script:FailDisable) {
+            throw 'Fixture disable failure'
+        }
+        if ($Arguments[0] -eq '-start') {
+            $saved = Get-Content -LiteralPath $script:SnapshotJournal -Raw | ConvertFrom-Json -AsHashtable
+            Assert-Equal $saved.tracing_armed $true
+            Assert-Equal $saved.start_attempted $true
+            if ($script:FailStart) { throw 'Fixture start failure' }
+        }
+        return @{ exit_code = 0; output = '' }
+    }
+    $script:SnapshotCalls = [Collections.Generic.List[string]]::new()
+    $script:FailDisable = $false
+    $script:FailStart = $false
+    $writesBeforeSnapshot = $script:Writes
+    $state = New-SnapshotState | ConvertTo-Json | ConvertFrom-Json -AsHashtable
+    Restore-Capture $state $journal
+    Assert-Equal ($script:SnapshotCalls -join '|') ('-snapshotconfig heap -pid 123 disable|-cancel -instancename TdMemory' + ('a' * 32))
+    Assert-Equal $script:Writes $writesBeforeSnapshot
+    Assert-Equal $state.tracing_armed $false
+    Assert-Equal $state.start_attempted $false
+    Restore-Capture $state $journal
+    Assert-Equal $script:SnapshotCalls.Count 2
+
+    $script:SnapshotCalls.Clear()
+    $state = New-SnapshotState
+    $script:SnapshotProcess.StartTime = $script:SnapshotProcess.StartTime.AddSeconds(1)
+    Restore-Capture $state $journal
+    Assert-Equal $script:SnapshotCalls.Count 1
+    Assert-Equal $script:SnapshotCalls[0].StartsWith('-cancel ') $true
+    $script:SnapshotProcess.StartTime = $script:TargetStarted.ToLocalTime()
+    $script:SnapshotCalls.Clear()
+    $state = New-SnapshotState
+    $savedProcess = $script:SnapshotProcess
+    $script:SnapshotProcess = $null
+    Restore-Capture $state $journal
+    Assert-Equal $script:SnapshotCalls.Count 1
+    $script:SnapshotProcess = $savedProcess
+
+    $script:SnapshotCalls.Clear()
+    $state = New-SnapshotState
+    $script:FailDisable = $true
+    Assert-Throws { Restore-Capture $state $journal } 'Fixture disable failure'
+    Assert-Equal $state.tracing_armed $true
+    Assert-Equal $state.start_attempted $false
+    $script:FailDisable = $false
+    Restore-Capture $state $journal
+    Assert-Equal $script:SnapshotCalls.Count 3
+    Assert-Equal $state.tracing_armed $false
+
+    $script:SnapshotCalls.Clear()
+    $script:SnapshotJournal = $journal
+    $script:CaptureDirectory = $fixture
+    $script:State = New-SnapshotState
+    $script:State.tracing_armed = $false
+    $script:State.start_attempted = $false
+    $script:FakeTracing = @{ exists = $false; flags = 0L }
+    $script:FailStart = $true
+    Assert-Throws { Start-RunningSnapshot $journal } 'Fixture start failure'
+    Restore-Capture $script:State $journal
+    Assert-Equal $script:SnapshotCalls.Count 4
+    Assert-Equal $script:SnapshotCalls[0] '-snapshotconfig heap -pid 123 enable'
+    Assert-Equal $script:SnapshotCalls[1].StartsWith('-start HeapSnapshot ') $true
+    Assert-Equal $script:SnapshotCalls[2] '-snapshotconfig heap -pid 123 disable'
+    $script:FailStart = $false
+
+    $script:SnapshotCalls.Clear()
+    $script:State = New-SnapshotState
+    $script:State.tracing_armed = $false
+    $script:State.start_attempted = $false
+    Start-RunningSnapshot $journal
+    Assert-Equal $script:SnapshotCalls.Count 2
+    Restore-Capture $script:State $journal
+    Assert-Equal $script:SnapshotCalls.Count 4
+    Assert-Equal $script:Writes $writesBeforeSnapshot
+
+    $script:SnapshotCalls.Clear()
+    $script:State = New-SnapshotState
+    $script:State.tracing_armed = $false
+    $script:State.start_attempted = $false
+    $script:FakeTracing = @{ exists = $true; flags = 1L }
+    Assert-Throws { Start-RunningSnapshot $journal } 'changed during preflight'
+    Assert-Equal $script:SnapshotCalls.Count 0
+    Assert-Equal $script:State.tracing_armed $false
+    $script:FakeTracing = @{ exists = $false; flags = 0L }
+
+    $script:Stages = [Collections.Generic.List[object]]::new()
+    $script:State = New-SnapshotState
+    Save-Stage 'tracking_started'
+    Assert-Equal $script:SnapshotCalls.Count 2
+    Assert-Equal $script:SnapshotCalls[0].StartsWith('-marker TdMemory:tracking_started ') $true
+    Assert-Equal $script:SnapshotCalls[1] '-singlesnapshot heap 123'
+    Assert-Equal $script:Stages[0].private_bytes 123456L
+    $script:SnapshotCalls.Clear()
+    $script:State = New-State
+    Save-Stage 'startup_stable'
+    Assert-Equal $script:SnapshotCalls.Count 1
+    Write-Host 'Capture checks passed: build pairing, process identity, snapshot stages, start failure, PID reuse, recovery retry and unchanged startup capture.'
 } finally {
     $resolved = (Resolve-Path -LiteralPath $fixture).ProviderPath
     if ($resolved -ne $fixture -or -not $resolved.StartsWith($temporaryRoot, [StringComparison]::OrdinalIgnoreCase)) {

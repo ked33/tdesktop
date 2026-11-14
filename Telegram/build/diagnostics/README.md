@@ -50,6 +50,30 @@
 
 采集会临时修改 64 位 IFEO `Telegram.exe` 的 `TracingFlags` 堆跟踪位，并恢复原值。已有堆跟踪或 IFEO 路径过滤时拒绝启动。Heap 跟踪按映像名启用，VirtualAllocation 记录包含系统范围事件，因此 ETL 可能包含其他进程的名称、路径和地址；文件只保存在指定本地目录，不自动上传。
 
+## 对运行中的客户端采集新增堆分配
+
+当内存已经在长期使用后升高，先保留当前进程，可用 `-RunningProcessId` 记录接下来可复现的增长。该模式使用 WPR HeapSnapshot，只跟踪指定 PID，不修改 IFEO，不重启客户端；原来的不带此参数的命令仍从客户端启动开始采集。
+
+**覆盖范围不同：只能得到启用跟踪之后发生的分配及其存活调用栈，无法追回此前已存在内存的调用栈。** 快照中的存活字节不能当成完整堆大小，也不能与 Private Bytes 相减后直接认定剩余都是碎片。堆栈跟踪本身也占用内存，Private Bytes 的变化需要结合各阶段分配分析。若短时间不能复现增长，不要长期开着采集器，原来数百 MiB 占用的归属仍未确定。
+
+在管理员 PowerShell 7 中运行，保持客户端普通权限且只有一个实例：
+
+```powershell
+$telegramProcessId = (Get-Process -Name Telegram -ErrorAction Stop).Id
+& '.\Telegram\build\diagnostics\capture_memory.ps1' `
+  -ExePath 'D:\D-Software\64Gram Desktop\Telegram.exe' `
+  -SymbolsDirectory 'D:\D-Download\Telegram-x64-symbols' `
+  -OutputDirectory 'D:\D-Download\Telegram-memory' `
+  -RunningProcessId $telegramProcessId `
+  -MaxSeconds 600
+```
+
+等出现 **【当前进程跟踪已就绪】** 后，再浏览能够增加占用的聊天、图片和视频。停止播放、关闭媒体查看器后，**先回终端按 Enter**；等出现 **【现在点击清理】** 再点击一次“清理”，按钮恢复后回终端按 Enter。脚本记录清理后和再等待 30 秒的快照，随后保存 ETL 并关闭本次 PID 的跟踪。
+
+此模式记录 `tracking_started`、`before_cleanup`、`after_cleanup`、`after_30s`，在 WPA 中查看 Heap Snapshots。清单和 EXE/PDB 校验仍必需；若 EXE 在当前进程启动后被替换，会拒绝采集。不要同时对这个 PID 使用其他堆快照工具：WPR 没有提供按 PID 查询既有快照配置的命令。
+
+异常恢复仍使用下面的 `-Recover`。恢复记录保存 PID、路径和启动时间 ticks；客户端已经退出或 PID 被其他进程复用时，不会对那个进程执行关闭跟踪。普通脚本测试覆盖这些恢复分支，但实际管理员 WPR HeapSnapshot 采集仍需单独验证。
+
 ## 中止与异常恢复
 
 按 Q 正常中止；常规异常和 Ctrl+C 通过 `finally` 尝试恢复原配置并取消本脚本的 WPR 实例。中止时不保留完整 ETL。不要直接关闭窗口或杀死采集器，否则无法保证 `finally` 执行。
@@ -61,7 +85,7 @@
   -Recover 'D:\D-Download\Telegram-memory\capture-实际目录\recovery.json'
 ```
 
-恢复只操作固定的 `Telegram.exe\TracingFlags` 和该记录中的独立 WPR 实例，不执行全局 `wpr -cancel`。采集和恢复通过互斥锁避免同时操作设置。若跟踪值被其他工具改动，会拒绝覆盖并报告冲突；不要删除整个 IFEO 键。原先不存在的键可能保留为空键，不含跟踪设置。WPR 的“无运行中的配置”错误 `0xc5583000` 按已取消处理，其他取消错误保留恢复记录并报告；可用 `wpr -status -instancename <实例名>` 核实，不要取消别人的会话。
+从启动采集的恢复只操作固定的 `Telegram.exe\TracingFlags`；运行中采集的恢复只关闭记录中仍具有相同身份的 PID 的堆快照配置。两者均只取消该记录中的独立 WPR 实例，不执行全局 `wpr -cancel`。采集和恢复通过互斥锁避免同时操作设置。若 IFEO 跟踪值被其他工具改动，会拒绝覆盖并报告冲突；不要删除整个 IFEO 键。原先不存在的键可能保留为空键，不含跟踪设置。WPR 的“无运行中的配置”错误 `0xc5583000` 按已取消处理，其他取消错误保留恢复记录并报告；可用 `wpr -status -instancename <实例名>` 核实，不要取消别人的会话。
 
 ## 结果分析与修复依据
 
@@ -83,4 +107,4 @@ Private Bytes 不能用工作集替代，VMMap Heap 分类本身也不能区分�
 
 检查覆盖错误 EXE/PDB 配对、恢复记录验证、跟踪设置冲突、失败重试和原值保留；使用临时文件与模拟采集/注册表，不启动 WPR 跟踪、不写系统设置。实际管理员采集需单独验证。
 
-参考：[WPR Heap Analysis](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/recording-for-heap-analysis)、[WPR 命令行](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/wpr-command-line-options)。
+参考：[WPR Heap Analysis](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/recording-for-heap-analysis)、[WPR Heap Snapshot](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/record-heap-snapshot)、[WPR 命令行](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/wpr-command-line-options)。

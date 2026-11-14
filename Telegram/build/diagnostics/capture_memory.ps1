@@ -12,6 +12,9 @@ param(
     [int] $MaxSeconds = 600,
     [Parameter(ParameterSetName = 'Capture')]
     [switch] $CheckOnly,
+    [Parameter(ParameterSetName = 'Capture')]
+    [ValidateRange(1, 2147483647)]
+    [int] $RunningProcessId,
     [Parameter(Mandatory, ParameterSetName = 'Recover')]
     [string] $Recover
 )
@@ -28,8 +31,22 @@ function Write-JsonFile($Path, $Value) {
 }
 
 function Assert-CaptureState($State) {
-    if ($State.schema_version -ne 1 -or $State.instance -cnotmatch '^TdMemory[0-9a-f]{32}$') {
+    if ($State.schema_version -notin @(1, 2) -or $State.instance -cnotmatch '^TdMemory[0-9a-f]{32}$') {
         throw 'Invalid recovery file schema or recording instance.'
+    }
+    if ($State.schema_version -eq 2) {
+        if ($State.target_id -isnot [int] -and $State.target_id -isnot [long]) {
+            throw 'Invalid snapshot target PID.'
+        }
+        if ($State.target_id -le 0 -or $State.target_id -gt [int]::MaxValue) {
+            throw 'Invalid snapshot target PID.'
+        }
+        if ($State.target_started_ticks -isnot [long] -or
+            $State.target_started_ticks -le 0 -or $State.target_started_ticks -gt [datetime]::MaxValue.Ticks -or
+            -not [IO.Path]::IsPathFullyQualified($State.target_path) -or
+            [IO.Path]::GetFileName($State.target_path) -cne 'Telegram.exe') {
+            throw 'Invalid snapshot target identity.'
+        }
     }
     foreach ($key in @('original_exists', 'tracing_armed', 'start_attempted')) {
         if ($State[$key] -isnot [bool]) { throw "Invalid recovery field: $key" }
@@ -126,9 +143,16 @@ function Restore-Capture($State, $StatePath) {
     $failures = [Collections.Generic.List[string]]::new()
     if ($State.tracing_armed) {
         try {
-            $action = Get-RestoreAction $State (Get-TracingSetting)
-            if ($action -eq 'Restore') {
-                Set-TracingSetting $State.original_exists $State.original_flags
+            if ($State.schema_version -eq 2) {
+                $process = Get-CaptureProcess $State.target_id
+                if (Test-SnapshotTarget $State $process) {
+                    $null = Invoke-Wpr @('-snapshotconfig', 'heap', '-pid', [string]$State.target_id, 'disable')
+                }
+            } else {
+                $action = Get-RestoreAction $State (Get-TracingSetting)
+                if ($action -eq 'Restore') {
+                    Set-TracingSetting $State.original_exists $State.original_flags
+                }
             }
             $State.tracing_armed = $false
             Write-JsonFile $StatePath $State
@@ -231,6 +255,40 @@ namespace TdMemory {
     }
 }
 
+function Get-CaptureProcess([int] $ProcessId) {
+    return Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+}
+
+function Test-SnapshotTarget($State, $Process) {
+    return $null -ne $Process -and
+        $Process.Id -eq $State.target_id -and
+        $Process.Path -eq $State.target_path -and
+        $Process.StartTime.ToUniversalTime().Ticks -eq $State.target_started_ticks
+}
+
+function Set-RunningTarget([int] $ProcessId) {
+    $processes = @(Get-ClientProcesses)
+    if ($processes.Count -ne 1 -or $processes[0].Id -ne $ProcessId -or
+        $processes[0].Path -ne $script:Executable) {
+        throw 'Expected exactly the specified running Telegram.exe PID and path.'
+    }
+    $script:Target = $processes[0]
+    $script:TargetStarted = $script:Target.StartTime.ToUniversalTime()
+    if ((Get-Item -LiteralPath $script:Executable).LastWriteTimeUtc -gt $script:TargetStarted) {
+        throw 'Telegram.exe changed after this process started. Its loaded code may not match the symbols.'
+    }
+    Assert-NormalPrivilege $script:Target.Id
+}
+
+function Wait-CaptureSettle([int] $Seconds) {
+    $settled = [DateTime]::UtcNow.AddSeconds($Seconds)
+    while ([DateTime]::UtcNow -lt $settled) {
+        Assert-RecordingBudget
+        if ((Read-CaptureKey) -eq [ConsoleKey]::Q) { throw 'Capture cancelled by the operator.' }
+        Start-Sleep -Milliseconds 250
+    }
+}
+
 function Assert-TargetProcess {
     $processes = @(Get-ClientProcesses)
     if ($processes.Count -ne 1 -or $processes[0].Id -ne $script:Target.Id) {
@@ -270,10 +328,29 @@ function Wait-Stage([string] $Message) {
     }
 }
 
+function Start-RunningSnapshot([string] $StatePath) {
+    $null = Assert-TargetProcess
+    $current = Get-TracingSetting
+    if ($current.exists -ne $script:State.original_exists -or $current.flags -ne $script:State.original_flags) {
+        throw 'TracingFlags changed during preflight. Rerun after the other tracing operation finishes.'
+    }
+    $script:State.tracing_armed = $true
+    Write-JsonFile $StatePath $script:State
+    $null = Invoke-Wpr @('-snapshotconfig', 'heap', '-pid', [string]$script:Target.Id, 'enable')
+    $script:State.tracking_enabled_utc = [DateTime]::UtcNow.ToString('o')
+    $script:State.start_attempted = $true
+    Write-JsonFile $StatePath $script:State
+    $null = Invoke-Wpr @('-start', 'HeapSnapshot', '-filemode', '-recordtempto', $script:CaptureDirectory, '-instancename', $script:State.instance)
+}
+
 function Save-Stage([string] $Name) {
     Assert-RecordingBudget
     $process = Assert-TargetProcess
     $null = Invoke-Wpr @('-marker', "TdMemory:$Name PID=$($process.Id)", '-instancename', $script:State.instance)
+    if ($script:State.schema_version -eq 2) {
+        $null = Invoke-Wpr @('-singlesnapshot', 'heap', [string]$process.Id)
+        $process = Assert-TargetProcess
+    }
     $script:Stages.Add([ordered]@{
         stage = $Name
         utc = [DateTime]::UtcNow.ToString('o')
@@ -318,20 +395,32 @@ if ($PSCmdlet.ParameterSetName -eq 'Recover') {
 $script:Executable = (Resolve-Path -LiteralPath $ExePath).ProviderPath
 if ([IO.Path]::GetFileName($script:Executable) -cne 'Telegram.exe') { throw 'This collector supports Telegram.exe only.' }
 $symbols = (Resolve-Path -LiteralPath $SymbolsDirectory).ProviderPath
+$runningSnapshot = $PSBoundParameters.ContainsKey('RunningProcessId')
+$script:Target = $null
+if ($runningSnapshot) { Set-RunningTarget $RunningProcessId }
 if (-not $CheckOnly) {
     if ([Console]::IsInputRedirected) { throw 'Run in an interactive administrator terminal.' }
-    Assert-ClientsStopped '文件校验前'
-    Write-Host '【预检中，请勿启动 Telegram】正在校验 EXE/PDB；较大的 PDB 可能需要数分钟，期间无需按 Enter。' -ForegroundColor Yellow
+    if ($runningSnapshot) {
+        Write-Host '【正在校验当前进程和 EXE/PDB】保持 Telegram 运行，暂时不要浏览或清理；此时尚未启用跟踪。' -ForegroundColor Yellow
+    } else {
+        Assert-ClientsStopped '文件校验前'
+        Write-Host '【预检中，请勿启动 Telegram】正在校验 EXE/PDB；较大的 PDB 可能需要数分钟，期间无需按 Enter。' -ForegroundColor Yellow
+    }
 }
 $manifest = Assert-BuildPair $script:Executable $symbols
 $original = Get-TracingSetting
 if (($original.flags -band 1L) -ne 0) { throw 'Heap tracing is already enabled for Telegram.exe. Finish that recording first.' }
+if ($runningSnapshot) { $null = Assert-TargetProcess }
 if ($CheckOnly) {
     Write-Host "Build pair verified: $($manifest.commit). No tracing or settings changed."
     return
 }
-Assert-ClientsStopped '文件校验后'
-Write-Host '【正在启用跟踪，请继续保持 Telegram 关闭】准备完成后会明确提示启动。' -ForegroundColor Yellow
+if ($runningSnapshot) {
+    Write-Host '【准备跟踪当前进程的新分配】仅覆盖接下来发生的堆分配，无法追回启用前已有占用的调用栈。不要同时运行其他堆快照工具。' -ForegroundColor Yellow
+} else {
+    Assert-ClientsStopped '文件校验后'
+    Write-Host '【正在启用跟踪，请继续保持 Telegram 关闭】准备完成后会明确提示启动。' -ForegroundColor Yellow
+}
 $outputRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
 $script:CaptureDirectory = Join-Path $outputRoot ('capture-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N'))
 $null = New-Item -ItemType Directory -Path $script:CaptureDirectory
@@ -345,50 +434,68 @@ $script:State = @{
     tracing_armed = $false
     start_attempted = $false
 }
-$script:Target = $null
+if ($runningSnapshot) {
+    $script:State.schema_version = 2
+    $script:State.target_id = $script:Target.Id
+    $script:State.target_path = $script:Executable
+    $script:State.target_started_utc = $script:TargetStarted.ToString('o')
+    $script:State.target_started_ticks = $script:TargetStarted.Ticks
+    $script:State.coverage = 'Heap allocations created after snapshot tracking was enabled; not the full existing heap.'
+}
 $script:Stages = [Collections.Generic.List[object]]::new()
 $script:Deadline = [DateTime]::UtcNow.AddSeconds($MaxSeconds)
 Write-JsonFile $statePath $script:State
 Write-JsonFile (Join-Path $script:CaptureDirectory 'build-info.json') $manifest
 Write-Host "Local output: $script:CaptureDirectory"
 Write-Host "If the console is forcibly closed, rerun with -Recover `"$statePath`"."
-Write-Host 'VirtualAllocation records system activity. Keep the trace local and filter by the recorded PID in WPA.'
+if ($runningSnapshot) {
+    Write-Host 'Heap snapshots stay local. Telegram remains running at normal privilege.'
+} else {
+    Write-Host 'VirtualAllocation records system activity. Keep the trace local and filter by the recorded PID in WPA.'
+}
 $captureLock = Enter-CaptureLock
 try {
     Assert-RecordingBudget
-    Assert-ClientsStopped '启用跟踪前'
-    $current = Get-TracingSetting
-    if ($current.exists -ne $original.exists -or $current.flags -ne $original.flags) {
-        throw 'TracingFlags changed during preflight. Rerun after the other tracing operation finishes.'
+    if ($runningSnapshot) {
+        Start-RunningSnapshot $statePath
+        Save-Stage 'tracking_started'
+        Write-Host '【当前进程跟踪已就绪】现在可以开始复现内存增长，不需要重启客户端。' -ForegroundColor Green
+    } else {
+        Assert-ClientsStopped '启用跟踪前'
+        $current = Get-TracingSetting
+        if ($current.exists -ne $original.exists -or $current.flags -ne $original.flags) {
+            throw 'TracingFlags changed during preflight. Rerun after the other tracing operation finishes.'
+        }
+        $script:State.tracing_armed = $true
+        Write-JsonFile $statePath $script:State
+        Set-TracingSetting $true ($original.flags -bor 1L)
+        $script:State.start_attempted = $true
+        Write-JsonFile $statePath $script:State
+        $null = Invoke-Wpr @('-start', 'Heap', '-start', 'VirtualAllocation', '-filemode', '-recordtempto', $script:CaptureDirectory, '-instancename', $script:State.instance)
+        $traceStarted = [DateTime]::UtcNow
+        Wait-Stage "【跟踪已就绪，现在可以启动 Telegram】请从普通桌面/资源管理器启动 $script:Executable。不要从管理员终端启动；等聊天列表稳定后，再回此终端按 Enter。"
+        $processes = @(Get-ClientProcesses)
+        if ($processes.Count -ne 1 -or $processes[0].Path -ne $script:Executable) {
+            throw 'Expected exactly one Telegram.exe at the specified path.'
+        }
+        $script:Target = $processes[0]
+        $script:TargetStarted = $script:Target.StartTime.ToUniversalTime()
+        if ($script:TargetStarted -lt $traceStarted) { throw 'Telegram started before recording was ready. Repeat the capture.' }
+        Assert-NormalPrivilege $script:Target.Id
+        Write-Host '已确认客户端身份，正在复核文件配对；请保持当前聊天列表，复核完成后再按下一步提示操作。' -ForegroundColor Cyan
+        $null = Assert-BuildPair $script:Executable $symbols
+        Save-Stage 'startup_stable'
     }
-    $script:State.tracing_armed = $true
-    Write-JsonFile $statePath $script:State
-    Set-TracingSetting $true ($original.flags -bor 1L)
-    $script:State.start_attempted = $true
-    Write-JsonFile $statePath $script:State
-    $null = Invoke-Wpr @('-start', 'Heap', '-start', 'VirtualAllocation', '-filemode', '-recordtempto', $script:CaptureDirectory, '-instancename', $script:State.instance)
-    $traceStarted = [DateTime]::UtcNow
-    Wait-Stage "【跟踪已就绪，现在可以启动 Telegram】请从普通桌面/资源管理器启动 $script:Executable。不要从管理员终端启动；等聊天列表稳定后，再回此终端按 Enter。"
-    $processes = @(Get-ClientProcesses)
-    if ($processes.Count -ne 1 -or $processes[0].Path -ne $script:Executable) {
-        throw 'Expected exactly one Telegram.exe at the specified path.'
-    }
-    $script:Target = $processes[0]
-    $script:TargetStarted = $script:Target.StartTime.ToUniversalTime()
-    if ($script:TargetStarted -lt $traceStarted) { throw 'Telegram started before recording was ready. Repeat the capture.' }
-    Assert-NormalPrivilege $script:Target.Id
-    Write-Host '已确认客户端身份，正在复核文件配对；请保持当前聊天列表，复核完成后再按下一步提示操作。' -ForegroundColor Cyan
-    $null = Assert-BuildPair $script:Executable $symbols
-    Save-Stage 'startup_stable'
-    Wait-Stage 'Browse the same chats and media that increase memory. Stop playback and close media viewers. Return here before clicking Clean.'
+    Wait-Stage '【先复现，再清理】浏览导致内存增长的聊天和媒体；完成后停止播放、关闭媒体查看器，先回此终端按 Enter。此时还不要点击清理。'
     Save-Stage 'before_cleanup'
-    Wait-Stage 'Click Clean once in enhanced settings. Wait until cleanup finishes, then return here without switching chats.'
-    $settled = [DateTime]::UtcNow.AddSeconds(3)
-    while ([DateTime]::UtcNow -lt $settled) {
-        Assert-RecordingBudget
-        Start-Sleep -Milliseconds 250
-    }
+    Wait-Stage '【现在点击清理】只点击一次增强设置中的“清理”，等待按钮恢复后回此终端按 Enter；不要切换聊天。'
+    Wait-CaptureSettle 3
     Save-Stage 'after_cleanup'
+    if ($runningSnapshot) {
+        Write-Host '正在等待 30 秒观察延迟释放，请保持当前界面，不要重复清理。按 Q 可取消。' -ForegroundColor Cyan
+        Wait-CaptureSettle 30
+        Save-Stage 'after_30s'
+    }
     $tracePath = Join-Path $script:CaptureDirectory 'memory.etl'
     $null = Invoke-Wpr @('-stop', $tracePath, 'Telegram private commit cleanup', '-skipPdbGen', '-instancename', $script:State.instance)
     $script:State.start_attempted = $false
