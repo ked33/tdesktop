@@ -701,51 +701,50 @@ namespace Settings {
 			EnhancedSettings::Write();
 		}, container->lifetime());
 
-		trackSearch(
-			AddButtonWithIcon(
-				container,
-				tr::lng_settings_search_main_and_archive(),
-				st::settingsButtonNoIcon
-			),
-			u"enhanced/search_main_and_archive"_q)->toggleOn(
-				rpl::single(GetEnhancedBool("search_main_and_archive"))
-		)->toggledChanges(
-		) | rpl::filter([=](bool toggled) {
-			return (toggled != GetEnhancedBool("search_main_and_archive"));
-		}) | rpl::on_next([=](bool toggled) {
-			SetEnhancedValue("search_main_and_archive", toggled);
-			EnhancedSettings::Write();
-		}, container->lifetime());
-
-		trackSearch(
-			AddButtonWithIcon(
-				container,
-				tr::lng_settings_search_include_porn(),
-				st::settingsButtonNoIcon
-			),
-			u"enhanced/search_include_porn"_q)->toggleOn(
-				rpl::single(EnhancedSettings::SearchIncludePorn())
-		)->toggledChanges(
-		) | rpl::on_next([](bool toggled) {
-			EnhancedSettings::SetSearchIncludePorn(toggled);
-		}, container->lifetime());
-
-		trackSearch(
-			AddButtonWithIcon(
-				container,
-				tr::lng_settings_search_dialog_filter(),
-				st::settingsButtonNoIcon
-			),
-			u"enhanced/search_dialog_filter"_q)->toggleOn(
-				rpl::single(EnhancedSettings::SearchDialogFilterEnabled())
-				| rpl::then(EnhancedSettings::SearchDialogFilterChanges()
-					| rpl::map([] {
-						return EnhancedSettings::SearchDialogFilterEnabled();
-					}))
-		)->toggledChanges(
-		) | rpl::on_next([](bool toggled) {
-			EnhancedSettings::SetSearchDialogFilterEnabled(toggled);
-		}, container->lifetime());
+		const auto addSearchToggle = [&](
+				const QString &id,
+				rpl::producer<QString> label,
+				bool EnhancedSettings::SearchOptions::*field) {
+			trackSearch(
+				AddButtonWithIcon(
+					container,
+					std::move(label),
+					st::settingsButtonNoIcon),
+				id)->toggleOn(
+					rpl::single(EnhancedSettings::GetSearchOptions())
+						| rpl::then(EnhancedSettings::SearchOptionsChanges())
+						| rpl::map([=](EnhancedSettings::SearchOptions options) {
+							return options.*field;
+						})
+			)->toggledChanges() | rpl::on_next([=](bool toggled) {
+				auto options = EnhancedSettings::GetSearchOptions();
+				options.*field = toggled;
+				EnhancedSettings::SetSearchOptions(options);
+			}, container->lifetime());
+		};
+		using SearchOptions = EnhancedSettings::SearchOptions;
+		addSearchToggle(
+			u"enhanced/search_main_and_archive"_q,
+			tr::lng_settings_search_main_and_archive(),
+			&SearchOptions::mainAndArchive);
+		addSearchToggle(
+			u"enhanced/search_include_porn"_q,
+			tr::lng_settings_search_include_porn(),
+			&SearchOptions::includePorn);
+		addSearchToggle(
+			u"enhanced/search_chinese_keywords"_q,
+			tr::lng_search_chinese_keywords(),
+			&SearchOptions::chineseKeywords);
+		AddDividerText(container, tr::lng_search_chinese_keywords_about());
+		addSearchToggle(
+			u"enhanced/search_dialog_filter"_q,
+			tr::lng_settings_search_dialog_filter(),
+			&SearchOptions::dialogFilter);
+		addSearchToggle(
+			u"enhanced/search_exact_match"_q,
+			tr::lng_settings_search_exact_match(),
+			&SearchOptions::exactMatch);
+		AddDividerText(container, tr::lng_settings_search_exact_match_about());
 
 		auto searchDialogFilterIdsValue = rpl::single(
 			SearchDialogFilterBox::IdsLabel(
@@ -1952,17 +1951,28 @@ namespace Settings {
 		addBool(
 			"disable_global_search",
 			tr::lng_settings_disable_global_search(tr::now));
-		addBool(
-			"search_main_and_archive",
-			tr::lng_settings_search_main_and_archive(tr::now));
+		addToggle(
+			u"enhanced/search_main_and_archive"_q,
+			tr::lng_settings_search_main_and_archive(tr::now),
+			EnhancedSettings::GetSearchOptions().mainAndArchive);
 		addToggle(
 			u"enhanced/search_include_porn"_q,
 			tr::lng_settings_search_include_porn(tr::now),
 			EnhancedSettings::SearchIncludePorn());
 		addToggle(
+			u"enhanced/search_chinese_keywords"_q,
+			tr::lng_search_chinese_keywords(tr::now),
+			EnhancedSettings::SearchChineseKeywordsEnabled(),
+			{ tr::lng_search_chinese_keywords_about(tr::now) });
+		addToggle(
 			u"enhanced/search_dialog_filter"_q,
 			tr::lng_settings_search_dialog_filter(tr::now),
 			EnhancedSettings::SearchDialogFilterEnabled());
+		addToggle(
+			u"enhanced/search_exact_match"_q,
+			tr::lng_settings_search_exact_match(tr::now),
+			EnhancedSettings::SearchExactMatchEnabled(),
+			{ tr::lng_settings_search_exact_match_about(tr::now) });
 		addButton(
 			u"enhanced/search_dialog_filter_ids"_q,
 			tr::lng_settings_search_dialog_filter(tr::now),

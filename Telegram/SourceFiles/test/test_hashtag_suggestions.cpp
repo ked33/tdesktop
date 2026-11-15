@@ -1,4 +1,6 @@
 #include "chat_helpers/hashtag_suggestions.h"
+#include "dialogs/dialogs_search_match.h"
+#include "api/api_porn_search_policy.h"
 
 #include "ui/text/text_entity.h"
 
@@ -35,6 +37,77 @@ void Check(bool condition, const char *name) {
 QString CountedNormalize(const QString &text) {
 	++Normalizations;
 	return TextUtilities::RemoveAccents(text);
+}
+
+void CheckMessageSearch() {
+	using namespace Dialogs;
+	Check(SearchTextMatches(u"#示例 #demo #测试 这是一段很长的测试文本", u"#示例"),
+		"whole hashtag retained");
+	Check(SearchTextMatches(u"家电节按实际搜索测试覅偶尔放数据对象", u"搜索测试"),
+		"Chinese infix needs no word boundary");
+	Check(!SearchTextMatches(u"如何无网络用局域网打dota2\nVia OvO", u"小远ovo"),
+		"server partial match excluded");
+	Check(SearchTextMatches(u"前文小远OvO后文", u"小远ovo"),
+		"full query ignores case");
+	Check(!SearchTextMatches(u"搜索 测试", u"搜索测试"), "spaces are literal");
+	Check(!SearchTextMatches(u"#示例", u"示_例"), "punctuation is literal");
+	Check(SearchTextMatches(u"任意消息", u""), "empty query keeps sender-only results");
+	auto text = TextWithEntities{ u"🚢#示例 #示例"_q };
+	Check(HighlightSearchText(text, u"#示例") == 2, "UTF-16 offset after emoji");
+	Check(text.entities.size() == 2 && text.entities[0].length() == 3
+		&& text.entities[1].offset() == 6, "all repeated hashtags highlighted");
+	Check(text.entities[0].data() == QString(QChar(1)), "dedicated highlight color");
+	auto overlap = TextWithEntities{ u"ababa"_q };
+	Check(HighlightSearchText(overlap, u"aba") == 0, "overlap first offset");
+	Check(overlap.entities.size() == 1 && overlap.entities[0].length() == 5,
+		"overlapping matches are merged");
+	auto marked = TextWithEntities{ u"abcdef"_q, {
+		EntityInText(EntityType::Colorized, 0, 6),
+		EntityInText(EntityType::Spoiler, 0, 6),
+	} };
+	Check(HighlightSearchText(marked, u"cd") == 2, "match inside existing color");
+	Check(marked.entities.size() == 4, "existing color split around match");
+	Check(std::any_of(begin(marked.entities), end(marked.entities), [](const auto &entity) {
+		return entity.type() == EntityType::Spoiler && entity.length() == 6;
+	}), "spoiler preserved");
+	auto sender = TextWithEntities{ u"搜索测试: 正文搜索测试"_q };
+	Check(HighlightSearchText(sender, u"搜索测试", 6) == 8,
+		"sender label excluded from matching");
+	auto longText = TextWithEntities{ QString(100000, QChar('x')) + u"搜索测试"_q };
+	Check(HighlightSearchText(longText, u"搜索测试") == 100000,
+		"match offsets do not truncate to uint16");
+}
+
+void CheckFilteredPaging() {
+	struct Source {
+		int oldestDate = 0;
+		int task = 0;
+		bool exhausted = false;
+		bool failed = false;
+		bool loadNext = false;
+	};
+	auto sources = std::map<int, Source>{
+		{ 1, { .oldestDate = 100 } },
+		{ 2, { .oldestDate = 90 } },
+		{ 3, { .oldestDate = 100 } },
+		{ 4, { .oldestDate = 110 } },
+	};
+	const auto next = [&] {
+		return Api::PornSearchPolicy::QueueNextSearchPage(sources,
+			[](int peer, const Source &) { return peer == 4; });
+	};
+	Check(next(), "all-hidden page can request more");
+	Check(sources[1].loadNext && sources[3].loadNext
+		&& !sources[2].loadNext && !sources[4].loadNext,
+		"advance newest remaining frontier and skip excluded chat");
+	sources[1].loadNext = sources[3].loadNext = false;
+	Check(next() && sources[1].loadNext, "same timestamp advances by raw message id");
+	sources[1].exhausted = sources[3].failed = true;
+	Check(next() && sources[2].loadNext, "finished and failed sources do not block others");
+	sources[2].exhausted = true;
+	Check(!next(), "all exhausted stops automatic continuation");
+	Check(!Api::PornSearchPolicy::PageAdvanced(50, 50), "repeated page stops");
+	Check(Api::PornSearchPolicy::PageAdvanced(50, 1), "raw id advances after filtered page");
 }
 
 void CheckMatching() {
@@ -293,6 +366,8 @@ rpl::producer<> on_main_update_requests() {
 
 int main(int argc, char *argv[]) {
 	const auto app = QGuiApplication(argc, argv);
+	CheckMessageSearch();
+	CheckFilteredPaging();
 	CheckMatching();
 	CheckUnicode();
 	CheckExactAndCompletion();

@@ -55,6 +55,21 @@ namespace EnhancedSettings {
 	[[nodiscard]] bool DownloadLimitToastsEnabled();
 	[[nodiscard]] rpl::producer<bool> DownloadLimitToastsChanges();
 	void SetDownloadLimitToastsEnabled(bool enabled);
+
+	struct SearchOptions {
+		bool mainAndArchive = true;
+		bool includePorn = true;
+		bool chineseKeywords = true;
+		bool dialogFilter = false;
+		bool exactMatch = true;
+
+		friend bool operator==(const SearchOptions &, const SearchOptions &) = default;
+	};
+
+	[[nodiscard]] SearchOptions GetSearchOptions();
+	[[nodiscard]] rpl::producer<SearchOptions> SearchOptionsChanges();
+	void SetSearchOptions(SearchOptions options);
+	[[nodiscard]] bool SearchExactMatchEnabled();
 	[[nodiscard]] bool SearchIncludePorn();
 	[[nodiscard]] rpl::producer<bool> SearchIncludePornChanges();
 	void SetSearchIncludePorn(bool enabled);

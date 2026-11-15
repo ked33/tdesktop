@@ -1416,6 +1416,7 @@ void RowPainter::Paint(
 	}();
 	previewOptions.ignoreGroup = true;
 	previewOptions.searchLowerText = context.searchLowerText;
+	previewOptions.searchQuery = context.searchQuery;
 
 	const auto badgesState = context.displayUnreadInfo
 		? entry->chatListBadgesState()
@@ -1443,7 +1444,7 @@ void RowPainter::Paint(
 		if (video && video != item.get()) {
 			previewOptions.imagesFrom = video;
 		}
-		if (!view.prepared(item, nullptr, nullptr)) {
+		if (!view.prepared(item, nullptr, nullptr, context.searchQuery)) {
 			view.prepare(
 				item,
 				nullptr,

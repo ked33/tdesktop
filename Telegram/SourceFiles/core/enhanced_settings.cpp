@@ -49,6 +49,11 @@ namespace EnhancedSettings {
 			return events;
 		}
 
+		rpl::event_stream<SearchOptions> &SearchOptionsEvents() {
+			static auto events = rpl::event_stream<SearchOptions>();
+			return events;
+		}
+
 		rpl::event_stream<bool> &SearchIncludePornEvents() {
 			static auto events = rpl::event_stream<bool>();
 			return events;
@@ -106,16 +111,15 @@ namespace EnhancedSettings {
 
 		void EnsureSearchDialogFilterCache() {
 			auto &cache = DialogFilterCache();
+			if (cache.valid) {
+				return;
+			}
 			const auto enabled = gEnhancedOptions.value(
 				u"search_dialog_filter"_q,
 				false).toBool();
 			const auto text = gEnhancedOptions.value(
 				u"search_dialog_filter_ids"_q).toString();
-			if (cache.valid
-				&& cache.enabled == enabled
-				&& cache.text == text) {
-				return;
-			}
+
 			cache.enabled = enabled;
 			cache.text = text;
 			cache.ids = (enabled && !text.trimmed().isEmpty())
@@ -227,6 +231,7 @@ namespace EnhancedSettings {
 			ensureBool(u"search_include_porn"_q, true);
 			ensureBool(u"search_dialog_filter"_q, false);
 			ensureBool(u"search_chinese_keywords"_q, true);
+			ensureBool(u"search_exact_match"_q, true);
 			ensureBool(u"message_folding_enabled"_q, true);
 			ensureString(u"message_folding_keywords"_q, QString());
 			ensureString(u"message_folding_user_ids"_q, QString());
@@ -421,6 +426,50 @@ namespace EnhancedSettings {
 		DownloadLimitToastsEvents().fire_copy(enabled);
 	}
 
+	SearchOptions GetSearchOptions() {
+		return {
+			.mainAndArchive = GetEnhancedBool("search_main_and_archive"),
+			.includePorn = SearchIncludePorn(),
+			.chineseKeywords = SearchChineseKeywordsEnabled(),
+			.dialogFilter = SearchDialogFilterEnabled(),
+			.exactMatch = SearchExactMatchEnabled(),
+		};
+	}
+
+	rpl::producer<SearchOptions> SearchOptionsChanges() {
+		return SearchOptionsEvents().events();
+	}
+
+	void SetSearchOptions(SearchOptions options) {
+		const auto previous = GetSearchOptions();
+		if (previous == options) {
+			return;
+		}
+		SetEnhancedValue(u"search_main_and_archive"_q, options.mainAndArchive);
+		SetEnhancedValue(u"search_include_porn"_q, options.includePorn);
+		SetEnhancedValue(u"search_chinese_keywords"_q, options.chineseKeywords);
+		SetEnhancedValue(u"search_dialog_filter"_q, options.dialogFilter);
+		SetEnhancedValue(u"search_exact_match"_q, options.exactMatch);
+		InvalidateSearchDialogFilterCache();
+		if (!WriteNow()) {
+			Write();
+		}
+		if (previous.includePorn != options.includePorn) {
+			SearchIncludePornEvents().fire_copy(options.includePorn);
+		}
+		if (previous.chineseKeywords != options.chineseKeywords) {
+			SearchChineseKeywordsEvents().fire_copy(options.chineseKeywords);
+		}
+		if (previous.dialogFilter != options.dialogFilter) {
+			SearchDialogFilterEvents().fire({});
+		}
+		SearchOptionsEvents().fire_copy(options);
+	}
+
+	bool SearchExactMatchEnabled() {
+		return gEnhancedOptions.value(u"search_exact_match"_q, true).toBool();
+	}
+
 	bool SearchIncludePorn() {
 		return gEnhancedOptions.value(u"search_include_porn"_q, true).toBool();
 	}
@@ -436,12 +485,9 @@ namespace EnhancedSettings {
 	}
 
 	void SetSearchIncludePorn(bool enabled) {
-		if (SearchIncludePorn() == enabled) {
-			return;
-		}
-		SetEnhancedValue(u"search_include_porn"_q, enabled);
-		Write();
-		SearchIncludePornEvents().fire_copy(enabled);
+		auto options = GetSearchOptions();
+		options.includePorn = enabled;
+		SetSearchOptions(options);
 	}
 
 	bool SearchChineseKeywordsEnabled() {
@@ -455,14 +501,9 @@ namespace EnhancedSettings {
 	}
 
 	void SetSearchChineseKeywordsEnabled(bool enabled) {
-		if (SearchChineseKeywordsEnabled() == enabled) {
-			return;
-		}
-		SetEnhancedValue(u"search_chinese_keywords"_q, enabled);
-		if (!WriteNow()) {
-			Write();
-		}
-		SearchChineseKeywordsEvents().fire_copy(enabled);
+		auto options = GetSearchOptions();
+		options.chineseKeywords = enabled;
+		SetSearchOptions(options);
 	}
 
 	bool SearchDialogFilterEnabled() {
@@ -489,13 +530,9 @@ namespace EnhancedSettings {
 	}
 
 	void SetSearchDialogFilterEnabled(bool enabled) {
-		if (SearchDialogFilterEnabled() == enabled) {
-			return;
-		}
-		SetEnhancedValue(u"search_dialog_filter"_q, enabled);
-		Write();
-		InvalidateSearchDialogFilterCache();
-		SearchDialogFilterEvents().fire({});
+		auto options = GetSearchOptions();
+		options.dialogFilter = enabled;
+		SetSearchOptions(options);
 	}
 
 	void SetSearchDialogFilterIds(const QString &value) {
@@ -507,6 +544,7 @@ namespace EnhancedSettings {
 		Write();
 		InvalidateSearchDialogFilterCache();
 		SearchDialogFilterEvents().fire({});
+		SearchOptionsEvents().fire_copy(GetSearchOptions());
 	}
 
 	Storage::MediaPreviewLimits MediaPreviewDownloadLimits() {
@@ -757,6 +795,7 @@ namespace EnhancedSettings {
 		}
 
 		loadSettings(settings);
+		InvalidateSearchDialogFilterCache();
 		if (settings.contains(u"recent_chats_limit"_q)
 			&& !ValidRecentChatsLimit(settings.value(u"recent_chats_limit"_q))) {
 			SetEnhancedValue(u"recent_chats_limit"_q, kRecentChatsLimitDefault);
@@ -919,6 +958,7 @@ namespace EnhancedSettings {
 		settings.insert(u"search_include_porn"_q, true);
 		settings.insert(u"search_dialog_filter"_q, false);
 		settings.insert(u"search_chinese_keywords"_q, true);
+		settings.insert(u"search_exact_match"_q, true);
 		settings.insert(u"message_folding_enabled"_q, true);
 		settings.insert(u"message_folding_keywords"_q, QString());
 		settings.insert(u"message_folding_user_ids"_q, QString());
@@ -1010,6 +1050,7 @@ namespace EnhancedSettings {
 		file.write(document.toJson(QJsonDocument::Indented));
 
 		loadSettings(settings);
+		InvalidateSearchDialogFilterCache();
 	}
 
 	namespace {
@@ -1061,6 +1102,7 @@ namespace EnhancedSettings {
 		settings.insert(qsl("search_main_and_archive"), GetEnhancedBool("search_main_and_archive"));
 		settings.insert(u"search_include_porn"_q, SearchIncludePorn());
 		settings.insert(u"search_dialog_filter"_q, SearchDialogFilterEnabled());
+		settings.insert(u"search_exact_match"_q, SearchExactMatchEnabled());
 		settings.insert(
 			u"search_chinese_keywords"_q,
 			SearchChineseKeywordsEnabled());
@@ -1382,7 +1424,7 @@ namespace EnhancedSettings {
 			return false;
 		}
 		const auto backup = gEnhancedOptions;
-		const auto chineseSearchBefore = SearchChineseKeywordsEnabled();
+		const auto searchBefore = GetSearchOptions();
 		const auto recentChatsLimitBefore = RecentChatsLimit();
 		const auto requests = cNetRequestsCount();
 		const auto uploadSessions = cNetUploadSessionsCount();
@@ -1406,10 +1448,15 @@ namespace EnhancedSettings {
 		RecentChatsButtonEvents().fire_copy(
 			GetEnhancedBool("show_recent_chats_button"));
 		MediaPreviewDownloadLimitsEvents().fire({});
-		if (chineseSearchBefore != SearchChineseKeywordsEnabled()) {
+		if (searchBefore.includePorn != SearchIncludePorn()) {
+			SearchIncludePornEvents().fire_copy(SearchIncludePorn());
+		}
+		SearchDialogFilterEvents().fire({});
+		if (searchBefore.chineseKeywords != SearchChineseKeywordsEnabled()) {
 			SearchChineseKeywordsEvents().fire_copy(
 				SearchChineseKeywordsEnabled());
 		}
+		SearchOptionsEvents().fire_copy(GetSearchOptions());
 		return true;
 	}
 

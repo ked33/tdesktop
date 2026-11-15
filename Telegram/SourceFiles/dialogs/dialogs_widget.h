@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_peer_search.h"
 #include "api/api_porn_search.h"
 #include "base/timer.h"
+#include "core/enhanced_settings.h"
 #include "dialogs/dialogs_key.h"
 #include "window/section_widget.h"
 #include "ui/controls/swipe_handler_data.h"
@@ -181,6 +182,7 @@ private:
 		int32 nextRate = 0;
 		mtpRequestId requestId = 0;
 		bool full = false;
+		bool failed = false;
 	};
 
 	void chosenRow(const ChosenRow &row);
@@ -207,6 +209,10 @@ private:
 	bool searchPornMessages(bool inCache);
 	void searchTopics();
 	void searchMore();
+	void applySearchOptions(EnhancedSettings::SearchOptions options);
+	void continueFilteredSearch();
+	void scheduleFilteredSearch();
+	[[nodiscard]] const QString &preparedSearchQuery();
 
 	void slideFinished();
 	void searchReceived(
@@ -364,8 +370,8 @@ private:
 	object_ptr<Ui::InputField> _search;
 	object_ptr<ChatHelpers::HashtagAutocomplete> _hashtagAutocomplete = { nullptr };
 	object_ptr<ChatHelpers::HashtagAutocomplete> _hashtagSearchHistory = { nullptr };
-	object_ptr<Ui::IconButton> _searchDialogFilter;
-	object_ptr<Ui::IconButton> _searchChineseKeywords;
+	object_ptr<Ui::IconButton> _searchFilters;
+	EnhancedSettings::SearchOptions _searchOptions;
 	object_ptr<Ui::FadeWrapScaled<Ui::IconButton>> _chooseFromUser;
 	object_ptr<Ui::FadeWrapScaled<Ui::IconButton>> _jumpToDate;
 	object_ptr<Ui::CrossButton> _cancelSearch;
@@ -436,6 +442,11 @@ private:
 	bool _searchHasFocus = false;
 	bool _searchEngaged = false;
 	bool _processingSearch = false;
+	bool _continuingSearch = false;
+	bool _filteredSearchScheduled = false;
+	QString _preparedSearchQuery;
+	QString _preparedSearchQueryFor;
+	bool _preparedSearchChinese = false;
 
 	rpl::event_stream<rpl::producer<Stories::Content>> _storiesContents;
 	base::flat_map<PeerId, Ui::PeerUserpicView> _storiesUserpicsViewsHidden;
@@ -478,7 +489,6 @@ private:
 	Api::PornSearch::QueryId _pornSearchQuery = 0;
 	std::optional<Api::PornSearchRequest> _pornSearchRequest;
 	bool _pornSearchMore = false;
-	bool _nativeSearchFailed = false;
 	SearchProcessState _migratedProcess;
 	SearchProcessState _postsProcess;
 	int _historiesRequest = 0; // Not real mtpRequestId.

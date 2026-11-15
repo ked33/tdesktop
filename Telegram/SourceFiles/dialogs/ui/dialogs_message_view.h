@@ -59,7 +59,8 @@ public:
 	[[nodiscard]] bool prepared(
 		not_null<const HistoryItem*> item,
 		Data::Forum *forum,
-		Data::SavedMessages *monoforum) const;
+		Data::SavedMessages *monoforum,
+		QStringView searchQuery = QStringView()) const;
 	void prepare(
 		not_null<const HistoryItem*> item,
 		Data::Forum *forum,
@@ -100,6 +101,7 @@ private:
 	mutable Text::String _senderCache;
 	mutable std::unique_ptr<TopicsView> _topics;
 	mutable Text::String _textCache;
+	QString _searchQuery;
 	mutable std::vector<ItemPreviewImage> _imagesCache;
 	mutable std::unique_ptr<SpoilerAnimation> _spoiler;
 	mutable std::unique_ptr<LoadingContext> _loadingContext;

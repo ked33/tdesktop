@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/ui/dialogs_message_view.h"
 
+#include "dialogs/dialogs_search_match.h"
 #include "data/data_document_media.h"
 #include "data/data_photo_media.h"
 #include "history/history.h"
@@ -28,7 +29,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/ui_integration.h"
 #include "lang/lang_keys.h"
 #include "lang/lang_text_entity.h"
+#include "styles/style_chat.h"
 #include "styles/style_dialogs.h"
+
+#include <array>
 
 namespace {
 
@@ -191,8 +195,10 @@ bool MessageView::dependsOn(not_null<const HistoryItem*> item) const {
 bool MessageView::prepared(
 		not_null<const HistoryItem*> item,
 		Data::Forum *forum,
-		Data::SavedMessages *monoforum) const {
+		Data::SavedMessages *monoforum,
+		QStringView searchQuery) const {
 	return (_textCachedFor == item.get())
+		&& (_searchQuery == searchQuery)
 		&& (_unreadMedia == item->isUnreadMedia())
 		&& ((!forum && !monoforum)
 			|| (_topics
@@ -225,7 +231,7 @@ void MessageView::prepare(
 			_topics->prepare(item->sublistPeerId(), customEmojiRepaint);
 		}
 	}
-	if (_textCachedFor == item.get()) {
+	if (_textCachedFor == item.get() && _searchQuery == options.searchQuery) {
 		_unreadMedia = item->isUnreadMedia();
 		return;
 	}
@@ -257,6 +263,7 @@ void MessageView::prepare(
 	const auto senderTill = (preview.arrowInTextPosition > 0)
 		? preview.arrowInTextPosition
 		: preview.imagesInTextPosition;
+	auto matchFrom = std::max(preview.imagesInTextPosition, 0);
 	if ((hasImages || _leftIcon) && senderTill > 0) {
 		auto sender = Text::Mid(preview.text, 0, senderTill);
 		TextUtilities::Trim(sender);
@@ -265,13 +272,35 @@ void MessageView::prepare(
 			std::move(sender),
 			DialogTextOptions());
 		preview.text = Text::Mid(preview.text, senderTill);
+		matchFrom = std::max(matchFrom - senderTill, 0);
 	} else {
 		_senderCache = { st::dialogsTextWidthMin };
 	}
+	auto leading = 0;
+	while (leading < preview.text.text.size()
+		&& preview.text.text[leading].isSpace()) {
+		++leading;
+	}
+	matchFrom = std::max(matchFrom - leading, 0);
 	TextUtilities::Trim(preview.text);
 	auto textToCache = DialogsPreviewText(std::move(preview.text));
 
-	if (!options.searchLowerText.isEmpty()) {
+	_searchQuery = options.searchQuery.toString();
+	if (!options.searchQuery.isEmpty()) {
+		const auto first = HighlightSearchText(
+			textToCache,
+			options.searchQuery,
+			std::min(matchFrom, int(textToCache.text.size())));
+		if (first >= 0) {
+			auto start = std::max(first - 15, 0);
+			if (start > 0 && textToCache.text[start].isLowSurrogate()) {
+				--start;
+			}
+			textToCache = TextWithEntities{
+				start > 0 ? kQEllipsis : QString()
+			}.append(Text::Mid(std::move(textToCache), start));
+		}
+	} else if (!options.searchLowerText.isEmpty()) {
 		static constexpr auto kLeftShift = 15;
 		auto minFrom = std::numeric_limits<uint16>::max();
 
@@ -368,7 +397,8 @@ void MessageView::prepare(
 		}
 	}
 	_hasPlainLinkAtBegin = !textToCache.entities.empty()
-		&& (textToCache.entities.front().type() == EntityType::Colorized);
+		&& (textToCache.entities.front().type() == EntityType::Colorized)
+		&& textToCache.entities.front().data().isEmpty();
 	_textCache.setMarkedText(
 		st::dialogsTextStyle,
 		std::move(textToCache),
@@ -605,10 +635,15 @@ void MessageView::paint(
 	static const auto ellipsisWidth = st::dialogsTextStyle.font->width(
 		kQEllipsis);
 	if (rect.width() > ellipsisWidth) {
+		auto searchColors = std::array{ Text::SpecialColor{
+			.pen = &st::historyLinkInFg->p,
+			.penSelected = &st::historyLinkInFg->p,
+		} };
 		_textCache.draw(p, {
 			.position = rect.topLeft(),
 			.availableWidth = rect.width(),
 			.palette = palette,
+			.colors = searchColors,
 			.spoiler = Text::DefaultSpoilerCache(),
 			.now = context.now,
 			.pausedEmoji = context.paused || On(PowerSaving::kEmojiChat),

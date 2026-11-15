@@ -155,6 +155,9 @@ public:
 		SearchRequestType type,
 		int fullCount);
 	void peerSearchReceived(Api::PeerSearchResult result);
+	void applySearchFilters();
+	[[nodiscard]] bool needsMoreSearchResults() const;
+	[[nodiscard]] bool needsMoreSearchPreview() const;
 	void setPornSearchEnabled(bool enabled);
 	void pornSearchReceived(Api::PornSearchResult result);
 	void setNativeSearchState(bool loading, bool full, bool failed, bool waiting);
@@ -640,7 +643,8 @@ private:
 	[[nodiscard]] int defaultChildIndexOfSelected() const;
 
 	void announceSelectedFocus();
-	void applySearchDialogFilter();
+	[[nodiscard]] bool skipSearchItem(not_null<HistoryItem*> item);
+	void rebuildSearchPreview();
 	void refreshFilterResults();
 	void clearSearchResults(bool alsoPeerSearchResults = true);
 	void clearPeerSearchResults();
@@ -806,6 +810,10 @@ private:
 	uint64 _searchPreloadGeneration = 0;
 	int _searchAlbumPreloadActive = 0;
 	MessageIdsList _nativeSearchResults;
+	MessageIdsList _previewSearchCandidates;
+	std::map<FullMsgId, bool> _searchMatches;
+	QString _searchMatchQuery;
+	bool _searchExactMatch = true;
 	Api::PornSearchResult _pornSearchResult;
 	object_ptr<Ui::FlatLabel> _pornSearchStatus = { nullptr };
 	object_ptr<Ui::RpWidget> _pornSearchHeader = { nullptr };

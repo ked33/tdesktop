@@ -46,7 +46,9 @@ void PeerSearch::request(
 		finish(cache.result);
 		return;
 	} else if (type == RequestType::CacheOnly) {
-		_callback = nullptr;
+		if (!cache.requested) {
+			_callback = nullptr;
+		}
 		return;
 	} else if (cache.requested) {
 		return;

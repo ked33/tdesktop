@@ -187,11 +187,36 @@ void PornSearch::cacheQuery(Query &query) {
 	}
 }
 
-void PornSearch::loadMore(QueryId id, TimeId before) {
+void PornSearch::loadMore(QueryId id, TimeId before, bool fill) {
 	const auto i = _queries.find(id);
-	if (i != end(_queries) && before > 0 && before < i->second.before) {
-		i->second.before = before;
-		i->second.dirty = true;
+	if (i == end(_queries)) {
+		return;
+	}
+	auto &query = i->second;
+	if (before > 0 && before < query.before) {
+		query.before = before;
+		query.dirty = true;
+		schedule();
+	}
+	if (!fill || !query.sources.ready()) {
+		return;
+	}
+	const auto skip = [](PeerId peer, const Source &source) {
+		return EnhancedSettings::SearchDialogFilterContains(peer)
+			|| EnhancedSettings::SearchDialogFilterContains(source.channel);
+	};
+	const auto loading = ranges::any_of(query.sources.entries(), [&](const auto &entry) {
+		const auto &[peer, source] = entry;
+		return !skip(peer, source) && (source.task
+			|| (!source.exhausted && !source.failed
+				&& (!source.started || source.retry || source.loadNext
+					|| source.oldestDate >= query.before)));
+	});
+	if (loading || _requestGate.waiting(crl::now())) {
+		return;
+	}
+	if (PornSearchPolicy::QueueNextSearchPage(query.sources.entries(), skip)) {
+		query.dirty = true;
 		schedule();
 	}
 }
@@ -621,7 +646,7 @@ bool PornSearch::sendReadySearch(bool firstPage) {
 			}
 			if (!source.task && !source.exhausted && !source.failed
 				&& ((!source.started && firstPage)
-					|| (!firstPage && (source.retry
+					|| (!firstPage && (source.retry || source.loadNext
 						|| source.oldestDate >= query->second.before)))) {
 				_lastQuery = query->first;
 				sendSearch(query->first, peer);
@@ -864,6 +889,7 @@ void PornSearch::sendSearch(QueryId queryId, PeerId peerId) {
 	const auto taskId = ++_nextTask;
 	source.task = taskId;
 	source.retry = false;
+	source.loadNext = false;
 	query.dirty = true;
 	_tasks.emplace(taskId, Task{
 		.type = TaskType::Search,
@@ -1057,7 +1083,7 @@ PornSearchResult PornSearch::resultFor(const Query &query) const {
 		result.failed += int(source.failed);
 		result.loading |= source.task != 0
 			|| (!source.exhausted && !source.failed
-				&& (!source.started || source.retry
+				&& (!source.started || source.retry || source.loadNext
 					|| source.oldestDate >= query.before));
 		result.more |= !source.exhausted;
 		result.messages.insert(

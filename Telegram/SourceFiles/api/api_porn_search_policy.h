@@ -22,6 +22,27 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Api::PornSearchPolicy {
 
+template <typename Sources, typename Skip>
+[[nodiscard]] bool QueueNextSearchPage(Sources &sources, Skip skip) {
+	auto frontier = std::int64_t(0);
+	for (const auto &[peer, source] : sources) {
+		if (!source.exhausted && !source.failed && !source.task
+			&& !skip(peer, source)) {
+			frontier = std::max(frontier, std::int64_t(source.oldestDate));
+		}
+	}
+	if (!frontier) {
+		return false;
+	}
+	for (auto &[peer, source] : sources) {
+		if (!source.exhausted && !source.failed && !source.task
+			&& source.oldestDate == frontier && !skip(peer, source)) {
+			source.loadNext = true;
+		}
+	}
+	return true;
+}
+
 template <typename Key, typename Value>
 class QueryCache final {
 public:

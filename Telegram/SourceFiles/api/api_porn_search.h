@@ -65,7 +65,7 @@ public:
 
 	[[nodiscard]] QueryId start(PornSearchRequest request, Callback done);
 	void cancel(QueryId id);
-	void loadMore(QueryId id, TimeId before);
+	void loadMore(QueryId id, TimeId before, bool fill = false);
 	void retry(QueryId id);
 	void preload();
 	void invalidate();
@@ -88,6 +88,7 @@ private:
 		bool exhausted = false;
 		bool failed = false;
 		bool retry = false;
+		bool loadNext = false;
 		bool changed = false;
 	};
 
