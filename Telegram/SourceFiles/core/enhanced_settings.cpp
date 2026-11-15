@@ -39,6 +39,11 @@ namespace EnhancedSettings {
 
 		constexpr auto kWriteJsonTimeout = crl::time(5000);
 
+		rpl::event_stream<bool> &MediaLoadDebugLogsEvents() {
+			static auto events = rpl::event_stream<bool>();
+			return events;
+		}
+
 		rpl::event_stream<bool> &DownloadLimitToastsEvents() {
 			static auto events = rpl::event_stream<bool>();
 			return events;
@@ -198,6 +203,7 @@ namespace EnhancedSettings {
 					qsl("show_message_context_stream_in_mpv_special"));
 				ensureBool(qsl("mpv_streaming_debug_logs"), false);
 				ensureBool(qsl("online_playback_debug_logs"), false);
+			ensureBool(u"media_load_debug_logs"_q, false);
 			ensureBool(u"download_limit_toasts"_q, true);
 			ensureInt(u"download_limit_toast_mode"_q, 0);
 			ensureInt(u"media_preview_concurrent_requests"_q, 0);
@@ -407,6 +413,23 @@ namespace EnhancedSettings {
 		SetEnhancedValue(u"download_limit_toast_mode"_q, int(mode));
 		Write();
 		DownloadLimitToastModeEvents().fire_copy(mode);
+	}
+
+	bool MediaLoadDebugLogsEnabled() {
+		return gEnhancedOptions.value(u"media_load_debug_logs"_q, false).toBool();
+	}
+
+	rpl::producer<bool> MediaLoadDebugLogsChanges() {
+		return MediaLoadDebugLogsEvents().events();
+	}
+
+	void SetMediaLoadDebugLogsEnabled(bool enabled) {
+		if (MediaLoadDebugLogsEnabled() == enabled) {
+			return;
+		}
+		SetEnhancedValue(u"media_load_debug_logs"_q, enabled);
+		Write();
+		MediaLoadDebugLogsEvents().fire_copy(enabled);
 	}
 
 	bool DownloadLimitToastsEnabled() {
@@ -983,6 +1006,7 @@ namespace EnhancedSettings {
 			settings.insert(qsl("show_message_context_stream_in_mpv"), true);
 			settings.insert(qsl("mpv_streaming_debug_logs"), false);
 			settings.insert(qsl("online_playback_debug_logs"), false);
+		settings.insert(u"media_load_debug_logs"_q, false);
 		settings.insert(u"download_limit_toasts"_q, true);
 		settings.insert(u"download_limit_toast_mode"_q, 0);
 		settings.insert(u"media_preview_concurrent_requests"_q, 0);
@@ -1138,6 +1162,9 @@ namespace EnhancedSettings {
 			settings.insert(qsl("show_message_context_stream_in_mpv"), GetEnhancedBool("show_message_context_stream_in_mpv"));
 			settings.insert(qsl("mpv_streaming_debug_logs"), GetEnhancedBool("mpv_streaming_debug_logs"));
 			settings.insert(qsl("online_playback_debug_logs"), GetEnhancedBool("online_playback_debug_logs"));
+		settings.insert(
+			u"media_load_debug_logs"_q,
+			MediaLoadDebugLogsEnabled());
 		settings.insert(
 			u"download_limit_toasts"_q,
 			DownloadLimitToastsEnabled());
@@ -1425,6 +1452,7 @@ namespace EnhancedSettings {
 		}
 		const auto backup = gEnhancedOptions;
 		const auto searchBefore = GetSearchOptions();
+		const auto mediaLogsBefore = MediaLoadDebugLogsEnabled();
 		const auto recentChatsLimitBefore = RecentChatsLimit();
 		const auto requests = cNetRequestsCount();
 		const auto uploadSessions = cNetUploadSessionsCount();
@@ -1443,6 +1471,9 @@ namespace EnhancedSettings {
 		}
 		if (recentChatsLimitBefore != RecentChatsLimit()) {
 			RecentChatsLimitEvents().fire_copy(RecentChatsLimit());
+		}
+		if (mediaLogsBefore != MediaLoadDebugLogsEnabled()) {
+			MediaLoadDebugLogsEvents().fire_copy(MediaLoadDebugLogsEnabled());
 		}
 		MessageFolding::Reload();
 		RecentChatsButtonEvents().fire_copy(

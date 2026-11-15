@@ -891,7 +891,11 @@ OverlayWidget::OverlayWidget()
 	});
 	base::install_event_filter(_widget, [=](not_null<QEvent*> e) {
 		const auto type = e->type();
-		if (type == QEvent::Leave) {
+		if (type == QEvent::Enter) {
+			updateOver(_widget->mapFromGlobal(QCursor::pos()));
+		} else if (type == QEvent::Leave) {
+			updateBottomBarVisibility(QPoint(-1, -1));
+			ClickHandler::clearActive(this);
 			if (_over != Over::None) {
 				updateOverState(Over::None);
 			}
@@ -3326,7 +3330,8 @@ void OverlayWidget::hideControls(bool force) {
 		_helper->setControlsOpacity(1.);
 		return;
 	} else if (!force) {
-		if (!_dropdown->isHidden()
+		if (_bottomBarVisible
+			|| !_dropdown->isHidden()
 			|| (_streamed
 				&& _streamed->controls
 				&& _streamed->controls->hasMenu())
@@ -3359,7 +3364,7 @@ void OverlayWidget::dropdownHidden() {
 	_lastMouseMovePos = _widget->mapFromGlobal(QCursor::pos());
 	updateOver(_lastMouseMovePos);
 	_ignoringDropdown = false;
-	if (!_controlsHideTimer.isActive()) {
+	if (!_controlsHideTimer.isActive() && !_bottomBarVisible) {
 		hideControls(true);
 	}
 }
@@ -4512,6 +4517,9 @@ void OverlayWidget::refreshGroupThumbs() {
 	if (_groupThumbs && !existed) {
 		initGroupThumbs();
 	}
+	if (_groupThumbs && !_bottomBarVisible) {
+		_groupThumbs->finishAnimation();
+	}
 }
 
 void OverlayWidget::initGroupThumbs() {
@@ -4525,7 +4533,9 @@ void OverlayWidget::initGroupThumbs() {
 			_groupThumbsTop,
 			rect.width(),
 			_groupThumbs->height());
-		update(_groupThumbsRect);
+		if (_bottomBarVisible || _groupThumbs->hidden()) {
+			update(_groupThumbsRect);
+		}
 	}, _groupThumbs->lifetime());
 
 	_groupThumbs->activateRequests(
@@ -6723,16 +6733,20 @@ void OverlayWidget::paint(not_null<Renderer*> renderer) {
 		renderer->paintWheelHint(_wheelHintRect);
 	}
 
+	if (_groupThumbs && _groupThumbs->hidden()) {
+		_groupThumbs = nullptr;
+		_groupThumbsRect = QRect();
+	}
 	const auto opacity = _fullScreenVideo ? 0. : _controlsOpacity.current();
 	if (opacity > 0) {
 		paintControls(renderer, opacity);
-		if (!_stories) {
+		if (!_stories && _bottomBarVisible) {
 			renderer->paintFooter(footerGeometry(), opacity);
 		}
 		if (!(_stories ? _stories->skipCaption() : _caption.isEmpty())) {
 			renderer->paintCaption(captionGeometry(), opacity);
 		}
-		if (_groupThumbs) {
+		if (_groupThumbs && _bottomBarVisible) {
 			renderer->paintGroupThumbs(
 				QRect(
 					_groupThumbsLeft,
@@ -6750,7 +6764,9 @@ void OverlayWidget::paint(not_null<Renderer*> renderer) {
 
 void OverlayWidget::checkGroupThumbsAnimation() {
 	if (_groupThumbs
-		&& (!_streamed || _streamed->instance.player().ready())) {
+		&& (_groupThumbs->hiding()
+			|| (_bottomBarVisible
+				&& (!_streamed || _streamed->instance.player().ready())))) {
 		_groupThumbs->checkForAnimationStart();
 	}
 }
@@ -7447,6 +7463,7 @@ bool OverlayWidget::saveControlLocked() const {
 void OverlayWidget::paintControls(
 		not_null<Renderer*> renderer,
 		float64 opacity) {
+	const auto bottomVisible = _stories || _bottomBarVisible;
 	struct Control {
 		Over state = Over::None;
 		bool visible = false;
@@ -7473,7 +7490,7 @@ void OverlayWidget::paintControls(
 			true },
 		{
 			Over::Save,
-			_saveVisible,
+			_saveVisible && bottomVisible,
 			_saveNavOver,
 			_saveNavIcon,
 			(saveControlLocked()
@@ -7481,31 +7498,31 @@ void OverlayWidget::paintControls(
 				: st::mediaviewSave) },
 		{
 			Over::Share,
-			_shareVisible,
+			_shareVisible && bottomVisible,
 			_shareNavOver,
 			_shareNavIcon,
 			st::mediaviewShare },
 		{
 			Over::Rotate,
-			_rotateVisible,
+			_rotateVisible && bottomVisible,
 			_rotateNavOver,
 			_rotateNavIcon,
 			st::mediaviewRotate },
 		{
 			Over::More,
-			true,
+			bottomVisible,
 			_moreNavOver,
 			_moreNavIcon,
 			st::mediaviewMore },
 		{
 			Over::Draw,
-			_drawVisible,
+			_drawVisible && bottomVisible,
 			_drawNavOver,
 			_drawNavIcon,
 			st::mediaviewDraw },
 		{
 			Over::Recognize,
-			_recognizeVisible,
+			_recognizeVisible && bottomVisible,
 			_recognizeNavOver,
 			_recognizeNavIcon,
 			st::mediaviewRecognize },
@@ -8550,14 +8567,12 @@ bool OverlayWidget::handleDoubleClick(
 		Qt::MouseButton button) {
 	updateOver(position);
 
-	if (_over != Over::Video || button != Qt::LeftButton) {
+	if (_over != Over::Video
+		|| button != Qt::LeftButton
+		|| ClickHandler::getActive()) {
 		return false;
 	}
-	if (_stories) {
-		if (ClickHandler::getActive()) {
-			return false;
-		}
-	} else if (!_streamed) {
+	if (!_stories && !_streamed) {
 		return false;
 	}
 	_speedBoostHoldTimer.cancel();
@@ -8569,7 +8584,15 @@ bool OverlayWidget::handleDoubleClick(
 	if (_stories) {
 		toggleFullScreen(_windowed);
 	} else {
-		playbackToggleFullScreen(true);
+		const auto visible = finalContentRect().intersected(_widget->rect());
+		const auto middle = visible.isEmpty()
+			? height() / 2
+			: visible.y() + visible.height() / 2;
+		if (position.y() < middle) {
+			toggleFullScreen();
+		} else {
+			playbackToggleFullScreen(true);
+		}
 		if (base::take(_videoPlaybackToggledOnLastRelease)) {
 			playbackPauseResume();
 		}
@@ -8822,7 +8845,44 @@ bool OverlayWidget::updateOverState(Over newState) {
 	return result;
 }
 
+QRect OverlayWidget::bottomBarGeometry() const {
+	const auto footer = footerGeometry();
+	auto top = height() - st::mediaviewIconSize.height();
+	if (!footer.isEmpty()) {
+		accumulate_min(top, footer.top());
+	}
+	if (_groupThumbs) {
+		accumulate_min(top, _groupThumbsTop);
+	}
+	return QRect(0, top, width(), height() - top);
+}
+
+void OverlayWidget::updateBottomBarVisibility(QPoint position) {
+	const auto keepVisible = _bottomBarVisible
+		&& (_mousePressed || !_dropdown->isHidden() || _menu);
+	const auto visible = !_stories
+		&& !_fullScreenVideo
+		&& (bottomBarGeometry().contains(position) || keepVisible);
+	if (_bottomBarVisible == visible) {
+		return;
+	}
+	_bottomBarVisible = visible;
+	if (visible) {
+		activateControls();
+	} else {
+		if (_groupThumbs) {
+			_groupThumbs->finishAnimation();
+		}
+		if (!_controlsHideTimer.isActive()) {
+			_controlsHideTimer.callOnce(st::mediaviewWaitHide);
+		}
+	}
+	update(bottomBarGeometry());
+}
+
 void OverlayWidget::updateOver(QPoint pos) {
+	updateBottomBarVisibility(pos);
+	const auto bottomVisible = _stories || _bottomBarVisible;
 	ClickHandlerPtr lnk;
 	ClickHandlerHost *lnkhost = nullptr;
 	if (isSaveMsgShown() && _saveMsg.contains(pos)) {
@@ -8850,7 +8910,13 @@ void OverlayWidget::updateOver(QPoint pos) {
 			setCursor(style::cur_pointer);
 			_cursorOverriden = true;
 		}
-	} else if (_groupThumbs && _groupThumbsRect.contains(pos)) {
+	} else if (_groupThumbs
+		&& _bottomBarVisible
+		&& QRect(
+			_groupThumbsLeft,
+			_groupThumbsTop,
+			_groupThumbsAvailableWidth,
+			_groupThumbs->height()).contains(pos)) {
 		const auto point = pos - QPoint(_groupThumbsLeft, _groupThumbsTop);
 		lnk = _groupThumbs->getState(point);
 		lnkhost = this;
@@ -8894,30 +8960,37 @@ void OverlayWidget::updateOver(QPoint pos) {
 		&& _stories->sibling(
 			SiblingType::Right).layout.geometry.contains(pos)) {
 		updateOverState(Over::RightStories);
-	} else if (!_stories && _from && _nameNav.contains(pos)) {
+	} else if (!_stories
+		&& bottomVisible
+		&& _from
+		&& _nameNav.contains(pos)) {
 		updateOverState(Over::Name);
 	} else if (!_stories
+		&& bottomVisible
 		&& _message
 		&& _message->isRegular()
 		&& _dateNav.contains(pos)) {
 		updateOverState(Over::Date);
-	} else if (!_stories && _headerHasLink && _headerNav.contains(pos)) {
+	} else if (!_stories
+		&& bottomVisible
+		&& _headerHasLink
+		&& _headerNav.contains(pos)) {
 		updateOverState(Over::Header);
-	} else if (_saveVisible && _saveNav.contains(pos)) {
+	} else if (bottomVisible && _saveVisible && _saveNav.contains(pos)) {
 		updateOverState(Over::Save);
-	} else if (_shareVisible && _shareNav.contains(pos)) {
+	} else if (bottomVisible && _shareVisible && _shareNav.contains(pos)) {
 		updateOverState(Over::Share);
-	} else if (_rotateVisible && _rotateNav.contains(pos)) {
+	} else if (bottomVisible && _rotateVisible && _rotateNav.contains(pos)) {
 		updateOverState(Over::Rotate);
 	} else if (_document
 		&& documentBubbleShown()
 		&& _docIconRect.contains(pos)) {
 		updateOverState(Over::Icon);
-	} else if (_moreNav.contains(pos)) {
+	} else if (bottomVisible && _moreNav.contains(pos)) {
 		updateOverState(Over::More);
-	} else if (_drawVisible && _drawNav.contains(pos)) {
+	} else if (bottomVisible && _drawVisible && _drawNav.contains(pos)) {
 		updateOverState(Over::Draw);
-	} else if (_recognizeVisible && _recognizeNav.contains(pos)) {
+	} else if (bottomVisible && _recognizeVisible && _recognizeNav.contains(pos)) {
 		updateOverState(Over::Recognize);
 	} else if (contentShown() && finalContentRect().contains(pos)) {
 		if (_stories) {
@@ -9288,6 +9361,7 @@ bool OverlayWidget::filterApplicationEvent(
 				_mousePressed = false;
 				activate = true;
 			}
+			updateBottomBarVisibility(mousePosition);
 			if (activate) {
 				activateControls();
 			}
@@ -9401,6 +9475,7 @@ void OverlayWidget::clearBeforeHide() {
 	_controlsState = ControlsShown;
 	_controlsOpacity = anim::value(1);
 	_helper->setControlsOpacity(1.);
+	_bottomBarVisible = false;
 	_groupThumbs = nullptr;
 	_groupThumbsRect = QRect();
 	_sponsoredButton = nullptr;
@@ -9438,6 +9513,7 @@ void OverlayWidget::clearAfterHide() {
 
 void OverlayWidget::receiveMouse() {
 	_receiveMouse = true;
+	updateOver(_widget->mapFromGlobal(QCursor::pos()));
 }
 
 void OverlayWidget::showDropdown() {

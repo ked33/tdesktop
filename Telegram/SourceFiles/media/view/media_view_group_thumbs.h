@@ -88,6 +88,7 @@ public:
 	bool hiding() const;
 	bool hidden() const;
 	void checkForAnimationStart();
+	void finishAnimation();
 
 	void paint(QPainter &p, int x, int y, int outerWidth);
 	ClickHandlerPtr getState(QPoint point) const;

@@ -1,5 +1,6 @@
 #include "storage/download_diagnostics.h"
 
+#include "core/enhanced_settings.h"
 #include "logs.h"
 
 #include <algorithm>
@@ -131,6 +132,23 @@ DownloadDiagnostics::DownloadDiagnostics(Fn<QString(int)> queueSnapshot)
 : _id(NextDiagnosticId())
 , _queueSnapshot(std::move(queueSnapshot))
 , _timer([=] { check(); }) {
+	setEnabled(EnhancedSettings::MediaLoadDebugLogsEnabled());
+	EnhancedSettings::MediaLoadDebugLogsChanges(
+	) | rpl::on_next([=](bool enabled) {
+		setEnabled(enabled);
+	}, _lifetime);
+}
+
+void DownloadDiagnostics::setEnabled(bool enabled) {
+	_enabled = enabled;
+	if (!enabled) {
+		_timer.cancel();
+		_traces.clear();
+		_successSamples.clear();
+		_summaryAt = 0;
+		_started = _completed = _failed = _cancelled = 0;
+		_untracked = _suppressed = 0;
+	}
 }
 
 std::shared_ptr<DownloadTrace> DownloadDiagnostics::create() {
@@ -142,7 +160,7 @@ std::shared_ptr<DownloadTrace> DownloadDiagnostics::create() {
 }
 
 void DownloadDiagnostics::watch(const std::shared_ptr<DownloadTrace> &trace) {
-	if (_traces.contains(trace->id)) {
+	if (!_enabled || _traces.contains(trace->id)) {
 		return;
 	}
 	if (_traces.size() < kTraceLimit) {
@@ -172,6 +190,9 @@ bool DownloadDiagnostics::report(
 }
 
 void DownloadDiagnostics::check() {
+	if (!_enabled) {
+		return;
+	}
 	const auto now = crl::now();
 	auto stalled = 0;
 	for (auto i = _traces.begin(); i != _traces.end();) {

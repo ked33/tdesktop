@@ -351,6 +351,8 @@ private:
 	void assignMediaPointer(std::shared_ptr<Data::GroupCall> call);
 
 	void updateOver(QPoint mpos);
+	[[nodiscard]] QRect bottomBarGeometry() const;
+	void updateBottomBarVisibility(QPoint position);
 	void initFullScreen();
 	void initNormalGeometry();
 	void savePosition();
@@ -723,6 +725,7 @@ private:
 	int _groupThumbsAvailableWidth = 0;
 	int _groupThumbsLeft = 0;
 	int _groupThumbsTop = 0;
+	bool _bottomBarVisible = false;
 	Ui::Text::String _caption;
 	Ui::Text::QuotePaintCache _captionPreCache;
 	Ui::Text::QuotePaintCache _captionBlockquoteCache;

@@ -1680,6 +1680,21 @@ namespace Settings {
 		trackSearch(
 			AddButtonWithIcon(
 				container,
+				tr::lng_settings_media_load_debug_logs(),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/media_load_debug_logs"_q)->toggleOn(
+			rpl::single(EnhancedSettings::MediaLoadDebugLogsEnabled())
+				| rpl::then(EnhancedSettings::MediaLoadDebugLogsChanges())
+		)->toggledChanges(
+		) | rpl::on_next([=](bool toggled) {
+			EnhancedSettings::SetMediaLoadDebugLogsEnabled(toggled);
+		}, container->lifetime());
+		AddDividerText(container, tr::lng_settings_media_load_debug_logs_about());
+
+		trackSearch(
+			AddButtonWithIcon(
+				container,
 				tr::lng_settings_online_playback_debug_logs(),
 				st::settingsButtonNoIcon
 			),
@@ -1859,6 +1874,10 @@ namespace Settings {
 				tr::lng_settings_download_limit_toast_countdown(tr::now),
 				tr::lng_settings_download_limit_toast_mode_about(tr::now),
 			});
+		addBool(
+			"media_load_debug_logs",
+			tr::lng_settings_media_load_debug_logs(tr::now),
+			{ tr::lng_settings_media_load_debug_logs_about(tr::now) });
 		addBool(
 			"online_playback_debug_logs",
 			tr::lng_settings_online_playback_debug_logs(tr::now));

@@ -262,6 +262,7 @@ public:
 	[[nodiscard]] State state() const;
 	[[nodiscard]] bool inited() const;
 	[[nodiscard]] bool removed() const;
+	void finishAnimation();
 
 	void paint(QPainter &p, int x, int y, int outerWidth, float64 progress);
 	[[nodiscard]] ClickHandlerPtr getState(QPoint point) const;
@@ -469,6 +470,12 @@ bool GroupThumbs::Thumb::inited() const {
 
 bool GroupThumbs::Thumb::removed() const {
 	return (_state == State::Dying) && _hiding && !_opacity.current();
+}
+
+void GroupThumbs::Thumb::finishAnimation() {
+	_opacity.finish();
+	_left.finish();
+	_width.finish();
 }
 
 void GroupThumbs::Thumb::paint(
@@ -946,6 +953,21 @@ void GroupThumbs::checkForAnimationStart() {
 		_waitingForAnimationStart = false;
 		_animation.start([=] { update(); }, 0., 1., kThumbDuration);
 	}
+}
+
+void GroupThumbs::finishAnimation() {
+	_animation.stop();
+	_waitingForAnimationStart = false;
+	_dying.clear();
+	for (auto i = _cache.begin(); i != _cache.end();) {
+		if (i->second->state() == Thumb::State::Dying) {
+			i = _cache.erase(i);
+		} else {
+			i->second->finishAnimation();
+			++i;
+		}
+	}
+	countUpdatedRect();
 }
 
 void GroupThumbs::update() {

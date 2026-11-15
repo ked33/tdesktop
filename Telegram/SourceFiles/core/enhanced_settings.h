@@ -55,6 +55,9 @@ namespace EnhancedSettings {
 	[[nodiscard]] bool DownloadLimitToastsEnabled();
 	[[nodiscard]] rpl::producer<bool> DownloadLimitToastsChanges();
 	void SetDownloadLimitToastsEnabled(bool enabled);
+	[[nodiscard]] bool MediaLoadDebugLogsEnabled();
+	[[nodiscard]] rpl::producer<bool> MediaLoadDebugLogsChanges();
+	void SetMediaLoadDebugLogsEnabled(bool enabled);
 
 	struct SearchOptions {
 		bool mainAndArchive = true;

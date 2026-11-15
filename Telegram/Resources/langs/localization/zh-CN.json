@@ -1,4 +1,6 @@
 {
+    "lng_settings_media_load_debug_logs": "将媒体加载诊断日志写入 log.txt",
+    "lng_settings_media_load_debug_logs_about": "默认关闭。为新开始跟踪的图片、视频等下载记录 Media load 明细及汇总日志。关闭后立即停止诊断扫描和日志输出，不影响下载或播放。",
     "lng_thumbnail_failed": "加载失败",
     "lng_transfer_limit_download": "在线播放或下载暂时受限",
     "lng_transfer_limit_upload": "上传暂时受限",

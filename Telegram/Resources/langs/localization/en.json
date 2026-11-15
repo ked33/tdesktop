@@ -1,4 +1,6 @@
 {
+    "lng_settings_media_load_debug_logs": "Write media load diagnostics to log.txt",
+    "lng_settings_media_load_debug_logs_about": "Disabled by default. Record Media load details and summaries for newly tracked image, video and other downloads. Turning this off immediately stops diagnostic scans and logging without changing downloads or playback.",
     "lng_thumbnail_failed": "Failed",
     "lng_transfer_limit_download": "Playback or download temporarily limited",
     "lng_transfer_limit_upload": "Upload temporarily limited",

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/timer.h"
+#include "rpl/lifetime.h"
 
 #include <atomic>
 #include <map>
@@ -72,6 +73,7 @@ public:
 	void watch(const std::shared_ptr<DownloadTrace> &trace);
 
 private:
+	void setEnabled(bool enabled);
 	void check();
 	bool report(const DownloadTrace &trace, const char *event, crl::time now);
 
@@ -87,6 +89,8 @@ private:
 	int _cancelled = 0;
 	int _untracked = 0;
 	int _suppressed = 0;
+	bool _enabled = false;
+	rpl::lifetime _lifetime;
 
 };
 
