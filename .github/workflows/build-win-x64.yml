@@ -50,6 +50,31 @@ jobs:
         run: |
           & "$env:TBUILD\$env:REPO_NAME\Telegram\build\diagnostics\test_capture_memory.ps1"
 
+      - name: Configure MSVC environment
+        shell: cmd
+        run: |
+          set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+          if not exist "%VSWHERE%" exit /b 1
+          for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALLPATH=%%i"
+          if not defined VSINSTALLPATH exit /b 1
+          call "%VSINSTALLPATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          echo Platform=x64>>"%GITHUB_ENV%"
+          for /f "delims=" %%i in ('set') do @echo %%i>>"%GITHUB_ENV%"
+
+      - name: Compute Qt toolchain cache key
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (!$env:WindowsSdkDir -or !$env:WindowsSDKVersion -or !$env:VCToolsVersion) {
+            throw 'MSVC and Windows SDK environment is incomplete.'
+          }
+          $sdkVersion = $env:WindowsSDKVersion.TrimEnd('\')
+          $baseHeader = Join-Path $env:WindowsSdkDir "Include\$sdkVersion\cppwinrt\winrt\base.h"
+          $headerHash = (Get-FileHash -LiteralPath $baseHeader -Algorithm SHA256).Hash.ToLowerInvariant()
+          $toolchainKey = "$($env:VCToolsVersion)-$sdkVersion-$headerHash"
+          "QT_TOOLCHAIN_KEY=$toolchainKey" >> $env:GITHUB_ENV
+          Write-Host "Qt cache toolchain: $toolchainKey"
+
       - name: Compute cache key
         shell: bash
         run: |
@@ -98,9 +123,9 @@ jobs:
             !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*.pdb
             !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*d.lib
             !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*d.prl
-          key: win64-qt-6.11.2-${{ env.CACHE_KEY }}
+          key: win64-qt-6.11.2-${{ env.QT_TOOLCHAIN_KEY }}-${{ env.CACHE_KEY }}
           restore-keys: |
-            win64-qt-6.11.2-
+            win64-qt-6.11.2-${{ env.QT_TOOLCHAIN_KEY }}-
 
       - name: Set up sccache
         id: sccache
@@ -109,17 +134,6 @@ jobs:
         with:
           version: "v0.15.0"
           disable_annotations: "true"
-
-      - name: Configure MSVC environment
-        shell: cmd
-        run: |
-          set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
-          if not exist "%VSWHERE%" exit /b 1
-          for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALLPATH=%%i"
-          if not defined VSINSTALLPATH exit /b 1
-          call "%VSINSTALLPATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
-          echo Platform=x64>>"%GITHUB_ENV%"
-          for /f "delims=" %%i in ('set') do @echo %%i>>"%GITHUB_ENV%"
 
       - name: Check supplemental search progress, merging and limits
         shell: cmd
