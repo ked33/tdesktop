@@ -81,7 +81,7 @@
     "lng_settings_search_exact_match": "Match complete search text",
     "lng_settings_search_exact_match_about": "Only show messages whose original text or caption contains the complete search text, ignoring letter case. Applies to all message search results, including searches in chats and topics.",
     "lng_search_chinese_keywords_about": "Search standalone Chinese terms as quoted phrases on the server. This does not restrict results to Chinese messages or replace complete text matching.",
-    "lng_search_matched_results": "Matching messages loaded: {count}",
+    "lng_search_matched_results": "Matching messages loaded: {total}",
     "lng_settings_search_dialog_filter_placeholder": "-1002615379741,-1001887545270",
     "lng_settings_search_dialog_filter_disabled": "Disabled",
     "lng_settings_search_porn_concurrency": "Supplemental search concurrency",

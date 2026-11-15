@@ -5840,7 +5840,7 @@ void InnerWidget::paintSearchHeader(Painter &p) {
 			|| EnhancedSettings::SearchDialogFilterEnabled())
 		? tr::lng_search_matched_results(
 			tr::now,
-			lt_count,
+			lt_total,
 			QString::number(_searchResults.size()))
 		: (_searchState.tab == ChatSearchTab::PublicPosts && !_searchIn)
 		? (_searchState.query.isEmpty()
