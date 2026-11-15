@@ -67,7 +67,7 @@ void CheckMessageSearch() {
 	} };
 	Check(HighlightSearchText(marked, u"cd") == 2, "match inside existing color");
 	Check(marked.entities.size() == 4, "existing color split around match");
-	Check(std::any_of(begin(marked.entities), end(marked.entities), [](const auto &entity) {
+	Check(std::any_of(marked.entities.begin(), marked.entities.end(), [](const auto &entity) {
 		return entity.type() == EntityType::Spoiler && entity.length() == 6;
 	}), "spoiler preserved");
 	auto sender = TextWithEntities{ u"搜索测试: 正文搜索测试"_q };
