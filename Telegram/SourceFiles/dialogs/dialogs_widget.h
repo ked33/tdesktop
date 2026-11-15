@@ -84,6 +84,7 @@ extern const char kOptionForumHideChatsList[];
 
 struct RowDescriptor;
 class Row;
+class BasicRow;
 class FakeRow;
 class Key;
 struct ChosenRow;
@@ -97,6 +98,9 @@ enum class HashOrCashtag : uchar;
 
 class Widget final : public Window::AbstractSectionWidget {
 public:
+	void collectIdleMemoryKeepRows(
+		base::flat_set<const BasicRow*> &keep) const;
+	void releaseIdleMemory(const base::flat_set<const BasicRow*> &keep);
 	enum class Layout {
 		Main,
 		Child,

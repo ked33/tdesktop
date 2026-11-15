@@ -363,6 +363,18 @@ void BasicRow::clearRipple() {
 	_ripple = nullptr;
 }
 
+void BasicRow::releaseIdleMemory() {
+	_userpic = {};
+	_userpicCorner = {};
+	_ripple = nullptr;
+}
+
+void Row::releaseIdleMemory() {
+	BasicRow::releaseIdleMemory();
+	_cornerBadgeUserpic = nullptr;
+	_communityUserpicEffect = nullptr;
+}
+
 void BasicRow::stopLastRipple() {
 	if (_ripple) {
 		_ripple->lastStop();

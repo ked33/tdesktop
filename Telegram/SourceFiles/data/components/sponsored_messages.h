@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/timer.h"
+#include "base/weak_ptr.h"
 #include "history/history_item.h"
 #include "ui/image/image_location.h"
 #include "window/window_session_controller_link_info.h"
@@ -107,7 +108,7 @@ struct SponsoredForVideo {
 	SponsoredForVideoState state;
 };
 
-class SponsoredMessages final {
+class SponsoredMessages final : public base::has_weak_ptr {
 public:
 	enum class AppendResult {
 		None,
@@ -179,6 +180,7 @@ public:
 		Fn<void()> erase);
 
 	void clear();
+	[[nodiscard]] int releaseIdleMemory();
 
 private:
 	using OwnedItem = std::unique_ptr<HistoryItem, HistoryItem::Destroyer>;
@@ -187,6 +189,7 @@ private:
 		FullMsgId itemFullId;
 		SponsoredMessage sponsored;
 		std::unique_ptr<MediaPreload> preload;
+		uint64 preloadGeneration = 0;
 		std::unique_ptr<rpl::lifetime> optionalDestructionNotifier;
 	};
 	struct List {
@@ -223,9 +226,12 @@ private:
 		not_null<PeerData*> peer,
 		const MTPmessages_sponsoredMessages &list);
 	void append(
-		Fn<not_null<std::vector<Entry>*>()> entries,
+		Fn<std::vector<Entry>*()> entries,
 		not_null<History*> history,
 		const MTPSponsoredMessage &message);
+	void preloadFinished(
+		const Fn<std::vector<Entry>*()> &entries,
+		uint64 generation);
 	[[nodiscard]] SponsoredForVideo prepareForVideo(
 		not_null<PeerData*> peer);
 	void clearOldRequests();
@@ -235,6 +241,7 @@ private:
 	const not_null<Main::Session*> _session;
 
 	base::Timer _clearTimer;
+	uint64 _preloadGeneration = 0;
 	base::flat_map<not_null<History*>, List> _data;
 	base::flat_map<not_null<History*>, Request> _requests;
 	base::flat_map<RandomId, Request> _viewRequests;

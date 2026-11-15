@@ -1449,6 +1449,16 @@ void MainWidget::reloadUnloadedHistory() {
 			anim::activation::background));
 }
 
+void MainWidget::collectIdleMemoryKeepRows(
+		base::flat_set<const Dialogs::BasicRow*> &keep) const {
+	_dialogs->collectIdleMemoryKeepRows(keep);
+}
+
+void MainWidget::releaseIdleListMemory(
+		const base::flat_set<const Dialogs::BasicRow*> &keep) {
+	_dialogs->releaseIdleMemory(keep);
+}
+
 void MainWidget::showHistory(
 		PeerId peerId,
 		const SectionShow &params,

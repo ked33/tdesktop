@@ -7,11 +7,32 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_indexed_list.h"
 
+#include "data/data_thread.h"
+
 #include "main/main_session.h"
 #include "data/data_session.h"
 #include "history/history.h"
 
 namespace Dialogs {
+
+void IndexedList::releaseIdleMemory(
+		const base::flat_set<const BasicRow*> &keep) {
+	const auto release = [&](const List &list) {
+		for (const auto row : list) {
+			if (!keep.contains(row.get())) {
+				row->releaseIdleMemory();
+			}
+			if (const auto thread = row->thread()) {
+				thread->lastItemDialogsView().releaseIdleMemory(true);
+			}
+		}
+	};
+	release(_list);
+	release(_empty);
+	for (const auto &[letter, list] : _index) {
+		release(list);
+	}
+}
 
 IndexedList::IndexedList(SortMode sortMode, FilterId filterId)
 : _sortMode(sortMode)

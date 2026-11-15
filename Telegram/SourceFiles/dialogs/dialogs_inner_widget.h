@@ -88,6 +88,7 @@ namespace Dialogs {
 extern const char kOptionCtrlClickChatNewWindow[];
 
 class Row;
+class BasicRow;
 class FakeRow;
 class IndexedList;
 class SearchTags;
@@ -176,6 +177,9 @@ public:
 	void setNarrowRatio(float64 narrowRatio);
 
 	void clearFilter();
+	void collectIdleMemoryKeepRows(
+		base::flat_set<const BasicRow*> &keep) const;
+	void releaseIdleMemory(const base::flat_set<const BasicRow*> &keep);
 	void refresh(bool toTop = false);
 	void refreshEmpty();
 	void resizeEmpty();

@@ -28,6 +28,7 @@ public:
 	[[nodiscard]] int32 hash() const;
 	[[nodiscard]] bool partial() const;
 	[[nodiscard]] const std::shared_ptr<const RichPage> &richPage() const;
+	[[nodiscard]] bool releaseUnused();
 
 private:
 	const uint64 _pageId = 0;
@@ -35,7 +36,7 @@ private:
 	const QString _url;
 	const QString _name;
 	const bool _partial = false;
-	const std::shared_ptr<const RichPage> _richPage;
+	std::shared_ptr<const RichPage> _richPage;
 
 };
 

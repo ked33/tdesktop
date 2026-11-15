@@ -24,6 +24,7 @@ class Loader;
 namespace Data {
 
 class Session;
+class MediaMemoryCompactor;
 class ReplyPreview;
 class PhotoMedia;
 
@@ -53,6 +54,8 @@ public:
 	[[nodiscard]] bool isNull() const;
 
 	void automaticLoadSettingsChanged();
+	void compactMemory(Data::MediaMemoryCompactor &compactor);
+	[[nodiscard]] bool releaseReplyPreviewMemory();
 
 	[[nodiscard]] TimeId date() const;
 	[[nodiscard]] bool loading() const;

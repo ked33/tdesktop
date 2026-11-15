@@ -7,6 +7,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/application.h"
 
+#include "spellcheck/spellcheck_highlight_syntax.h"
+#include "ui/emoji_config.h"
+
 #include "data/data_abstract_structure.h"
 #include "data/data_channel.h"
 #include "data/data_forum.h"
@@ -922,9 +925,26 @@ void Application::finishIdleMemoryCleanup(
 	}
 	auto removed = 0;
 	auto releasedReactionIcons = 0;
+	auto keepRows = base::flat_set<const Dialogs::BasicRow*>();
+	enumerateWindows([&](not_null<Window::Controller*> window) {
+		if (const auto controller = window->sessionController()) {
+			controller->content()->collectIdleMemoryKeepRows(keepRows);
+		}
+	});
+	enumerateWindows([&](not_null<Window::Controller*> window) {
+		if (const auto controller = window->sessionController()) {
+			controller->content()->releaseIdleListMemory(keepRows);
+		}
+	});
+	const auto releaseIv = _iv->releaseIdleMemory();
+	auto releasedIvPages = 0;
 	for (const auto &account : _domain->orderedAccounts()) {
 		if (account->sessionExists()) {
 			removed += account->session().data().releaseIdleMemory();
+			account->session().data().releaseIdleMediaMemory(keepRows);
+			if (releaseIv) {
+				releasedIvPages += account->session().data().releaseIdleIvMemory();
+			}
 			releasedReactionIcons += account->session()
 				.cachedReactionIconFactory().releaseUnused();
 		}
@@ -935,6 +955,11 @@ void Application::finishIdleMemoryCleanup(
 		).arg(source).arg(releasedReactionIcons));
 	QPixmapCache::clear();
 	Ui::Text::DefaultSpoilerCache()->reset();
+	const auto releasedEmojiImages = Ui::Emoji::ReleaseCachedImages();
+	const auto releasedSpoilerImages = Ui::ReleaseDefaultSpoilerImages();
+	LOG(("Memory cleanup: emoji_images=%1 spoiler_images=%2 iv_pages=%3."
+		).arg(releasedEmojiImages).arg(releasedSpoilerImages)
+		.arg(releasedIvPages));
 	LogIdleMemoryCleanup(
 		source,
 		"objects_released",
@@ -948,14 +973,14 @@ void Application::finishIdleMemoryCleanup(
 			controller->content()->reloadUnloadedHistory();
 		}
 	});
-	crl::on_main(this, [=] {
+	Spellchecker::ReleaseSyntaxHighlighting(crl::guard(this, [=] {
 		if (Quitting()) {
 			return;
 		}
 		InvokeQueued(this, [=] {
 			finishIdleMemoryHeaps(source, before, done);
 		});
-	});
+	}));
 }
 
 void Application::finishIdleMemoryHeaps(

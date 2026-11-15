@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_photo.h"
 
 #include "data/data_document.h"
+#include "data/data_media_memory.h"
 #include "data/data_session.h"
 #include "data/data_reply_preview.h"
 #include "data/data_photo_media.h"
@@ -52,10 +53,26 @@ PhotoData::~PhotoData() {
 	base::take(_videoSizes);
 }
 
+void PhotoData::compactMemory(Data::MediaMemoryCompactor &compactor) {
+	compactor.compact(_fileReference);
+	compactor.compact(_inlineThumbnailBytes);
+	for (auto &image : _images) {
+		compactor.compact(image.location);
+	}
+	if (_videoSizes) {
+		compactor.compact(_videoSizes->small.location);
+		compactor.compact(_videoSizes->large.location);
+	}
+}
+
 void PhotoData::setFields(TimeId date, bool hasAttachedStickers) {
 	_dateOrExtendedVideoDuration = date;
 	_hasStickers = hasAttachedStickers;
 	_extendedMediaPreview = false;
+}
+
+bool PhotoData::releaseReplyPreviewMemory() {
+	return _replyPreview && _replyPreview->releaseIdleMemory();
 }
 
 void PhotoData::setExtendedMediaPreview(

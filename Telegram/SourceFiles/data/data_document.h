@@ -45,6 +45,7 @@ class Reader;
 namespace Data {
 class Session;
 class DocumentMedia;
+class MediaMemoryCompactor;
 class ReplyPreview;
 enum class StickersType : uchar;
 } // namespace Data
@@ -124,6 +125,8 @@ public:
 	void setVideoQualities(const QVector<MTPDocument> &list);
 
 	void automaticLoadSettingsChanged();
+	void compactMemory(Data::MediaMemoryCompactor &compactor);
+	[[nodiscard]] bool releaseReplyPreviewMemory();
 	void setVideoQualities(std::vector<not_null<DocumentData*>> qualities);
 	[[nodiscard]] int resolveVideoQuality() const;
 	[[nodiscard]] int resolveOriginalVideoQuality() const;

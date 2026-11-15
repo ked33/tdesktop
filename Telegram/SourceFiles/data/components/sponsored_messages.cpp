@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_peer_search.h" // SponsoredSearchResult
 #include "apiwrap.h"
 #include "core/click_handler_types.h"
+#include "crl/crl_on_main.h"
 #include "data/data_channel.h"
 #include "data/data_document.h"
 #include "data/data_file_origin.h"
@@ -30,8 +31,6 @@ namespace {
 
 constexpr auto kMs = crl::time(1000);
 constexpr auto kRequestTimeLimit = 5 * 60 * crl::time(1000);
-
-const auto kFlaggedPreload = ((MediaPreload*)quintptr(0x01));
 
 [[nodiscard]] bool TooEarlyForRequest(crl::time received) {
 	return (received > 0) && (received + kRequestTimeLimit > crl::now());
@@ -98,6 +97,23 @@ void SponsoredMessages::clearOldRequests() {
 	};
 	clear(_requests);
 	clear(_requestsForVideo);
+}
+
+int SponsoredMessages::releaseIdleMemory() {
+	auto released = 0;
+	const auto release = [&](auto &lists) {
+		for (auto &[key, list] : lists) {
+			for (auto &entry : list.entries) {
+				if (entry.preload && entry.preload->finished()) {
+					entry.preload = nullptr;
+					++released;
+				}
+			}
+		}
+	};
+	release(_data);
+	release(_dataForVideo);
+	return released;
 }
 
 SponsoredMessages::AppendResult SponsoredMessages::append(
@@ -458,8 +474,9 @@ void SponsoredMessages::parse(
 				: State::AppendToTopBar;
 		}
 		for (const auto &message : messages) {
-			append([=] {
-				return &_data[history].entries;
+			append([=]() -> std::vector<Entry>* {
+				const auto i = _data.find(history);
+				return (i != end(_data)) ? &i->second.entries : nullptr;
 			}, history, message);
 		}
 	}, [](const MTPDmessages_sponsoredMessagesEmpty &) {
@@ -488,8 +505,9 @@ void SponsoredMessages::parseForVideo(
 		list.startDelay = data.vstart_delay().value_or_empty() * kMs;
 		list.betweenDelay = data.vbetween_delay().value_or_empty() * kMs;
 		for (const auto &message : messages) {
-			append([=] {
-				return &_dataForVideo[peer].entries;
+			append([=]() -> std::vector<Entry>* {
+				const auto i = _dataForVideo.find(peer);
+				return (i != end(_dataForVideo)) ? &i->second.entries : nullptr;
 			}, history, message);
 		}
 	}, [](const MTPDmessages_sponsoredMessagesEmpty &) {
@@ -548,7 +566,7 @@ rpl::producer<> SponsoredMessages::itemRemoved(const FullMsgId &fullId) {
 }
 
 void SponsoredMessages::append(
-		Fn<not_null<std::vector<Entry>*>()> entries,
+		Fn<std::vector<Entry>*()> entries,
 		not_null<History*> history,
 		const MTPSponsoredMessage &message) {
 	const auto &data = message.data();
@@ -627,29 +645,21 @@ void SponsoredMessages::append(
 		history->peer->id,
 		_session->data().nextLocalMessageId());
 	const auto list = entries();
+	Expects(list != nullptr);
+
+	const auto generation = ++_preloadGeneration;
 	list->push_back({
 		.itemFullId = itemId,
 		.sponsored = std::move(sharedMessage),
+		.preloadGeneration = generation,
 	});
-	auto &entry = list->back();
 	const auto fileOrigin = FileOrigin(); // No way to refresh in ads.
-
+	const auto weak = base::make_weak(this);
 	const auto preloaded = [=] {
-		const auto list = entries();
-		const auto j = ranges::find(*list, itemId, &Entry::itemFullId);
-		if (j == end(*list)) {
-			return;
-		}
-		auto &entry = *j;
-		if (entry.preload.get() == kFlaggedPreload) {
-			entry.preload.release();
-		} else {
-			entry.preload = nullptr;
-		}
+		crl::on_main(weak, [=] { preloadFinished(entries, generation); });
 	};
 
 	auto preload = std::unique_ptr<MediaPreload>();
-	entry.preload.reset(kFlaggedPreload);
 	if (mediaPhoto) {
 		preload = std::make_unique<PhotoPreload>(
 			mediaPhoto,
@@ -661,14 +671,27 @@ void SponsoredMessages::append(
 			fileOrigin,
 			preloaded);
 	}
-	// Preload constructor may have called preloaded(), which zero-ed
-	// entry.preload, that way we're ready and don't need to save it.
-	// Otherwise we're preloading and need to save the task.
-	if (entry.preload.get() == kFlaggedPreload) {
-		entry.preload.release();
-		if (preload) {
-			entry.preload = std::move(preload);
+	if (const auto current = entries()) {
+		const auto i = ranges::find(
+			*current,
+			generation,
+			&Entry::preloadGeneration);
+		if (i != end(*current)) {
+			i->preload = std::move(preload);
 		}
+	}
+}
+
+void SponsoredMessages::preloadFinished(
+		const Fn<std::vector<Entry>*()> &entries,
+		uint64 generation) {
+	const auto list = entries();
+	if (!list) {
+		return;
+	}
+	const auto i = ranges::find(*list, generation, &Entry::preloadGeneration);
+	if (i != end(*list)) {
+		i->preload = nullptr;
 	}
 }
 

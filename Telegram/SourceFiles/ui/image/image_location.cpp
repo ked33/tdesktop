@@ -566,6 +566,13 @@ bool StorageFileLocation::refreshFileReference(const QByteArray &data) {
 	return true;
 }
 
+void StorageFileLocation::shareFileReference(const QByteArray &reference) {
+	if (_fileReference.isNull() == reference.isNull()
+		&& _fileReference == reference) {
+		_fileReference = reference;
+	}
+}
+
 const StorageFileLocation &StorageFileLocation::Invalid() {
 	static auto result = StorageFileLocation();
 	return result;
@@ -1013,6 +1020,12 @@ bool DownloadLocation::refreshFileReference(
 	}
 	auto &file = v::get<StorageFileLocation>(data);
 	return file.refreshFileReference(updates);
+}
+
+void DownloadLocation::shareFileReference(const QByteArray &reference) {
+	if (const auto file = std::get_if<StorageFileLocation>(&data)) {
+		file->shareFileReference(reference);
+	}
 }
 
 ImageLocation::ImageLocation(

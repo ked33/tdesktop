@@ -143,4 +143,36 @@ bool ReplyPreview::loaded(bool spoiler) const {
 	return spoiler ? _checkedSpoilered : _checkedRegular;
 }
 
+bool ReplyPreview::releaseIdleMemory() {
+	if (!_photoMedia && !_documentMedia) {
+		return false;
+	}
+	auto source = (Image*)nullptr;
+	auto options = Images::Options();
+	if (_photoMedia) {
+		source = _photoMedia->image(PhotoSize::Small);
+		if (!source) {
+			source = _photoMedia->image(PhotoSize::Large);
+		}
+	} else {
+		source = _documentMedia->thumbnail();
+		if (_document->isVideoMessage()) {
+			options |= Images::Option::RoundCircle;
+		}
+	}
+	if (source) {
+		if (!_checkedRegular) {
+			prepare(source, options);
+			_checkedRegular = (_regular != nullptr);
+		}
+		if (!_checkedSpoilered) {
+			prepare(source, options, true);
+			_checkedSpoilered = (_spoilered != nullptr);
+		}
+	}
+	_photoMedia = nullptr;
+	_documentMedia = nullptr;
+	return true;
+}
+
 } // namespace Data

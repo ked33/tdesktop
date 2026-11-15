@@ -36,6 +36,7 @@ public:
 
 	CustomEmojiManager(not_null<Session*> owner);
 	~CustomEmojiManager();
+	[[nodiscard]] int releaseIdleMemory();
 
 	[[nodiscard]] std::unique_ptr<Ui::Text::CustomEmoji> create(
 		QStringView data,

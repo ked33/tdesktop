@@ -28,6 +28,7 @@ public:
 		not_null<PeerData*> context,
 		bool spoiler);
 	[[nodiscard]] bool loaded(bool spoiler) const;
+	[[nodiscard]] bool releaseIdleMemory();
 
 private:
 	void prepare(

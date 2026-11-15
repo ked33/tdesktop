@@ -37,9 +37,13 @@ MediaPreload::MediaPreload(Fn<void()> done)
 }
 
 void MediaPreload::callDone() {
-	if (const auto onstack = _done) {
+	if (const auto onstack = base::take(_done)) {
 		onstack();
 	}
+}
+
+bool MediaPreload::finished() const {
+	return !_done;
 }
 
 PhotoPreload::PhotoPreload(
@@ -52,7 +56,7 @@ PhotoPreload::PhotoPreload(
 }
 
 PhotoPreload::~PhotoPreload() {
-	if (_photo) {
+	if (_photo && !finished() && _photo.use_count() == 1) {
 		base::take(_photo)->owner()->cancel();
 	}
 }

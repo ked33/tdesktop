@@ -96,6 +96,7 @@ public:
 	[[nodiscard]] QByteArray fileReference() const;
 	bool refreshFileReference(const Data::UpdatedFileReferences &updates);
 	bool refreshFileReference(const QByteArray &data);
+	void shareFileReference(const QByteArray &reference);
 
 	[[nodiscard]] static const StorageFileLocation &Invalid();
 
@@ -482,6 +483,7 @@ public:
 	[[nodiscard]] QByteArray fileReference() const;
 	bool refreshFileReference(const QByteArray &data);
 	bool refreshFileReference(const Data::UpdatedFileReferences &updates);
+	void shareFileReference(const QByteArray &reference);
 
 	friend inline bool operator==(
 			const DownloadLocation &a,
@@ -572,6 +574,9 @@ public:
 	}
 	bool refreshFileReference(const Data::UpdatedFileReferences &updates) {
 		return _file.refreshFileReference(updates);
+	}
+	void shareFileReference(const QByteArray &reference) {
+		_file.shareFileReference(reference);
 	}
 
 	[[nodiscard]] static const ImageLocation &Invalid() {

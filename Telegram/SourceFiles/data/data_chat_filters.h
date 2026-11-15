@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 class History;
 
 namespace Dialogs {
+class BasicRow;
 class MainList;
 class Key;
 } // namespace Dialogs
@@ -176,6 +177,8 @@ public:
 	void refreshHistory(not_null<History*> history);
 
 	[[nodiscard]] not_null<Dialogs::MainList*> chatsList(FilterId filterId);
+	void releaseIdleMemory(
+		const base::flat_set<const Dialogs::BasicRow*> &keep);
 	void clear();
 
 	const ChatFilter &applyUpdatedPinned(

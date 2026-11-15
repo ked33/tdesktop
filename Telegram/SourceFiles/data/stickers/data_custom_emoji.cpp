@@ -992,6 +992,17 @@ Main::Session &CustomEmojiManager::session() const {
 	return _owner->session();
 }
 
+int CustomEmojiManager::releaseIdleMemory() {
+	const auto now = crl::now();
+	auto released = 0;
+	for (auto &instances : _instances) {
+		for (const auto &[id, instance] : instances) {
+			released += instance->releaseUnused(now) ? 1 : 0;
+		}
+	}
+	return released;
+}
+
 Session &CustomEmojiManager::owner() const {
 	return *_owner;
 }

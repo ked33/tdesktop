@@ -507,6 +507,9 @@ public:
 		int from,
 		int till);
 	[[nodiscard]] int releaseIdleMemory();
+	void releaseIdleMediaMemory(
+		const base::flat_set<const Dialogs::BasicRow*> &keep);
+	[[nodiscard]] int releaseIdleIvMemory();
 	[[nodiscard]] int releaseIdleStreamingMemory();
 
 	void registerShownSpoiler(not_null<ViewElement*> view);

@@ -165,6 +165,25 @@ void MessageView::itemInvalidated(not_null<const HistoryItem*> item) {
 	}
 }
 
+void MessageView::releaseIdleMemory(bool keepPending) {
+	if (!_loadingContext) {
+		return;
+	}
+	const auto complete = !_imagesCache.empty()
+		&& _loadingContext->loaded
+		&& *_loadingContext->loaded >= int(_imagesCache.size())
+		&& ranges::all_of(_imagesCache, [](const auto &image) {
+			return !image.data.isNull();
+		});
+	if (keepPending && !complete) {
+		return;
+	}
+	_loadingContext = nullptr;
+	if (!complete) {
+		_textCachedFor = nullptr;
+	}
+}
+
 bool MessageView::dependsOn(not_null<const HistoryItem*> item) const {
 	return (_textCachedFor == item.get());
 }

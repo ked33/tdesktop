@@ -95,6 +95,7 @@ public:
 	bool minimizeActive();
 
 	void closeAll();
+	[[nodiscard]] bool releaseIdleMemory();
 
 	[[nodiscard]] rpl::lifetime &lifetime();
 

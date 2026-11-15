@@ -1135,6 +1135,22 @@ void Widget::setupSwipeBack() {
 
 }
 
+void Widget::collectIdleMemoryKeepRows(
+		base::flat_set<const BasicRow*> &keep) const {
+	_inner->collectIdleMemoryKeepRows(keep);
+	if (_childList) {
+		_childList->collectIdleMemoryKeepRows(keep);
+	}
+}
+
+void Widget::releaseIdleMemory(
+		const base::flat_set<const BasicRow*> &keep) {
+	_inner->releaseIdleMemory(keep);
+	if (_childList) {
+		_childList->releaseIdleMemory(keep);
+	}
+}
+
 void Widget::chosenRow(const ChosenRow &row) {
 	storiesToggleExplicitExpand(false);
 

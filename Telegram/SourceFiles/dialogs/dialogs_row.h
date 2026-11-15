@@ -46,6 +46,7 @@ class BasicRow : public base::has_weak_ptr {
 public:
 	BasicRow();
 	virtual ~BasicRow();
+	virtual void releaseIdleMemory();
 
 	virtual void paintUserpic(
 		Painter &p,
@@ -91,6 +92,7 @@ public:
 	}
 	Row(Key key, int index, int top);
 	~Row();
+	void releaseIdleMemory() override;
 
 	[[nodiscard]] static const style::DialogRow &ComputeSt(
 		not_null<const Entry*> entry,

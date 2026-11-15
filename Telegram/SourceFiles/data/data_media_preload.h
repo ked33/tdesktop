@@ -18,6 +18,7 @@ class MediaPreload {
 public:
 	explicit MediaPreload(Fn<void()> done);
 	virtual ~MediaPreload() = default;
+	[[nodiscard]] bool finished() const;
 
 protected:
 	void callDone();

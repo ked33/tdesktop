@@ -876,6 +876,13 @@ void Instance::showOpenedPage(
 		not_null<Data*> data,
 		QString hash,
 		bool requestFullOnOpen) {
+	if (!data->richPage()) {
+		_fullRequested[session].remove(data->id());
+		openWithIvPreferred(
+			session,
+			data->id() + (hash.isEmpty() ? QString() : u"#"_q + hash));
+		return;
+	}
 	if (Platform::IsMac()) {
 		// Otherwise IV is not visible under the media viewer.
 		Core::App().hideMediaView();
@@ -1264,7 +1271,9 @@ void Instance::openWithIvPreferred(
 	const auto hash = (parts.size() > 1) ? parts[1] : u""_q;
 	const auto url = parts[0];
 	const auto &cache = _ivCache[session];
-	if (const auto i = cache.find(url); i != end(cache)) {
+	const auto i = cache.find(url);
+	if (i != end(cache)
+		&& (!i->second || !i->second->iv || i->second->iv->richPage())) {
 		const auto page = i->second;
 		if (page && page->iv) {
 			auto my = context.value<ClickHandlerContext>();
@@ -1773,10 +1782,11 @@ void Instance::requestFull(
 		return;
 	}
 	requested.lastRequestedAt = now;
-	session->api().request(MTPmessages_GetWebPage(
+	const auto requestId = session->api().request(MTPmessages_GetWebPage(
 		MTP_string(id),
 		MTP_int(requested.hash)
-	)).done([=](const MTPmessages_WebPage &result) {
+	)).done([=](const MTPmessages_WebPage &result, mtpRequestId requestId) {
+		finishInPageRequest(session, requestId);
 		const auto processed = processReceivedPage(session, id, result);
 		if (processed.articleChanged
 			&& processed.page
@@ -1785,7 +1795,10 @@ void Instance::requestFull(
 			&& _shownSession == session) {
 			_shown->update(processed.page->iv.get());
 		}
+	}).fail([=](const MTP::Error &, mtpRequestId requestId) {
+		finishInPageRequest(session, requestId);
 	}).send();
+	_inPageRequested[session].emplace(requestId);
 }
 
 Instance::ProcessReceivedPageResult Instance::processReceivedPage(
@@ -1958,6 +1971,26 @@ bool Instance::hasActiveWindow(not_null<Main::Session*> session) const {
 	const auto i = _markdownBindings.find(activeMarkdownKey());
 	return (i != end(_markdownBindings))
 		&& (i->second.session == session.get());
+}
+
+bool Instance::releaseIdleMemory() {
+	eraseSettledHtmlExports();
+	if (_shown || !_closing.empty() || !_markdowns.empty()
+		|| !_htmlExports.empty() || _ivRequestId
+		|| !_inPageRequested.empty()) {
+		return false;
+	}
+	for (const auto &[session, requests] : _richMessageRequested) {
+		for (const auto &[id, request] : requests) {
+			if (request.requestId || !request.callbacks.empty()) {
+				return false;
+			}
+		}
+	}
+	_richMessageRequested.clear();
+	_ivCache.clear();
+	_fullRequested.clear();
+	return true;
 }
 
 bool Instance::closeActive() {

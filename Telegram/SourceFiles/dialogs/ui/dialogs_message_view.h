@@ -53,6 +53,7 @@ public:
 	using ItemPreview = HistoryView::ItemPreview;
 
 	void itemInvalidated(not_null<const HistoryItem*> item);
+	void releaseIdleMemory(bool keepPending = false);
 	[[nodiscard]] bool dependsOn(not_null<const HistoryItem*> item) const;
 
 	[[nodiscard]] bool prepared(

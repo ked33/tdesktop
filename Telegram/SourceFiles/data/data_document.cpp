@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_document.h"
 
 #include "data/data_document_resolver.h"
+#include "data/data_media_memory.h"
 #include "data/data_session.h"
 #include "data/data_streaming.h"
 #include "data/data_document_media.h"
@@ -1062,6 +1063,28 @@ void DocumentData::automaticLoadSettingsChanged() {
 	}
 	_loader = nullptr;
 	resetCancelled();
+}
+
+void DocumentData::compactMemory(Data::MediaMemoryCompactor &compactor) {
+	compactor.compact(_filename);
+	compactor.compact(_mimeString);
+	compactor.compact(_url);
+	compactor.compact(_fileReference);
+	compactor.compact(_inlineThumbnailBytes);
+	compactor.compact(_thumbnail.location);
+	compactor.compact(_videoThumbnail.location);
+	if (const auto data = sticker()) {
+		compactor.compact(data->alt);
+	} else if (const auto data = video()) {
+		compactor.compact(data->codec);
+	} else if (const auto data = song()) {
+		compactor.compact(data->title);
+		compactor.compact(data->performer);
+	}
+}
+
+bool DocumentData::releaseReplyPreviewMemory() {
+	return _replyPreview && _replyPreview->releaseIdleMemory();
 }
 
 void DocumentData::finishLoad() {

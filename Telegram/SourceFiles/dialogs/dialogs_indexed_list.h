@@ -45,6 +45,7 @@ public:
 
 	void remove(Key key, Row *replacedBy = nullptr);
 	void clear();
+	void releaseIdleMemory(const base::flat_set<const BasicRow*> &keep);
 
 	[[nodiscard]] const List &all() const {
 		return _list;

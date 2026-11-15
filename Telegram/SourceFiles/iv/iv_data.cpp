@@ -40,7 +40,7 @@ uint64 Data::pageId() const {
 }
 
 int32 Data::hash() const {
-	return _hash;
+	return _richPage ? _hash : 0;
 }
 
 bool Data::partial() const {
@@ -51,6 +51,14 @@ Data::~Data() = default;
 
 const std::shared_ptr<const RichPage> &Data::richPage() const {
 	return _richPage;
+}
+
+bool Data::releaseUnused() {
+	if (_richPage.use_count() != 1) {
+		return false;
+	}
+	_richPage = nullptr;
+	return true;
 }
 
 QString SiteNameFromUrl(const QString &url) {

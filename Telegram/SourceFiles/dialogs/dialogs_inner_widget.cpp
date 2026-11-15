@@ -832,6 +832,110 @@ bool InnerWidget::updateEntryHeight(not_null<Entry*> entry) {
 	return _shownList->updateHeight(entry, _narrowRatio) || changing;
 }
 
+void InnerWidget::collectIdleMemoryKeepRows(
+		base::flat_set<const BasicRow*> &keep) const {
+	if (!isVisible() || !_geometryInited || _visibleBottom <= _visibleTop) {
+		return;
+	}
+	const auto margin = (_visibleBottom - _visibleTop) * PreloadHeightsCount;
+	const auto remember = [&](const BasicRow *row, int top, int height) {
+		if (top + height > _visibleTop - margin
+			&& top < _visibleBottom + margin) {
+			keep.emplace(row);
+		}
+	};
+	if (_state == WidgetState::Default) {
+		for (const auto row : *_shownList) {
+			remember(
+				row.get(),
+				dialogsOffset() + row->top(),
+				row->height());
+		}
+		for (auto i = 0; i != communityRowCount(); ++i) {
+			const auto row = communityRowAt(i);
+			remember(row, communityRowAbsoluteTop(i), row->height());
+		}
+	} else {
+		for (const auto &result : _filterResults) {
+			remember(
+				result.row.get(),
+				filteredOffset() + result.top,
+				result.row->height());
+		}
+		for (auto i = 0; i != int(_peerSearchResults.size()); ++i) {
+			remember(
+				&_peerSearchResults[i]->row,
+				peerSearchOffset() + i * st::dialogsRowHeight,
+				st::dialogsRowHeight);
+		}
+		for (auto i = 0; i != int(_previewResults.size()); ++i) {
+			remember(
+				_previewResults[i].get(),
+				previewOffset() + i * _st->height,
+				_st->height);
+		}
+		for (auto i = 0; i != int(_searchResults.size()); ++i) {
+			remember(
+				_searchResults[i].get(),
+				searchedOffset() + i * _st->height,
+				_st->height);
+		}
+	}
+	if (_dragging) {
+		keep.emplace(_dragging);
+	}
+	for (const auto &result : _hashtagResults) {
+		keep.emplace(&result->row);
+	}
+}
+
+void InnerWidget::releaseIdleMemory(
+		const base::flat_set<const BasicRow*> &keep) {
+	_cachedRows.clear();
+	_rowsScrollCache.clear();
+	if (!isVisible()) {
+		_searchVisibleMedia.clear();
+	}
+	clearSearchMediaPins();
+	_shownList->releaseIdleMemory(keep);
+	for (auto i = 0; i != communityRowCount(); ++i) {
+		const auto row = communityRowAt(i);
+		if (!keep.contains(row)) {
+			row->releaseIdleMemory();
+		}
+	}
+	for (const auto &result : _filterResults) {
+		if (!keep.contains(result.row.get())) {
+			result.row->releaseIdleMemory();
+		}
+	}
+	for (const auto &[key, row] : _filterResultsGlobal) {
+		if (!keep.contains(row.get())) {
+			row->releaseIdleMemory();
+		}
+	}
+	for (const auto &result : _peerSearchResults) {
+		if (!keep.contains(&result->row)) {
+			result->row.releaseIdleMemory();
+		}
+	}
+	for (const auto &result : _hashtagResults) {
+		if (!keep.contains(&result->row)) {
+			result->row.releaseIdleMemory();
+		}
+	}
+	const auto release = [&](const auto &rows) {
+		for (const auto &row : rows) {
+			if (!keep.contains(row.get())) {
+				row->releaseIdleMemory();
+				row->itemView().releaseIdleMemory();
+			}
+		}
+	};
+	release(_previewResults);
+	release(_searchResults);
+}
+
 void InnerWidget::setNarrowRatio(float64 narrowRatio) {
 	if (_geometryInited && _narrowRatio == narrowRatio) {
 		return;

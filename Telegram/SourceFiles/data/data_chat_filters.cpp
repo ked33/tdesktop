@@ -417,6 +417,13 @@ void ChatFilters::clear() {
 	_list.clear();
 }
 
+void ChatFilters::releaseIdleMemory(
+		const base::flat_set<const Dialogs::BasicRow*> &keep) {
+	for (const auto &[id, list] : _chatsLists) {
+		list->indexed()->releaseIdleMemory(keep);
+	}
+}
+
 void ChatFilters::setPreloaded(
 		const QVector<MTPDialogFilter> &result,
 		bool tagsEnabled) {

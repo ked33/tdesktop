@@ -6,6 +6,9 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_session.h"
+
+#include "data/stickers/data_custom_emoji.h"
+#include "data/data_media_memory.h"
 #include "core/message_folding.h"
 
 #include "main/main_session.h"
@@ -2743,6 +2746,63 @@ int Session::releaseIdleMemory() {
 
 int Session::releaseIdleStreamingMemory() {
 	return _streaming->releaseIdleMemory();
+}
+
+void Session::releaseIdleMediaMemory(
+		const base::flat_set<const Dialogs::BasicRow*> &keep) {
+	auto previews = 0;
+	auto strings = 0;
+	auto bytes = 0;
+	auto limited = false;
+	{
+		auto compactor = MediaMemoryCompactor();
+		for (const auto &[id, document] : _documents) {
+			document->compactMemory(compactor);
+			previews += document->releaseReplyPreviewMemory() ? 1 : 0;
+		}
+		for (const auto &[id, photo] : _photos) {
+			photo->compactMemory(compactor);
+			previews += photo->releaseReplyPreviewMemory() ? 1 : 0;
+		}
+		strings = compactor.sharedStrings();
+		bytes = compactor.sharedByteArrays();
+		limited = compactor.limitReached();
+	}
+	const auto release = [&](not_null<Dialogs::MainList*> list) {
+		list->indexed()->releaseIdleMemory(keep);
+	};
+	release(&_chatsList);
+	_contactsList.releaseIdleMemory(keep);
+	_contactsNoChatsList.releaseIdleMemory(keep);
+	for (const auto &[id, folder] : _folders) {
+		release(folder->chatsList());
+	}
+	_chatsFilters->releaseIdleMemory(keep);
+	release(_savedMessages->chatsList());
+	for (const auto &[id, peer] : _peers) {
+		if (const auto forum = peer->forum()) {
+			release(forum->topicsList());
+		}
+		if (const auto saved = peer->monoforum()) {
+			release(saved->chatsList());
+		}
+	}
+	const auto sponsored = session().sponsoredMessages().releaseIdleMemory();
+	const auto emoji = _customEmojiManager->releaseIdleMemory();
+	LOG(("Memory cleanup: reply_previews=%1 sponsored_preloads=%2 "
+		"custom_emoji=%3 shared_strings=%4 shared_bytes=%5 limited=%6."
+		).arg(previews).arg(sponsored).arg(emoji)
+		.arg(strings).arg(bytes).arg(limited ? 1 : 0));
+}
+
+int Session::releaseIdleIvMemory() {
+	auto released = 0;
+	for (const auto &[id, page] : _webpages) {
+		if (page->iv && page->iv->releaseUnused()) {
+			++released;
+		}
+	}
+	return released;
 }
 
 void Session::unloadHeavyViewParts(

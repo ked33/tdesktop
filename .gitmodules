@@ -30,7 +30,7 @@
 	url = https://github.com/desktop-app/lib_tl.git
 [submodule "Telegram/lib_spellcheck"]
 	path = Telegram/lib_spellcheck
-	url = https://github.com/desktop-app/lib_spellcheck
+	url = https://github.com/ked33/lib_spellcheck.git
 [submodule "Telegram/lib_storage"]
 	path = Telegram/lib_storage
 	url = https://github.com/TDesktop-x64/lib_storage.git
@@ -81,7 +81,7 @@
 	url = https://github.com/google/cld3.git
 [submodule "Telegram/ThirdParty/libprisma"]
 	path = Telegram/ThirdParty/libprisma
-	url = https://github.com/desktop-app/libprisma.git
+	url = https://github.com/ked33/libprisma.git
 [submodule "Telegram/ThirdParty/xdg-desktop-portal"]
 	path = Telegram/ThirdParty/xdg-desktop-portal
 	url = https://github.com/flatpak/xdg-desktop-portal.git

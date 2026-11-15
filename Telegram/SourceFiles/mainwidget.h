@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/weak_ptr.h"
+#include "base/flat_set.h"
 #include "media/player/media_player_float.h"
 #include "mtproto/sender.h"
 
@@ -44,6 +45,7 @@ struct ReportInput;
 namespace Dialogs {
 struct RowDescriptor;
 class Row;
+class BasicRow;
 class Key;
 class Widget;
 } // namespace Dialogs
@@ -208,6 +210,10 @@ public:
 		const SectionShow &params,
 		MsgId msgId);
 	void reloadUnloadedHistory();
+	void collectIdleMemoryKeepRows(
+		base::flat_set<const Dialogs::BasicRow*> &keep) const;
+	void releaseIdleListMemory(
+		const base::flat_set<const Dialogs::BasicRow*> &keep);
 	[[nodiscard]] bool toggleMessageSelection(
 		not_null<HistoryItem*> item);
 	bool handleDrawToReplyRequest(Data::DrawToReplyRequest request);
