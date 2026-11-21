@@ -1754,12 +1754,27 @@ StorageFileLocation DocumentData::videoPreloadLocation() const {
 }
 
 auto DocumentData::createStreamingLoader(
-	Data::FileOrigin origin,
-	bool forceRemoteLoader) const
+		Data::FileOrigin origin,
+		bool forceRemoteLoader) const
 -> std::unique_ptr<Media::Streaming::Loader> {
 	if (!useStreamingLoader()) {
 		return nullptr;
 	}
+	return createStreamingLoaderImpl(origin, forceRemoteLoader);
+}
+
+auto DocumentData::createStreamingLoaderForExternalPlayer(
+		Data::FileOrigin origin) const
+-> std::unique_ptr<Media::Streaming::Loader> {
+	return (size > 0)
+		? createStreamingLoaderImpl(origin, false)
+		: nullptr;
+}
+
+auto DocumentData::createStreamingLoaderImpl(
+		Data::FileOrigin origin,
+		bool forceRemoteLoader) const
+-> std::unique_ptr<Media::Streaming::Loader> {
 	if (!forceRemoteLoader) {
 		const auto media = activeMediaView();
 		const auto &location = this->location(true);

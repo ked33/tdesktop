@@ -40,6 +40,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtNetwork/QTcpSocket>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -70,6 +71,64 @@ constexpr auto kMpvLoaderPriority = 2;
 [[nodiscard]] bool MpvDebugLogsEnabled() {
 	return GetEnhancedBool("mpv_streaming_debug_logs");
 }
+
+#ifdef Q_OS_WIN
+[[nodiscard]] bool IsVideoFileCandidate(not_null<DocumentData*> document) {
+	if (document->type != FileDocument) {
+		return false;
+	}
+	const auto mime = document->mimeString()
+		.section(u';', 0, 0)
+		.trimmed()
+		.toLower();
+	const auto extension = QFileInfo(document->filename()).suffix().toLower();
+	const auto videoMime = mime.startsWith(u"video/"_q) && mime.size() > 6;
+	if (videoMime && extension.isEmpty()) {
+		return true;
+	}
+	static const auto fallbackMimes = std::array{
+		u""_q,
+		u"application/binary"_q,
+		u"application/mp4"_q,
+		u"application/octet-stream"_q,
+		u"application/ogg"_q,
+		u"application/vnd.ms-asf"_q,
+		u"application/x-binary"_q,
+		u"application/x-matroska"_q,
+		u"binary/octet-stream"_q,
+	};
+	if (!videoMime
+		&& std::find(fallbackMimes.begin(), fallbackMimes.end(), mime)
+			== fallbackMimes.end()) {
+		return false;
+	}
+	static const auto extensions = std::array{
+		u"3g2"_q,
+		u"3gp"_q,
+		u"asf"_q,
+		u"avi"_q,
+		u"f4v"_q,
+		u"flv"_q,
+		u"m2ts"_q,
+		u"m2v"_q,
+		u"m4v"_q,
+		u"mkv"_q,
+		u"mov"_q,
+		u"mp4"_q,
+		u"mpe"_q,
+		u"mpeg"_q,
+		u"mpg"_q,
+		u"mts"_q,
+		u"ogv"_q,
+		u"ts"_q,
+		u"vob"_q,
+		u"webm"_q,
+		u"wmv"_q,
+	};
+	return std::find(extensions.begin(), extensions.end(), extension)
+		!= extensions.end();
+}
+#endif // Q_OS_WIN
 
 [[nodiscard]] bool LooksLikeMp4Stream(not_null<DocumentData*> document) {
 	const auto mime = document->mimeString().toLower();
@@ -270,7 +329,7 @@ void ActivateSmartReader(
 [[nodiscard]] std::shared_ptr<Reader> CreateDedicatedReader(
 		not_null<DocumentData*> document,
 		Data::FileOrigin origin) {
-	auto loader = document->createStreamingLoader(origin, false);
+	auto loader = document->createStreamingLoaderForExternalPlayer(origin);
 	if (!loader) {
 		return nullptr;
 	}
@@ -1221,21 +1280,22 @@ private:
 
 } // namespace
 
-	bool CanOpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
-	#ifndef Q_OS_WIN
+bool CanOpenVideoMessageInMpv(HistoryItem *item, DocumentData *document) {
+#ifndef Q_OS_WIN
+	return false;
+#else
+	if (!item || !document) {
 		return false;
-	#else
-		if (!item || !document) {
-			return false;
-		}
-		const auto media = item->media();
-		return media
-			&& (media->ttlSeconds() <= 0)
-			&& document->size > 0
-			&& document->useStreamingLoader()
-			&& (document->isVideoFile() || document->isVideoMessage());
-	#endif
 	}
+	const auto media = item->media();
+	return media
+		&& (media->ttlSeconds() <= 0)
+		&& document->size > 0
+		&& ((document->useStreamingLoader()
+				&& (document->isVideoFile() || document->isVideoMessage()))
+			|| IsVideoFileCandidate(document));
+#endif
+}
 
 OpenResult OpenVideoMessageInMpv(
 		HistoryItem *item,

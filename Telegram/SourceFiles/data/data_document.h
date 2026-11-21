@@ -315,6 +315,9 @@ public:
 		Data::FileOrigin origin,
 		bool forceRemoteLoader) const
 	-> std::unique_ptr<Media::Streaming::Loader>;
+	[[nodiscard]] auto createStreamingLoaderForExternalPlayer(
+		Data::FileOrigin origin) const
+	-> std::unique_ptr<Media::Streaming::Loader>;
 	[[nodiscard]] bool useStreamingLoader() const;
 	[[nodiscard]] auto createStreamedDownloader(
 		std::shared_ptr<Media::Streaming::Reader> reader,
@@ -389,6 +392,11 @@ private:
 	static constexpr Flags kStreamingSupportedNo = Flags();
 
 	friend class Serialize::Document;
+
+	[[nodiscard]] auto createStreamingLoaderImpl(
+		Data::FileOrigin origin,
+		bool forceRemoteLoader) const
+	-> std::unique_ptr<Media::Streaming::Loader>;
 
 	void validateLottieSticker();
 	void setMaybeSupportsStreaming(bool supports);
