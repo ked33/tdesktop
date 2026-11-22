@@ -92,6 +92,7 @@ class BasicRow;
 class FakeRow;
 class IndexedList;
 class SearchTags;
+class SearchQuery;
 class SearchEmpty;
 class ChatSearchIn;
 class CommunityRequestableList;
@@ -813,6 +814,7 @@ private:
 	MessageIdsList _previewSearchCandidates;
 	std::map<FullMsgId, bool> _searchMatches;
 	QString _searchMatchQuery;
+	std::unique_ptr<SearchQuery> _searchMatchTerms;
 	bool _searchExactMatch = true;
 	Api::PornSearchResult _pornSearchResult;
 	object_ptr<Ui::FlatLabel> _pornSearchStatus = { nullptr };

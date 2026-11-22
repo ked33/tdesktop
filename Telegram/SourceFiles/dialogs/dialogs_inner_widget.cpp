@@ -1949,6 +1949,7 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 						.filter = _filterId,
 						.now = ms,
 						.searchQuery = searchQuery,
+						.searchQueryTerms = _searchMatchTerms.get(),
 						.width = fullWidth,
 						.active = active,
 						.selected = selected,
@@ -2000,6 +2001,7 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 						.filter = _filterId,
 						.now = ms,
 						.searchQuery = searchQuery,
+						.searchQueryTerms = _searchMatchTerms.get(),
 						.width = fullWidth,
 						.active = active,
 						.selected = selected,
@@ -4656,7 +4658,14 @@ void InnerWidget::applySearchState(SearchState state) {
 	}
 	_searchState = std::move(state);
 	_searchExactMatch = EnhancedSettings::SearchExactMatchEnabled();
-	_searchMatchQuery = _searchState.query.trimmed();
+	const auto matchQuery = _searchState.query.trimmed();
+	if (!_searchMatchTerms || _searchMatchQuery != matchQuery) {
+		_searchMatchQuery = matchQuery;
+		if (!_searchMatchTerms) {
+			_searchMatchTerms = std::make_unique<SearchQuery>();
+		}
+		*_searchMatchTerms = ParseSearchQuery(_searchMatchQuery);
+	}
 	_searchMatches.clear();
 	_searchHashOrCashtag = IsHashOrCashtagSearchQuery(_searchState.query);
 	_searchWithPostsPreview = computeSearchWithPostsPreview();
@@ -4733,12 +4742,14 @@ bool InnerWidget::skipSearchItem(not_null<HistoryItem*> item) {
 	if (SkipGlobalSearchItem(_searchState, item)) {
 		return true;
 	}
-	if (!_searchExactMatch || _searchMatchQuery.isEmpty()) {
+	if (!_searchExactMatch || !_searchMatchTerms || _searchMatchTerms->empty()) {
 		return false;
 	}
 	const auto [i, inserted] = _searchMatches.try_emplace(item->fullId(), false);
 	if (inserted) {
-		i->second = SearchTextMatches(item->originalText().text, _searchMatchQuery);
+		i->second = SearchTextMatches(
+			item->originalText().text,
+			*_searchMatchTerms);
 	}
 	return !i->second;
 }

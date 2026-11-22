@@ -1417,6 +1417,7 @@ void RowPainter::Paint(
 	previewOptions.ignoreGroup = true;
 	previewOptions.searchLowerText = context.searchLowerText;
 	previewOptions.searchQuery = context.searchQuery;
+	previewOptions.searchQueryTerms = context.searchQueryTerms;
 
 	const auto badgesState = context.displayUnreadInfo
 		? entry->chatListBadgesState()

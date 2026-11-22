@@ -1,8 +1,9 @@
+#include "api/api_porn_search_policy.h"
 #include "chat_helpers/hashtag_suggestions.h"
 #include "dialogs/dialogs_search_match.h"
-#include "api/api_porn_search_policy.h"
 
 #include "ui/text/text_entity.h"
+#include "ui/emoji_config.h"
 
 #include <QtCore/QElapsedTimer>
 #include <QtGui/QGuiApplication>
@@ -17,6 +18,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
+#include <vector>
 
 namespace {
 
@@ -57,18 +59,18 @@ void CheckMessageSearch() {
 	Check(text.entities.size() == 2 && text.entities[0].length() == 3
 		&& text.entities[1].offset() == 6, "all repeated hashtags highlighted");
 	Check(text.entities[0].data() == QString(QChar(1)), "dedicated highlight color");
-	auto overlap = TextWithEntities{ u"ababa"_q };
-	Check(HighlightSearchText(overlap, u"aba") == 0, "overlap first offset");
-	Check(overlap.entities.size() == 1 && overlap.entities[0].length() == 5,
+	auto overlap = TextWithEntities{ u"测试测试测试"_q };
+	Check(HighlightSearchText(overlap, u"测试测试") == 0, "overlap first offset");
+	Check(overlap.entities.size() == 1 && overlap.entities[0].length() == 6,
 		"overlapping matches are merged");
-	auto marked = TextWithEntities{ u"abcdef"_q, {
-		EntityInText(EntityType::Colorized, 0, 6),
-		EntityInText(EntityType::Spoiler, 0, 6),
+	auto marked = TextWithEntities{ u"ab cd ef"_q, {
+		EntityInText(EntityType::Colorized, 0, 8),
+		EntityInText(EntityType::Spoiler, 0, 8),
 	} };
-	Check(HighlightSearchText(marked, u"cd") == 2, "match inside existing color");
+	Check(HighlightSearchText(marked, u"cd") == 3, "match inside existing color");
 	Check(marked.entities.size() == 4, "existing color split around match");
 	Check(std::any_of(marked.entities.begin(), marked.entities.end(), [](const auto &entity) {
-		return entity.type() == EntityType::Spoiler && entity.length() == 6;
+		return entity.type() == EntityType::Spoiler && entity.length() == 8;
 	}), "spoiler preserved");
 	auto sender = TextWithEntities{ u"搜索测试: 正文搜索测试"_q };
 	Check(HighlightSearchText(sender, u"搜索测试", 6) == 8,
@@ -76,6 +78,190 @@ void CheckMessageSearch() {
 	auto longText = TextWithEntities{ QString(100000, QChar('x')) + u"搜索测试"_q };
 	Check(HighlightSearchText(longText, u"搜索测试") == 100000,
 		"match offsets do not truncate to uint16");
+}
+
+void CheckSearchQueryRules() {
+	using namespace Dialogs;
+	struct MatchCase {
+		QStringView text;
+		QStringView query;
+		bool matches = false;
+		const char *name = nullptr;
+	};
+	const auto cases = std::vector<MatchCase>{
+		{ u"dsfsadjfasdlkfuiej demo 测试", u"测试 demo", true,
+			"unordered Chinese and English example" },
+		{ u"dsfsadjfasdlkfuiej demo #测试", u"#测试 demo", true,
+			"unordered hashtag and English example" },
+		{ u"#demo dsfsadjfasdlkfuiej  #测试", u"#测试 #demo", true,
+			"unordered hashtags example" },
+		{ u"demox fdsfkddsa #测试", u"#测试 demo", false,
+			"English suffix excludes a multi-keyword result" },
+		{ u"demo #其他", u"#测试 demo", false,
+			"every keyword must occur in the same message" },
+		{ u"#测试", u"#测试 demo", false,
+			"matching hashtag cannot replace missing word" },
+		{ u"demox xdemo demo123 demo_1 demo\u0301", u"demo", false,
+			"letters digits underscores and combining marks extend words" },
+		{ u"\U0001D400demo", u"demo", false,
+			"supplementary Unicode letter blocks the left boundary" },
+		{ u"demo\U0001D400", u"demo", false,
+			"supplementary Unicode letter blocks the right boundary" },
+		{ u"(demo)", u"demo", true, "parentheses delimit a word" },
+		{ u"demo-test", u"demo", true, "hyphen delimits a word" },
+		{ u"demo🚀", u"demo", true, "emoji delimits a word" },
+		{ u"demo❤️", u"demo", true,
+			"variation-selector emoji delimits the right boundary" },
+		{ u"❤️demo", u"demo", true,
+			"variation-selector emoji delimits the left boundary" },
+		{ u"demo1️⃣", u"demo", true,
+			"keycap digit is an emoji boundary rather than a word suffix" },
+		{ u"1️⃣demo", u"demo", true,
+			"keycap combining mark is an emoji boundary" },
+		{ u"👩‍💻demo", u"demo", true,
+			"joined emoji delimits a word" },
+		{ u"👍🏽demo", u"demo", true,
+			"skin-tone emoji delimits a word" },
+		{ u"#测试123 #测试扩展 x#测试", u"#测试", false,
+			"Chinese hashtag always requires complete boundaries" },
+		{ u"#demo123 #demox", u"#demo", false,
+			"English hashtag always requires complete boundaries" },
+		{ u"测试 demo", u"#测试 demo", false,
+			"hash remains required input content" },
+		{ u"❤️#测试", u"#测试", true,
+			"emoji delimits a complete hashtag" },
+		{ u"(#测试),demo!", u"#测试 demo", true,
+			"punctuation separates both keywords without whitespace" },
+		{ u"#demo", u"demo", true,
+			"plain word may match the word in a hashtag" },
+		{ u"demo", u"#demo", false,
+			"hashtag cannot match a plain word" },
+		{ u"demox … demo … #测试", u"#测试 demo", true,
+			"invalid first occurrence does not hide a later complete word" },
+		{ u"这是测试消息 测试扩展", u"测试", true,
+			"ordinary Chinese words retain substring matching" },
+		{ u"前文小远OvO后文", u"小远ovo", true,
+			"mixed Chinese word retains case-insensitive substring matching" },
+		{ u"x\U00020000y", u"\U00020000", true,
+			"supplementary Han character uses Chinese substring matching" },
+		{ u"#测试 DEMO", u"\t#测试\u00A0demo\u202F DEMO \u3000", true,
+			"Unicode whitespace and case-insensitive duplicate keywords" },
+		{ u"#测试\r\ndemo", u"  demo \t #测试 \n", true,
+			"line breaks and surrounding query whitespace are accepted" },
+		{ u"demo", u"demo DEMO demo", true,
+			"repeated keywords do not require repeated occurrences" },
+		{ u"任意消息", u" \t\r\n\u3000", true,
+			"whitespace-only query preserves unfiltered results" },
+		{ u"", u"demo", false, "nonempty query cannot match empty text" },
+		{ u"demo", u"demo❤️", false,
+			"emoji in query cannot be dropped" },
+		{ u"demo❤️", u"demo❤️", true,
+			"complete emoji in query is literal content" },
+		{ u"1️⃣", u"1", false,
+			"word cannot select part of a keycap emoji" },
+		{ u"demo❤️", u"demo❤", false,
+			"query cannot end within an emoji" },
+		{ u"👩‍💻", u"👩", false,
+			"query cannot select part of a joined emoji" },
+		{ u"这是测试❤️消息", u"测试❤", false,
+			"Chinese substring cannot truncate an emoji" },
+		{ u"demo", u"\"demo\"", false,
+			"double quotes remain literal characters" },
+		{ u"\"demo\"", u"\"demo\"", true,
+			"literal quoted keyword can match literal quoted text" },
+		{ u"\"测试 filler demo\"", u"\"测试 demo\"", true,
+			"quotes do not introduce continuous phrase matching" },
+		{ u"café", u"cafe", false,
+			"matching does not remove accents" },
+		{ u"demo test", u"demo-test", false,
+			"punctuation in query remains literal content" },
+		{ u"a.b", u"a.b", true,
+			"period in query is matched literally" },
+		{ u"axb", u"a.b", false,
+			"period in query is not a wildcard" },
+		{ u"c++", u"c++", true,
+			"plus signs in query are matched literally" },
+		{ u"c", u"c++", false,
+			"plus signs in query are required content" },
+	};
+	for (const auto &entry : cases) {
+		Check(
+			SearchTextMatches(entry.text, entry.query) == entry.matches,
+			entry.name);
+	}
+	const auto query = ParseSearchQuery(u"#测试 demo DEMO");
+	Check(
+		SearchTextMatches(u"demo #测试", query),
+		"parsed query can be reused for matching messages");
+	Check(
+		!SearchTextMatches(u"demox #测试", query),
+		"reused parsed query does not cache the previous message result");
+	auto source = u"#测试 demo"_q;
+	const auto owned = ParseSearchQuery(source);
+	source.clear();
+	Check(
+		SearchTextMatches(u"demo #测试", owned),
+		"parsed query owns its keywords after input text is released");
+}
+
+void CheckSearchHighlights() {
+	using namespace Dialogs;
+	const auto query = ParseSearchQuery(u"#测试 demo DEMO");
+	auto text = TextWithEntities{ u"demox demo #测试 demo"_q };
+	Check(HighlightSearchText(text, query) == 6,
+		"highlight skips an incomplete first occurrence");
+	Check(text.entities.size() == 3,
+		"all keywords and all repeated valid occurrences are highlighted");
+	Check(text.entities[0].offset() == 6 && text.entities[0].length() == 4
+		&& text.entities[1].offset() == 11 && text.entities[1].length() == 3
+		&& text.entities[2].offset() == 15 && text.entities[2].length() == 4,
+		"unordered and deduplicated highlights retain original offsets");
+	auto overlap = TextWithEntities{ u"这是测试消息"_q };
+	Check(HighlightSearchText(overlap, u"测试 测试消息") == 2,
+		"multiple Chinese keywords can overlap");
+	Check(overlap.entities.size() == 1
+		&& overlap.entities[0].length() == 4,
+		"overlap across different keywords produces one highlight");
+	auto tag = TextWithEntities{ u"#demo"_q };
+	Check(HighlightSearchText(tag, u"demo #demo") == 0,
+		"plain word and hashtag may match the same message span");
+	Check(tag.entities.size() == 1
+		&& tag.entities[0].length() == 5,
+		"plain word highlight merges into its containing hashtag");
+	auto emoji = TextWithEntities{ u"❤️demo1️⃣ #测试"_q };
+	Check(HighlightSearchText(emoji, query) == 2,
+		"composite emoji leaves original UTF-16 highlight offset");
+	Check(emoji.entities.size() == 2
+		&& emoji.entities[0].offset() == 2 && emoji.entities[0].length() == 4
+		&& emoji.entities[1].offset() == 10 && emoji.entities[1].length() == 3,
+		"keycap emoji is kept intact beside highlighted words");
+	auto incomplete = TextWithEntities{ u"demox #测试扩展"_q };
+	Check(HighlightSearchText(incomplete, query) == -1
+		&& incomplete.entities.empty(),
+		"incomplete words and tags receive no highlight");
+	auto clipped = TextWithEntities{ u"xdemo demo"_q };
+	Check(HighlightSearchText(clipped, u"demo", 1) == 6,
+		"start offset cannot manufacture a complete left boundary");
+	auto sender = TextWithEntities{ u"demo: #测试 demo"_q };
+	Check(HighlightSearchText(sender, query, 6) == 6,
+		"all keywords exclude the sender label");
+	Check(sender.entities.size() == 2
+		&& sender.entities[0].offset() == 6
+		&& sender.entities[1].offset() == 10,
+		"sender exclusion preserves both body keyword offsets");
+	auto empty = TextWithEntities{ u"demo"_q };
+	Check(HighlightSearchText(empty, u" \t") == -1
+		&& empty.entities.empty(),
+		"empty parsed query adds no highlight entities");
+	auto longText = TextWithEntities{
+		QString(100000, QChar('x')) + u" demo #测试"_q,
+	};
+	Check(HighlightSearchText(longText, query) == 100001,
+		"complete-word highlights retain offsets larger than uint16");
+	Check(longText.entities.size() == 2
+		&& longText.entities[0].offset() == 100001
+		&& longText.entities[1].offset() == 100006,
+		"long multi-keyword highlight offsets do not truncate");
 }
 
 void CheckFilteredPaging() {
@@ -366,7 +552,10 @@ rpl::producer<> on_main_update_requests() {
 
 int main(int argc, char *argv[]) {
 	const auto app = QGuiApplication(argc, argv);
+	Ui::Emoji::internal::Init();
 	CheckMessageSearch();
+	CheckSearchQueryRules();
+	CheckSearchHighlights();
 	CheckFilteredPaging();
 	CheckMatching();
 	CheckUnicode();

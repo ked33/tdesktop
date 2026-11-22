@@ -9559,7 +9559,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_search_chinese_keywords" = "Optimize Chinese keyword search";
 "lng_search_filters" = "Search filters";
 "lng_settings_search_exact_match" = "Match complete search text";
-"lng_settings_search_exact_match_about" = "Only show messages whose original text or caption contains the complete search text, ignoring letter case. Applies to all message search results, including searches in chats and topics.";
+"lng_settings_search_exact_match_about" = "Split keywords on whitespace and show messages whose original text or caption contains every keyword, in any order and ignoring letter case. Ordinary keywords containing Chinese characters can match substrings; other keywords and # tags must match completely, with punctuation and emoji acting as boundaries. Applies to message searches across chats, in a chat, or in a topic.";
 "lng_search_chinese_keywords_about" = "Search standalone Chinese terms as quoted phrases on the server. This does not restrict results to Chinese messages or replace complete text matching.";
 "lng_search_matched_results" = "Matching messages loaded: {total}";
 "lng_message_folding_enabled" = "Enable message folding";

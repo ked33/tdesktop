@@ -287,10 +287,10 @@ void MessageView::prepare(
 
 	_searchQuery = options.searchQuery.toString();
 	if (!options.searchQuery.isEmpty()) {
-		const auto first = HighlightSearchText(
-			textToCache,
-			options.searchQuery,
-			std::min(matchFrom, int(textToCache.text.size())));
+		const auto start = std::min(matchFrom, int(textToCache.text.size()));
+		const auto first = options.searchQueryTerms
+			? HighlightSearchText(textToCache, *options.searchQueryTerms, start)
+			: HighlightSearchText(textToCache, options.searchQuery, start);
 		if (first >= 0) {
 			auto start = std::max(first - 15, 0);
 			if (start > 0 && textToCache.text[start].isLowSurrogate()) {

@@ -32,6 +32,7 @@ namespace Dialogs {
 class Row;
 class FakeRow;
 class BasicRow;
+class SearchQuery;
 struct RightButton;
 } // namespace Dialogs
 
@@ -71,6 +72,7 @@ struct PaintContext {
 	crl::time now = 0;
 	QStringView searchLowerText;
 	QStringView searchQuery;
+	const SearchQuery *searchQueryTerms = nullptr;
 	int width = 0;
 	bool active = false;
 	bool selected = false;

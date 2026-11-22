@@ -9,6 +9,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 class HistoryItem;
 
+namespace Dialogs {
+class SearchQuery;
+} // namespace Dialogs
+
 namespace HistoryView {
 
 struct ItemPreviewImage {
@@ -45,6 +49,7 @@ struct ToPreviewOptions {
 	const std::vector<ItemPreviewImage> *existing = nullptr;
 	QStringView searchLowerText;
 	QStringView searchQuery;
+	const Dialogs::SearchQuery *searchQueryTerms = nullptr;
 	bool hideSender = false;
 	bool hideCaption = false;
 	bool ignoreMessageText = false;
