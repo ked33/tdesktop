@@ -89,6 +89,36 @@ void CheckSearchQueryRules() {
 		const char *name = nullptr;
 	};
 	const auto cases = std::vector<MatchCase>{
+		{ u"测试demo", u"测试 demo", true,
+			"Chinese and English keywords can share adjacent text" },
+		{ u"#测试demo", u"#测试 demo", false,
+			"matched hashtag body cannot supply another partial word" },
+		{ u"demo_1", u"demo", true,
+			"underscore delimits the end of a word" },
+		{ u"_demo", u"demo", true,
+			"underscore delimits the start of a word" },
+		{ u"#测试demo", u"#测试", true,
+			"hashtag query retains literal substring matching" },
+		{ u"#测试_1", u"#测试", true,
+			"hashtag query permits an underscore suffix" },
+		{ u"x#测试", u"#测试", true,
+			"hashtag query does not require a left word boundary" },
+		{ u"1️⃣", u"1", true,
+			"plain digit matches the corresponding complete keycap emoji" },
+		{ u"demo🚀", u"🚀", true,
+			"emoji-only keyword does not require a Latin word boundary" },
+		{ u"demo-test", u"demo test", true,
+			"hyphen separates two message words" },
+		{ u"demo test", u"demo-test", true,
+			"hyphen in query separates two AND keywords" },
+		{ u"café", u"cafe", true,
+			"precomposed accents are folded for matching" },
+		{ u"ＤＥＭＯ", u"demo", true,
+			"fullwidth letters are folded for matching" },
+		{ u"#测试demo", u"demo", true,
+			"unrequested hashtag body can supply a plain word" },
+		{ u"1", u"1️⃣", true,
+			"keycap query matches the corresponding plain digit" },
 		{ u"dsfsadjfasdlkfuiej demo 测试", u"测试 demo", true,
 			"unordered Chinese and English example" },
 		{ u"dsfsadjfasdlkfuiej demo #测试", u"#测试 demo", true,
@@ -101,8 +131,10 @@ void CheckSearchQueryRules() {
 			"every keyword must occur in the same message" },
 		{ u"#测试", u"#测试 demo", false,
 			"matching hashtag cannot replace missing word" },
-		{ u"demox xdemo demo123 demo_1 demo\u0301", u"demo", false,
-			"letters digits underscores and combining marks extend words" },
+		{ u"demox xdemo demo123 1demo", u"demo", false,
+			"Latin letters and plain digits extend words" },
+		{ u"demo\u0301", u"demo", true,
+			"trailing combining accent is folded with the matched word" },
 		{ u"\U0001D400demo", u"demo", false,
 			"supplementary Unicode letter blocks the left boundary" },
 		{ u"demo\U0001D400", u"demo", false,
@@ -122,10 +154,10 @@ void CheckSearchQueryRules() {
 			"joined emoji delimits a word" },
 		{ u"👍🏽demo", u"demo", true,
 			"skin-tone emoji delimits a word" },
-		{ u"#测试123 #测试扩展 x#测试", u"#测试", false,
-			"Chinese hashtag always requires complete boundaries" },
-		{ u"#demo123 #demox", u"#demo", false,
-			"English hashtag always requires complete boundaries" },
+		{ u"#测试123 #测试扩展 x#测试", u"#测试", true,
+			"Chinese hashtag query permits literal prefix and infix matches" },
+		{ u"#demo123 #demox", u"#demo", true,
+			"English hashtag query permits literal prefix matches" },
 		{ u"测试 demo", u"#测试 demo", false,
 			"hash remains required input content" },
 		{ u"❤️#测试", u"#测试", true,
@@ -157,8 +189,24 @@ void CheckSearchQueryRules() {
 			"emoji in query cannot be dropped" },
 		{ u"demo❤️", u"demo❤️", true,
 			"complete emoji in query is literal content" },
-		{ u"1️⃣", u"1", false,
-			"word cannot select part of a keycap emoji" },
+		{ u"demo1️⃣", u"1", true,
+			"keycap digit can match beside a Latin word" },
+		{ u"demo1", u"1", false,
+			"plain digit query cannot match a Latin word suffix" },
+		{ u"demo1", u"1️⃣", false,
+			"keycap query uses the same numeric word boundary as a plain digit" },
+		{ u"demo1️⃣", u"1️⃣", true,
+			"keycap query uses the complete message emoji as a word boundary" },
+		{ u"1", u"1 1️⃣", true,
+			"equivalent digit and keycap keywords need only one occurrence" },
+		{ u"demo1", u"1 1️⃣", false,
+			"equivalent numeric keywords retain the plain text suffix rejection" },
+		{ u"demo1️⃣", u"1 1️⃣", true,
+			"equivalent numeric keywords share one complete message keycap" },
+		{ u"❤️", u"❤", false,
+			"non-keycap emoji cannot discard a required variation selector" },
+		{ u"❤", u"❤️", false,
+			"non-keycap emoji query retains its variation selector" },
 		{ u"demo❤️", u"demo❤", false,
 			"query cannot end within an emoji" },
 		{ u"👩‍💻", u"👩", false,
@@ -171,10 +219,58 @@ void CheckSearchQueryRules() {
 			"literal quoted keyword can match literal quoted text" },
 		{ u"\"测试 filler demo\"", u"\"测试 demo\"", true,
 			"quotes do not introduce continuous phrase matching" },
-		{ u"café", u"cafe", false,
-			"matching does not remove accents" },
-		{ u"demo test", u"demo-test", false,
-			"punctuation in query remains literal content" },
+		{ u"cafe", u"café", true,
+			"accent folding is symmetric for the query" },
+		{ u"cafe\u0301", u"cafe", true,
+			"decomposed accent folds to its plain word" },
+		{ u"cafe", u"cafe\u0301", true,
+			"decomposed accent in query folds to its plain word" },
+		{ u"demo", u"ＤＥＭＯ", true,
+			"fullwidth folding is symmetric for the query" },
+		{ u"＃测试＿1", u"#测试", true,
+			"fullwidth hash and underscore are folded in message text" },
+		{ u"#测试_1", u"＃测试", true,
+			"fullwidth hash is folded in query text" },
+		{ u"test demo", u"demo－test", true,
+			"fullwidth hyphen in query separates unordered AND keywords" },
+		{ u"demo－test", u"demo test", true,
+			"fullwidth hyphen separates two message words" },
+		{ u"demo＿1", u"demo", true,
+			"fullwidth underscore delimits a word after folding" },
+		{ u"1demo", u"1_demo", false,
+			"underscore in query remains literal required content" },
+		{ u"1_demo", u"1_demo", true,
+			"underscore is not a query keyword separator" },
+		{ u"#测试demo demo", u"#测试 demo", true,
+			"standalone word can satisfy a query beside its matched hashtag" },
+		{ u"#测试demo demo", u"demo #测试", true,
+			"hashtag body protection does not depend on query order" },
+		{ u"#测试 #其他demo", u"#测试 demo", true,
+			"another unrequested hashtag can supply the plain word" },
+		{ u"#demo", u"demo #demo", true,
+			"plain word can share an entire matched hashtag body" },
+		{ u"＃测试demo", u"#测试 demo", false,
+			"folded hashtag body cannot supply another partial word" },
+		{ u"#测试ＤＥＭＯ", u"#测试 demo", false,
+			"folded suffix inside the matched hashtag remains protected" },
+		{ u"测试demo", u"demo", true,
+			"Han character delimits a Latin word on the left" },
+		{ u"demo测试", u"demo", true,
+			"Han character delimits a Latin word on the right" },
+		{ u"测试demo扩展", u"demo", true,
+			"Han characters delimit both ends of a Latin word" },
+		{ u"xdemo测试", u"demo", false,
+			"Han suffix cannot override a Latin prefix" },
+		{ u"测试demox", u"demo", false,
+			"Han prefix cannot override a Latin suffix" },
+		{ u"caféx", u"cafe", false,
+			"accent folding does not remove a Latin suffix" },
+		{ u"cafe\u0301teria", u"cafe", false,
+			"decomposed accent cannot create a word boundary" },
+		{ u"21 12 demo1", u"1", false,
+			"plain numeric word still requires surrounding boundaries" },
+		{ u"demo", u" -- \t- \n", true,
+			"query containing only keyword separators has no terms" },
 		{ u"a.b", u"a.b", true,
 			"period in query is matched literally" },
 		{ u"axb", u"a.b", false,
@@ -236,9 +332,19 @@ void CheckSearchHighlights() {
 		&& emoji.entities[1].offset() == 10 && emoji.entities[1].length() == 3,
 		"keycap emoji is kept intact beside highlighted words");
 	auto incomplete = TextWithEntities{ u"demox #测试扩展"_q };
-	Check(HighlightSearchText(incomplete, query) == -1
-		&& incomplete.entities.empty(),
-		"incomplete words and tags receive no highlight");
+	Check(HighlightSearchText(incomplete, query) == 6
+		&& incomplete.entities.size() == 1
+		&& incomplete.entities[0].length() == 3,
+		"hashtag substring is highlighted while Latin suffix is rejected");
+	auto protectedBody = TextWithEntities{ u"#测试demo demo"_q };
+	Check(HighlightSearchText(protectedBody, query) == 0,
+		"matched hashtag prefix remains highlighted");
+	Check(protectedBody.entities.size() == 2
+		&& protectedBody.entities[0].offset() == 0
+		&& protectedBody.entities[0].length() == 3
+		&& protectedBody.entities[1].offset() == 8
+		&& protectedBody.entities[1].length() == 4,
+		"only the independent ordinary word is highlighted beside a matched tag");
 	auto clipped = TextWithEntities{ u"xdemo demo"_q };
 	Check(HighlightSearchText(clipped, u"demo", 1) == 6,
 		"start offset cannot manufacture a complete left boundary");
@@ -262,6 +368,83 @@ void CheckSearchHighlights() {
 		&& longText.entities[0].offset() == 100001
 		&& longText.entities[1].offset() == 100006,
 		"long multi-keyword highlight offsets do not truncate");
+}
+
+void CheckFoldedSearchHighlights() {
+	using namespace Dialogs;
+	struct HighlightRange {
+		int offset = 0;
+		int length = 0;
+	};
+	const auto query = ParseSearchQuery(u"cafe 1 demo #测试");
+	auto text = TextWithEntities{ u"cafe\u0301 1️⃣ ＤＥＭＯ #测试 demo"_q };
+	Check(HighlightSearchText(text, query) == 0,
+		"folded keywords retain the first original text position");
+	const auto expected = std::vector<HighlightRange>{
+		{ 0, 5 }, { 6, 3 }, { 10, 4 }, { 15, 3 }, { 19, 4 },
+	};
+	Check(text.entities.size() == expected.size(),
+		"all folded keywords retain distinct original highlight ranges");
+	for (auto i = size_t(0); i < expected.size(); ++i) {
+		Check(
+			text.entities[i].offset() == expected[i].offset
+				&& text.entities[i].length() == expected[i].length,
+			"sparse normalization mapping preserves original UTF-16 ranges");
+	}
+	auto precomposed = TextWithEntities{ u"café"_q };
+	Check(HighlightSearchText(precomposed, u"cafe") == 0
+		&& precomposed.entities.size() == 1
+		&& precomposed.entities[0].length() == 4,
+		"precomposed accent highlight retains the original glyph length");
+	auto keycap = TextWithEntities{ u"demo1️⃣"_q };
+	Check(HighlightSearchText(keycap, u"1") == 4
+		&& keycap.entities.size() == 1
+		&& keycap.entities[0].length() == 3,
+		"numeric highlight covers the entire keycap emoji");
+	auto plainDigit = TextWithEntities{ u"1"_q };
+	Check(HighlightSearchText(plainDigit, u"1️⃣") == 0
+		&& plainDigit.entities.size() == 1
+		&& plainDigit.entities[0].length() == 1,
+		"keycap query maps back to a plain numeric glyph");
+	auto rocket = TextWithEntities{ u"demo🚀"_q };
+	Check(HighlightSearchText(rocket, u"🚀") == 4
+		&& rocket.entities.size() == 1
+		&& rocket.entities[0].length() == 2,
+		"emoji-only keyword highlights the complete surrogate pair");
+	auto accentStart = TextWithEntities{ u"cafe\u0301 cafe"_q };
+	Check(HighlightSearchText(accentStart, u"cafe", 4) == 6
+		&& accentStart.entities.size() == 1
+		&& accentStart.entities[0].offset() == 6,
+		"start inside a folded accent cannot expose its earlier word");
+	auto keycapStart = TextWithEntities{ u"1️⃣ 1"_q };
+	Check(HighlightSearchText(keycapStart, u"1", 1) == 4
+		&& keycapStart.entities.size() == 1
+		&& keycapStart.entities[0].offset() == 4,
+		"start inside a folded keycap cannot expose its earlier emoji");
+	auto emojiStart = TextWithEntities{ u"🚀 🚀"_q };
+	Check(HighlightSearchText(emojiStart, u"🚀", 1) == 3
+		&& emojiStart.entities.size() == 1
+		&& emojiStart.entities[0].offset() == 3,
+		"start inside a surrogate pair cannot create an emoji match");
+	auto sender = TextWithEntities{ u"cafe\u0301: ＤＥＭＯ 1️⃣ #测试"_q };
+	Check(HighlightSearchText(sender, query, 7) == 7,
+		"sender start uses original offsets after normalization shrinks text");
+	Check(sender.entities.size() == 3
+		&& sender.entities[0].offset() == 7
+		&& sender.entities[1].offset() == 12
+		&& sender.entities[1].length() == 3
+		&& sender.entities[2].offset() == 16,
+		"sender exclusion remains precise across several sparse mapping spans");
+	auto marked = TextWithEntities{ u"cafe\u0301 demo"_q, {
+		EntityInText(EntityType::Colorized, 0, 10),
+		EntityInText(EntityType::Spoiler, 0, 10),
+	} };
+	Check(HighlightSearchText(marked, u"cafe demo") == 0
+		&& marked.entities.size() == 4,
+		"folded highlights split existing color using original ranges");
+	Check(std::any_of(marked.entities.begin(), marked.entities.end(), [](const auto &entity) {
+		return entity.type() == EntityType::Spoiler && entity.length() == 10;
+	}), "folded highlights preserve the original spoiler span");
 }
 
 void CheckFilteredPaging() {
@@ -556,6 +739,7 @@ int main(int argc, char *argv[]) {
 	CheckMessageSearch();
 	CheckSearchQueryRules();
 	CheckSearchHighlights();
+	CheckFoldedSearchHighlights();
 	CheckFilteredPaging();
 	CheckMatching();
 	CheckUnicode();

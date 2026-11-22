@@ -90,7 +90,7 @@
     "lng_search_chinese_keywords": "中文关键词搜索优化",
     "lng_search_filters": "搜索筛选",
     "lng_settings_search_exact_match": "完整关键词匹配",
-    "lng_settings_search_exact_match_about": "按空白分隔关键词，仅显示原始正文或媒体说明包含所有关键词的消息，顺序不限，忽略字母大小写。普通含中文关键词支持子串匹配，其他关键词和 # 标签须完整匹配，标点和 emoji 可作为边界。适用于全局、指定聊天和话题内的消息搜索。",
+    "lng_settings_search_exact_match_about": "按空白或连字符分隔关键词，仅显示原始正文或媒体说明包含所有关键词的消息，顺序不限，忽略大小写、重音及全半角差异。普通含中文关键词和 # 关键词支持子串匹配；其他关键词按词边界匹配，汉字、下划线、标点和 emoji 可作为边界。支持 emoji 搜索，数字与对应键帽 emoji 等价；组合搜索不会借用同一扩展标签的部分内容满足普通关键词。适用于全局、指定聊天和话题内的消息搜索。",
     "lng_search_chinese_keywords_about": "将独立的中文关键词作为带引号的短语提交搜索。这不会只保留中文消息，也不能替代完整关键词匹配。",
     "lng_search_matched_results": "已找到匹配消息：{total}",
     "lng_settings_search_dialog_filter_placeholder": "-1002615379741,-1001887545270",

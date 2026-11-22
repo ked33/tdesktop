@@ -213,6 +213,7 @@ private:
 	void continueFilteredSearch();
 	void scheduleFilteredSearch();
 	[[nodiscard]] const QString &preparedSearchQuery();
+	[[nodiscard]] const QString &preparedSearchQuery(const QString &query);
 
 	void slideFinished();
 	void searchReceived(
@@ -447,6 +448,7 @@ private:
 	QString _preparedSearchQuery;
 	QString _preparedSearchQueryFor;
 	bool _preparedSearchChinese = false;
+	bool _preparedSearchExact = false;
 
 	rpl::event_stream<rpl::producer<Stories::Content>> _storiesContents;
 	base::flat_map<PeerId, Ui::PeerUserpicView> _storiesUserpicsViewsHidden;

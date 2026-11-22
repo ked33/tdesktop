@@ -19,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "dialogs/ui/dialogs_top_bar_suggestion_content.h"
 #include "dialogs/dialogs_inner_widget.h"
 #include "dialogs/dialogs_search_from_controllers.h"
+#include "dialogs/dialogs_search_match.h"
 #include "dialogs/dialogs_top_bar_suggestion.h"
 #include "dialogs/dialogs_quick_action.h"
 #include "dialogs/dialogs_key.h"
@@ -123,7 +124,19 @@ constexpr auto kSearchPerPage = 50;
 constexpr auto kStoriesExpandDuration = crl::time(200);
 constexpr auto kSearchRequestDelay = crl::time(900);
 
-[[nodiscard]] QString PrepareMessageSearchQuery(QString query) {
+[[nodiscard]] QString PrepareMessageSearchQuery(QString query, bool exactMatch) {
+	if (exactMatch) {
+		const auto parsed = ParseSearchQuery(query);
+		auto prepared = QString();
+		prepared.reserve(query.size());
+		for (const auto &term : parsed.terms()) {
+			if (!prepared.isEmpty()) {
+				prepared += ' ';
+			}
+			prepared += term.text;
+		}
+		query = std::move(prepared);
+	}
 	if (!EnhancedSettings::SearchChineseKeywordsEnabled()
 		|| query.contains('"')) {
 		return query;
@@ -3449,9 +3462,13 @@ bool Widget::search(bool inCache, SearchRequestDelay delay) {
 
 	auto result = false;
 	const auto query = _searchState.query.trimmed();
-	const auto trimmed = (query.isEmpty() || query[0] != '#')
-		? query
-		: query.mid(1).trimmed();
+	const auto searchText = (_searchState.tab != ChatSearchTab::PublicPosts
+		&& EnhancedSettings::SearchExactMatchEnabled())
+		? preparedSearchQuery(query)
+		: query;
+	const auto trimmed = (searchText.isEmpty() || searchText[0] != '#')
+		? searchText
+		: searchText.mid(1).trimmed();
 	const auto inPeer = searchInPeer();
 	const auto fromPeer = searchFromPeer();
 	const auto &inTags = searchInTags();
@@ -3679,7 +3696,8 @@ void Widget::savePendingSearchHashtags() {
 
 bool Widget::searchPornMessages(bool inCache) {
 	const auto query = _searchState.query.trimmed();
-	const auto empty = query.isEmpty() || query == u"#"_q;
+	const auto &prepared = preparedSearchQuery(query);
+	const auto empty = prepared.isEmpty() || prepared == u"#"_q;
 	const auto changed = (_searchQuery != query)
 		|| (_searchQueryTab != ChatSearchTab::PornMessages)
 		|| (_searchQueryFilter != _searchState.filter)
@@ -3716,7 +3734,8 @@ bool Widget::searchPornMessages(bool inCache) {
 
 void Widget::applySearchOptions(EnhancedSettings::SearchOptions options) {
 	const auto previous = std::exchange(_searchOptions, options);
-	const auto queryChanged = previous.chineseKeywords != options.chineseKeywords;
+	const auto queryChanged = previous.chineseKeywords != options.chineseKeywords
+		|| previous.exactMatch != options.exactMatch;
 	const auto archiveChanged = previous.mainAndArchive != options.mainAndArchive;
 	if (queryChanged || archiveChanged) {
 		_searchTimer.cancel();
@@ -3778,12 +3797,19 @@ void Widget::scheduleFilteredSearch() {
 }
 
 const QString &Widget::preparedSearchQuery() {
+	return preparedSearchQuery(_searchQuery);
+}
+
+const QString &Widget::preparedSearchQuery(const QString &query) {
 	const auto chinese = EnhancedSettings::SearchChineseKeywordsEnabled();
-	if (_preparedSearchQueryFor != _searchQuery
-		|| _preparedSearchChinese != chinese) {
-		_preparedSearchQueryFor = _searchQuery;
+	const auto exactMatch = EnhancedSettings::SearchExactMatchEnabled();
+	if (_preparedSearchQueryFor != query
+		|| _preparedSearchChinese != chinese
+		|| _preparedSearchExact != exactMatch) {
+		_preparedSearchQueryFor = query;
 		_preparedSearchChinese = chinese;
-		_preparedSearchQuery = PrepareMessageSearchQuery(_searchQuery);
+		_preparedSearchExact = exactMatch;
+		_preparedSearchQuery = PrepareMessageSearchQuery(query, exactMatch);
 	}
 	return _preparedSearchQuery;
 }
@@ -3797,7 +3823,9 @@ void Widget::updatePornSearch() {
 		|| _searchState.filter == ChatTypeFilter::Private
 		|| query.isEmpty()
 		|| query == u"#"_q
-		|| _searchQuery != query) {
+		|| _searchQuery != query
+		|| preparedSearchQuery().isEmpty()
+		|| preparedSearchQuery() == u"#"_q) {
 		stopPornSearch();
 		return;
 	}
