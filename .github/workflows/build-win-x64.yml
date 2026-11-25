@@ -300,6 +300,9 @@ jobs:
             throw 'The active pagefile and commit limit do not meet the full-symbol linking budget.'
           }
 
+      # Previous full-symbol configure options:
+      #     -D DESKTOP_APP_NO_PDB=OFF ^
+      #     -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded %SCCACHE_LAUNCHER_FLAGS%
       - name: Configure project
         shell: cmd
         env:
@@ -317,9 +320,9 @@ jobs:
             -D TDESKTOP_GIT_COMMIT=%GITHUB_SHA:~0,7% ^
             -DCMAKE_CONFIGURATION_TYPES=Release ^
             -D DESKTOP_APP_DISABLE_CRASH_REPORTS=OFF ^
-            -D DESKTOP_APP_NO_PDB=OFF ^
+            -D DESKTOP_APP_NO_PDB=ON ^
             -D CMAKE_COMPILE_WARNING_AS_ERROR=OFF ^
-            -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded %SCCACHE_LAUNCHER_FLAGS%
+            -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= %SCCACHE_LAUNCHER_FLAGS%
 
       - name: Check hashtag matching, highlighting and 10k history
         shell: pwsh
@@ -366,18 +369,22 @@ jobs:
         shell: pwsh
         run: |
           $exe = "$env:TBUILD\$env:REPO_NAME\out\Release\Telegram.exe"
-          $pdb = "$env:TBUILD\$env:REPO_NAME\out\Release\Telegram.pdb"
-          if (-not (Test-Path -LiteralPath $exe) -or -not (Test-Path -LiteralPath $pdb)) {
-            throw 'Both Telegram.exe and its matching Telegram.pdb are required.'
+          # $pdb = "$env:TBUILD\$env:REPO_NAME\out\Release\Telegram.pdb"
+          # if (-not (Test-Path -LiteralPath $exe) -or -not (Test-Path -LiteralPath $pdb)) {
+          #   throw 'Both Telegram.exe and its matching Telegram.pdb are required.'
+          # }
+          if (-not (Test-Path -LiteralPath $exe)) {
+            throw 'Telegram.exe is required.'
           }
           $artifactDir = Join-Path $env:GITHUB_WORKSPACE 'artifact'
-          $symbolsDir = Join-Path $env:GITHUB_WORKSPACE 'symbols'
+          # $symbolsDir = Join-Path $env:GITHUB_WORKSPACE 'symbols'
           New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
-          New-Item -ItemType Directory -Force -Path $symbolsDir | Out-Null
+          # New-Item -ItemType Directory -Force -Path $symbolsDir | Out-Null
           Copy-Item -LiteralPath $exe -Destination (Join-Path $artifactDir 'Telegram.exe')
-          Copy-Item -LiteralPath $pdb -Destination (Join-Path $symbolsDir 'Telegram.pdb')
+          # Copy-Item -LiteralPath $pdb -Destination (Join-Path $symbolsDir 'Telegram.pdb')
           $files = [ordered]@{}
-          foreach ($path in @($exe, $pdb)) {
+          # foreach ($path in @($exe, $pdb)) {
+          foreach ($path in @($exe)) {
             $file = Get-Item -LiteralPath $path
             $files[$file.Name] = [ordered]@{
               sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
@@ -394,9 +401,10 @@ jobs:
             architecture = 'x64'
             files = $files
           } | ConvertTo-Json -Depth 5
-          foreach ($directory in @($artifactDir, $symbolsDir)) {
-            [IO.File]::WriteAllText((Join-Path $directory 'build-info.json'), $manifest, [Text.UTF8Encoding]::new($false))
-          }
+          # foreach ($directory in @($artifactDir, $symbolsDir)) {
+          #   [IO.File]::WriteAllText((Join-Path $directory 'build-info.json'), $manifest, [Text.UTF8Encoding]::new($false))
+          # }
+          [IO.File]::WriteAllText((Join-Path $artifactDir 'build-info.json'), $manifest, [Text.UTF8Encoding]::new($false))
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
@@ -405,10 +413,10 @@ jobs:
           path: artifact/
           if-no-files-found: error
 
-      - name: Upload matching debug symbols
-        uses: actions/upload-artifact@v7
-        with:
-          name: Telegram-x64-symbols
-          path: symbols/
-          if-no-files-found: error
-          retention-days: 14
+      # - name: Upload matching debug symbols
+      #   uses: actions/upload-artifact@v7
+      #   with:
+      #     name: Telegram-x64-symbols
+      #     path: symbols/
+      #     if-no-files-found: error
+      #     retention-days: 14
