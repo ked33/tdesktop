@@ -143,13 +143,16 @@ private:
 	[[nodiscard]] bool hasImagePreview() const;
 	[[nodiscard]] const style::HistoryFileLayout &fileLayout(
 		LayoutMode mode) const;
+	[[nodiscard]] QSize thumbnailDisplaySize(
+		LayoutMode mode,
+		int width = 0) const;
 
 	[[nodiscard]] Ui::BubbleRounding thumbRounding(
 		LayoutMode mode,
 		Ui::BubbleRounding outsideRounding) const;
 	void validateThumbnail(
 		not_null<const HistoryDocumentThumbed*> thumbed,
-		int size,
+		QSize size,
 		Ui::BubbleRounding rounding) const;
 
 	void setStatusSize(int64 newSize, TimeId realDuration = 0) const;

@@ -35,7 +35,7 @@
     "lng_settings_video_player_prefer_original": "Play original quality by default in the built-in player",
     "lng_settings_video_player_auto_fullscreen": "Open videos in full screen",
     "lng_settings_open_image_files": "Open image files in the media viewer",
-    "lng_settings_open_image_files_about": "Show larger thumbnails for images sent as files and load the original image when clicked. Supports decodable images smaller than 64 MB. Turn off to restore the original file layout and opening behavior.",
+    "lng_settings_open_image_files_about": "Show image file thumbnails at their original size, up to 320 pixels on the longest side, preserving the aspect ratio without enlarging small images. Click to load the original image in the built-in viewer. Supports decodable images smaller than 64 MB. Turn off to restore the original file layout and opening behavior.",
     "lng_mediaview_image_file_failed": "Could not preview this image. Try again or save the file from the menu.",
     "lng_mediaview_image_file_retry": "Retry",
     "lng_settings_video_player_auto_fullscreen_about": "Automatically enter full-screen playback when opening a video in the built-in player. You can still double-click the video to switch modes. Applies to the next video you open.",

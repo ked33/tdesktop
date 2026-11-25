@@ -678,6 +678,7 @@ public:
 	void notifyDocumentLayoutChanged(
 		not_null<const DocumentData*> document);
 	void requestDocumentViewRepaint(not_null<const DocumentData*> document);
+	void requestDocumentViewRefresh(not_null<const DocumentData*> document);
 	void markMediaRead(not_null<const DocumentData*> document);
 
 	void photoLoadProgress(not_null<PhotoData*> photo);

@@ -574,7 +574,8 @@ QSize Document::countOptimalSize() {
 	auto thumbed = Get<HistoryDocumentThumbed>();
 	const auto imagePreview = hasImagePreview();
 	const auto &st = fileLayout(LayoutMode::Full);
-	if (thumbed) {
+	const auto thumbnailSize = thumbnailDisplaySize(LayoutMode::Full);
+	if (thumbed && !imagePreview) {
 		if (_data->hasThumbnail()) {
 			const auto &location = _data->thumbnailLocation();
 			auto tw = style::ConvertScale(location.width());
@@ -590,7 +591,7 @@ QSize Document::countOptimalSize() {
 	}
 
 	auto maxWidth = imagePreview
-		? st.padding.left() + st.thumbSize + st.padding.right()
+		? st.padding.left() + thumbnailSize.width() + st.padding.right()
 		: st::msgFileMinWidth;
 
 	const auto tleft = st.padding.left() + st.thumbSize + st.thumbSkip;
@@ -640,7 +641,9 @@ QSize Document::countOptimalSize() {
 				+ transcribeWidth);
 	}
 
-	auto minHeight = st.padding.top() + st.thumbSize + st.padding.bottom();
+	auto minHeight = st.padding.top()
+		+ thumbnailSize.height()
+		+ st.padding.bottom();
 	if (imagePreview
 		&& isBubbleBottom()
 		&& !Has<HistoryDocumentCaptioned>()) {
@@ -681,7 +684,16 @@ QSize Document::countCurrentSize(int newWidth) {
 	const auto &st = fileLayout(LayoutMode::Full);
 	const auto hostedInstantView = IsHostedInstantViewMedia(_parent);
 	if (hasImagePreview() && !captioned) {
-		return { std::min(newWidth, maxWidth()), minHeight() };
+		const auto width = std::min(newWidth, maxWidth());
+		const auto size = thumbnailDisplaySize(LayoutMode::Full, width);
+		auto height = st.padding.top() + size.height() + st.padding.bottom();
+		if (!isBubbleTop()) {
+			height -= st::msgFileTopMinus;
+		}
+		if (isBubbleBottom()) {
+			height += st::msgDateFont->height - st::msgDateDelta.y();
+		}
+		return { width, height };
 	}
 	if (!captioned && !hasTranscribe) {
 		auto result = File::countCurrentSize(newWidth);
@@ -719,7 +731,9 @@ QSize Document::countCurrentSize(int newWidth) {
 	if (!hostedInstantView) {
 		accumulate_min(newWidth, maxWidth());
 	}
-	auto newHeight = st.padding.top() + st.thumbSize + st.padding.bottom();
+	auto newHeight = st.padding.top()
+		+ thumbnailDisplaySize(LayoutMode::Full, newWidth).height()
+		+ st.padding.bottom();
 	if (!isBubbleTop()) {
 		newHeight -= st::msgFileTopMinus;
 	}
@@ -788,19 +802,38 @@ void Document::draw(
 	const auto thumbed = Get<HistoryDocumentThumbed>();
 	const auto imagePreview = hasImagePreview();
 	const auto &st = fileLayout(mode);
-	const auto nameleft = st.padding.left() + st.thumbSize + st.thumbSkip;
+	const auto thumbnailSize = thumbnailDisplaySize(mode, width);
+	const auto nameleft = st.padding.left()
+		+ thumbnailSize.width()
+		+ st.thumbSkip;
 	const auto nametop = st.nameTop - topMinus;
 	const auto nameright = st.padding.right();
 	const auto statustop = st.statusTop - topMinus;
 	const auto linktop = st.linkTop - topMinus;
-	const auto bottom = st.padding.top() + st.thumbSize + st.padding.bottom() - topMinus;
-	const auto rthumb = style::rtlrect(st.padding.left(), st.padding.top() - topMinus, st.thumbSize, st.thumbSize, width);
-	const auto innerSize = st::msgFileLayout.thumbSize;
+	const auto bottom = st.padding.top()
+		+ thumbnailSize.height()
+		+ st.padding.bottom()
+		- topMinus;
+	const auto rthumb = style::rtlrect(
+		st.padding.left(),
+		st.padding.top() - topMinus,
+		thumbnailSize.width(),
+		thumbnailSize.height(),
+		width);
+	const auto innerSize = std::min({
+		int(st::msgFileLayout.thumbSize),
+		thumbnailSize.width(),
+		thumbnailSize.height(),
+	});
 	const auto inner = QRect(rthumb.x() + (rthumb.width() - innerSize) / 2, rthumb.y() + (rthumb.height() - innerSize) / 2, innerSize, innerSize);
 	const auto radialOpacity = radial ? _animation->radial.opacity() : 1.;
 	if (thumbed) {
+		if (imagePreview) {
+			p.save();
+			p.setClipRect(rthumb, Qt::IntersectClip);
+		}
 		const auto rounding = thumbRounding(mode, outsideRounding);
-		validateThumbnail(thumbed, st.thumbSize, rounding);
+		validateThumbnail(thumbed, thumbnailSize, rounding);
 		p.drawImage(rthumb, thumbed->thumbnail);
 		if (context.selected()) {
 			FillThumbnailOverlay(p, rthumb, rounding, context);
@@ -841,6 +874,9 @@ void Document::draw(
 			}
 		}
 
+		if (imagePreview) {
+			p.restore();
+		}
 		if (_data->status != FileUploadFailed
 			&& !mediaEditor
 			&& !imagePreview) {
@@ -1177,6 +1213,29 @@ const style::HistoryFileLayout &Document::fileLayout(LayoutMode mode) const {
 		: (thumbed ? st::msgFileThumbLayoutGrouped : st::msgFileLayoutGrouped);
 }
 
+QSize Document::thumbnailDisplaySize(LayoutMode mode, int width) const {
+	const auto &st = fileLayout(mode);
+	auto bounds = QSize(st.thumbSize, st.thumbSize);
+	if (!hasImagePreview()) {
+		return bounds;
+	}
+	const auto &location = _data->thumbnailLocation();
+	auto size = QSize(location.width(), location.height());
+	if (size.isEmpty()) {
+		ensureDataMediaCreated();
+		size = _dataMedia->thumbnailSize();
+	}
+	size = size.isEmpty() ? bounds : style::ConvertScale(size);
+	if (width > 0) {
+		bounds.setWidth(std::min(
+			bounds.width(),
+			std::max(1, width - st.padding.left() - st.padding.right())));
+	}
+	return (size.width() > bounds.width() || size.height() > bounds.height())
+		? size.scaled(bounds, Qt::KeepAspectRatio).expandedTo(QSize(1, 1))
+		: size;
+}
+
 Ui::BubbleRounding Document::thumbRounding(
 		LayoutMode mode,
 		Ui::BubbleRounding outsideRounding) const {
@@ -1199,7 +1258,7 @@ Ui::BubbleRounding Document::thumbRounding(
 
 void Document::validateThumbnail(
 		not_null<const HistoryDocumentThumbed*> thumbed,
-		int size,
+		QSize size,
 		Ui::BubbleRounding rounding) const {
 	const auto good = _data->isSvgImage()
 		? _dataMedia->goodThumbnail()
@@ -1213,7 +1272,7 @@ void Document::validateThumbnail(
 		}
 		return;
 	}
-	const auto outer = QSize(size, size);
+	const auto outer = size;
 	if ((thumbed->thumbnail.size() == outer * style::DevicePixelRatio())
 		&& (thumbed->blurred == !normal)
 		&& (thumbed->rounding == rounding)) {
@@ -1402,14 +1461,29 @@ TextState Document::textState(
 	const auto topMinus = isBubbleTop() ? 0 : st::msgFileTopMinus;
 	const auto imagePreview = hasImagePreview();
 	const auto &st = fileLayout(mode);
-	const auto nameleft = st.padding.left() + st.thumbSize + st.thumbSkip;
+	const auto thumbnailSize = thumbnailDisplaySize(mode, width);
+	const auto nameleft = st.padding.left()
+		+ thumbnailSize.width()
+		+ st.thumbSkip;
 	const auto nametop = st.nameTop - topMinus;
 	const auto nameright = st.padding.right();
 	auto namewidth = width - nameleft - nameright;
 	const auto linktop = st.linkTop - topMinus;
-	auto bottom = st.padding.top() + st.thumbSize + st.padding.bottom() - topMinus;
-	const auto rthumb = style::rtlrect(st.padding.left(), st.padding.top() - topMinus, st.thumbSize, st.thumbSize, width);
-	const auto innerSize = st::msgFileLayout.thumbSize;
+	auto bottom = st.padding.top()
+		+ thumbnailSize.height()
+		+ st.padding.bottom()
+		- topMinus;
+	const auto rthumb = style::rtlrect(
+		st.padding.left(),
+		st.padding.top() - topMinus,
+		thumbnailSize.width(),
+		thumbnailSize.height(),
+		width);
+	const auto innerSize = std::min({
+		int(st::msgFileLayout.thumbSize),
+		thumbnailSize.width(),
+		thumbnailSize.height(),
+	});
 	const auto inner = QRect(rthumb.x() + (rthumb.width() - innerSize) / 2, rthumb.y() + (rthumb.height() - innerSize) / 2, innerSize, innerSize);
 
 	const auto filenameMoused = QRect(nameleft, nametop, namewidth, st::semiboldFont->height).contains(point);
@@ -1910,7 +1984,9 @@ int Document::widenGroupingMaxWidth(int current, bool last) {
 
 QSize Document::sizeForGroupingOptimal(int maxWidth, bool last) const {
 	const auto &st = fileLayout(LayoutMode::Grouped);
-	auto height = st.padding.top() + st.thumbSize + st.padding.bottom();
+	auto height = st.padding.top()
+		+ thumbnailDisplaySize(LayoutMode::Grouped, maxWidth).height()
+		+ st.padding.bottom();
 	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
 		auto captionw = maxWidth
 			- st::msgPadding.left()
@@ -1922,7 +1998,9 @@ QSize Document::sizeForGroupingOptimal(int maxWidth, bool last) const {
 
 QSize Document::sizeForGrouping(int width) const {
 	const auto &st = fileLayout(LayoutMode::Grouped);
-	auto height = st.padding.top() + st.thumbSize + st.padding.bottom();
+	auto height = st.padding.top()
+		+ thumbnailDisplaySize(LayoutMode::Grouped, width).height()
+		+ st.padding.bottom();
 	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
 		auto captionw = width
 			- st::msgPadding.left()

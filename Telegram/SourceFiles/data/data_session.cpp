@@ -2062,6 +2062,18 @@ void Session::requestDocumentViewRepaint(
 	}
 }
 
+void Session::requestDocumentViewRefresh(
+		not_null<const DocumentData*> document) {
+	const auto i = _documentItems.find(document);
+	if (i == end(_documentItems)) {
+		return;
+	}
+	const auto items = i->second;
+	for (const auto item : items) {
+		requestItemViewRefresh(item);
+	}
+}
+
 void Session::documentLoadProgress(not_null<DocumentData*> document) {
 	requestDocumentViewRepaint(document);
 	_documentLoadProgress.fire_copy(document);

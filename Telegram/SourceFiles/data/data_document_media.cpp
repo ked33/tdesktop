@@ -22,6 +22,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/themes/window_theme_preview.h"
 #include "core/core_settings.h"
 #include "core/application.h"
+#include "core/enhanced_settings.h"
 #include "core/mime_type.h"
 #include "storage/file_download.h"
 #include "ui/chat/attach/attach_prepare.h"
@@ -254,7 +255,23 @@ QSize DocumentMedia::thumbnailSize() const {
 }
 
 void DocumentMedia::setThumbnail(QImage thumbnail) {
+	const auto previousSize = _thumbnail ? _thumbnail->size() : QSize();
 	_thumbnail = std::make_unique<Image>(std::move(thumbnail));
+	const auto &location = _owner->thumbnailLocation();
+	if (EnhancedSettings::ImageFilePreviewEnabled()
+		&& _owner->type == FileDocument
+		&& _owner->isImage()
+		&& (location.width() <= 0 || location.height() <= 0)
+		&& previousSize != _thumbnail->size()) {
+		const auto document = _owner;
+		crl::on_main(&document->session(), [=] {
+			if (EnhancedSettings::ImageFilePreviewEnabled()
+				&& document->type == FileDocument
+				&& document->isImage()) {
+				document->owner().requestDocumentViewRefresh(document);
+			}
+		});
+	}
 	_owner->session().notifyDownloaderTaskFinished();
 }
 

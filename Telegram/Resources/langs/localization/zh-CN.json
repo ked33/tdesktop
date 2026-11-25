@@ -43,7 +43,7 @@
     "lng_settings_video_player_prefer_original": "内置播放器默认播放原画质",
     "lng_settings_video_player_auto_fullscreen": "打开视频播放器时自动全屏",
     "lng_settings_open_image_files": "支持打开图片文件",
-    "lng_settings_open_image_files_about": "以放大的缩略图展示图片文件，点击后在内置查看器中加载原图。支持小于 64 MB 且可解码的图片。关闭后恢复原来的文件布局和打开方式。",
+    "lng_settings_open_image_files_about": "按原始尺寸显示图片文件缩略图，最长边不超过 320 像素，保持宽高比，小图不放大。点击后在内置查看器中加载原图。支持小于 64 MB 且可解码的图片。关闭后恢复原来的文件布局和打开方式。",
     "lng_mediaview_image_file_failed": "无法预览此图片，请重试或通过菜单保存文件。",
     "lng_mediaview_image_file_retry": "重试",
     "lng_settings_video_player_auto_fullscreen_about": "打开视频时自动进入内置播放器的全屏播放模式，仍可双击画面切换。下次打开视频时生效。",

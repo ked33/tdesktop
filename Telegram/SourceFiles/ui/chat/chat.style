@@ -405,7 +405,7 @@ msgFileThumbLayoutGrouped: HistoryFileLayout(msgFileThumbLayout) {
 }
 msgImageFileLayout: HistoryFileLayout(msgFileThumbLayout) {
 	padding: margins(6px, 6px, 6px, 6px);
-	thumbSize: 120px;
+	thumbSize: 320px;
 	thumbSkip: 0px;
 }
 msgImageFileLayoutGrouped: HistoryFileLayout(msgImageFileLayout) {
