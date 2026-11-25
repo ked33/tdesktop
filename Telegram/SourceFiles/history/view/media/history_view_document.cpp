@@ -26,6 +26,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_cursor_state.h"
 #include "history/view/history_view_transcribe_button.h"
 #include "history/view/media/history_view_media_common.h"
+#include "history/view/media/history_view_preview_brightness.h"
 #include "ui/text/format_values.h"
 #include "ui/text/format_song_document_name.h"
 #include "ui/text/text_lottie_custom_emoji.h"
@@ -1273,9 +1274,15 @@ void Document::validateThumbnail(
 		return;
 	}
 	const auto outer = size;
+	const auto brightnessKey = (_data->type == FileDocument
+		&& _data->isImage()
+		&& _parent->context() != Context::MediaEditor)
+		? PreviewBrightnessKey()
+		: -1;
 	if ((thumbed->thumbnail.size() == outer * style::DevicePixelRatio())
 		&& (thumbed->blurred == !normal)
-		&& (thumbed->rounding == rounding)) {
+		&& (thumbed->rounding == rounding)
+		&& (thumbed->brightness == brightnessKey)) {
 		return;
 	}
 	const auto small = (rounding == Ui::BubbleRounding());
@@ -1294,6 +1301,9 @@ void Document::validateThumbnail(
 			| (small ? Images::Option::RoundSmall : Images::Option()),
 		.outer = outer,
 	});
+	if (brightnessKey >= 0) {
+		ApplyPreviewBrightness(thumbnail);
+	}
 	if (!small) {
 		using Corner = Ui::BubbleCornerRounding;
 		using Radius = Ui::CachedCornerRadius;
@@ -1311,6 +1321,7 @@ void Document::validateThumbnail(
 	thumbed->thumbnail = std::move(thumbnail);
 	thumbed->blurred = !normal;
 	thumbed->rounding = rounding;
+	thumbed->brightness = brightnessKey;
 }
 
 bool Document::hasHeavyPart() const {

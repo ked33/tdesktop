@@ -957,6 +957,7 @@ struct HistoryDocumentThumbed
 	mutable QString link;
 	int thumbw = 0;
 	mutable int linkw = 0;
+	mutable int brightness = 0;
 	mutable Ui::BubbleRounding rounding;
 	mutable bool blurred : 1 = false;
 };
