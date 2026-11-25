@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element.h"
 #include "history/view/history_view_cursor_state.h"
 #include "history/view/history_view_message.h"
+#include "core/enhanced_settings.h"
 #include "data/data_document.h"
 #include "data/data_media_types.h"
 #include "data/data_session.h"
@@ -32,6 +33,14 @@ namespace HistoryView {
 namespace {
 
 constexpr auto kCaptionSelectionLimit = 0xFFFE;
+
+[[nodiscard]] bool ImageFileNeedsSeparateInfoLine(DocumentData *document) {
+	return EnhancedSettings::ImageFilePreviewEnabled()
+		&& document
+		&& document->type == FileDocument
+		&& document->isImage()
+		&& (document->hasThumbnail() || document->isSvgImage());
+}
 
 [[nodiscard]] bool IsHostedInstantViewMedia(not_null<const Element*> parent) {
 	return parent->Get<InstantViewMediaRuntime>() != nullptr;
@@ -218,7 +227,8 @@ QSize GroupedMedia::countOptimalSize() {
 		const auto item = _parent->data();
 		const auto msgsigned = item->Get<HistoryMessageSigned>();
 		const auto views = item->Get<HistoryMessageViews>();
-		if ((msgsigned && !msgsigned->isAnonymousRank)
+		if (ImageFileNeedsSeparateInfoLine(_parts.back().content->getDocument())
+			|| (msgsigned && !msgsigned->isAnonymousRank)
 			|| (views
 				&& (views->views.count >= 0 || views->replies.count > 0))
 			|| displayedEditBadge()) {
@@ -290,7 +300,8 @@ QSize GroupedMedia::countCurrentSize(int newWidth) {
 		const auto item = _parent->data();
 		const auto msgsigned = item->Get<HistoryMessageSigned>();
 		const auto views = item->Get<HistoryMessageViews>();
-		if ((msgsigned && !msgsigned->isAnonymousRank)
+		if (ImageFileNeedsSeparateInfoLine(_parts.back().content->getDocument())
+			|| (msgsigned && !msgsigned->isAnonymousRank)
 			|| (views
 				&& (views->views.count >= 0 || views->replies.count > 0))
 			|| displayedEditBadge()) {

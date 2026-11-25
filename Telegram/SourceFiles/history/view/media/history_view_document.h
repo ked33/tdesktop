@@ -21,6 +21,10 @@ namespace Ui::Text {
 class String;
 } // namespace Ui::Text
 
+namespace style {
+struct HistoryFileLayout;
+} // namespace style
+
 namespace HistoryView {
 
 using TtlPaintCallback = Fn<void(QPainter&, QRect, QColor)>;
@@ -135,6 +139,10 @@ private:
 	void refreshCaption(bool last);
 	void createComponents();
 	void fillNamedFromData(not_null<HistoryDocumentNamed*> named);
+
+	[[nodiscard]] bool hasImagePreview() const;
+	[[nodiscard]] const style::HistoryFileLayout &fileLayout(
+		LayoutMode mode) const;
 
 	[[nodiscard]] Ui::BubbleRounding thumbRounding(
 		LayoutMode mode,

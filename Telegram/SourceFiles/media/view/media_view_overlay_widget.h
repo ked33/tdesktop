@@ -87,6 +87,10 @@ class View;
 struct ContentLayout;
 } // namespace Media::Stories
 
+namespace Media::Streaming {
+struct LoadedPart;
+} // namespace Media::Streaming
+
 namespace Media::View {
 
 class VideoStream;
@@ -147,6 +151,7 @@ public:
 private:
 	class Show;
 	struct Streamed;
+	struct ImageFilePreview;
 	struct PipWrap;
 	struct ItemContext;
 	struct StoriesContext;
@@ -633,6 +638,15 @@ private:
 	[[nodiscard]] bool documentContentShown() const;
 	[[nodiscard]] bool documentBubbleShown() const;
 	void setStaticContent(QImage image);
+	void initImageFilePreview();
+	void imageFileCacheLoaded(QByteArray bytes);
+	void startImageFileTransfer();
+	void loadImageFileParts();
+	void imageFilePartLoaded(const Streaming::LoadedPart &part);
+	void decodeImageFilePreview();
+	void finishImageFilePreview(QImage image, QByteArray bytes);
+	void failImageFilePreview();
+	void clearImageFilePreview();
 	[[nodiscard]] bool contentShown() const;
 	[[nodiscard]] bool canFlipContent() const;
 	void toggleContentFlip(Qt::Orientation orientation);
@@ -762,6 +776,7 @@ private:
 	std::unique_ptr<QObject> _applicationEventFilter;
 
 	std::unique_ptr<Streamed> _streamed;
+	std::unique_ptr<ImageFilePreview> _imageFilePreview;
 	std::unique_ptr<PipWrap> _pip;
 	QImage _streamedQualityChangeFrame;
 	crl::time _streamedPosition = 0;

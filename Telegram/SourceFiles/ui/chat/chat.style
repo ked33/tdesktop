@@ -403,6 +403,14 @@ msgFileThumbLayoutGrouped: HistoryFileLayout(msgFileThumbLayout) {
 	statusTop: 28px;
 	linkTop: 52px;
 }
+msgImageFileLayout: HistoryFileLayout(msgFileThumbLayout) {
+	padding: margins(6px, 6px, 6px, 6px);
+	thumbSize: 120px;
+	thumbSkip: 0px;
+}
+msgImageFileLayoutGrouped: HistoryFileLayout(msgImageFileLayout) {
+	padding: margins(6px, 3px, 6px, 3px);
+}
 attachPreviewLayout: HistoryFileLayout {
 	padding: margins(0px, 0px, 0px, 0px);
 	nameTop: 6px;

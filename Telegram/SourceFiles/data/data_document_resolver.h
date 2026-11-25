@@ -29,6 +29,8 @@ namespace Data {
 
 class DocumentMedia;
 
+[[nodiscard]] bool CanOpenImageFile(not_null<DocumentData*> document);
+
 enum class ImageOpenSource : uchar {
 	None,
 	Location,

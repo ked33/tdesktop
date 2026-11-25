@@ -45,6 +45,8 @@ namespace EnhancedSettings {
 
 	[[nodiscard]] int MessageEmojiSize();
 	[[nodiscard]] int MessageStickerSize();
+	[[nodiscard]] bool ImageFilePreviewEnabled();
+	void SetImageFilePreviewEnabled(bool enabled);
 	[[nodiscard]] Storage::MediaPreviewLimits MediaPreviewDownloadLimits();
 	[[nodiscard]] rpl::producer<> MediaPreviewDownloadLimitsChanges();
 	void SetMediaPreviewDownloadLimits(Storage::MediaPreviewLimits limits);

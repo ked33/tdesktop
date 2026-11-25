@@ -318,6 +318,8 @@ public:
 	[[nodiscard]] auto createStreamingLoaderForExternalPlayer(
 		Data::FileOrigin origin) const
 	-> std::unique_ptr<Media::Streaming::Loader>;
+	[[nodiscard]] auto createImagePreviewLoader(Data::FileOrigin origin) const
+	-> std::unique_ptr<Media::Streaming::Loader>;
 	[[nodiscard]] bool useStreamingLoader() const;
 	[[nodiscard]] auto createStreamedDownloader(
 		std::shared_ptr<Media::Streaming::Reader> reader,

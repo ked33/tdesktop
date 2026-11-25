@@ -2004,6 +2004,20 @@ void Session::documentLoadSettingsChanged() {
 	}
 }
 
+void Session::refreshImageFileViews() {
+	auto items = base::flat_set<not_null<const HistoryItem*>>();
+	for (const auto &[document, documentItems] : _documentItems) {
+		if (document->type == FileDocument && document->isImage()) {
+			for (const auto item : documentItems) {
+				items.emplace(item);
+			}
+		}
+	}
+	for (const auto item : items) {
+		requestItemViewRefresh(item);
+	}
+}
+
 void Session::notifyPhotoLayoutChanged(not_null<const PhotoData*> photo) {
 	if (const auto i = _photoItems.find(photo); i != end(_photoItems)) {
 		for (const auto &entry : i->second) {

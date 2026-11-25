@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item.h"
 #include "history/history.h"
 #include "core/click_handler_types.h" // kDocumentFilenameTooltipProperty.
+#include "core/enhanced_settings.h"
 #include "history/view/history_view_element.h"
 #include "history/view/history_view_message.h"
 #include "history/view/history_view_cursor_state.h"
@@ -571,7 +572,8 @@ QSize Document::countOptimalSize() {
 	}
 
 	auto thumbed = Get<HistoryDocumentThumbed>();
-	const auto &st = thumbed ? st::msgFileThumbLayout : st::msgFileLayout;
+	const auto imagePreview = hasImagePreview();
+	const auto &st = fileLayout(LayoutMode::Full);
 	if (thumbed) {
 		if (_data->hasThumbnail()) {
 			const auto &location = _data->thumbnailLocation();
@@ -587,11 +589,28 @@ QSize Document::countOptimalSize() {
 		}
 	}
 
-	auto maxWidth = st::msgFileMinWidth;
+	auto maxWidth = imagePreview
+		? st.padding.left() + st.thumbSize + st.padding.right()
+		: st::msgFileMinWidth;
 
 	const auto tleft = st.padding.left() + st.thumbSize + st.thumbSkip;
 	const auto tright = st.padding.right();
-	if (thumbed) {
+	if (imagePreview) {
+		accumulate_max(
+			maxWidth,
+			_parent->bottomInfoFirstLineWidth()
+				+ st::msgPadding.left()
+				+ st::msgPadding.right());
+		if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
+			accumulate_max(
+				maxWidth,
+				std::min(
+					captioned->caption.maxWidth()
+						+ st::msgPadding.left()
+						+ st::msgPadding.right(),
+					int(st::msgMaxWidth)));
+		}
+	} else if (thumbed) {
 		accumulate_max(maxWidth, tleft + MaxStatusWidth(_data) + tright);
 	} else {
 		auto unread = (_data->isVoiceMessage() || _transcribedRound)
@@ -600,7 +619,9 @@ QSize Document::countOptimalSize() {
 		accumulate_max(maxWidth, tleft + MaxStatusWidth(_data) + unread + _parent->skipBlockWidth() + st::msgPadding.right());
 	}
 
-	if (const auto named = Get<HistoryDocumentNamed>()) {
+	if (const auto named = imagePreview
+		? nullptr
+		: Get<HistoryDocumentNamed>()) {
 		accumulate_max(maxWidth, tleft + named->name.maxWidth() + tright);
 		accumulate_min(maxWidth, st::msgMaxWidth);
 	}
@@ -620,6 +641,11 @@ QSize Document::countOptimalSize() {
 	}
 
 	auto minHeight = st.padding.top() + st.thumbSize + st.padding.bottom();
+	if (imagePreview
+		&& isBubbleBottom()
+		&& !Has<HistoryDocumentCaptioned>()) {
+		minHeight += st::msgDateFont->height - st::msgDateDelta.y();
+	}
 	if (isBubbleBottom() && !hasTranscribe) {
 		if (const auto link = thumbedLinkMaxWidth()) {
 			accumulate_max(
@@ -652,8 +678,11 @@ QSize Document::countCurrentSize(int newWidth) {
 	const auto voice = Get<HistoryDocumentVoice>();
 	const auto hasTranscribe = voice && !voice->transcribeText.isEmpty();
 	const auto thumbed = Get<HistoryDocumentThumbed>();
-	const auto &st = thumbed ? st::msgFileThumbLayout : st::msgFileLayout;
+	const auto &st = fileLayout(LayoutMode::Full);
 	const auto hostedInstantView = IsHostedInstantViewMedia(_parent);
+	if (hasImagePreview() && !captioned) {
+		return { std::min(newWidth, maxWidth()), minHeight() };
+	}
 	if (!captioned && !hasTranscribe) {
 		auto result = File::countCurrentSize(newWidth);
 		if (hostedInstantView) {
@@ -730,7 +759,10 @@ void Document::draw(
 	const auto cornerDownload = downloadInCorner();
 	const auto mediaEditor = (_parent->context() == Context::MediaEditor);
 
-	if (!_dataMedia->canBePlayed()) {
+	if (!_dataMedia->canBePlayed()
+		&& (!EnhancedSettings::ImageFilePreviewEnabled()
+			|| _data->type != FileDocument
+			|| !_data->isImage())) {
 		auto peerId = _parent->data()->from() ? _parent->data()->from()->id : PeerId(0);
 		auto user = history()->session().data().peerLoaded(_parent->data()->from() ? _parent->data()->from()->id : PeerId(0));
 		if (!blockExist(peerId.value) || (!GetEnhancedBool("blocked_user_spoiler_mode") && user && !user->isBlocked())) {
@@ -754,9 +786,8 @@ void Document::draw(
 
 	const auto topMinus = isBubbleTop() ? 0 : st::msgFileTopMinus;
 	const auto thumbed = Get<HistoryDocumentThumbed>();
-	const auto &st = (mode == LayoutMode::Full)
-		? (thumbed ? st::msgFileThumbLayout : st::msgFileLayout)
-		: (thumbed ? st::msgFileThumbLayoutGrouped : st::msgFileLayoutGrouped);
+	const auto imagePreview = hasImagePreview();
+	const auto &st = fileLayout(mode);
 	const auto nameleft = st.padding.left() + st.thumbSize + st.thumbSkip;
 	const auto nametop = st.nameTop - topMinus;
 	const auto nameright = st.padding.right();
@@ -777,7 +808,7 @@ void Document::draw(
 
 		if (!mediaEditor
 			&& (radial
-				|| (!loaded && !_data->loading())
+				|| (!loaded && !_data->loading() && !imagePreview)
 				|| _data->waitingForAlbum())) {
 			const auto backOpacity = (loaded && !_data->uploading()) ? radialOpacity : 1.;
 			p.setPen(Qt::NoPen);
@@ -810,7 +841,9 @@ void Document::draw(
 			}
 		}
 
-		if (_data->status != FileUploadFailed && !mediaEditor) {
+		if (_data->status != FileUploadFailed
+			&& !mediaEditor
+			&& !imagePreview) {
 			const auto &lnk = (_data->loading() || _data->uploading())
 				? thumbed->linkcancell
 				: dataLoaded()
@@ -1057,7 +1090,9 @@ void Document::draw(
 			_voiceHoverProgress,
 			inTTLViewer ? &voice->once->waveform : nullptr);
 		p.restore();
-	} else if (const auto named = Get<HistoryDocumentNamed>()) {
+	} else if (const auto named = imagePreview
+		? nullptr
+		: Get<HistoryDocumentNamed>()) {
 		p.setPen(stm->historyFileNameFg);
 		named->name.draw(p, {
 			.position = QPoint(nameleft, nametop),
@@ -1069,20 +1104,22 @@ void Document::draw(
 		_tooltipFilename.setElided(namewidth < named->name.maxWidth());
 	}
 
-	auto statusText = voiceStatusOverride.isEmpty() ? _statusText : voiceStatusOverride;
-	p.setFont(st::normalFont);
-	p.setPen(stm->mediaFg);
-	p.drawTextLeft(nameleft, statustop, width, statusText);
+	if (!imagePreview) {
+		auto statusText = voiceStatusOverride.isEmpty() ? _statusText : voiceStatusOverride;
+		p.setFont(st::normalFont);
+		p.setPen(stm->mediaFg);
+		p.drawTextLeft(nameleft, statustop, width, statusText);
 
-	if (_realParent->isUnreadMedia() && !mediaEditor) {
-		auto w = st::normalFont->width(statusText);
-		if (w + st::mediaUnreadSkip + st::mediaUnreadSize <= statuswidth) {
-			p.setPen(Qt::NoPen);
-			p.setBrush(stm->msgFileBg);
+		if (_realParent->isUnreadMedia() && !mediaEditor) {
+			auto w = st::normalFont->width(statusText);
+			if (w + st::mediaUnreadSkip + st::mediaUnreadSize <= statuswidth) {
+				p.setPen(Qt::NoPen);
+				p.setBrush(stm->msgFileBg);
 
-			{
-				PainterHighQualityEnabler hq(p);
-				p.drawEllipse(style::rtlrect(nameleft + w + st::mediaUnreadSkip, statustop + st::mediaUnreadTop, st::mediaUnreadSize, st::mediaUnreadSize, width));
+				{
+					PainterHighQualityEnabler hq(p);
+					p.drawEllipse(style::rtlrect(nameleft + w + st::mediaUnreadSkip, statustop + st::mediaUnreadTop, st::mediaUnreadSize, st::mediaUnreadSize, width));
+				}
 			}
 		}
 	}
@@ -1118,6 +1155,26 @@ void Document::draw(
 			.useFullWidth = true,
 		});
 	}
+}
+
+bool Document::hasImagePreview() const {
+	return EnhancedSettings::ImageFilePreviewEnabled()
+		&& _data->type == FileDocument
+		&& _data->isImage()
+		&& Has<HistoryDocumentThumbed>()
+		&& _parent->context() != Context::MediaEditor;
+}
+
+const style::HistoryFileLayout &Document::fileLayout(LayoutMode mode) const {
+	if (hasImagePreview()) {
+		return (mode == LayoutMode::Full)
+			? st::msgImageFileLayout
+			: st::msgImageFileLayoutGrouped;
+	}
+	const auto thumbed = Has<HistoryDocumentThumbed>();
+	return (mode == LayoutMode::Full)
+		? (thumbed ? st::msgFileThumbLayout : st::msgFileLayout)
+		: (thumbed ? st::msgFileThumbLayoutGrouped : st::msgFileLayoutGrouped);
 }
 
 Ui::BubbleRounding Document::thumbRounding(
@@ -1164,9 +1221,17 @@ void Document::validateThumbnail(
 	}
 	const auto small = (rounding == Ui::BubbleRounding());
 	auto image = normal ? normal : blurred;
-	const auto imageWidth = thumbed->thumbw * style::DevicePixelRatio();
+	const auto imagePreview = hasImagePreview();
+	const auto imageWidth = imagePreview
+		? image->original().size().scaled(
+			outer * style::DevicePixelRatio(),
+			Qt::KeepAspectRatio).width()
+		: thumbed->thumbw * style::DevicePixelRatio();
 	auto thumbnail = Images::Prepare(image->original(), imageWidth, {
 		.options = (normal ? Images::Option() : Images::Option::Blur)
+			| (imagePreview
+				? Images::Option::TransparentBackground
+				: Images::Option())
 			| (small ? Images::Option::RoundSmall : Images::Option()),
 		.outer = outer,
 	});
@@ -1335,10 +1400,8 @@ TextState Document::textState(
 	updateStatusText();
 
 	const auto topMinus = isBubbleTop() ? 0 : st::msgFileTopMinus;
-	const auto thumbed = Get<HistoryDocumentThumbed>();
-	const auto &st = (mode == LayoutMode::Full)
-		? (thumbed ? st::msgFileThumbLayout : st::msgFileLayout)
-		: (thumbed ? st::msgFileThumbLayoutGrouped : st::msgFileLayoutGrouped);
+	const auto imagePreview = hasImagePreview();
+	const auto &st = fileLayout(mode);
 	const auto nameleft = st.padding.left() + st.thumbSize + st.thumbSkip;
 	const auto nametop = st.nameTop - topMinus;
 	const auto nameright = st.padding.right();
@@ -1350,14 +1413,24 @@ TextState Document::textState(
 	const auto inner = QRect(rthumb.x() + (rthumb.width() - innerSize) / 2, rthumb.y() + (rthumb.height() - innerSize) / 2, innerSize, innerSize);
 
 	const auto filenameMoused = QRect(nameleft, nametop, namewidth, st::semiboldFont->height).contains(point);
-	_tooltipFilename.setMoused(filenameMoused);
+	_tooltipFilename.setMoused(!imagePreview && filenameMoused);
 	if (const auto thumbed = Get<HistoryDocumentThumbed>()) {
 		if ((_data->loading() || _data->uploading()) && rthumb.contains(point)) {
 			result.link = _cancell;
 			return result;
 		}
 
-		if (_data->status != FileUploadFailed) {
+		if (imagePreview && rthumb.contains(point)) {
+			result.link = (loaded || Data::CanOpenImageFile(_data))
+				? _openl
+				: _savel;
+			_tooltipFilename.setElided(true);
+			_tooltipFilename.setMoused(true);
+			_tooltipFilename.updateTooltipForLink(result.link.get());
+			return result;
+		}
+
+		if (_data->status != FileUploadFailed && !imagePreview) {
 			if (style::rtlrect(nameleft, linktop, thumbed->linkw, st::semiboldFont->height, width).contains(point)) {
 				result.link = (_data->loading() || _data->uploading())
 					? thumbed->linkcancell
@@ -1458,10 +1531,11 @@ TextState Document::textState(
 	}
 	const auto till = voice ? (nameleft + namewidth) : width;
 	if (QRect(0, 0, till, painth).contains(point)
+		&& !imagePreview
 		&& (!_data->loading() || downloadInCorner())
 		&& !_data->uploading()
 		&& !_data->isNull()) {
-		if (loaded || _dataMedia->canBePlayed()) {
+		if (loaded || _dataMedia->canBePlayed() || Data::CanOpenImageFile(_data)) {
 			result.link = _openl;
 		} else {
 			result.link = _savel;
@@ -1657,7 +1731,7 @@ bool Document::uploading() const {
 }
 
 [[nodiscard]] int Document::thumbedLinkMaxWidth() const {
-	if (Has<HistoryDocumentThumbed>()) {
+	if (Has<HistoryDocumentThumbed>() && !hasImagePreview()) {
 		const auto w = [](const QString &text) {
 			return st::semiboldFont->width(text.toUpper());
 		};
@@ -1788,7 +1862,7 @@ QMargins Document::bubbleMargins() const {
 	if (!Has<HistoryDocumentThumbed>()) {
 		return st::msgPadding;
 	}
-	const auto padding = st::msgFileThumbLayout.padding;
+	const auto padding = fileLayout(LayoutMode::Full).padding;
 	return QMargins(padding.left(), padding.top(), padding.right(), padding.bottom());
 }
 
@@ -1835,8 +1909,7 @@ int Document::widenGroupingMaxWidth(int current, bool last) {
 }
 
 QSize Document::sizeForGroupingOptimal(int maxWidth, bool last) const {
-	const auto thumbed = Get<HistoryDocumentThumbed>();
-	const auto &st = (thumbed ? st::msgFileThumbLayoutGrouped : st::msgFileLayoutGrouped);
+	const auto &st = fileLayout(LayoutMode::Grouped);
 	auto height = st.padding.top() + st.thumbSize + st.padding.bottom();
 	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
 		auto captionw = maxWidth
@@ -1848,8 +1921,7 @@ QSize Document::sizeForGroupingOptimal(int maxWidth, bool last) const {
 }
 
 QSize Document::sizeForGrouping(int width) const {
-	const auto thumbed = Get<HistoryDocumentThumbed>();
-	const auto &st = (thumbed ? st::msgFileThumbLayoutGrouped : st::msgFileLayoutGrouped);
+	const auto &st = fileLayout(LayoutMode::Grouped);
 	auto height = st.padding.top() + st.thumbSize + st.padding.bottom();
 	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
 		auto captionw = width

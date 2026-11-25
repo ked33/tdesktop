@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "core/click_handler_types.h"
 #include "core/core_settings.h"
+#include "core/enhanced_settings.h"
 #include "core/mime_type.h"
 #include "data/data_document.h"
 #include "data/data_document_media.h"
@@ -145,6 +146,15 @@ void LaunchWithWarning(
 
 } // namespace
 
+bool CanOpenImageFile(not_null<DocumentData*> document) {
+	return EnhancedSettings::ImageFilePreviewEnabled()
+		&& document->type == FileDocument
+		&& document->isImage()
+		&& !document->isNull()
+		&& document->size > 0
+		&& document->size < Images::kReadBytesLimit;
+}
+
 ImageOpenCheck CheckImageOpenInApp(
 		not_null<DocumentData*> document,
 		const std::shared_ptr<DocumentMedia> &media) {
@@ -252,7 +262,9 @@ void ResolveDocument(
 
 	const auto media = document->createMediaView();
 	const auto &location = document->location(true);
-	if (document->isTheme() && media->loaded(true)) {
+	if (CanOpenImageFile(document)) {
+		showDocument();
+	} else if (document->isTheme() && media->loaded(true)) {
 		showDocument();
 		location.accessDisable();
 	} else if (media->canBePlayed()) {

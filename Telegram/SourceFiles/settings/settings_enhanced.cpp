@@ -1296,6 +1296,22 @@ namespace Settings {
 		trackSearch(
 			AddButtonWithIcon(
 				container,
+				tr::lng_settings_open_image_files(),
+				st::settingsButtonNoIcon
+			),
+			u"enhanced/open_image_files"_q)->toggleOn(
+			rpl::single(EnhancedSettings::ImageFilePreviewEnabled())
+		)->toggledChanges(
+		) | rpl::filter([=](bool enabled) {
+			return enabled != EnhancedSettings::ImageFilePreviewEnabled();
+		}) | rpl::on_next([=](bool enabled) {
+			EnhancedSettings::SetImageFilePreviewEnabled(enabled);
+		}, container->lifetime());
+		AddDividerText(container, tr::lng_settings_open_image_files_about());
+
+		trackSearch(
+			AddButtonWithIcon(
+				container,
 				tr::lng_settings_video_player_prefer_original(),
 				st::settingsButtonNoIcon
 			),
@@ -1815,6 +1831,10 @@ namespace Settings {
 			"video_player_prefer_original",
 			tr::lng_settings_video_player_prefer_original(tr::now),
 			{ tr::lng_settings_video_player_prefer_original_about(tr::now) });
+		addBool(
+			"open_image_files",
+			tr::lng_settings_open_image_files(tr::now),
+			{ tr::lng_settings_open_image_files_about(tr::now) });
 		addBool(
 			"video_player_auto_fullscreen",
 			tr::lng_settings_video_player_auto_fullscreen(tr::now),

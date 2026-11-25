@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/view/media_view_overlay_widget.h"
+#include "base/binary_guard.h"
+#include "base/flat_set.h"
 
 #include "apiwrap.h"
 #include "api/api_attached_stickers.h"
@@ -76,6 +78,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_boost.h"
 #include "media/streaming/media_streaming_debug.h"
 #include "media/streaming/media_streaming_document.h"
+#include "media/streaming/media_streaming_loader.h"
 #include "media/streaming/media_streaming_player.h"
 #include "media/player/media_player_instance.h"
 #include "history/history.h"
@@ -495,6 +498,20 @@ struct OverlayWidget::Collage {
 	}
 
 	CollageKey key;
+};
+
+struct OverlayWidget::ImageFilePreview {
+	std::unique_ptr<Streaming::Loader> loader;
+	QByteArray bytes;
+	base::flat_set<int64> pending;
+	int64 size = 0;
+	int64 nextOffset = 0;
+	int64 received = 0;
+	bool loading = true;
+	bool failed = false;
+	base::binary_guard cacheGuard;
+	base::binary_guard decodeGuard;
+	rpl::lifetime lifetime;
 };
 
 struct OverlayWidget::Streamed {
@@ -1031,7 +1048,13 @@ OverlayWidget::OverlayWidget()
 		activateControls();
 	}, lifetime());
 
-	_docDownload->addClickHandler([=] { downloadMedia(); });
+	_docDownload->addClickHandler([=] {
+		if (_imageFilePreview && _imageFilePreview->failed) {
+			redisplayContent();
+		} else {
+			downloadMedia();
+		}
+	});
 	_docSaveAs->addClickHandler([=] { saveAs(); });
 	_docCancel->addClickHandler([=] { saveCancel(); });
 
@@ -1653,7 +1676,187 @@ bool OverlayWidget::opaqueContentShown() const {
 				&& (!_streamed || !_streamed->instance.info().video.alpha)));
 }
 
+void OverlayWidget::initImageFilePreview() {
+	_imageFilePreview = std::make_unique<ImageFilePreview>();
+	_imageFilePreview->size = _document->size;
+	if (const auto thumbnail = _documentMedia->thumbnail()) {
+		setStaticContent(thumbnail->original());
+		_blurred = true;
+	}
+	if (_documentMedia->bytes().size() == _imageFilePreview->size) {
+		_imageFilePreview->bytes = _documentMedia->bytes();
+		_imageFilePreview->received = _imageFilePreview->size;
+		decodeImageFilePreview();
+		return;
+	}
+	const auto guard = std::make_shared<base::binary_guard>(
+		_imageFilePreview->cacheGuard.make_guard());
+	_document->owner().cache().get(_document->cacheKey(), [=](QByteArray bytes) {
+		crl::on_main([=, bytes = std::move(bytes)]() mutable {
+			if (guard->alive()) {
+				imageFileCacheLoaded(std::move(bytes));
+			}
+		});
+	});
+}
+
+void OverlayWidget::imageFileCacheLoaded(QByteArray bytes) {
+	if (!_imageFilePreview || !_imageFilePreview->loading) {
+		return;
+	}
+	if (bytes.size() == _imageFilePreview->size) {
+		_imageFilePreview->bytes = std::move(bytes);
+		_imageFilePreview->received = _imageFilePreview->size;
+		decodeImageFilePreview();
+	} else {
+		startImageFileTransfer();
+	}
+}
+
+void OverlayWidget::startImageFileTransfer() {
+	_imageFilePreview->loader = _document->createImagePreviewLoader(fileOrigin());
+	if (!_imageFilePreview->loader
+		|| _imageFilePreview->loader->size() != _imageFilePreview->size) {
+		failImageFilePreview();
+		return;
+	}
+	_imageFilePreview->bytes.resize(int(_imageFilePreview->size));
+	_imageFilePreview->loader->parts() | rpl::on_next([=](
+			const Streaming::LoadedPart &part) {
+		imageFilePartLoaded(part);
+	}, _imageFilePreview->lifetime);
+	loadImageFileParts();
+}
+
+void OverlayWidget::loadImageFileParts() {
+	constexpr auto kRequests = 4;
+	if (!_imageFilePreview || !_imageFilePreview->loading) {
+		return;
+	}
+	auto &state = *_imageFilePreview;
+	while (state.pending.size() < kRequests
+		&& state.nextOffset < state.size) {
+		const auto offset = state.nextOffset;
+		state.nextOffset += Streaming::Loader::kPartSize;
+		state.pending.emplace(offset);
+		state.loader->load(offset);
+	}
+}
+
+void OverlayWidget::imageFilePartLoaded(const Streaming::LoadedPart &part) {
+	if (!_imageFilePreview || !_imageFilePreview->loading) {
+		return;
+	}
+	auto &state = *_imageFilePreview;
+	if (part.cancelled
+		|| !part.valid(state.size)
+		|| part.offset < 0
+		|| part.offset >= state.size
+		|| part.bytes.size() != std::min(
+			Streaming::Loader::kPartSize,
+			state.size - part.offset)
+		|| !state.pending.remove(part.offset)) {
+		failImageFilePreview();
+		return;
+	}
+	std::copy(
+		part.bytes.cbegin(),
+		part.bytes.cend(),
+		state.bytes.data() + part.offset);
+	state.received += part.bytes.size();
+	if (state.received == state.size) {
+		decodeImageFilePreview();
+	} else {
+		loadImageFileParts();
+	}
+	update();
+}
+
+void OverlayWidget::decodeImageFilePreview() {
+	crl::async([
+		this,
+		bytes = std::move(_imageFilePreview->bytes),
+		guard = _imageFilePreview->decodeGuard.make_guard()
+	]() mutable {
+		if (!guard.alive()) {
+			return;
+		}
+		auto image = PrepareStaticImage({ .content = bytes });
+		crl::on_main(std::move(guard), [
+			this,
+			image = std::move(image),
+			bytes = std::move(bytes)
+		]() mutable {
+			finishImageFilePreview(std::move(image), std::move(bytes));
+		});
+	});
+}
+
+void OverlayWidget::finishImageFilePreview(QImage image, QByteArray bytes) {
+	if (!_imageFilePreview || !_imageFilePreview->loading) {
+		return;
+	} else if (image.isNull()
+		|| bytes.size() != _imageFilePreview->size
+		|| _document->size != _imageFilePreview->size) {
+		failImageFilePreview();
+		return;
+	}
+	if (bytes.size() < Storage::kMaxFileInMemory) {
+		const auto wasCached = _document->saveToCache();
+		_document->forceToCache(true);
+		_document->setDataAndCache(bytes);
+		if (!wasCached) {
+			_document->forceToCache(false);
+		}
+	} else {
+		_documentMedia->setBytes(bytes);
+	}
+	_imageFilePreview->loading = false;
+	_radial.stop();
+	setStaticContent(std::move(image));
+	_blurred = false;
+	const auto size = style::ConvertScale(
+		flipSizeByRotation(_staticContent.size()));
+	_w = size.width();
+	_h = size.height();
+	contentSizeChanged();
+	_touchbarDisplay.fire(TouchBarItemType::Photo);
+	_document->owner().requestDocumentViewRepaint(_document);
+	tryStartTextRecognition();
+	updateControls();
+	update();
+}
+
+void OverlayWidget::failImageFilePreview() {
+	if (!_imageFilePreview) {
+		return;
+	}
+	_imageFilePreview->loading = false;
+	_imageFilePreview->failed = true;
+	_imageFilePreview->bytes.clear();
+	_imageFilePreview->cacheGuard = nullptr;
+	_imageFilePreview->decodeGuard = nullptr;
+	if (_imageFilePreview->loader) {
+		_imageFilePreview->loader->stop();
+	}
+	setStaticContent({});
+	updateControls();
+	update();
+	uiShow()->showToast(tr::lng_mediaview_image_file_failed(tr::now));
+}
+
+void OverlayWidget::clearImageFilePreview() {
+	if (_imageFilePreview) {
+		_imageFilePreview->loading = false;
+		if (_imageFilePreview->loader) {
+			_imageFilePreview->loader->stop();
+		}
+	}
+	_imageFilePreview = nullptr;
+}
+
 void OverlayWidget::clearStreaming(bool savePosition) {
+	clearImageFilePreview();
 	Test::VideoScrollViewer(Test::VideoScrollViewerEvent::ClearStream, _window);
 	cancelPlaybackHolds();
 	_speedBoostAnimation.stop();
@@ -1811,6 +2014,9 @@ void OverlayWidget::showPremiumDownloadPromo() {
 void OverlayWidget::updateControls() {
 	++_rasterRevision;
 	if (_document && documentBubbleShown()) {
+		_docDownload->setText((_imageFilePreview && _imageFilePreview->failed)
+			? tr::lng_mediaview_image_file_retry(tr::now)
+			: tr::lng_media_download(tr::now));
 		_docRect = QRect(
 			(width() - st::mediaviewFileSize.width()) / 2,
 			_minUsedTop + (_maxUsedHeight - st::mediaviewFileSize.height()) / 2,
@@ -1821,7 +2027,7 @@ void OverlayWidget::updateControls() {
 			_docRect.y() + st::mediaviewFilePadding,
 			st::mediaviewFileIconSize,
 			st::mediaviewFileIconSize);
-		if (_document->loading()) {
+		if (_document->loading() || radialLoading()) {
 			_docDownload->hide();
 			_docSaveAs->hide();
 			_docCancel->moveToLeft(_docRect.x() + 2 * st::mediaviewFilePadding + st::mediaviewFileIconSize, _docRect.y() + st::mediaviewFilePadding + st::mediaviewFileLinksTop);
@@ -2940,7 +3146,9 @@ void OverlayWidget::resizeContentByScreenSize() {
 }
 
 float64 OverlayWidget::radialProgress() const {
-	if (_document) {
+	if (_imageFilePreview && _document) {
+		return float64(_imageFilePreview->received) / _imageFilePreview->size;
+	} else if (_document) {
 		return _documentMedia->progress();
 	} else if (_photo) {
 		return _photoMedia->progress();
@@ -2949,7 +3157,9 @@ float64 OverlayWidget::radialProgress() const {
 }
 
 bool OverlayWidget::radialLoading() const {
-	if (_streamed) {
+	if (_imageFilePreview) {
+		return _imageFilePreview->loading;
+	} else if (_streamed) {
 		return false;
 	} else if (_document) {
 		return _document->loading();
@@ -2960,7 +3170,13 @@ bool OverlayWidget::radialLoading() const {
 }
 
 QRect OverlayWidget::radialRect() const {
-	if (_photo) {
+	if (_imageFilePreview && !_staticContent.isNull()) {
+		return QRect(
+			QPoint(
+				_x + (_w - st::radialSize.width()) / 2,
+				_y + (_h - st::radialSize.height()) / 2),
+			st::radialSize);
+	} else if (_photo) {
 		return _photoRadialRect;
 	} else if (_document) {
 		return QRect(
@@ -2997,6 +3213,9 @@ bool OverlayWidget::radialAnimationCallback(crl::time now) {
 	if ((wasAnimating || _radial.animating())
 		&& (!anim::Disabled() || updated)) {
 		update(radialRect());
+	}
+	if (_imageFilePreview) {
+		return true;
 	}
 	const auto ready = _document && _documentMedia->loaded();
 	const auto streamVideo = ready && _documentMedia->canBePlayed();
@@ -3691,7 +3910,19 @@ void OverlayWidget::downloadMedia() {
 }
 
 void OverlayWidget::saveCancel() {
-	if (_document && _document->loading()) {
+	if (_imageFilePreview && _imageFilePreview->loading) {
+		_imageFilePreview->loading = false;
+		_imageFilePreview->failed = true;
+		_imageFilePreview->cacheGuard = nullptr;
+		_imageFilePreview->decodeGuard = nullptr;
+		_imageFilePreview->bytes.clear();
+		if (_imageFilePreview->loader) {
+			_imageFilePreview->loader->stop();
+		}
+		setStaticContent({});
+		updateControls();
+		update();
+	} else if (_document && _document->loading()) {
 		_document->cancel();
 		if (_documentMedia->canBePlayed()) {
 			redisplayContent();
@@ -4937,6 +5168,8 @@ void OverlayWidget::displayDocument(
 					_documentMedia->automaticLoad(fileOrigin(), _message);
 				}
 				initStreamingThumbnail();
+			} else if (Data::CanOpenImageFile(_document)) {
+				initImageFilePreview();
 			} else if (_document->isTheme()) {
 				_documentMedia->automaticLoad(fileOrigin(), _message);
 				initThemePreview();

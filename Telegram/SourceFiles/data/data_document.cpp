@@ -1771,6 +1771,13 @@ auto DocumentData::createStreamingLoaderForExternalPlayer(
 		: nullptr;
 }
 
+auto DocumentData::createImagePreviewLoader(Data::FileOrigin origin) const
+-> std::unique_ptr<Media::Streaming::Loader> {
+	return (size > 0 && type == FileDocument && isImage())
+		? createStreamingLoaderImpl(origin, false)
+		: nullptr;
+}
+
 auto DocumentData::createStreamingLoaderImpl(
 		Data::FileOrigin origin,
 		bool forceRemoteLoader) const

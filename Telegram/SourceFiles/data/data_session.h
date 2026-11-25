@@ -671,6 +671,7 @@ public:
 
 	void photoLoadSettingsChanged();
 	void documentLoadSettingsChanged();
+	void refreshImageFileViews();
 
 	void notifyPhotoLayoutChanged(not_null<const PhotoData*> photo);
 	void requestPhotoViewRepaint(not_null<const PhotoData*> photo);

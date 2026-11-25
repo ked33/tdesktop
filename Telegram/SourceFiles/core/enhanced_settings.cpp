@@ -13,6 +13,8 @@ https://github.com/TDesktop-x64/tdesktop/blob/dev/LEGAL
 #include "mainwidget.h"
 #include "window/window_controller.h"
 #include "core/application.h"
+#include "data/data_session.h"
+#include "main/main_session.h"
 #include "main/main_domain.h"
 #include "main/main_account.h"
 #include "storage/storage_account.h"
@@ -211,6 +213,7 @@ namespace EnhancedSettings {
 			ensureInt(u"media_preview_burst_requests"_q, 0);
 			ensureBool(u"video_player_prefer_original"_q, true);
 			ensureBool(u"video_player_auto_fullscreen"_q, false);
+			ensureBool(u"open_image_files"_q, true);
 				ensureBool(qsl("show_message_context_show_messages_from"), true);
 			ensureBool(qsl("show_message_context_forward"), true);
 			ensureBool(qsl("show_message_context_repeater"), true);
@@ -765,6 +768,26 @@ namespace EnhancedSettings {
 			: kMessageStickerSizeDefault;
 	}
 
+	bool ImageFilePreviewEnabled() {
+		return !gEnhancedOptions.contains(u"open_image_files"_q)
+			|| GetEnhancedBool(u"open_image_files"_q);
+	}
+
+	void SetImageFilePreviewEnabled(bool enabled) {
+		if (ImageFilePreviewEnabled() == enabled) {
+			return;
+		}
+		SetEnhancedValue(u"open_image_files"_q, enabled);
+		Write();
+		if (Core::App().domain().started()) {
+			for (const auto &pair : Core::App().domain().accounts()) {
+				if (pair.account->sessionExists()) {
+					pair.account->session().data().refreshImageFileViews();
+				}
+			}
+		}
+	}
+
 	Manager::Manager() {
 		_jsonWriteTimer.setSingleShot(true);
 		connect(&_jsonWriteTimer, SIGNAL(timeout()), this, SLOT(writeTimeout()));
@@ -1014,6 +1037,7 @@ namespace EnhancedSettings {
 		settings.insert(u"media_preview_burst_requests"_q, 0);
 		settings.insert(u"video_player_prefer_original"_q, true);
 		settings.insert(u"video_player_auto_fullscreen"_q, false);
+		settings.insert(u"open_image_files"_q, true);
 			settings.insert(qsl("show_message_context_show_messages_from"), true);
 		settings.insert(qsl("show_message_context_forward"), true);
 		settings.insert(qsl("show_message_context_repeater"), true);
@@ -1177,6 +1201,7 @@ namespace EnhancedSettings {
 		settings.insert(
 			u"video_player_auto_fullscreen"_q,
 			GetEnhancedBool(u"video_player_auto_fullscreen"_q));
+		settings.insert(u"open_image_files"_q, ImageFilePreviewEnabled());
 			settings.insert(qsl("show_message_context_show_messages_from"), GetEnhancedBool("show_message_context_show_messages_from"));
 		settings.insert(qsl("show_message_context_forward"), GetEnhancedBool("show_message_context_forward"));
 		settings.insert(qsl("show_message_context_repeater"), GetEnhancedBool("show_message_context_repeater"));
