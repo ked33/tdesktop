@@ -2222,6 +2222,8 @@ void DownloadMtprotoTask::logTransferLimitSource(
 		return u"cloud_draft"_q;
 	}, [](const Data::FileOriginStory &) {
 		return u"story"_q;
+	}, [](const Data::FileOriginBotMediaPreview &) {
+		return u"bot_media_preview"_q;
 	});
 	LOG(("Transfer limit source: request=%1 dc=%2 source=%3 resource=%4 "
 		"origin=%5 object=%6 offset=%7 request_age_ms=%8")

@@ -10436,9 +10436,10 @@ bool HistoryWidget::editableMessageNavigationRequest(QKeyEvent *e) {
 			if (last->media() && last->media()->allowsEdit()) {
 				if (const auto view = last->mainView()) {
 					controller()->show(Box(Ui::EditCaptionBox, view));
+					return true;
 				}
 			}
-			return true;
+			return false;
 		}
 	}
 	const auto item = editableMessageByDirection(currentId, isDown);

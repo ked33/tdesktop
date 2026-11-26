@@ -197,6 +197,7 @@ WelcomeMessagesWidget::WelcomeMessagesWidget(
 		if (const auto item = session().data().message(request.itemId)) {
 			const auto media = item->media();
 			if (!media || media->webpage() || media->allowsEditCaption()) {
+				*request.handled = true;
 				_composeControls->editMessage(
 					request.itemId,
 					request.selection.empty()
@@ -363,10 +364,10 @@ void WelcomeMessagesWidget::setupComposeControls() {
 		if (!item) {
 			return;
 		}
-		*request.handled = true;
 		if (request.mode == Request::Mode::Edit) {
-			_inner->editMessageRequestNotify(itemId);
+			*request.handled = _inner->editMessageRequestNotify(itemId);
 		} else {
+			*request.handled = true;
 			_composeControls->setEditableMessageNavigationText(
 				itemId,
 				PrepareEditText(item));

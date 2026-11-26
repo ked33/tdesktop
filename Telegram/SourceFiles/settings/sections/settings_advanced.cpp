@@ -1104,7 +1104,7 @@ void SetDefaultStatus(
 		update->show();
 		break;
 	default:
-		texts->fire(Core::UpdateRequiresManualInstall()
+		texts->fire_copy(Core::UpdateRequiresManualInstall()
 			? tr::lng_settings_update_manual_required(tr::now)
 			: version);
 		break;

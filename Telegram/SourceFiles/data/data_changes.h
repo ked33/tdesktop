@@ -321,6 +321,8 @@ public:
 	[[nodiscard]] rpl::producer<PeerUpdate> peerFlagsValue(
 		not_null<PeerData*> peer,
 		PeerUpdate::Flags flags) const;
+	[[nodiscard]] rpl::producer<PeerUpdate> realtimePeerUpdates(
+		PeerUpdate::Flag flag) const;
 
 	void historyUpdated(
 		not_null<History*> history,

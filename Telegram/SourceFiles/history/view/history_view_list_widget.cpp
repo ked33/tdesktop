@@ -6757,13 +6757,15 @@ ListWidget::editMessageRequested() const {
 	return _requestedToEditMessage.events();
 }
 
-void ListWidget::editMessageRequestNotify(
+bool ListWidget::editMessageRequestNotify(
 		FullMsgId item,
 		TextSelection selection) const {
-	_requestedToEditMessage.fire({ std::move(item), selection });
+	auto handled = false;
+	_requestedToEditMessage.fire({ std::move(item), selection, &handled });
+	return handled;
 }
 
-void ListWidget::lastMessageEditRequestNotify() const {
+bool ListWidget::lastMessageEditRequestNotify() const {
 	const auto &list = ranges::views::reverse(_items);
 	const auto notSponsored = ranges::find_if(list, [](
 			not_null<Element*> view) {
@@ -6773,12 +6775,14 @@ void ListWidget::lastMessageEditRequestNotify() const {
 		const auto last = (*notSponsored)->data();
 		if (last->media() && last->media()->allowsEdit()) {
 			controller()->show(Box(Ui::EditCaptionBox, *notSponsored));
+			return true;
 		}
-		return;
+		return false;
 	}
 	if (const auto itemId = editableMessageIdByDirection({}, false)) {
-		editMessageRequestNotify(itemId);
+		return editMessageRequestNotify(itemId);
 	}
+	return false;
 }
 
 FullMsgId ListWidget::editableMessageIdByDirection(

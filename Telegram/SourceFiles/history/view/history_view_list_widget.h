@@ -496,12 +496,13 @@ public:
 	struct EditMessageRequest {
 		FullMsgId itemId;
 		TextSelection selection;
+		not_null<bool*> handled;
 	};
 	[[nodiscard]] rpl::producer<EditMessageRequest> editMessageRequested() const;
-	void editMessageRequestNotify(
+	bool editMessageRequestNotify(
 		FullMsgId item,
 		TextSelection selection = {}) const;
-	void lastMessageEditRequestNotify() const;
+	[[nodiscard]] bool lastMessageEditRequestNotify() const;
 	[[nodiscard]] FullMsgId editableMessageIdByDirection(
 		FullMsgId currentId,
 		bool newer) const;

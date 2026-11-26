@@ -402,6 +402,7 @@ ShortcutMessages::ShortcutMessages(
 		if (const auto item = _session->data().message(request.itemId)) {
 			const auto media = item->media();
 			if (!media || media->webpage() || media->allowsEditCaption()) {
+				*request.handled = true;
 				const auto selection = request.selection.empty()
 					? _inner->getSelectedTextRangeForEdit(item)
 					: request.selection;
@@ -409,6 +410,7 @@ ShortcutMessages::ShortcutMessages(
 					request.itemId,
 					selection);
 			} else if (media->todolist()) {
+				*request.handled = true;
 				Window::PeerMenuEditTodoList(_controller, item);
 			}
 		}
@@ -768,8 +770,9 @@ void ShortcutMessages::setupComposeControls() {
 		if (!item) {
 			return;
 		} else if (request.mode == Request::Mode::Edit) {
-			_inner->editMessageRequestNotify(itemId);
+			*request.handled = _inner->editMessageRequestNotify(itemId);
 		} else {
+			*request.handled = true;
 			_composeControls->setEditableMessageNavigationText(
 				itemId,
 				PrepareEditText(item));

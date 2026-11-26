@@ -636,6 +636,7 @@ ChatWidget::ChatWidget(
 		if (const auto item = session().data().message(request.itemId)) {
 			const auto media = item->media();
 			if (!media || media->webpage() || media->allowsEditCaption()) {
+				*request.handled = true;
 				const auto selection = request.selection.empty()
 					? _inner->getSelectedTextRangeForEdit(item)
 					: request.selection;
@@ -651,6 +652,7 @@ ChatWidget::ChatWidget(
 					request.itemId,
 					selection);
 			} else if (media->todolist()) {
+				*request.handled = true;
 				Window::PeerMenuEditTodoList(controller, item);
 			}
 		}
@@ -1820,10 +1822,10 @@ void ChatWidget::setupComposeControls() {
 		if (!item) {
 			return;
 		}
-		*request.handled = true;
 		if (request.mode == Request::Mode::Edit) {
-			_inner->editMessageRequestNotify(itemId);
+			*request.handled = _inner->editMessageRequestNotify(itemId);
 		} else {
+			*request.handled = true;
 			_composeControls->setEditableMessageNavigationText(
 				itemId,
 				PrepareEditText(item));

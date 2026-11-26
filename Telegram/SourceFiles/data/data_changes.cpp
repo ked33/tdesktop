@@ -134,6 +134,11 @@ rpl::producer<PeerUpdate> Changes::peerFlagsValue(
 	return _peerChanges.flagsValue(peer, flags);
 }
 
+rpl::producer<PeerUpdate> Changes::realtimePeerUpdates(
+		PeerUpdate::Flag flag) const {
+	return _peerChanges.realtimeUpdates(flag);
+}
+
 void Changes::historyUpdated(
 		not_null<History*> history,
 		HistoryUpdate::Flags flags) {
