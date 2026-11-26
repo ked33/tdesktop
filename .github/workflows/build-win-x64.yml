@@ -79,13 +79,9 @@ jobs:
         shell: bash
         run: |
           PREPARE_ROOT="$GITHUB_WORKSPACE/$TBUILD_REL/$REPO_NAME/Telegram/build/prepare"
-          DOC_PATH="$GITHUB_WORKSPACE/$TBUILD_REL/$REPO_NAME/docs/building-win.md"
           {
             find "$PREPARE_ROOT" -type f -print0 | sort -z | xargs -0 sha256sum
             sha256sum "$GITHUB_WORKSPACE/$TBUILD_REL/$REPO_NAME/Telegram/build/qt_version.py"
-            if [ -f "$DOC_PATH" ]; then
-              sha256sum "$DOC_PATH"
-            fi
           } > CACHE_KEY.txt
           echo "CACHE_KEY=$(sha256sum CACHE_KEY.txt | awk '{ print $1 }')" >> $GITHUB_ENV
 
@@ -123,9 +119,9 @@ jobs:
             !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*.pdb
             !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*d.lib
             !${{ env.LibrariesPath }}\[qQ]t[_-]*\**\*d.prl
-          key: win64-qt-6.11.2-${{ env.QT_TOOLCHAIN_KEY }}-${{ env.CACHE_KEY }}
+          key: win64-qt-6.12.0-${{ env.QT_TOOLCHAIN_KEY }}-${{ env.CACHE_KEY }}
           restore-keys: |
-            win64-qt-6.11.2-${{ env.QT_TOOLCHAIN_KEY }}-
+            win64-qt-6.12.0-${{ env.QT_TOOLCHAIN_KEY }}-
 
       - name: Set up sccache
         id: sccache
@@ -314,10 +310,12 @@ jobs:
           cd /d %TBUILD%\%REPO_NAME%\Telegram
           set "SCCACHE_LAUNCHER_FLAGS="
           if defined SCCACHE_PATH if exist "%SCCACHE_PATH%" set "SCCACHE_LAUNCHER_FLAGS=-D CMAKE_C_COMPILER_LAUNCHER=sccache -D CMAKE_CXX_COMPILER_LAUNCHER=sccache"
-          configure.bat -G "Ninja Multi-Config" qt6 ^
+          configure.bat -G "Ninja Multi-Config" ^
             -D TDESKTOP_API_ID=%TDESKTOP_API_ID% ^
             -D TDESKTOP_API_HASH=%TDESKTOP_API_HASH% ^
             -D TDESKTOP_GIT_COMMIT=%GITHUB_SHA:~0,7% ^
+            -D TDESKTOP_BUILD_UPDATE_TESTS=ON ^
+            -D DESKTOP_APP_DISABLE_AUTOUPDATE=OFF ^
             -DCMAKE_CONFIGURATION_TYPES=Release ^
             -D DESKTOP_APP_DISABLE_CRASH_REPORTS=OFF ^
             -D DESKTOP_APP_NO_PDB=ON ^
@@ -332,6 +330,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & '.\Release\test_hashtag_suggestions.exe'
           exit $LASTEXITCODE
+
+      - name: Check update verification and extraction
+        shell: pwsh
+        run: |
+          Set-Location "$env:TBUILD\$env:REPO_NAME\out"
+          cmake --build . --config Release --target test_update_verify test_update_unpack --parallel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($test in @('test_update_verify', 'test_update_unpack')) {
+            & ".\Release\$test.exe"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
 
       - name: Build Telegram (Release)
         shell: cmd
@@ -368,26 +377,38 @@ jobs:
       - name: Package artifact
         shell: pwsh
         run: |
-          $exe = "$env:TBUILD\$env:REPO_NAME\out\Release\Telegram.exe"
           # $pdb = "$env:TBUILD\$env:REPO_NAME\out\Release\Telegram.pdb"
           # if (-not (Test-Path -LiteralPath $exe) -or -not (Test-Path -LiteralPath $pdb)) {
           #   throw 'Both Telegram.exe and its matching Telegram.pdb are required.'
           # }
-          if (-not (Test-Path -LiteralPath $exe)) {
-            throw 'Telegram.exe is required.'
+          # $symbolsDir = Join-Path $env:GITHUB_WORKSPACE 'symbols'
+          # New-Item -ItemType Directory -Force -Path $symbolsDir | Out-Null
+          # Copy-Item -LiteralPath $pdb -Destination (Join-Path $symbolsDir 'Telegram.pdb')
+          # foreach ($path in @($exe, $pdb)) {
+          # foreach ($directory in @($artifactDir, $symbolsDir)) {
+          #   [IO.File]::WriteAllText((Join-Path $directory 'build-info.json'), $manifest, [Text.UTF8Encoding]::new($false))
+          # }
+          $ErrorActionPreference = 'Stop'
+          $releaseDir = "$env:TBUILD\$env:REPO_NAME\out\Release"
+          $exe = Join-Path $releaseDir 'Telegram.exe'
+          $modules = Join-Path $releaseDir 'modules\x64'
+          $helper = Join-Path $modules 'TelegramWidgetHelper.exe'
+          foreach ($required in @($exe, $helper)) {
+            if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
+              throw "Required build output is missing: $required"
+            }
           }
           $artifactDir = Join-Path $env:GITHUB_WORKSPACE 'artifact'
-          # $symbolsDir = Join-Path $env:GITHUB_WORKSPACE 'symbols'
           New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
-          # New-Item -ItemType Directory -Force -Path $symbolsDir | Out-Null
-          Copy-Item -LiteralPath $exe -Destination (Join-Path $artifactDir 'Telegram.exe')
-          # Copy-Item -LiteralPath $pdb -Destination (Join-Path $symbolsDir 'Telegram.pdb')
+          $payload = @(Get-Item -LiteralPath $exe) + @(Get-ChildItem -LiteralPath $modules -File -Recurse | Where-Object Extension -ne '.pdb')
           $files = [ordered]@{}
-          # foreach ($path in @($exe, $pdb)) {
-          foreach ($path in @($exe)) {
-            $file = Get-Item -LiteralPath $path
-            $files[$file.Name] = [ordered]@{
-              sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+          foreach ($file in $payload) {
+            $relative = [IO.Path]::GetRelativePath($releaseDir, $file.FullName)
+            $destination = Join-Path $artifactDir $relative
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+            Copy-Item -LiteralPath $file.FullName -Destination $destination
+            $files[$relative.Replace('\', '/')] = [ordered]@{
+              sha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
               size = $file.Length
             }
           }
@@ -401,9 +422,6 @@ jobs:
             architecture = 'x64'
             files = $files
           } | ConvertTo-Json -Depth 5
-          # foreach ($directory in @($artifactDir, $symbolsDir)) {
-          #   [IO.File]::WriteAllText((Join-Path $directory 'build-info.json'), $manifest, [Text.UTF8Encoding]::new($false))
-          # }
           [IO.File]::WriteAllText((Join-Path $artifactDir 'build-info.json'), $manifest, [Text.UTF8Encoding]::new($false))
 
       - name: Upload artifacts

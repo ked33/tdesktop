@@ -19,8 +19,8 @@ public:
 	DragArea(QWidget *parent);
 
 	struct Areas {
-		DragArea *document;
-		DragArea *photo;
+		DragArea *document = nullptr;
+		DragArea *photo = nullptr;
 	};
 
 	using CallbackComputeState
@@ -42,6 +42,7 @@ public:
 	[[nodiscard]] static int MinimalHeight();
 
 	void setText(const QString &text, const QString &subtext);
+	void setIcon(const style::icon *icon);
 
 	void otherEnter();
 	void otherLeave();
@@ -86,5 +87,6 @@ private:
 	Ui::Animations::Simple _a_in;
 
 	QString _text, _subtext;
+	const style::icon *_icon = nullptr;
 
 };

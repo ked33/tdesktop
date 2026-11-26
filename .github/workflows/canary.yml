@@ -45,7 +45,7 @@
 #       (to stay above counters published by an earlier workflow).
 #   vars.CANARY_CPPGIR_MIRROR
 #       Optional git URL replacing https://gitlab.com/mnauw/cppgir.git
-#       for the Linux job's nested submodule clone. gitlab.com refuses
+#       for the build jobs' nested submodule clones. gitlab.com refuses
 #       (HTTP 403) the Depot runners this workflow uses; a mirror of
 #       that repository on github.com is the way around it.
 #   vars.CANARY_BOT_API_IMAGE
@@ -373,20 +373,21 @@ jobs:
 
       - name: Submodules.
         shell: bash
+        env:
+          CPPGIR_MIRROR: ${{ vars.CANARY_CPPGIR_MIRROR }}
         run: |
           # Separate from the clone on purpose: with submodules enabled
           # actions/checkout adds its own Authorization header on top of
           # the one above and GitHub rejects the duplicate. The submodules
           # are public repositories and need no credentials.
           #
-          # Not recursive: the only nested submodule any build needs is
-          # cmake/external/glib/cppgir, which cmake/external adds under
-          # if (LINUX) — so Windows and macOS never compile it. Skipping
-          # it keeps gitlab.com, which regularly answers 403 to cloud
-          # runners, out of these jobs; the other nested submodules are
-          # documentation (range-v3 gh-pages, libcbor doxygen-theme).
+          # Recursive, as on Linux, whose job explains the cppgir mirror.
+          if [ -n "$CPPGIR_MIRROR" ]; then
+            git config --global \
+              url."$CPPGIR_MIRROR".insteadOf https://gitlab.com/mnauw/cppgir.git
+          fi
           cd $TBUILD/$REPO_NAME
-          git submodule update --init --depth=1
+          git submodule update --init --recursive --depth=1
 
       - name: Read canary configuration.
         shell: bash
@@ -411,8 +412,7 @@ jobs:
       - name: First set up.
         shell: bash
         run: |
-          DOCPATH=$TBUILD/$REPO_NAME/docs/building-win.md
-          SDK="$(grep "SDK version" $DOCPATH | sed -r 's/.*\*\*(.*)\*\* SDK version.*/\1/')"
+          SDK=10.0.26100.0
           echo "SDK=$SDK" >> $GITHUB_ENV
 
           sed -i '/CMAKE_${lang}_FLAGS_DEBUG_INIT/s/${_Zi}//' "$PROGRAMFILES"/CMake/share/cmake*/Modules/Platform/Windows-MSVC.cmake
@@ -516,24 +516,9 @@ jobs:
         id: cache-libs
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          path: |
-            ${{ env.LibrariesPath }}\*
-            !${{ env.LibrariesPath }}\cache_keys
-            !${{ env.LibrariesPath }}\[qQ]t[_-]*
-            ${{ env.LibrariesPath }}\cache_keys\*
-            !${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
-          key: ${{ runner.OS }}-x64-libs-v2rel-${{ env.CACHE_KEY }}
-          restore-keys: ${{ runner.OS }}-x64-libs-v2rel-
-
-      - name: Qt cache.
-        id: cache-qt
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ${{ env.LibrariesPath }}\[qQ]t[_-]*
-            ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
-          key: ${{ runner.OS }}-x64-qtrel-${{ env.CACHE_KEY }}
-          restore-keys: ${{ runner.OS }}-x64-qtrel-
+          path: ${{ env.LibrariesPath }}
+          key: ${{ runner.OS }}-x64-rel-libs-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-x64-rel-libs-
 
       - name: Libraries.
         run: |
@@ -584,22 +569,8 @@ jobs:
         if: steps.cache-libs.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          path: |
-            ${{ env.LibrariesPath }}\*
-            !${{ env.LibrariesPath }}\cache_keys
-            !${{ env.LibrariesPath }}\[qQ]t[_-]*
-            ${{ env.LibrariesPath }}\cache_keys\*
-            !${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          path: ${{ env.LibrariesPath }}
           key: ${{ steps.cache-libs.outputs.cache-primary-key }}
-
-      - name: Save Qt cache.
-        if: steps.cache-qt.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ${{ env.LibrariesPath }}\[qQ]t[_-]*
-            ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
-          key: ${{ steps.cache-qt.outputs.cache-primary-key }}
 
       - name: Telegram Desktop build.
         run: |
@@ -665,11 +636,14 @@ jobs:
           export SM_CLIENT_CERT_FILE=/tmp/keylocker.p12
           smctl sign --keypair-alias "$SM_KEYPAIR_ALIAS" --input Telegram.exe
           smctl sign --keypair-alias "$SM_KEYPAIR_ALIAS" --input Updater.exe
-          # Both binaries are verified here, on the exact bytes that get
+          smctl sign --keypair-alias "$SM_KEYPAIR_ALIAS" --input modules/x64/TelegramWidgetHelper.exe
+          # Every binary is verified here, on the exact bytes that get
           # packed: Updater.exe travels only inside the update envelope,
           # the publish job can re-check just the portable's Telegram.exe.
-          signtool verify /pa /all Telegram.exe
-          signtool verify /pa /all Updater.exe
+          # Per command: smctl needs Git Bash to convert SM_CLIENT_CERT_FILE.
+          MSYS_NO_PATHCONV=1 signtool verify /pa /all Telegram.exe
+          MSYS_NO_PATHCONV=1 signtool verify /pa /all Updater.exe
+          MSYS_NO_PATHCONV=1 signtool verify /pa /all modules/x64/TelegramWidgetHelper.exe
           echo "signed=true" >> $GITHUB_OUTPUT
 
       - name: Azure login for update signing.
@@ -690,6 +664,7 @@ jobs:
           # while CI would grab whatever the runner's SDK ships. Canary
           # machines use the system compiler dll.
           ./Packer.exe -path Telegram.exe -path Updater.exe \
+            -path modules/x64/TelegramWidgetHelper.exe \
             -target win64 \
             -version $BASE \
             -channel canary-${{ needs.version.outputs.channel }} \
@@ -720,9 +695,10 @@ jobs:
           # folders from dropping it.
           PORTABLE=td-portable-win-x64-$CANARY_VERSION$CANARY_SUFFIX.zip
           rm -rf portable
-          mkdir -p portable/$CANARY_FOLDER/TelegramForcePortable
+          mkdir -p portable/$CANARY_FOLDER/TelegramForcePortable portable/$CANARY_FOLDER/modules/x64
           touch portable/$CANARY_FOLDER/TelegramForcePortable/.keep
           cp Telegram.exe portable/$CANARY_FOLDER/
+          cp modules/x64/TelegramWidgetHelper.exe portable/$CANARY_FOLDER/modules/x64/
           (cd portable && 7z a -mx9 ../$PORTABLE $CANARY_FOLDER/)
 
           mkdir -p artifact/update artifact/portable
@@ -774,11 +750,19 @@ jobs:
       - name: Clone.
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # Not recursive, see the Windows job: nothing macOS compiles
-          # lives in a nested submodule, and recursing would clone
-          # cppgir from gitlab.com once per arch of this matrix.
           submodules: true
           path: ${{ env.REPO_NAME }}
+
+      - name: Nested submodules.
+        env:
+          CPPGIR_MIRROR: ${{ vars.CANARY_CPPGIR_MIRROR }}
+        run: |
+          # Recursive, as on Linux, whose job explains the cppgir mirror.
+          if [ -n "$CPPGIR_MIRROR" ]; then
+            git config --global \
+              url."$CPPGIR_MIRROR".insteadOf https://gitlab.com/mnauw/cppgir.git
+          fi
+          git -C $REPO_NAME submodule update --init --recursive --depth=1
 
       - name: Read canary configuration.
         run: |
@@ -935,7 +919,7 @@ jobs:
           done
 
           # Stripped here: the universal app is lipo'd from these.
-          for BINARY in MacOS/Telegram Frameworks/Updater Helpers/crashpad_handler; do
+          for BINARY in MacOS/Telegram Frameworks/Updater Helpers/crashpad_handler Helpers/TelegramWidgetHelper; do
             strip Telegram.app/Contents/$BINARY
           done
 
@@ -1033,7 +1017,7 @@ jobs:
 
           # Use the arm64 bundle as the template and include Intel-only
           # Swift runtimes below for older macOS versions.
-          BINARIES="MacOS/Telegram Frameworks/Updater Helpers/crashpad_handler"
+          BINARIES="MacOS/Telegram Frameworks/Updater Helpers/crashpad_handler Helpers/TelegramWidgetHelper"
           rm -rf Telegram.app
           cp -R Telegram.arm64.app Telegram.app
           for BINARY in $BINARIES; do
@@ -1085,6 +1069,9 @@ jobs:
               echo "::error::Publishing requires the signing certificate, unsigned apps never ship."
               exit 1
             fi
+            for BUNDLE in Telegram.x86_64.app Telegram.arm64.app Telegram.app; do
+              python3 ../../Telegram/build/sign_mac.py --check "$BUNDLE"
+            done
             echo "::warning::No signing certificate, leaving the apps unsigned."
             echo "signed=false" >> $GITHUB_OUTPUT
             exit 0
@@ -1099,8 +1086,8 @@ jobs:
             -s -k "$KEYCHAIN_PASSWORD" build.keychain
 
           for BUNDLE in Telegram.x86_64.app Telegram.arm64.app Telegram.app; do
-            codesign --force --deep --timestamp --options runtime \
-              --sign "$SIGN_IDENTITY" \
+            python3 ../../Telegram/build/sign_mac.py --timestamp --runtime \
+              --identity "$SIGN_IDENTITY" \
               --entitlements ../../Telegram/Telegram/Telegram.entitlements \
               "$BUNDLE"
             codesign --verify --deep --strict "$BUNDLE"
@@ -1218,11 +1205,9 @@ jobs:
         env:
           CPPGIR_MIRROR: ${{ vars.CANARY_CPPGIR_MIRROR }}
         run: |
-          # This platform is the only one that compiles cppgir
-          # (cmake/external adds glib under if (LINUX)), so it is the
-          # only job that clones from gitlab.com. Recursing here instead
-          # of in the checkout keeps the documentation-only nested
-          # submodules (range-v3 gh-pages, libcbor doxygen-theme) out.
+          # The build compiles, on this platform only, cppgir nested in
+          # cmake (cmake/external adds glib under if (LINUX)). Recursing
+          # here instead of in the checkout lets the mirror below apply.
           #
           # gitlab.com answers 403 to the Depot runners every job here
           # uses, while GitHub-hosted runners reach it fine, so the clone
@@ -1232,7 +1217,7 @@ jobs:
             git config --global \
               url."$CPPGIR_MIRROR".insteadOf https://gitlab.com/mnauw/cppgir.git
           fi
-          git -C cmake submodule update --init --recursive --depth=1
+          git submodule update --init --recursive --depth=1
 
       - name: Read canary configuration.
         run: |
@@ -1404,7 +1389,7 @@ jobs:
       - name: Pack v2 update.
         run: |
           cd out/Release
-          ./Packer -path Telegram -path Updater \
+          ./Packer -path Telegram -path Updater -path TelegramHelpers/TelegramWidgetHelper \
             -version ${{ needs.version.outputs.base }} \
             -channel canary-${{ needs.version.outputs.channel }} \
             -counter $CANARY_COUNTER \
@@ -1432,9 +1417,10 @@ jobs:
           # folders from dropping TelegramForcePortable.
           PORTABLE=td-portable-linux-x64-$CANARY_VERSION$CANARY_SUFFIX.tar.xz
           rm -rf portable
-          mkdir -p portable/$CANARY_FOLDER/TelegramForcePortable
+          mkdir -p portable/$CANARY_FOLDER/TelegramForcePortable portable/$CANARY_FOLDER/TelegramHelpers
           touch portable/$CANARY_FOLDER/TelegramForcePortable/.keep
           cp Telegram Updater portable/$CANARY_FOLDER/
+          cp TelegramHelpers/TelegramWidgetHelper portable/$CANARY_FOLDER/TelegramHelpers/
           tar -cJf $PORTABLE -C portable $CANARY_FOLDER
 
           mkdir -p artifact/update artifact/portable
@@ -1509,8 +1495,8 @@ jobs:
         if: needs.version.outputs.unsigned != 'true'
         run: |
           # Publishing unsigned binaries is never allowed: this is a hard
-          # gate, not a warning. Both binaries inside the update envelope
-          # were verified with signtool right after signing in the build
+          # gate, not a warning. Every binary inside the update envelope
+          # was verified with signtool right after signing in the build
           # job; here the portable's Telegram.exe is re-checked as the
           # publish-side witness.
           sudo apt-get update && sudo apt-get install -y osslsigncode

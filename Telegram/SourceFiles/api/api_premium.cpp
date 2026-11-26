@@ -130,11 +130,6 @@ rpl::producer<> Premium::stickersUpdated() const {
 	return _stickersUpdated.events();
 }
 
-auto Premium::cloudSet() const
--> const std::vector<not_null<DocumentData*>> & {
-	return _cloudSet;
-}
-
 rpl::producer<> Premium::cloudSetUpdated() const {
 	return _cloudSetUpdated.events();
 }
@@ -253,12 +248,8 @@ void Premium::reloadCloudSet() {
 		}, [&](const MTPDmessages_stickers &data) {
 			_cloudSetHash = data.vhash().v;
 			const auto owner = &_session->data();
-			_cloudSet.clear();
 			for (const auto &sticker : data.vstickers().v) {
-				const auto document = owner->processDocument(sticker);
-				if (document->isPremiumSticker()) {
-					_cloudSet.push_back(document);
-				}
+				owner->processDocument(sticker);
 			}
 			_cloudSetUpdated.fire({});
 		});
@@ -644,7 +635,7 @@ const std::vector<int> &PremiumGiftCodeOptions::availablePresets() const {
 	return _availablePresets;
 }
 
-[[nodiscard]] int PremiumGiftCodeOptions::monthsFromPreset(int monthsIndex) {
+int PremiumGiftCodeOptions::monthsFromPreset(int monthsIndex) {
 	Expects(monthsIndex >= 0 && monthsIndex < _availablePresets.size());
 
 	return _optionsForOnePerson.months[monthsIndex];
@@ -1015,15 +1006,23 @@ std::optional<Data::StarGift> FromTL(
 				.releasedBy = releasedBy,
 				.themeUser = themeUser,
 				.nanoTonForResale = FindTonForResale(data.vresell_amount()),
+				.nanoTonMinOffer = int64(
+					data.voffer_min_amount().value_or_empty()),
 				.craftChancePermille
 					= data.vcraft_chance_permille().value_or_empty(),
 				.starsForResale = FindStarsForResale(data.vresell_amount()),
 				.starsMinOffer = data.voffer_min_stars().value_or(-1),
+				.feeBps = (data.vfee_bps()
+					? std::make_optional(data.vfee_bps()->v)
+					: std::nullopt),
 				.number = data.vnum().v,
 				.onlyAcceptTon = data.is_resale_ton_only(),
 				.canBeTheme = data.is_theme_available(),
 				.crafted = data.is_crafted(),
 				.burned = data.is_burned(),
+				.onchainSale = data.is_onchain_sale(),
+				.fixedSale = data.is_fixed_sale(),
+				.mySale = data.is_my_sale(),
 				.model = *model,
 				.pattern = *pattern,
 				.value = (data.vvalue_amount()

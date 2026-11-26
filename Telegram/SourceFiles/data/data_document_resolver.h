@@ -18,7 +18,7 @@ class HistoryItem;
 
 namespace Core {
 class Settings;
-enum class NameType : uchar;
+struct LaunchType;
 } // namespace Core
 
 namespace Window {
@@ -52,10 +52,10 @@ struct ImageOpenCheck {
 
 [[nodiscard]] bool LauncherWouldWarn(
 	const Core::Settings &settings,
-	Core::NameType nameType,
-	bool isIpReveal,
-	const QString &extension,
+	const Core::LaunchType &type,
 	HistoryItem *item);
+
+void LaunchWithWarning(const QString &name, HistoryItem *item);
 
 base::binary_guard ReadBackgroundImageAsync(
 	not_null<Data::DocumentMedia*> media,

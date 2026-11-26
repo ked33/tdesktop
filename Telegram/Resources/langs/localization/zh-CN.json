@@ -1,4 +1,10 @@
 {
+    "lng_settings_update_manual_required": "安装目录受保护，请手动安装更新。",
+    "lng_backup_cloud_incompatible": "云端设置因备份版本不兼容而被跳过。其他设置仍可导入。",
+    "lng_settings_experimental_import_title": "导入实验性设置",
+    "lng_settings_experimental_import_code": "实验性设置代码",
+    "lng_settings_experimental_import_code_invalid": "这不是有效的实验性设置代码。",
+    "lng_settings_experimental_import_applied": "实验性设置已导入。",
     "lng_settings_media_load_debug_logs": "将媒体加载诊断日志写入 log.txt",
     "lng_settings_media_load_debug_logs_about": "默认关闭。为新开始跟踪的图片、视频等下载记录 Media load 明细及汇总日志。关闭后立即停止诊断扫描和日志输出，不影响下载或播放。",
     "lng_thumbnail_failed": "加载失败",

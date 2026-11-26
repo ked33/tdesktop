@@ -234,13 +234,11 @@ void Panel::minimize() {
 }
 
 void Panel::pinToTop(bool isPinned) {
-	if (isPinned) {
-		window()->setWindowFlags(Qt::WindowStaysOnTopHint);
-		window()->show();
-	} else {
-		window()->setWindowFlags((window()->windowFlags() & ~Qt::WindowStaysOnTopHint));
-		window()->show();
+	if (Platform::IsWayland()) {
+		return;
 	}
+	window()->setWindowFlag(Qt::WindowStaysOnTopHint, isPinned);
+	window()->show();
 }
 
 void Panel::toggleFullScreen() {
@@ -408,7 +406,9 @@ void Panel::initWidget() {
 }
 
 void Panel::initControls() {
-	createPinOnTop();
+	if (!Platform::IsWayland()) {
+		createPinOnTop();
+	}
 
 	for (const auto &button : bottomButtons()) {
 		setupButtonTooltip(button);
@@ -1040,7 +1040,9 @@ void Panel::showControls() {
 	Expects(_call != nullptr);
 
 	widget()->showChildren();
-	_pinOnTop->setVisible(!_fullScreenOrMaximized.current());
+	if (_pinOnTop) {
+		_pinOnTop->setVisible(!_fullScreenOrMaximized.current());
+	}
 	if (_rateCall) {
 		hideControlsForRating();
 	} else {
@@ -1368,7 +1370,7 @@ void Panel::updateControlsGeometry() {
 	const auto shown = _controlsShownAnimation.value(
 		_controlsShown ? 1. : 0.);
 	if (_fingerprint) {
-#ifndef Q_OS_MAC
+#ifndef Q_OS_MACOS
 		const auto controlsGeometry = _window->controlsGeometry();
 		const auto halfWidth = widget()->width() / 2;
 		const auto controlsWidth = controlsGeometry.width()
@@ -1384,7 +1386,7 @@ void Panel::updateControlsGeometry() {
 		_incoming->setControlsAlignment(minLeft
 			? style::al_left
 			: style::al_right);
-#else // !Q_OS_MAC
+#else // !Q_OS_MACOS
 		const auto minLeft = 0;
 		const auto minRight = 0;
 #endif // _controls

@@ -1963,7 +1963,8 @@ void PaintQuoteBlock(
 			*context.caches.blockquote,
 			quoteStyle);
 		if (!block.pullquote) {
-			const auto control = QuoteHasCollapseControl(block);
+			const auto control = QuoteHasCollapseControl(block)
+				&& !context.suppressInteractiveControls;
 			p.save();
 			p.setClipRect(quoteClip);
 			Ui::Text::FillQuotePaint(
@@ -2790,7 +2791,7 @@ void PaintDetailsBlock(
 	if (lineHeight > 0 && !lineRect.isEmpty()) {
 		p.fillRect(lineRect, lineFg);
 	}
-	if (!block.iconRect.isEmpty()) {
+	if (!block.iconRect.isEmpty() && !context.suppressInteractiveControls) {
 		const auto collapsed = block.actionRect.isEmpty()
 			? block.collapsed
 			: !block.detailsOpen;
@@ -2872,50 +2873,41 @@ void PaintThinkingBlock(
 	const auto selection = PaintTextSelectionForSegmentIndex(
 		context.selectionState,
 		block.segmentIndex);
-	const auto logicalRect = viewport;
 	const auto visible = context.clip.intersected(block.outer);
 	if (visible.isEmpty()) {
 		AdvanceRevealLinesForBlock(context, block, st);
 		return;
 	}
 
+	const auto paintDirect = [&] {
+		if (contentClip.isEmpty()) {
+			AdvanceRevealLinesForBlock(context, block, st);
+		} else {
+			PaintThinkingTextLeafDirect(
+				p,
+				block,
+				st,
+				ClippedContext(context, contentClip));
+		}
+		PaintHorizontalOverflowIndicators(
+			p,
+			block,
+			st,
+			context,
+			viewport);
+		PaintHorizontalScrollbar(p, block, st, context);
+	};
 	const auto thinking = context.caches.thinking;
 	const auto pathShiftGradient = context.caches.pathShiftGradient;
-	if (!thinking || !pathShiftGradient) {
-		if (!contentClip.isEmpty()) {
-			PaintThinkingTextLeafDirect(
-				p,
-				block,
-				st,
-				ClippedContext(context, contentClip));
-		}
-		PaintHorizontalOverflowIndicators(
-			p,
-			block,
-			st,
-			context,
-			viewport);
-		PaintHorizontalScrollbar(p, block, st, context);
-		return;
-	}
-	if (selection && !selection->empty()) {
-		if (!contentClip.isEmpty()) {
-			PaintThinkingTextLeafDirect(
-				p,
-				block,
-				st,
-				ClippedContext(context, contentClip));
-		}
-		PaintHorizontalOverflowIndicators(
-			p,
-			block,
-			st,
-			context,
-			viewport);
-		PaintHorizontalScrollbar(p, block, st, context);
+	if (!thinking
+		|| !pathShiftGradient
+		|| contentClip.isEmpty()
+		|| (selection && !selection->empty())) {
+		paintDirect();
 		return;
 	}
 
+	const auto logicalRect = contentClip;
 	const auto ratio = std::max(devicePixelRatio, 1);
 	const auto cacheWidth = logicalRect.width() * ratio;
 	const auto cacheHeight = logicalRect.height() * ratio;
@@ -2927,6 +2919,10 @@ void PaintThinkingBlock(
 		&thinking->gradient,
 		logicalRect.size(),
 		ratio);
+	if (thinking->mask.isNull() || thinking->gradient.isNull()) {
+		paintDirect();
+		return;
+	}
 	thinking->mask.fill(Qt::transparent);
 
 	{

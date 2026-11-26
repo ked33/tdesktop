@@ -29,11 +29,6 @@ int PremiumLimits::similarChannelsDefault() const {
 int PremiumLimits::similarChannelsPremium() const {
 	return appConfigLimit("recommended_channels_limit_premium", 100);
 }
-int PremiumLimits::similarChannelsCurrent() const {
-	return isPremium()
-		? channelsPremium()
-		: channelsDefault();
-}
 
 int PremiumLimits::gifsDefault() const {
 	return appConfigLimit("saved_gifs_limit_default", 200);
@@ -77,11 +72,6 @@ int PremiumLimits::dialogShareableFiltersDefault() const {
 int PremiumLimits::dialogShareableFiltersPremium() const {
 	return appConfigLimit("chatlists_joined_limit_premium", 20);
 }
-int PremiumLimits::dialogShareableFiltersCurrent() const {
-	return isPremium()
-		? dialogShareableFiltersPremium()
-		: dialogShareableFiltersDefault();
-}
 
 int PremiumLimits::dialogFiltersChatsDefault() const {
 	return appConfigLimit("dialog_filters_chats_limit_default", 100);
@@ -100,11 +90,6 @@ int PremiumLimits::dialogFiltersLinksDefault() const {
 }
 int PremiumLimits::dialogFiltersLinksPremium() const {
 	return appConfigLimit("chatlist_invites_limit_premium", 20);
-}
-int PremiumLimits::dialogFiltersLinksCurrent() const {
-	return isPremium()
-		? dialogFiltersLinksPremium()
-		: dialogFiltersLinksDefault();
 }
 
 int PremiumLimits::dialogsPinnedDefault() const {
@@ -186,11 +171,6 @@ int PremiumLimits::uploadMaxDefault() const {
 int PremiumLimits::uploadMaxPremium() const {
 	return appConfigLimit("upload_max_fileparts_premium", 8000);
 }
-int PremiumLimits::uploadMaxCurrent() const {
-	return isPremium()
-		? uploadMaxPremium()
-		: uploadMaxDefault();
-}
 
 int PremiumLimits::aboutLengthDefault() const {
 	return appConfigLimit("about_length_limit_default", 70);
@@ -221,6 +201,62 @@ int PremiumLimits::aiComposeSavedTonesDefault() const {
 }
 int PremiumLimits::aiComposeSavedTonesPremium() const {
 	return appConfigLimit("aicompose_tone_saved_limit_premium", 20);
+}
+
+int PremiumLimits::storyCaptionLengthDefault() const {
+	return appConfigLimit("story_caption_length_limit_default", 200);
+}
+
+int PremiumLimits::storyCaptionLengthPremium() const {
+	return appConfigLimit("story_caption_length_limit_premium", 2048);
+}
+
+int PremiumLimits::storyCaptionLengthCurrent() const {
+	return isPremium()
+		? storyCaptionLengthPremium()
+		: storyCaptionLengthDefault();
+}
+
+int PremiumLimits::storiesExpiringDefault() const {
+	return appConfigLimit("story_expiring_limit_default", 50);
+}
+
+int PremiumLimits::storiesExpiringPremium() const {
+	return appConfigLimit("story_expiring_limit_premium", 100);
+}
+
+int PremiumLimits::storiesExpiringCurrent() const {
+	return isPremium()
+		? storiesExpiringPremium()
+		: storiesExpiringDefault();
+}
+
+int PremiumLimits::storiesSentWeeklyDefault() const {
+	return appConfigLimit("stories_sent_weekly_limit_default", 7);
+}
+
+int PremiumLimits::storiesSentWeeklyPremium() const {
+	return appConfigLimit("stories_sent_weekly_limit_premium", 70);
+}
+
+int PremiumLimits::storiesSentWeeklyCurrent() const {
+	return isPremium()
+		? storiesSentWeeklyPremium()
+		: storiesSentWeeklyDefault();
+}
+
+int PremiumLimits::storiesSentMonthlyDefault() const {
+	return appConfigLimit("stories_sent_monthly_limit_default", 30);
+}
+
+int PremiumLimits::storiesSentMonthlyPremium() const {
+	return appConfigLimit("stories_sent_monthly_limit_premium", 300);
+}
+
+int PremiumLimits::storiesSentMonthlyCurrent() const {
+	return isPremium()
+		? storiesSentMonthlyPremium()
+		: storiesSentMonthlyDefault();
 }
 
 int PremiumLimits::appConfigLimit(

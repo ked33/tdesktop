@@ -86,7 +86,10 @@ bool ApplyEnhanced(const QJsonObject &incoming) {
 	for (const auto &entry : entries) {
 		ids.push_back(int64(entry.toDouble()));
 	}
-	cSetBlockList(ids);
+	if (cBlockList() != ids) {
+		cSetBlockList(ids);
+		EnhancedSettings::NotifyBlockedUserSpoilerModeChanged();
+	}
 	return true;
 }
 

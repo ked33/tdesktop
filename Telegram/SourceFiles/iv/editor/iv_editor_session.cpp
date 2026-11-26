@@ -232,18 +232,6 @@ private:
 
 };
 
-[[nodiscard]] Ui::LocationPickerConfig ResolveMapsConfig(
-		not_null<Main::Session*> session) {
-	const auto &appConfig = session->appConfig();
-	auto map = appConfig.get<base::flat_map<QString, QString>>(
-		u"tdesktop_config_map"_q,
-		base::flat_map<QString, QString>());
-	return {
-		.mapsToken = map[u"maps"_q],
-		.geoToken = map[u"geo"_q],
-	};
-}
-
 [[nodiscard]] QString PreparedFileName(const PreparedFile &file) {
 	return file.displayName.isEmpty()
 		? QFileInfo(file.path).fileName()
@@ -1780,7 +1768,7 @@ private:
 			return;
 		}
 		_editor = editor;
-		const auto config = ResolveMapsConfig(_session);
+		const auto config = Ui::ResolveMapsConfig(_session);
 		if (!Ui::LocationPicker::Available(config)) {
 			return;
 		}
@@ -1790,10 +1778,14 @@ private:
 			.parent = static_cast<Ui::RpWidget*>(parent.data()),
 			.config = config,
 			.chooseLabel = tr::lng_maps_point_send(),
-			.session = _session,
-			.callback = [weak, editorPointer](::Data::InputVenue venue) {
+			.callback = [weak, editorPointer](
+					::Data::LocationPoint point,
+					::Core::GeoAddress address) {
 				if (const auto session = weak.get()) {
-					session->applyMapSelection(editorPointer, std::move(venue));
+					session->applyMapSelection(
+						editorPointer,
+						point,
+						std::move(address.name));
 				}
 			},
 			.quit = [] { Shortcuts::Launch(Shortcuts::Command::Quit); },
@@ -2900,12 +2892,13 @@ private:
 
 	void applyMapSelection(
 		QPointer<Widget> editor,
-		::Data::InputVenue venue) {
+		::Data::LocationPoint point,
+		QString address) {
 		if (!editor) {
 			return;
 		}
 		_editor = editor;
-		editor->insertPreparedBlock(makeMapBlock(std::move(venue)));
+		editor->insertPreparedBlock(makeMapBlock(point, std::move(address)));
 	}
 
 	[[nodiscard]] RichPage::Block makeAttachmentBlock(
@@ -2988,27 +2981,19 @@ private:
 		return SplitGroupedMediaBlock(std::move(block));
 	}
 
-	[[nodiscard]] RichPage::Block makeMapBlock(::Data::InputVenue venue) const {
-		const auto point = ::Data::LocationPoint(
-			venue.lat,
-			venue.lon,
-			::Data::LocationPoint::NoAccessHash);
+	[[nodiscard]] RichPage::Block makeMapBlock(
+			const ::Data::LocationPoint &point,
+			QString address) const {
 		const auto preview = ::Data::ComputeLocation(point);
-		auto caption = QString();
-		if (!venue.title.isEmpty() && !venue.address.isEmpty()) {
-			caption = venue.title + u"\n"_q + venue.address;
-		} else {
-			caption = !venue.title.isEmpty() ? venue.title : venue.address;
-		}
 		auto block = RichPage::Block();
 		block.kind = RichPage::BlockKind::Map;
-		block.latitude = venue.lat;
-		block.longitude = venue.lon;
+		block.latitude = point.lat();
+		block.longitude = point.lon();
 		block.accessHash = point.accessHash();
 		block.width = preview.width;
 		block.height = preview.height;
 		block.zoom = preview.zoom;
-		block.caption = ToRichText(std::move(caption));
+		block.caption = ToRichText(std::move(address));
 		return block;
 	}
 

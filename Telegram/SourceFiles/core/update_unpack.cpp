@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QIODevice>
 #include <QtCore/QSet>
 #include <QtCore/QStringList>
 
@@ -113,8 +114,8 @@ struct LzmaDeleter {
 
 // WHY: Callers authenticate bytes before this parser reads the payload:
 // [lzma props on Windows,] original size, compressed bytes.
-std::optional<QByteArray> DecompressUpdatePayload(
-		const VerifiedUpdate &verified,
+std::optional<QByteArray> DecompressAuthenticatedUpdatePayload(
+		const QByteArray &payload,
 		QString *error) {
 #ifndef TDESKTOP_DISABLE_AUTOUPDATE
 #if defined Q_OS_WIN && !defined TDESKTOP_USE_PACKAGED
@@ -123,7 +124,6 @@ std::optional<QByteArray> DecompressUpdatePayload(
 	constexpr auto kPropsSize = 0;
 #endif // Q_OS_WIN && !TDESKTOP_USE_PACKAGED
 	constexpr auto kHeaderSize = kPropsSize + sizeof(qint32);
-	const auto &payload = verified.envelope.payload;
 	if (payload.size() <= kHeaderSize || payload.size() > kMaxPayloadSize) {
 		SetError(error, "Bad compressed payload size.");
 		return std::nullopt;
@@ -180,10 +180,18 @@ std::optional<QByteArray> DecompressUpdatePayload(
 #endif // TDESKTOP_DISABLE_AUTOUPDATE
 }
 
-bool ExtractUpdateFiles(
+std::optional<QByteArray> DecompressUpdatePayload(
+		const VerifiedUpdate &verified,
+		QString *error) {
+	return DecompressAuthenticatedUpdatePayload(verified.envelope.payload, error);
+}
+
+namespace {
+
+bool ProcessUpdateFiles(
 		const QByteArray &uncompressed,
 		quint64 expectedVersion,
-		const QString &directory,
+		const QString *directory,
 		QString *error) {
 #ifndef TDESKTOP_DISABLE_AUTOUPDATE
 	if (uncompressed.size() > kMaxUncompressedSize) {
@@ -254,7 +262,10 @@ bool ExtractUpdateFiles(
 			SetError(error, "Unsafe or conflicting update filename.");
 			return false;
 		}
-		auto file = QFile(QDir(directory).filePath(name));
+		if (!directory) {
+			continue;
+		}
+		auto file = QFile(QDir(*directory).filePath(name));
 		if (!QDir().mkpath(QFileInfo(file).absolutePath())
 			|| !file.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
 			SetError(error, "Could not create extracted update file.");
@@ -287,6 +298,23 @@ bool ExtractUpdateFiles(
 	SetError(error, "Automatic updates are disabled.");
 	return false;
 #endif // TDESKTOP_DISABLE_AUTOUPDATE
+}
+
+} // namespace
+
+bool ValidateUpdateFiles(
+		const QByteArray &uncompressed,
+		quint64 expectedVersion,
+		QString *error) {
+	return ProcessUpdateFiles(uncompressed, expectedVersion, nullptr, error);
+}
+
+bool ExtractUpdateFiles(
+		const QByteArray &uncompressed,
+		quint64 expectedVersion,
+		const QString &directory,
+		QString *error) {
+	return ProcessUpdateFiles(uncompressed, expectedVersion, &directory, error);
 }
 
 } // namespace Core::Updates

@@ -1608,15 +1608,20 @@ Stream File::Context::initStream(
 			.arg(options.hwAllow ? 1 : 0)
 			.arg(info->codecpar ? info->codecpar->width : 0)
 			.arg(info->codecpar ? info->codecpar->height : 0));
-		result.codec = FFmpeg::MakeCodecPointer({
+		auto descriptor = FFmpeg::CodecDescriptor{
 			.stream = info,
 			.hwAllowed = options.hwAllow,
 			.videoMaxArea = kMaxFrameArea,
-		});
+		};
+		result.codec = FFmpeg::MakeCodecPointer(descriptor);
 		if (!result.codec) {
 			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream codec failed "
 				"type=%1 index=%2.").arg(int(type)).arg(index));
 			return result;
+		} else if (result.codec->codec
+			!= FFmpeg::FindDecoder(result.codec.get())) {
+			descriptor.hwAllowed = false;
+			result.softwareFallback = descriptor;
 		}
 		result.rotation = FFmpeg::ReadRotationFromMetadata(info);
 		result.aspect = FFmpeg::ValidateAspectRatio(

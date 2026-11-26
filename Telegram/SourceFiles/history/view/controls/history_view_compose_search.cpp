@@ -139,6 +139,15 @@ Main::Session &ListController::session() const {
 }
 
 void ListController::prepare() {
+	_history->owner().itemRemoved(
+	) | rpl::on_next([=](not_null<const HistoryItem*> item) {
+		const auto id = PeerListRowId(item->fullId().msg.bare);
+		const auto row = delegate()->peerListFindRow(id);
+		if (row && static_cast<Row*>(row)->fakeRow()->item() == item) {
+			delegate()->peerListRemoveRow(row);
+			delegate()->peerListRefreshRows();
+		}
+	}, lifetime());
 }
 
 void ListController::rowClicked(not_null<PeerListRow*> row) {
@@ -790,7 +799,7 @@ bool BottomBar::handleKeyPress(not_null<QKeyEvent*> e) {
 			return true;
 		}
 	}
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 	if (e->key() == Qt::Key_G) {
 		const auto modifiers = e->modifiers();
 		if (modifiers.testFlag(Qt::ControlModifier)) {

@@ -493,12 +493,8 @@ void PhotoData::updateImages(
 	}
 }
 
-[[nodiscard]] bool PhotoData::hasAttachedStickers() const {
+bool PhotoData::hasAttachedStickers() const {
 	return _hasStickers;
-}
-
-void PhotoData::setHasAttachedStickers(bool value) {
-	_hasStickers = value;
 }
 
 int PhotoData::width() const {
@@ -554,15 +550,6 @@ bool PhotoData::hasVideo() const {
 
 bool PhotoData::hasVideoSmall() const {
 	return hasVideo() && _videoSizes->small.location.valid();
-}
-
-bool PhotoData::videoLoading(Data::PhotoSize size) const {
-	return _videoSizes && videoFile(size).loader != nullptr;
-}
-
-bool PhotoData::videoFailed(Data::PhotoSize size) const {
-	return _videoSizes
-		&& (videoFile(size).flags & Data::CloudFile::Flag::Failed);
 }
 
 void PhotoData::loadVideo(Data::PhotoSize size, Data::FileOrigin origin) {

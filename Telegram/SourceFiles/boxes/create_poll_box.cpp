@@ -969,7 +969,7 @@ void Options::fixAfterErase() {
 
 	const auto last = _list.end() - 1;
 	(*last)->setPlaceholder();
-	(*last)->showAddIcon(true);
+	(*last)->showAddIcon(!full());
 	if (last != begin(_list)) {
 		(*(last - 1))->setPlaceholder();
 		(*(last - 1))->showAddIcon(false);
@@ -1036,7 +1036,7 @@ void Options::insertOption(
 	initOptionField(raw->field());
 
 	if (isAppend) {
-		raw->showAddIcon(true);
+		raw->showAddIcon(!full());
 	}
 	raw->show(animated);
 	fixShadows();
@@ -1173,6 +1173,7 @@ void Options::validateState() {
 	_hasCorrect = ranges::any_of(_list, &Option::isCorrect);
 
 	const auto lastEmpty = !_list.empty() && _list.back()->isEmpty();
+	restartReorder();
 	_usedCount = _list.size() - (lastEmpty ? 1 : 0);
 }
 
@@ -2600,13 +2601,15 @@ object_ptr<Ui::RpWidget> CreatePollBox::setupContent() {
 			.geoToken = map[u"geo"_q],
 		};
 		const auto applyGeo = [=](float64 lat, float64 lon) {
-			const auto point = Data::LocationPoint(
+			const auto point = Data::LocationPoint::FromCoordinates(
 				lat,
-				lon,
-				Data::LocationPoint::NoAccessHash);
+				lon);
+			if (!point) {
+				return;
+			}
 			auto pollMedia = PollMedia();
 			pollMedia.geo = point;
-			const auto cloudImage = session->data().location(point);
+			const auto cloudImage = session->data().location(*point);
 			auto thumbnail = Ui::MakeGeoThumbnailWithPin(
 				cloudImage,
 				session,
@@ -2628,9 +2631,10 @@ object_ptr<Ui::RpWidget> CreatePollBox::setupContent() {
 			.parent = _controller->widget().get(),
 			.config = config,
 			.chooseLabel = tr::lng_maps_point_send(),
-			.session = session,
-			.callback = crl::guard(this, [=](Data::InputVenue venue) {
-				applyGeo(venue.lat, venue.lon);
+			.callback = crl::guard(this, [=](
+					Data::LocationPoint point,
+					Core::GeoAddress) {
+				applyGeo(point.lat(), point.lon());
 			}),
 			.quit = [] { Shortcuts::Launch(Shortcuts::Command::Quit); },
 			.storageId = session->local().resolveStorageIdBots(),

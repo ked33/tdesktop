@@ -7,7 +7,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "editor/video/video_editor.h"
 
+#include "base/event_filter.h"
 #include "base/timer.h"
+#include "api/api_stories.h"
+#include "editor/editor_caption_bar.h"
 #include "editor/editor_crop.h"
 #include "editor/video/video_quality_slider.h"
 #include "editor/video/video_segment_player.h"
@@ -19,10 +22,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/layers/layer_widget.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
+#include "ui/widgets/tooltip.h"
 #include "ui/painter.h"
 #include "ui/text/format_values.h"
+#include "ui/ui_utility.h"
 #include "styles/style_editor.h"
+#include "styles/style_media_view.h"
 
+#include <QtCore/QFileInfo>
 #include <QtGui/QPainterPath>
 #include <QtGui/QtEvents>
 #include <QtWidgets/QApplication>
@@ -37,6 +44,20 @@ constexpr auto kBubbleMinVisible = crl::time(600);
 constexpr auto kBubbleDuration = crl::time(500);
 
 constexpr auto kCaptureDuration = crl::time(420);
+
+constexpr auto kMaxGifSize = 10 * 1024 * 1024;
+
+constexpr auto kCanvasZoomMin = 0.5;
+constexpr auto kCanvasZoomMax = 4.;
+constexpr auto kCanvasWheelZoomBase = 1.0015;
+
+[[nodiscard]] int64 SourceSize(
+		const QString &path,
+		const QByteArray &content) {
+	return path.isEmpty()
+		? int64(content.size())
+		: QFileInfo(path).size();
+}
 
 class ControlsBar final : public Ui::RpWidget {
 public:
@@ -90,11 +111,13 @@ public:
 	BarTextButton(
 		not_null<Ui::RpWidget*> parent,
 		const QString &text,
-		const style::color &fg);
+		const style::color &fg,
+		const style::RippleAnimation &ripple);
 
 private:
 	void paintEvent(QPaintEvent *e) override;
 	[[nodiscard]] QImage prepareRippleMask() const override;
+	[[nodiscard]] QRect rippleRect() const;
 
 	const style::color &_fg;
 	const QString _text;
@@ -104,8 +127,9 @@ private:
 BarTextButton::BarTextButton(
 	not_null<Ui::RpWidget*> parent,
 	const QString &text,
-	const style::color &fg)
-: RippleButton(parent, st::photoEditorRotateButton.ripple)
+	const style::color &fg,
+	const style::RippleAnimation &ripple)
+: RippleButton(parent, ripple)
 , _fg(fg)
 , _text(text) {
 	const auto &padding = st::photoEditorTextButtonPadding;
@@ -116,20 +140,27 @@ BarTextButton::BarTextButton(
 		st::photoEditorButtonBarHeight);
 }
 
+QRect BarTextButton::rippleRect() const {
+	const auto skip = st::videoEditorBarButtonRippleSkip;
+	return rect().marginsRemoved({ skip, skip, skip, skip });
+}
+
 QImage BarTextButton::prepareRippleMask() const {
-	return Ui::RippleAnimation::RoundRectMask(size(), height() / 2);
+	const auto inner = rippleRect().size();
+	return Ui::RippleAnimation::RoundRectMask(inner, inner.height() / 2);
 }
 
 void BarTextButton::paintEvent(QPaintEvent *e) {
 	auto p = QPainter(this);
 	auto hq = PainterHighQualityEnabler(p);
+	const auto inner = rippleRect();
 	if (isOver() || isDown()) {
-		const auto radius = height() / 2.;
+		const auto radius = inner.height() / 2.;
 		p.setPen(Qt::NoPen);
 		p.setBrush(st::photoEditorEdgeButtonBg);
-		p.drawRoundedRect(rect(), radius, radius);
+		p.drawRoundedRect(inner, radius, radius);
 	}
-	paintRipple(p, 0, 0);
+	paintRipple(p, inner.x(), inner.y());
 	p.setPen(_fg);
 	p.setFont(st::photoEditorButtonStyle.font);
 	p.drawText(rect(), Qt::AlignCenter, _text);
@@ -175,6 +206,7 @@ VideoEditor::VideoEditor(
 : RpWidget(parent)
 , _path(descriptor.path)
 , _content(descriptor.content)
+, _preview(std::move(descriptor.preview))
 , _dimensions(descriptor.dimensions)
 , _duration(std::max(descriptor.duration, crl::time(1)))
 , _data(descriptor.data)
@@ -185,9 +217,15 @@ VideoEditor::VideoEditor(
 	SegmentPlayerOptions{ .keepAlpha = _data.webmSticker })) {
 	_geometry = _initial.geometry;
 	_gif = _initial.gif;
+	_gifAllowed = (SourceSize(_path, _content) <= kMaxGifSize);
 	_geometry.cropType = _data.editor.cropType;
 	_geometry.cropMode = _data.editor.cropMode;
-	if (!_geometry.crop.isValid() && !_data.exactSize.isEmpty()) {
+	if (_data.canvas && !_initial.canvasMediaRect.isEmpty()) {
+		restoreCanvasPlacement(_initial.canvasMediaRect);
+	}
+	if (!_geometry.crop.isValid()
+		&& !_data.exactSize.isEmpty()
+		&& !_data.canvas) {
 		// A fixed size result starts from the largest crop that fits it.
 		const auto side = std::min(_dimensions.width(), _dimensions.height());
 		_geometry.crop = QRect(
@@ -202,13 +240,18 @@ VideoEditor::VideoEditor(
 		_geometry,
 		_dimensions,
 		_data.editor);
+	if (_data.canvas) {
+		_crop->hide();
+	}
 
 	setupControls();
 	setupTimeline();
 	setupQuality();
 	setupSizeEstimate();
 	setupStreaming();
-	setupTapToPause();
+	if (!_data.canvas) {
+		setupTapToPause();
+	}
 	refreshCoverPreview();
 
 	// The crop only reaches its saved rect after its own release handler.
@@ -242,6 +285,7 @@ void VideoEditor::setupTimeline() {
 		VideoTimelineDescriptor{
 			.path = _path,
 			.content = _content,
+			.preview = _preview,
 			.dimensions = _dimensions,
 			.duration = _duration,
 			.maxDuration = _data.maxDuration,
@@ -352,28 +396,34 @@ void VideoEditor::setupControls() {
 	_bar = base::make_unique_q<ControlsBar>(_controls.get());
 	const auto bar = _bar.get();
 
+	const auto &buttonRipple = _data.editor.story
+		? st::storiesComposeRippleLight
+		: st::photoEditorRotateButton.ripple;
 	_cancelButton = base::make_unique_q<BarTextButton>(
 		bar,
 		tr::lng_cancel(tr::now),
-		st::mediaviewCaptionFg);
+		st::mediaviewCaptionFg,
+		buttonRipple);
 	_rotate = base::make_unique_q<Ui::IconButton>(
 		bar,
 		st::photoEditorRotateButton);
 	_flip = base::make_unique_q<Ui::IconButton>(
 		bar,
 		st::photoEditorFlipButton);
-	if (!_data.removeAudio) {
+	if (!_data.removeAudio && _data.allowGif) {
 		// When the audio is dropped anyway there is nothing to choose.
 		_gifButton = base::make_unique_q<Ui::IconButton>(
 			bar,
 			st::videoEditorGifButton);
+		setupGifButton();
 	}
 	_confirm = base::make_unique_q<BarTextButton>(
 		bar,
 		(_data.editor.confirm.isEmpty()
 			? tr::lng_box_done(tr::now)
 			: _data.editor.confirm),
-		st::mediaviewTextLinkFg);
+		st::mediaviewTextLinkFg,
+		buttonRipple);
 
 	if (!_data.hint.isEmpty()) {
 		_hint = base::make_unique_q<Ui::FlatLabel>(
@@ -381,6 +431,22 @@ void VideoEditor::setupControls() {
 			rpl::single(_data.hint),
 			st::videoEditorHint);
 		_hint->setAttribute(Qt::WA_TransparentForMouseEvents);
+	}
+	if (const auto &story = _data.editor.story) {
+		_captionBar = base::make_unique_q<CaptionBar>(
+			_controls.get(),
+			this,
+			*story);
+		const auto bar = _captionBar.get();
+		bar->heightValue() | rpl::skip(1) | rpl::on_next([=] {
+			applyGeometry();
+		}, bar->lifetime());
+		bar->submits() | rpl::on_next([=] {
+			_done.fire(collect());
+		}, bar->lifetime());
+		bar->cancels() | rpl::on_next([=] {
+			setFocus();
+		}, bar->lifetime());
 	}
 
 	_bubble = base::make_unique_q<Ui::RpWidget>(this);
@@ -490,6 +556,7 @@ void VideoEditor::setupControls() {
 		while (_geometry.angle >= 360) {
 			_geometry.angle -= 360;
 		}
+		_canvasRestored = std::nullopt;
 		applyGeometry();
 		refreshSizeEstimate();
 		invalidateCoverPreview();
@@ -500,20 +567,6 @@ void VideoEditor::setupControls() {
 		refreshSizeEstimate();
 		invalidateCoverPreview();
 	});
-	if (_gifButton) {
-		const auto refresh = [=] {
-			const auto icon = _gif
-				? &st::videoEditorGifIconActive
-				: nullptr;
-			_gifButton->setIconOverride(icon, icon);
-		};
-		refresh();
-		_gifButton->setClickedCallback([=] {
-			_gif = !_gif;
-			refresh();
-			refreshSizeEstimate();
-		});
-	}
 	_cancelButton->setClickedCallback([=] {
 		_cancel.fire({});
 	});
@@ -521,6 +574,85 @@ void VideoEditor::setupControls() {
 		_timeline->commitPendingEdit();
 		_done.fire(collect());
 	});
+}
+
+void VideoEditor::setupGifButton() {
+	if (!_gifButton) {
+		return;
+	}
+	const auto refresh = [=] {
+		const auto icon = _gif
+			? &st::videoEditorGifIconActive
+			: nullptr;
+		_gifButton->setIconOverride(icon, icon);
+	};
+	refresh();
+	_gifButton->setClickedCallback([=] {
+		if (!_gifAllowed) {
+			return;
+		}
+		_gif = !_gif;
+		refresh();
+		refreshSizeEstimate();
+	});
+	if (_gifAllowed) {
+		return;
+	}
+	_gifButton->setDisabled(true);
+	_gifButton->setIconColorOverride(st::photoEditorButtonIconFgInactive->c);
+	base::install_event_filter(_gifButton, [](not_null<QEvent*> e) {
+		const auto type = e->type();
+		return (type == QEvent::MouseButtonPress
+			|| type == QEvent::MouseButtonDblClick)
+			? base::EventFilterResult::Cancel
+			: base::EventFilterResult::Continue;
+	}, _gifButton->lifetime());
+	_gifButton->events() | rpl::on_next([=](not_null<QEvent*> e) {
+		const auto type = e->type();
+		if (type == QEvent::Enter) {
+			showGifTooltip();
+		} else if (type == QEvent::Leave) {
+			hideGifTooltip();
+		}
+	}, _gifButton->lifetime());
+}
+
+void VideoEditor::showGifTooltip() {
+	if (_gifAllowed || !_gifButton) {
+		return;
+	}
+	if (!_gifTooltip) {
+		const auto parent = parentWidget();
+		if (!parent) {
+			return;
+		}
+		const auto text = tr::marked(tr::lng_video_editor_gif_too_large(
+			tr::now,
+			lt_size,
+			(QString::number(kMaxGifSize / (1024 * 1024))
+				+ ' '
+				+ tr::lng_size_megabytes(tr::now))));
+		_gifTooltip = base::make_unique_q<Ui::ImportantTooltip>(
+			parent,
+			Ui::MakeNiceTooltipLabel(
+				parent,
+				rpl::single(text),
+				st::videoEditorGifTooltipMaxWidth,
+				st::defaultImportantTooltipLabel),
+			st::defaultImportantTooltip);
+		_gifTooltip->setAttribute(Qt::WA_TransparentForMouseEvents);
+	}
+	const auto parent = _gifTooltip->parentWidget();
+	_gifTooltip->pointAt(
+		Ui::MapFrom(parent, _gifButton, _gifButton->rect()),
+		RectPart::Top | RectPart::Center);
+	_gifTooltip->toggleAnimated(true);
+}
+
+void VideoEditor::hideGifTooltip() {
+	if (_gifTooltip) {
+		_gifTooltip->toggleAnimated(false);
+	}
 }
 
 void VideoEditor::setupStreaming() {
@@ -532,7 +664,12 @@ void VideoEditor::setupStreaming() {
 		}
 	}, lifetime());
 
+	_player->setPaused(true);
 	_player->start();
+}
+
+void VideoEditor::startPlayback() {
+	_player->setPaused(_userPaused);
 }
 
 void VideoEditor::setupTapToPause() {
@@ -754,10 +891,17 @@ void VideoEditor::applyGeometry() {
 	if (quality) {
 		quality->resizeToWidth(barWidth);
 	}
+	if (_captionBar) {
+		_captionBar->resizeToWidth(barWidth);
+	}
+	const auto captionHeight = _captionBar
+		? (st::videoEditorCaptionSkip + _captionBar->height())
+		: 0;
 	const auto controlsHeight = st::videoEditorTimelineTop
 		+ _timeline->height()
 		+ (_hint ? (st::videoEditorHintSkip + _hint->height()) : 0)
 		+ (quality ? (st::videoEditorQualitySkip + quality->height()) : 0)
+		+ captionHeight
 		+ st::videoEditorBarSkip
 		+ st::photoEditorButtonBarHeight
 		+ st::videoEditorBarBottomSkip;
@@ -766,47 +910,53 @@ void VideoEditor::applyGeometry() {
 	if (contentRect.isEmpty()) {
 		return;
 	}
+	_contentRect = contentRect;
 
-	const auto frameSizeF = [&] {
-		const auto rotated = FlipSizeByRotation(
-			contentRect.size(),
-			_geometry.angle);
+	if (_data.canvas && !_data.exactSize.isEmpty()) {
+		layoutCanvas(contentRect);
+	} else {
 		const auto m = _crop->cropMargins();
-		const auto forCrop = rotated
-			- QSize(m.left() + m.right(), m.top() + m.bottom());
-		const auto original = QSizeF(_dimensions);
-		if ((original.width() > forCrop.width())
-			|| (original.height() > forCrop.height())) {
-			return original.scaled(forCrop, Qt::KeepAspectRatio);
+		const auto margins = QSize(
+			m.left() + m.right(),
+			m.top() + m.bottom());
+		const auto frameSizeF = [&] {
+			const auto rotated = FlipSizeByRotation(
+				contentRect.size(),
+				_geometry.angle);
+			const auto forCrop = rotated - margins;
+			const auto original = QSizeF(_dimensions);
+			if ((original.width() > forCrop.width())
+				|| (original.height() > forCrop.height())) {
+				return original.scaled(forCrop, Qt::KeepAspectRatio);
+			}
+			return original;
+		}();
+		const auto frameSize = QSize(
+			int(frameSizeF.width()),
+			int(frameSizeF.height()));
+		_frameRect = QRect(
+			QPoint(-frameSize.width() / 2, -frameSize.height() / 2),
+			frameSize);
+
+		_frameMatrix.reset();
+		_frameMatrix.translate(
+			contentRect.x() + contentRect.width() / 2,
+			contentRect.y() + contentRect.height() / 2);
+		if (_geometry.flipped) {
+			_frameMatrix.scale(-1, 1);
 		}
-		return original;
-	}();
-	const auto frameSize = QSize(
-		int(frameSizeF.width()),
-		int(frameSizeF.height()));
-	_frameRect = QRect(
-		QPoint(-frameSize.width() / 2, -frameSize.height() / 2),
-		frameSize);
+		_frameMatrix.rotate(_geometry.angle);
 
-	_frameMatrix.reset();
-	_frameMatrix.translate(
-		contentRect.x() + contentRect.width() / 2,
-		contentRect.y() + contentRect.height() / 2);
-	if (_geometry.flipped) {
-		_frameMatrix.scale(-1, 1);
+		const auto geometry = _frameMatrix.mapRect(_frameRect);
+		_crop->applyTransform(
+			geometry + m,
+			QPoint(m.left(), m.top()),
+			_geometry.angle,
+			_geometry.flipped,
+			frameSizeF);
+		_crop->setCornersLevel(_geometry.cornersLevel);
+		_innerRect = geometry;
 	}
-	_frameMatrix.rotate(_geometry.angle);
-
-	const auto geometry = _frameMatrix.mapRect(_frameRect);
-	const auto m = _crop->cropMargins();
-	_crop->applyTransform(
-		geometry + m,
-		QPoint(m.left(), m.top()),
-		_geometry.angle,
-		_geometry.flipped,
-		frameSizeF);
-	_crop->setCornersLevel(_geometry.cornersLevel);
-	_innerRect = geometry;
 
 	const auto controlsTop = size.height() - controlsHeight;
 	_controls->setGeometry(0, controlsTop, size.width(), controlsHeight);
@@ -821,6 +971,10 @@ void VideoEditor::applyGeometry() {
 	if (quality) {
 		quality->move(barLeft, below + st::videoEditorQualitySkip);
 		below = quality->y() + quality->height();
+	}
+	if (_captionBar) {
+		_captionBar->move(barLeft, below + st::videoEditorCaptionSkip);
+		below = _captionBar->y() + _captionBar->height();
 	}
 	_bar->setGeometry(
 		barLeft,
@@ -843,18 +997,249 @@ void VideoEditor::paint(QPainter &p) {
 	if (_frameRect.isEmpty()) {
 		return;
 	}
-	const auto frame = _player->frame(_frameRect.size());
-	if (frame.isNull()) {
+	const auto frame = _player->frame(frameRequestSize());
+	const auto &image = frame.isNull() ? _preview : frame;
+	if (image.isNull()) {
 		return;
 	}
 	auto hq = PainterHighQualityEnabler(p);
+	if (_data.canvas) {
+		paintCanvas(p);
+		p.setClipRect(_canvasRect);
+	}
 	p.setTransform(_frameMatrix);
-	p.drawImage(_frameRect, frame);
+	p.drawImage(_frameRect, image);
 	p.resetTransform();
+	if (_data.canvas) {
+		p.setClipping(false);
+	}
 
 	if (_userPaused) {
 		paintPlayBadge(p);
 	}
+}
+
+void VideoEditor::paintCanvas(QPainter &p) {
+	Expects(_data.canvas.has_value());
+
+	if (!_canvasRect.isEmpty()) {
+		Media::Encode::PaintCanvasBackground(p, _canvasRect, *_data.canvas);
+	}
+}
+
+QSize VideoEditor::frameRequestSize() const {
+	if (!_data.canvas) {
+		return _frameRect.size();
+	}
+	const auto limit = _dimensions / style::DevicePixelRatio();
+	const auto size = _frameRect.size();
+	if (limit.isEmpty()
+		|| ((size.width() <= limit.width())
+			&& (size.height() <= limit.height()))) {
+		return size;
+	}
+	return size.scaled(limit, Qt::KeepAspectRatio);
+}
+
+float64 VideoEditor::canvasScale() const {
+	return _data.exactSize.isEmpty()
+		? 1.
+		: _canvasRect.width() / float64(_data.exactSize.width());
+}
+
+QRectF VideoEditor::canvasBasePlacement() const {
+	const auto oriented = FlipSizeByRotation(_dimensions, _geometry.angle);
+	return QRectF(Media::Encode::CanvasPlacement(
+		oriented,
+		_data.exactSize));
+}
+
+QRectF VideoEditor::canvasMediaRect() const {
+	if (_canvasRestored) {
+		return QRectF(*_canvasRestored);
+	}
+	const auto base = canvasBasePlacement();
+	const auto size = base.size() * _canvasZoom;
+	const auto center = base.center() + _canvasShift;
+	return QRectF(
+		center - QPointF(size.width() / 2., size.height() / 2.),
+		size);
+}
+
+void VideoEditor::layoutCanvas(QRect contentRect) {
+	const auto exact = _data.exactSize;
+	const auto canvasSize = QSizeF(exact).scaled(
+		contentRect.size(),
+		Qt::KeepAspectRatio).toSize();
+	_canvasRect = QRect(
+		contentRect.x() + (contentRect.width() - canvasSize.width()) / 2,
+		contentRect.y() + (contentRect.height() - canvasSize.height()) / 2,
+		canvasSize.width(),
+		canvasSize.height());
+	const auto scale = canvasScale();
+	const auto media = canvasMediaRect();
+	_mediaRect = QRectF(
+		_canvasRect.x() + media.x() * scale,
+		_canvasRect.y() + media.y() * scale,
+		media.width() * scale,
+		media.height() * scale).toRect();
+
+	const auto frameSize = FlipSizeByRotation(
+		_mediaRect.size(),
+		_geometry.angle);
+	_frameRect = QRect(
+		QPoint(-frameSize.width() / 2, -frameSize.height() / 2),
+		frameSize);
+	_frameMatrix.reset();
+	_frameMatrix.translate(
+		_mediaRect.x() + _mediaRect.width() / 2.,
+		_mediaRect.y() + _mediaRect.height() / 2.);
+	if (_geometry.flipped) {
+		_frameMatrix.scale(-1, 1);
+	}
+	_frameMatrix.rotate(_geometry.angle);
+	_innerRect = _mediaRect;
+}
+
+void VideoEditor::clampCanvasShift() {
+	const auto exact = _data.exactSize;
+	const auto base = canvasBasePlacement();
+	const auto center = base.center() + _canvasShift;
+	const auto clamped = QPointF(
+		std::clamp(center.x(), 0., float64(exact.width())),
+		std::clamp(center.y(), 0., float64(exact.height())));
+	_canvasShift = clamped - base.center();
+}
+
+void VideoEditor::restoreCanvasPlacement(QRect rect) {
+	const auto base = canvasBasePlacement();
+	if (base.isEmpty() || rect.isEmpty()) {
+		return;
+	}
+	_canvasZoom = std::clamp(
+		rect.width() / base.width(),
+		kCanvasZoomMin,
+		kCanvasZoomMax);
+	_canvasShift = QRectF(rect).center() - base.center();
+	_canvasRestored = rect;
+}
+
+bool VideoEditor::edited() const {
+	const auto now = collect();
+	const auto &was = _initial;
+	const auto till = [&](crl::time value) {
+		return value ? value : _duration;
+	};
+	return (now.geometry.angle != was.geometry.angle)
+		|| (now.geometry.flipped != was.geometry.flipped)
+		|| (now.canvasMediaRect != was.canvasMediaRect)
+		|| (now.from != was.from)
+		|| (till(now.till) != till(was.till))
+		|| (now.cover != was.cover)
+		|| (now.gif != was.gif);
+}
+
+void VideoEditor::zoomCanvas(float64 factor, QPoint about) {
+	const auto zoom = std::clamp(
+		_canvasZoom * factor,
+		kCanvasZoomMin,
+		kCanvasZoomMax);
+	const auto real = zoom / _canvasZoom;
+	if (real == 1. || _canvasRect.isEmpty()) {
+		return;
+	}
+	const auto point = QPointF(about - _canvasRect.topLeft())
+		/ canvasScale();
+	const auto base = canvasBasePlacement();
+	const auto center = base.center() + _canvasShift;
+	const auto shifted = point - (point - center) * real;
+	_canvasZoom = zoom;
+	_canvasShift = shifted - base.center();
+	_canvasRestored = std::nullopt;
+	clampCanvasShift();
+	canvasChanged();
+}
+
+void VideoEditor::canvasChanged() {
+	if (_contentRect.isEmpty()) {
+		return;
+	}
+	layoutCanvas(_contentRect);
+	invalidateCoverPreview();
+	update();
+}
+
+void VideoEditor::mousePressEvent(QMouseEvent *e) {
+	if (!_data.canvas
+		|| (e->button() != Qt::LeftButton)
+		|| !_canvasRect.contains(e->pos())) {
+		return RpWidget::mousePressEvent(e);
+	}
+	_canvasPress = e->pos();
+	_canvasDragShift = _canvasShift;
+	_canvasMoved = false;
+}
+
+void VideoEditor::mouseMoveEvent(QMouseEvent *e) {
+	if (!_canvasPress) {
+		return RpWidget::mouseMoveEvent(e);
+	}
+	const auto delta = e->pos() - *_canvasPress;
+	if (!_canvasMoved
+		&& (delta.manhattanLength() < QApplication::startDragDistance())) {
+		return;
+	}
+	if (!_canvasMoved) {
+		_canvasMoved = true;
+		setCursor(Qt::ClosedHandCursor);
+	}
+	_canvasShift = _canvasDragShift + QPointF(delta) / canvasScale();
+	_canvasRestored = std::nullopt;
+	clampCanvasShift();
+	layoutCanvas(_contentRect);
+	update();
+}
+
+void VideoEditor::mouseReleaseEvent(QMouseEvent *e) {
+	if (!_canvasPress) {
+		return RpWidget::mouseReleaseEvent(e);
+	}
+	const auto moved = _canvasMoved;
+	_canvasPress = std::nullopt;
+	_canvasMoved = false;
+	if (moved) {
+		unsetCursor();
+		invalidateCoverPreview();
+	} else {
+		togglePause();
+	}
+}
+
+void VideoEditor::wheelEvent(QWheelEvent *e) {
+	const auto position = e->position().toPoint();
+	if (!_data.canvas || !_canvasRect.contains(position)) {
+		return RpWidget::wheelEvent(e);
+	}
+	const auto delta = e->angleDelta().y()
+		? e->angleDelta().y()
+		: e->angleDelta().x();
+	if (delta) {
+		zoomCanvas(std::pow(kCanvasWheelZoomBase, delta), position);
+	}
+	e->accept();
+}
+
+bool VideoEditor::eventHook(QEvent *e) {
+	if (_data.canvas && (e->type() == QEvent::NativeGesture)) {
+		const auto gesture = static_cast<QNativeGestureEvent*>(e);
+		const auto position = gesture->position().toPoint();
+		if ((gesture->gestureType() == Qt::ZoomNativeGesture)
+			&& _canvasRect.contains(position)) {
+			zoomCanvas(1. + gesture->value(), position);
+			return true;
+		}
+	}
+	return RpWidget::eventHook(e);
 }
 
 void VideoEditor::paintPlayBadge(QPainter &p) {
@@ -887,6 +1272,8 @@ void VideoEditor::keyPressEvent(QKeyEvent *e) {
 VideoModifications VideoEditor::collect() const {
 	auto geometry = _geometry;
 	geometry.crop = _crop->saveCropRect();
+	const auto moved = _data.canvas
+		&& ((_canvasZoom != 1.) || !_canvasShift.isNull());
 	return {
 		.geometry = std::move(geometry),
 		.from = _timeline->from(),
@@ -894,7 +1281,18 @@ VideoModifications VideoEditor::collect() const {
 		.cover = _timeline->cover(),
 		.quality = _quality ? _quality->value() : 0,
 		.gif = _gif,
+		.canvasMediaRect = (moved
+			? Media::Encode::RoundedCanvasRect(canvasMediaRect())
+			: QRect()),
 	};
+}
+
+TextWithTags VideoEditor::caption() const {
+	return _captionBar ? _captionBar->caption() : TextWithTags();
+}
+
+int VideoEditor::period() const {
+	return _captionBar ? _captionBar->period() : 0;
 }
 
 void InitVideoEditorLayer(

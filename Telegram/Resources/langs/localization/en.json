@@ -1,4 +1,10 @@
 {
+    "lng_settings_update_manual_required": "Install the update manually: this installation folder is protected.",
+    "lng_backup_cloud_incompatible": "Cloud settings were skipped because this backup uses an incompatible version. Other settings can still be imported.",
+    "lng_settings_experimental_import_title": "Import experimental settings",
+    "lng_settings_experimental_import_code": "Experimental settings code",
+    "lng_settings_experimental_import_code_invalid": "This is not a valid experimental settings code.",
+    "lng_settings_experimental_import_applied": "Experimental settings imported.",
     "lng_settings_media_load_debug_logs": "Write media load diagnostics to log.txt",
     "lng_settings_media_load_debug_logs_about": "Disabled by default. Record Media load details and summaries for newly tracked image, video and other downloads. Turning this off immediately stops diagnostic scans and logging without changing downloads or playback.",
     "lng_thumbnail_failed": "Failed",

@@ -41,6 +41,11 @@ namespace EnhancedSettings {
 
 		constexpr auto kWriteJsonTimeout = crl::time(5000);
 
+		rpl::event_stream<> &BlockedUserSpoilerModeEvents() {
+			static auto events = rpl::event_stream<>();
+			return events;
+		}
+
 		rpl::event_stream<bool> &MediaLoadDebugLogsEvents() {
 			static auto events = rpl::event_stream<bool>();
 			return events;
@@ -420,6 +425,14 @@ namespace EnhancedSettings {
 
 	bool MediaLoadDebugLogsEnabled() {
 		return gEnhancedOptions.value(u"media_load_debug_logs"_q, false).toBool();
+	}
+
+	rpl::producer<> BlockedUserSpoilerModeChanges() {
+		return BlockedUserSpoilerModeEvents().events();
+	}
+
+	void NotifyBlockedUserSpoilerModeChanged() {
+		BlockedUserSpoilerModeEvents().fire({});
 	}
 
 	rpl::producer<bool> MediaLoadDebugLogsChanges() {
@@ -956,7 +969,11 @@ namespace EnhancedSettings {
 				}
 				return blockList;
 			};
-			cSetBlockList(toList());
+			const auto updated = toList();
+			if (cBlockList() != updated) {
+				cSetBlockList(updated);
+				NotifyBlockedUserSpoilerModeChanged();
+			}
 		}
 	}
 

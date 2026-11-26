@@ -81,7 +81,6 @@ DeclareSetting(bool, SeenTrayTooltip);
 DeclareSetting(bool, RestartingUpdate);
 DeclareSetting(bool, Restarting);
 DeclareSetting(bool, RestartingToSettings);
-DeclareSetting(bool, WriteProtected);
 DeclareSetting(int32, LastUpdateCheck);
 DeclareSetting(bool, NoStartUpdate);
 DeclareSetting(bool, StartToSettings);
@@ -176,8 +175,17 @@ inline QString GetEnhancedString(const QString& key) {
 	return gEnhancedOptions[key].toString();
 }
 
+namespace EnhancedSettings {
+void NotifyBlockedUserSpoilerModeChanged();
+} // namespace EnhancedSettings
+
 inline void SetEnhancedValue(const QString& key, const QVariant& value) {
+	const auto notifyBlocked = (key == u"blocked_user_spoiler_mode"_q)
+		&& (gEnhancedOptions.value(key).toBool() != value.toBool());
 	gEnhancedOptions.insert(key, value);
+	if (notifyBlocked) {
+		EnhancedSettings::NotifyBlockedUserSpoilerModeChanged();
+	}
 }
 
 inline void SetNetworkBoost(int boost) {

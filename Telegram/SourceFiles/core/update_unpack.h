@@ -16,8 +16,17 @@ namespace Core::Updates {
 
 struct VerifiedUpdate;
 
+[[nodiscard]] std::optional<QByteArray> DecompressAuthenticatedUpdatePayload(
+	const QByteArray &payload,
+	QString *error = nullptr);
+
 [[nodiscard]] std::optional<QByteArray> DecompressUpdatePayload(
 	const VerifiedUpdate &verified,
+	QString *error = nullptr);
+
+[[nodiscard]] bool ValidateUpdateFiles(
+	const QByteArray &uncompressed,
+	quint64 expectedVersion,
 	QString *error = nullptr);
 
 // Extraction requires a fresh caller-controlled directory.

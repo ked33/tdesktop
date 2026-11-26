@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_channel.h"
 #include "data/data_chat.h"
 #include "data/data_session.h"
+#include "ui/controls/slider_tick_labels.h"
 #include "ui/effects/toggle_arrow.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/wrap/vertical_layout.h"
@@ -481,19 +482,19 @@ not_null<Ui::RpWidget*> AddInnerToggle(
 	const auto totalInnerChecks = state->innerChecks.size();
 	const auto label = Ui::CreateChild<Ui::FlatLabel>(
 		button,
-		rpl::combine(
-			std::move(buttonLabel),
-			state->anyChanges.events_starting_with(
-				rpl::empty_value()
-			) | rpl::map(countChecked)
-		) | rpl::map([=](const QString &t, int checked) {
-			auto count = tr::bold("  "
-				+ QString::number(checked)
+		std::move(buttonLabel),
+		st::rightsButtonNameLabel);
+	label->setAttribute(Qt::WA_TransparentForMouseEvents);
+	const auto counter = Ui::CreateChild<Ui::FlatLabel>(
+		button,
+		state->anyChanges.events_starting_with(
+			rpl::empty_value()
+		) | rpl::map(countChecked) | rpl::map([=](int checked) {
+			return tr::bold(QString::number(checked)
 				+ '/'
 				+ QString::number(totalInnerChecks));
-			return TextWithEntities::Simple(t).append(std::move(count));
 		}));
-	label->setAttribute(Qt::WA_TransparentForMouseEvents);
+	counter->setAttribute(Qt::WA_TransparentForMouseEvents);
 	const auto arrow = Ui::CreateChild<Ui::RpWidget>(button);
 	{
 		const auto &icon = st::permissionsExpandIcon;
@@ -522,19 +523,33 @@ not_null<Ui::RpWidget*> AddInnerToggle(
 		const auto labelRight = s.width() - toggleButton->width();
 
 		const auto arrowSkip = st::rightsButtonArrowSkip;
-		label->resizeToWidth(
-			labelRight - labelLeft - arrow->width() - arrowSkip);
+		const auto counterSkip = 2 * counter->st().style.font->bold()->spacew;
+		const auto available = labelRight
+			- labelLeft
+			- arrow->width()
+			- arrowSkip;
+		counter->resizeToNaturalWidth(available);
+		label->resizeToWidth(std::max(
+			std::min(
+				label->textMaxWidth(),
+				available - counterSkip - counter->width()),
+			0));
 		label->moveToLeft(
 			labelLeft,
 			(s.height() - label->height()) / 2);
+		const auto counterLeft = labelLeft + label->width() + counterSkip;
+		counter->moveToLeft(
+			counterLeft,
+			(s.height() - counter->height()) / 2);
 		arrow->moveToLeft(
 			std::min(
-				labelLeft + label->textMaxWidth() + arrowSkip,
+				counterLeft + counter->width() + arrowSkip,
 				labelRight - arrow->width()),
 			(s.height() - arrow->height()) / 2);
 	};
 	rpl::merge(
 		button->sizeValue() | rpl::to_empty,
+		label->naturalWidthValue() | rpl::to_empty,
 		state->anyChanges.events_starting_with(rpl::empty_value())
 	) | rpl::on_next([=] {
 		reposition();
@@ -809,6 +824,7 @@ void AddSlowmodeLabels(
 	const auto labels = container->add(
 		object_ptr<Ui::FixedHeightWidget>(container, st::normalFont->height),
 		st::slowmodeLabelsMargin);
+	auto list = std::vector<not_null<Ui::LabelSimple*>>();
 	for (auto i = 0; i != kSlowmodeValues; ++i) {
 		const auto seconds = SlowmodeDelayByIndex(i);
 		const auto label = Ui::CreateChild<Ui::LabelSimple>(
@@ -821,16 +837,20 @@ void AddSlowmodeLabels(
 				: (seconds < 3600)
 				? tr::lng_minutes_tiny(tr::now, lt_count, seconds / 60)
 				: tr::lng_hours_tiny(tr::now, lt_count,seconds / 3600)));
-		rpl::combine(
-			labels->widthValue(),
-			label->widthValue()
-		) | rpl::on_next([=](int outer, int inner) {
-			const auto skip = st::localStorageLimitMargin;
-			const auto size = st::localStorageLimitSlider.seekSize;
-			const auto available = outer
-				- skip.left()
-				- skip.right()
-				- size.width();
+		list.push_back(label);
+	}
+	labels->widthValue(
+	) | rpl::on_next([=](int outer) {
+		const auto skip = st::localStorageLimitMargin;
+		const auto size = st::localStorageLimitSlider.seekSize;
+		const auto available = outer
+			- skip.left()
+			- skip.right()
+			- size.width();
+		auto centers = std::vector<int>();
+		auto widths = std::vector<int>();
+		for (auto i = 0; i != kSlowmodeValues; ++i) {
+			const auto inner = list[i]->width();
 			const auto shift = (i == 0)
 				? -(size.width() / 2)
 				: (i + 1 == kSlowmodeValues)
@@ -840,9 +860,18 @@ void AddSlowmodeLabels(
 				+ (size.width() / 2)
 				+ (i * available) / (kSlowmodeValues - 1)
 				+ shift;
-			label->moveToLeft(left, 0, outer);
-		}, label->lifetime());
-	}
+			centers.push_back(left + inner / 2);
+			widths.push_back(inner);
+		}
+		const auto lefts = Ui::LayoutSliderTickLabels(
+			centers,
+			widths,
+			outer,
+			3 * st::slowmodeLabel.font->spacew);
+		for (auto i = 0; i != kSlowmodeValues; ++i) {
+			list[i]->moveToLeft(lefts[i], 0, outer);
+		}
+	}, labels->lifetime());
 }
 
 rpl::producer<int> AddSlowmodeSlider(

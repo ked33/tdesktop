@@ -1206,7 +1206,7 @@ namespace Settings {
 				tr::lng_context_to_msg(tr::now),
 				"show_message_context_go_to_message");
 			addMessageContextToggle(
-				tr::lng_replies_view_thread(tr::now),
+				tr::lng_replies_header_none(tr::now),
 				"show_message_context_view_replies");
 			addMessageContextToggle(
 				tr::lng_context_edit_msg(tr::now),
@@ -2079,7 +2079,7 @@ namespace Settings {
 			tr::lng_context_to_msg(tr::now));
 		addBool(
 			"show_message_context_view_replies",
-			tr::lng_replies_view_thread(tr::now));
+			tr::lng_replies_header_none(tr::now));
 		addBool(
 			"show_message_context_edit",
 			tr::lng_context_edit_msg(tr::now));

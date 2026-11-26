@@ -237,6 +237,11 @@ void ShowPreview(QJsonObject document, std::shared_ptr<int> operation) {
 			        [=](bool value) { category.set(*selected, value); },
 			        checkbox->lifetime());
 		}
+		if (preview.skipped.contains(u"cloud/incompatible"_q)) {
+			Ui::AddDividerText(
+				box->verticalLayout(),
+				tr::lng_backup_cloud_incompatible());
+		}
 		if (!preview.skipped.isEmpty()) {
 			Ui::AddDividerText(box->verticalLayout(),
 			    rpl::single(tr::lng_backup_unknown_count(tr::now)

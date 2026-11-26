@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_premium.h"
 #include "base/unixtime.h"
 #include "boxes/send_credits_box.h" // SetButtonMarkedLabel
+#include "boxes/star_gift_preview_box.h"
 #include "boxes/sticker_set_box.h"
 #include "chat_helpers/stickers_gift_box_pack.h"
 #include "chat_helpers/stickers_lottie.h"
@@ -309,17 +310,23 @@ void GiftButton::unsubscribe() {
 }
 
 void GiftButton::setDescriptor(const GiftDescriptor &descriptor, Mode mode) {
-	_mode = mode;
-
 	const auto unique = v::is<GiftTypeStars>(descriptor)
 		? v::get<GiftTypeStars>(descriptor).info.unique.get()
 		: nullptr;
-	const auto resalePrice = (unique && _mode != Mode::CraftPreview)
-		? unique->starsForResale
-		: 0;
-	if (_descriptor == descriptor && _resalePrice == resalePrice) {
+	const auto resalePrice = unique
+		? ResalePrice{
+			.nanoTon = unique->nanoTonForResale,
+			.stars = unique->starsForResale,
+			.tonOnly = unique->onlyAcceptTon,
+		}
+		: ResalePrice();
+	if (_mode == mode
+		&& _descriptor == descriptor
+		&& _resalePrice == resalePrice) {
 		return;
 	}
+	_mode = mode;
+
 	const auto starsType = Ui::Premium::MiniStarsType::SlowStars;
 	unsubscribe();
 	update();
@@ -338,7 +345,9 @@ void GiftButton::setDescriptor(const GiftDescriptor &descriptor, Mode mode) {
 
 	_descriptor = descriptor;
 	_resalePrice = resalePrice;
-	const auto resale = (_resalePrice > 0);
+	const auto resale = unique
+		&& (_mode != Mode::CraftPreview)
+		&& Data::UniqueGiftOnSale(*unique);
 	v::match(descriptor, [&](const GiftTypePremium &data) {
 		const auto months = data.months;
 		_text = Ui::Text::String(st::giftBoxGiftHeight / 4);
@@ -390,10 +399,14 @@ void GiftButton::setDescriptor(const GiftDescriptor &descriptor, Mode mode) {
 			_stars.reset();
 			return;
 		}
+		const auto resaleTon = unique
+			&& (data.forceTon
+				|| ((unique->starsForResale <= 0)
+					&& (unique->nanoTonForResale > 0)));
 		_price.setMarkedText(
 			st::semiboldTextStyle,
 			(data.resale
-				? ((unique && data.forceTon)
+				? (resaleTon
 					? Data::FormatGiftResaleTon(*unique)
 					: (unique
 					? _delegate->monostar()
@@ -402,7 +415,7 @@ void GiftButton::setDescriptor(const GiftDescriptor &descriptor, Mode mode) {
 								? unique->starsForResale
 								: data.info.starsResellMin)
 						).append(data.info.resellCount > 1 ? "+" : ""))
-				: (small() && unique && unique->starsForResale)
+				: (small() && resale)
 				? Data::FormatGiftResaleAsked(*unique)
 				: unique
 				? tr::lng_gift_transfer_button(tr::now, tr::marked)
@@ -716,42 +729,7 @@ void GiftButton::toggleSelected(
 
 void GiftButton::paintBackground(QPainter &p, const QImage &background) {
 	const auto removed = currentExtend() - _extend;
-	const auto x = removed.left();
-	const auto y = removed.top();
-	const auto width = this->width() - x - removed.right();
-	const auto height = this->height() - y - removed.bottom();
-	const auto dpr = int(background.devicePixelRatio());
-	const auto bwidth = background.width() / dpr;
-	const auto bheight = background.height() / dpr;
-	const auto fillRow = [&](int yfrom, int ytill, int bfrom) {
-		const auto fill = [&](int xto, int wto, int xfrom, int wfrom = 0) {
-			const auto fheight = ytill - yfrom;
-			p.drawImage(
-				QRect(x + xto, y + yfrom, wto, fheight),
-				background,
-				QRect(
-					QPoint(xfrom, bfrom) * dpr,
-					QSize((wfrom ? wfrom : wto), fheight) * dpr));
-		};
-		if (width < bwidth) {
-			const auto xhalf = width / 2;
-			fill(0, xhalf, 0);
-			fill(xhalf, width - xhalf, bwidth - (width - xhalf));
-		} else if (width == bwidth) {
-			fill(0, width, 0);
-		} else {
-			const auto half = bwidth / (2 * dpr);
-			fill(0, half, 0);
-			fill(width - half, half, bwidth - half);
-			fill(half, width - 2 * half, half, 1);
-		}
-	};
-	if (height < bheight) {
-		fillRow(0, height / 2, 0);
-		fillRow(height / 2, height, bheight - (height - (height / 2)));
-	} else {
-		fillRow(0, height, 0);
-	}
+	Ui::PaintGiftCardBackground(p, background, rect().marginsRemoved(removed));
 
 	auto hq = PainterHighQualityEnabler(p);
 	const auto progress = (_selectionMode == GiftSelectionMode::Border)
@@ -1043,7 +1021,7 @@ void GiftButton::paintEvent(QPaintEvent *e) {
 void GiftButton::paint(QPainter &p, float64 craftProgress) {
 	const auto stargift = std::get_if<GiftTypeStars>(&_descriptor);
 	const auto unique = stargift ? stargift->info.unique.get() : nullptr;
-	const auto onsale = unique && unique->starsForResale && small();
+	const auto onsale = unique && small() && Data::UniqueGiftOnSale(*unique);
 	const auto onCard = unique && stargift->onCard;
 	const auto silhouette = onCard || (unique && stargift->silhouette);
 	const auto requirePremium = stargift
@@ -1581,48 +1559,7 @@ QImage Delegate::background() {
 	if (!_bg.isNull()) {
 		return _bg;
 	}
-	const auto single = buttonSize();
-	const auto extend = buttonExtend();
-	const auto bgSize = single.grownBy(extend);
-	const auto ratio = style::DevicePixelRatio();
-	auto bg = QImage(
-		bgSize * ratio,
-		QImage::Format_ARGB32_Premultiplied);
-	bg.setDevicePixelRatio(ratio);
-	bg.fill(Qt::transparent);
-
-	const auto radius = st::giftBoxGiftRadius;
-	const auto rect = QRect(QPoint(), bgSize).marginsRemoved(extend);
-
-	{
-		auto p = QPainter(&bg);
-		auto hq = PainterHighQualityEnabler(p);
-		p.setOpacity(0.3);
-		p.setPen(Qt::NoPen);
-		p.setBrush(st::windowShadowFg);
-		p.drawRoundedRect(
-			QRectF(rect).translated(0, radius / 12.),
-			radius,
-			radius);
-	}
-	bg = bg.scaled(
-		(bgSize * ratio) / 2,
-		Qt::IgnoreAspectRatio,
-		Qt::SmoothTransformation);
-	bg = Images::Blur(std::move(bg), true);
-	bg = bg.scaled(
-		bgSize * ratio,
-		Qt::IgnoreAspectRatio,
-		Qt::SmoothTransformation);
-	{
-		auto p = QPainter(&bg);
-		auto hq = PainterHighQualityEnabler(p);
-		p.setPen(Qt::NoPen);
-		p.setBrush(st::windowBg);
-		p.drawRoundedRect(rect, radius, radius);
-	}
-
-	_bg = std::move(bg);
+	_bg = Ui::GenerateGiftCardBackground(buttonSize(), buttonExtend());
 	return _bg;
 }
 

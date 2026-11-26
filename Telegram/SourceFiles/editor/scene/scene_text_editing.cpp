@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/painter.h"
 #include "styles/style_editor.h"
 
+#include <QApplication>
 #include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsTextItem>
 #include <QGraphicsView>
@@ -42,6 +43,7 @@ public:
 
 	Fn<void()> onFinish;
 	Fn<void()> onCancel;
+	QPointer<QWidget> emojiPanel;
 
 	void setStyleInfo(
 			TextStyle style,
@@ -94,10 +96,7 @@ protected:
 		QGraphicsTextItem::keyPressEvent(event);
 	}
 
-	void focusOutEvent(QFocusEvent *event) override {
-		QGraphicsTextItem::focusOutEvent(event);
-		fire(onFinish);
-	}
+	void focusOutEvent(QFocusEvent *event) override;
 
 	void contextMenuEvent(QGraphicsSceneContextMenuEvent *event) override {
 		event->accept();
@@ -205,6 +204,29 @@ private:
 	float64 _fontSize = 0.;
 };
 
+void TextEditProxy::focusOutEvent(QFocusEvent *event) {
+	QGraphicsTextItem::focusOutEvent(event);
+	if (!emojiPanel) {
+		fire(onFinish);
+		return;
+	}
+	crl::on_main(
+		this,
+		[=] {
+			const auto focused
+				= QApplication::focusWidget();
+			const auto inPanel = focused
+				&& emojiPanel
+				&& emojiPanel->isAncestorOf(focused);
+			if (!hasFocus()
+				&& onFinish
+				&& !inPanel) {
+				const auto finish = onFinish;
+				finish();
+			}
+		});
+}
+
 } // namespace
 
 TextEditController::TextEditController(not_null<Scene*> scene)
@@ -270,6 +292,24 @@ void TextEditController::setColor(const QColor &color) {
 	} else {
 		_defaultColor = color;
 	}
+}
+
+void TextEditController::setEmojiPanel(QWidget *panel) {
+	_emojiPanel = panel;
+}
+
+void TextEditController::insertText(const QString &text) {
+	const auto proxy = _edit.proxy.get();
+	if (!proxy) {
+		return;
+	}
+	auto cursor = proxy->textCursor();
+	cursor.insertText(text);
+	proxy->setTextCursor(cursor);
+	if (!_scene->views().isEmpty()) {
+		_scene->views().first()->setFocus();
+	}
+	proxy->setFocus();
 }
 
 bool TextEditController::editing() const {
@@ -364,11 +404,43 @@ void TextEditController::applyAutoShrink() {
 	}
 }
 
+int TextEditController::adjustProxyWidth(
+		QGraphicsTextItem *proxy,
+		QTextDocument *emojiDoc,
+		bool flipped) {
+	applyAutoShrink();
+	const auto maxTextWidth = sessionWrapWidth();
+	const auto minTextWidth = sessionMinTextWidth();
+	if (int(emojiDoc->textWidth()) != maxTextWidth) {
+		emojiDoc->setTextWidth(maxTextWidth);
+	}
+	auto ideal = int(std::ceil(emojiDoc->idealWidth()));
+	if (emojiDoc->isEmpty()) {
+		ideal = std::max(
+			ideal,
+			QFontMetrics(proxy->font()).horizontalAdvance(
+				PlaceholderText()));
+	}
+	const auto width = std::clamp(
+		ideal + kIdealWidthExtra,
+		minTextWidth,
+		maxTextWidth);
+	if (int(proxy->textWidth()) != width) {
+		proxy->setTextWidth(width);
+	}
+	if (flipped) {
+		proxy->setTransform(
+			QTransform().translate(width, 0).scale(-1, 1));
+	}
+	return width;
+}
+
 void TextEditController::setupProxy(
 		QGraphicsTextItem *proxy,
 		const QColor &color,
 		const TextLayoutSpec &spec,
 		TextAlignment alignment) {
+	static_cast<TextEditProxy*>(proxy)->emojiPanel = _emojiPanel;
 	proxy->setTextInteractionFlags(Qt::TextEditorInteraction);
 	proxy->setDefaultTextColor(color);
 
@@ -428,30 +500,7 @@ void TextEditController::createAtCenter(int rotation, bool flipped) {
 	const auto emojiDoc = proxy->document();
 	const auto sceneCenter = _scene->canvasRect().center();
 	const auto adjustWidth = [=] {
-		applyAutoShrink();
-		const auto maxTextWidth = sessionWrapWidth();
-		const auto minTextWidth = sessionMinTextWidth();
-		if (int(emojiDoc->textWidth()) != maxTextWidth) {
-			emojiDoc->setTextWidth(maxTextWidth);
-		}
-		auto ideal = int(std::ceil(emojiDoc->idealWidth()));
-		if (emojiDoc->isEmpty()) {
-			ideal = std::max(
-				ideal,
-				QFontMetrics(proxy->font()).horizontalAdvance(
-					PlaceholderText()));
-		}
-		const auto width = std::clamp(
-			ideal + kIdealWidthExtra,
-			minTextWidth,
-			maxTextWidth);
-		if (int(proxy->textWidth()) != width) {
-			proxy->setTextWidth(width);
-		}
-		if (flipped) {
-			proxy->setTransform(
-				QTransform().translate(width, 0).scale(-1, 1));
-		}
+		const auto width = adjustProxyWidth(proxy, emojiDoc, flipped);
 		const auto anchor = QPointF(width / 2., 0.);
 		proxy->setTransformOriginPoint(anchor);
 		proxy->setPos(sceneCenter - anchor);
@@ -540,30 +589,7 @@ void TextEditController::startEditing(ItemText *item) {
 	const auto anchor = item->scenePos();
 	const auto flipped = item->flipped();
 	const auto adjustWidth = [=] {
-		applyAutoShrink();
-		const auto maxTextWidth = sessionWrapWidth();
-		const auto minTextWidth = sessionMinTextWidth();
-		if (int(emojiDoc->textWidth()) != maxTextWidth) {
-			emojiDoc->setTextWidth(maxTextWidth);
-		}
-		auto ideal = int(std::ceil(emojiDoc->idealWidth()));
-		if (emojiDoc->isEmpty()) {
-			ideal = std::max(
-				ideal,
-				QFontMetrics(proxy->font()).horizontalAdvance(
-					PlaceholderText()));
-		}
-		const auto width = std::clamp(
-			ideal + kIdealWidthExtra,
-			minTextWidth,
-			maxTextWidth);
-		if (int(proxy->textWidth()) != width) {
-			proxy->setTextWidth(width);
-		}
-		if (flipped) {
-			proxy->setTransform(
-				QTransform().translate(width, 0).scale(-1, 1));
-		}
+		adjustProxyWidth(proxy, emojiDoc, flipped);
 		const auto center = proxy->boundingRect().center();
 		proxy->setTransformOriginPoint(center);
 		proxy->setPos(anchor - center);

@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/object_ptr.h"
+#include "data/data_boosts.h"
 #include "info/info_controller.h" // Key
 #include "info/profile/info_profile_badge.h"
 #include "info/profile/tabs/info_profile_tab_top_bar_bindings.h"
@@ -15,6 +16,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/animations.h"
 #include "ui/rp_widget.h"
 #include "ui/userpic_view.h"
+
+namespace Api {
+class Boosts;
+} // namespace Api
 
 namespace Data {
 class ForumTopic;
@@ -88,11 +93,18 @@ struct MenuCallback;
 namespace Info::Profile {
 
 class Badge;
-class BalancePill;
+class PillsRow;
 class StatusLabel;
 class TopBarActionButton;
 
 struct TopBarActionButtonStyle;
+
+enum class TopBarAction : quint64 {
+	AddStory = (1 << 0),
+};
+
+[[nodiscard]] bool TopBarActionHidden(TopBarAction action);
+void SetTopBarActionHidden(TopBarAction action, bool hidden);
 
 class TopBar final : public Ui::RpWidget {
 public:
@@ -112,13 +124,14 @@ public:
 		rpl::producer<bool> backToggles;
 		rpl::producer<> showFinished;
 		rpl::producer<TextWithEntities> customStatus;
+		Fn<void()> showSavedMusic;
 	};
 
 	struct AnimatedPatternPoint {
 		QPointF basePosition;
-		float64 size;
-		float64 startTime;
-		float64 endTime;
+		float64 size = 0.;
+		float64 startTime = 0.;
+		float64 endTime = 0.;
 	};
 
 	TopBar(not_null<Ui::RpWidget*> parent, Descriptor descriptor);
@@ -145,11 +158,8 @@ public:
 	void setColorProfileIndex(std::optional<uint8> index);
 	void setPatternEmojiId(std::optional<DocumentId> patternEmojiId);
 	void setLocalEmojiStatusId(EmojiStatusId emojiStatusId);
-	void addTopBarEditButton(
-		not_null<Window::SessionController*> controller,
-		Wrap wrap);
 
-	rpl::producer<std::optional<QColor>> edgeColor() const;
+	rpl::producer<int> desiredHeightValue() const override;
 
 protected:
 	void resizeEvent(QResizeEvent *e) override;
@@ -163,6 +173,7 @@ private:
 		const QBrush &brush) const;
 	void paintEdges(QPainter &p, const QRect &clip) const;
 	void updateLabelsPosition();
+	[[nodiscard]] float64 progressForHeight(int height) const;
 	[[nodiscard]] int titleMostLeft() const;
 	[[nodiscard]] int statusMostLeft() const;
 	[[nodiscard]] QRect userpicGeometry() const;
@@ -177,10 +188,23 @@ private:
 	void fillTopBarMenu(
 		not_null<Window::SessionController*> controller,
 		const Ui::Menu::MenuCallback &addAction);
-	void setupUserpicButton(not_null<Window::SessionController*> controller);
+	Fn<void()> setupUserpicButton(
+		not_null<Window::SessionController*> controller);
 	void setupBirthdayEffect();
 	void startUploadOverlay();
 	void setupActions(not_null<Window::SessionController*> controller);
+	void setupMyProfileActions(
+		not_null<Window::SessionController*> controller,
+		Fn<void()> choosePhoto);
+	void setupPills(
+		not_null<Window::SessionController*> controller,
+		Fn<void()> showSavedMusic);
+	void applyPillsReserve(int reserve);
+	void openBoostsSectionForStory(
+		not_null<Window::SessionController*> controller);
+	void setupStoryDrop(
+		not_null<TopBarActionButton*> button,
+		not_null<Window::SessionController*> controller);
 	void searchInCommunity(not_null<Window::SessionController*> controller);
 	void finalizeActions(
 		const std::vector<not_null<TopBarActionButton*>> &buttons);
@@ -268,10 +292,9 @@ private:
 	const std::unique_ptr<Badge> _verified;
 
 	const bool _hasActions;
-	const bool _hasBalance;
-	const int _balanceReserve;
 	const int _minForProgress;
-	std::unique_ptr<BalancePill> _balancePill;
+	std::unique_ptr<PillsRow> _pills;
+	rpl::variable<int> _pillsReserve = 0;
 
 	std::unique_ptr<Ui::GlareTooltip> _badgeTooltip;
 	std::vector<std::unique_ptr<Ui::GlareTooltip>> _badgeOldTooltips;
@@ -360,11 +383,11 @@ private:
 	rpl::event_stream<> _backClicks;
 	Ui::Controls::SwipeBackResult _swipeBackData;
 
-	base::unique_qptr<Ui::IconButton> _topBarButton;
 	base::unique_qptr<Ui::FadeWrap<Ui::IconButton>> _tabMenuToggle;
 	base::unique_qptr<Ui::FadeWrap<Ui::IconButton>> _tabSearchToggle;
 	base::unique_qptr<Ui::FadeWrap<Ui::IconButton>> _tabGroupToggle;
 	base::unique_qptr<Ui::PopupMenu> _peerMenu;
+	base::unique_qptr<Ui::PopupMenu> _actionContextMenu;
 
 	Ui::RpWidget *_actionMore = nullptr;
 
@@ -393,6 +416,9 @@ private:
 	std::vector<Ui::OutlineSegment> _storySegments;
 	bool _hasStories = false;
 	bool _hasLiveStories = false;
+	Api::Boosts *_boostsApi = nullptr;
+	std::optional<Data::BoostStatus> _boostsStatus;
+	rpl::variable<bool> _storyBoostsLoading = false;
 
 	std::optional<uint8> _localColorProfileIndex;
 	std::optional<DocumentId> _localPatternEmojiId;

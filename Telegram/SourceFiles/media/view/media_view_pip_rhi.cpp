@@ -26,10 +26,10 @@ using namespace Ui::GL;
 
 struct PipUniforms {
 	float viewport[2];
-	float fragCoordYUp;
-	float _pad0;
+	float fragCoordYUp = 0.;
+	float _pad0 = 0.;
 	float roundRect[4];
-	float roundRadius;
+	float roundRadius = 0.;
 	float _pad1[3];
 	float fadeColor[4];
 	float h_size[2];
@@ -42,9 +42,9 @@ static_assert(sizeof(PipUniforms) % 16 == 0);
 // The NDC Y flip stays at offset 12 in every block, see NdcFlipY().
 struct ImageUniforms {
 	float viewport[2];
-	float g_opacity;
-	float flipY;
-	float o_opacity;
+	float g_opacity = 0.;
+	float flipY = 0.;
+	float o_opacity = 0.;
 	float _pad0[3];
 };
 static_assert(sizeof(ImageUniforms) % 16 == 0);
@@ -481,9 +481,9 @@ void Pip::RendererRhi::releaseResources() {
 	_trackFrameIndex = -1;
 	_chromaNV12 = false;
 	_usingExternalVideoTextures = false;
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 	_metalTextureCache.flush();
-#endif // Q_OS_MAC
+#endif // Q_OS_MACOS
 #ifdef Q_OS_WIN
 	_d3d11Frames.reset();
 #endif // Q_OS_WIN
@@ -580,7 +580,7 @@ void Pip::RendererRhi::paintTransformedVideoFrame(
 
 	if (upload) {
 		auto zeroCopied = false;
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 		if (nativeTexture && data.nativeFrame
 			&& data.nativeFrame->pixelBuffer) {
 			const auto ok = _metalTextureCache.createTexturesFromPixelBuffer(
@@ -597,7 +597,7 @@ void Pip::RendererRhi::paintTransformedVideoFrame(
 				return;
 			}
 		}
-#endif // Q_OS_MAC
+#endif // Q_OS_MACOS
 		if (!zeroCopied) {
 			if (_usingExternalVideoTextures) {
 				delete _yTexture;
@@ -610,9 +610,9 @@ void Pip::RendererRhi::paintTransformedVideoFrame(
 				_uvTexture = nullptr;
 				_lumaSize = QSize();
 				_chromaSize = QSize();
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 				_metalTextureCache.flush();
-#endif // Q_OS_MAC
+#endif // Q_OS_MACOS
 			}
 			if (!yuv || yuv->size.isEmpty()) {
 				return;
@@ -1118,37 +1118,8 @@ void Pip::RendererRhi::paintButton(
 
 auto Pip::RendererRhi::ControlMeta(OverState control, int index)
 -> Control {
-	Expects(index >= 0);
-
-	switch (control) {
-	case OverState::Close: Assert(index < 1); return {
-		0,
-		&st::pipCloseIcon,
-		&st::pipCloseIconOver,
-	};
-	case OverState::Enlarge: Assert(index < 1); return {
-		1,
-		&st::pipEnlargeIcon,
-		&st::pipEnlargeIconOver,
-	};
-	case OverState::VolumeToggle: Assert(index < 3); return {
-		(2 + index),
-		(index == 0
-			? &st::pipVolumeIcon0
-			: (index == 1)
-			? &st::pipVolumeIcon1
-			: &st::pipVolumeIcon2),
-		(index == 0
-			? &st::pipVolumeIcon0Over
-			: (index == 1)
-			? &st::pipVolumeIcon1Over
-			: &st::pipVolumeIcon2Over),
-	};
-	case OverState::Other: Assert(index < 2); return {
-		(5 + index),
-		(index ? &st::pipPauseIcon : &st::pipPlayIcon),
-		(index ? &st::pipPauseIconOver : &st::pipPlayIconOver),
-	};
+	if (const auto result = FindControlMeta(control, index)) {
+		return *result;
 	}
 	Unexpected("Control value in Pip::RendererRhi::ControlIndex.");
 }
@@ -1166,35 +1137,8 @@ void Pip::RendererRhi::validateControls() {
 		ControlMeta(OverState::Other),
 		ControlMeta(OverState::Other, 1),
 	};
-	auto maxWidth = 0;
-	auto fullHeight = 0;
-	for (const auto &meta : metas) {
-		Assert(meta.icon->size() == meta.iconOver->size());
-		maxWidth = std::max(meta.icon->width(), maxWidth);
-		fullHeight += 2 * meta.icon->height();
-	}
-	auto image = QImage(
-		QSize(maxWidth, fullHeight) * _ifactor,
-		QImage::Format_ARGB32_Premultiplied);
-	image.fill(Qt::transparent);
-	image.setDevicePixelRatio(_ifactor);
-	{
-		auto p = QPainter(&image);
-		auto index = 0;
-		auto height = 0;
-		const auto paint = [&](not_null<const style::icon*> icon) {
-			icon->paint(p, 0, height, maxWidth);
-			_controlsTextures[index++] = QRect(
-				QPoint(0, height) * _ifactor,
-				icon->size() * _ifactor);
-			height += icon->height();
-		};
-		for (const auto &meta : metas) {
-			paint(meta.icon);
-			paint(meta.iconOver);
-		}
-	}
-	_controlsImage.setImage(std::move(image));
+	_controlsImage.setImage(
+		PrepareControlsImage(metas, _controlsTextures, _ifactor));
 }
 
 void Pip::RendererRhi::invalidateControls() {

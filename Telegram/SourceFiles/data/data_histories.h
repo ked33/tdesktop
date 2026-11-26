@@ -154,6 +154,8 @@ public:
 	}
 
 	void checkTopicCreated(FullMsgId rootId, MsgId realRoot);
+	void checkReplyTargetSent(FullMsgId localId, MsgId realId);
+	void discardCreatingTopic(not_null<History*> history, MsgId rootId);
 	[[nodiscard]] FullMsgId convertTopicReplyToId(
 		not_null<History*> history,
 		FullMsgId replyToId) const;
@@ -240,6 +242,10 @@ private:
 		MsgId rootId) const;
 	void sendCreateTopicRequest(not_null<History*> history, MsgId rootId);
 	void cancelDelayedByTopicRequest(int id);
+	void cancelDelayedByReplyRequest(int id);
+	void failDelayedMessage(
+		DelayedByTopicMessage entry,
+		const MTP::Error &error);
 
 	const not_null<Session*> _owner;
 	rpl::event_stream<ShownRead> _shownReads;
@@ -268,7 +274,11 @@ private:
 		FullMsgId,
 		std::vector<DelayedByTopicMessage>> _creatingTopics;
 	base::flat_map<FullMsgId, MsgId> _createdTopicIds;
+	base::flat_map<
+		FullMsgId,
+		std::vector<DelayedByTopicMessage>> _delayedByReplyTarget;
 	base::flat_set<mtpRequestId> _creatingTopicRequests;
+	base::flat_set<int> _delayedReplyRequests;
 
 	base::flat_map<
 		not_null<PeerData*>,

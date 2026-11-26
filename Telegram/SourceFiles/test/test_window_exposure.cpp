@@ -5,7 +5,7 @@ the official desktop application for the Telegram messaging service.
 For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
-#ifdef _DEBUG
+#if defined _DEBUG || defined TDESKTOP_RELEASE_TEST_HARNESS
 
 #include "test/test_window_exposure.h"
 
@@ -32,11 +32,11 @@ namespace {
 
 // Only on macOS does a covered window turn unexposed in a way a client can
 // repair by stacking; see the off-macOS paragraph in the header.
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 constexpr auto kStacking = true;
-#else // Q_OS_MAC
+#else // Q_OS_MACOS
 constexpr auto kStacking = false;
-#endif // Q_OS_MAC
+#endif // Q_OS_MACOS
 
 [[nodiscard]] bool StayOnTop(QWindow *window) {
 	return window && (window->flags() & Qt::WindowStaysOnTopHint);
@@ -880,4 +880,4 @@ void AppendKeepWindowExposedSelfTest(not_null<Runner*> runner) {
 
 } // namespace Test
 
-#endif // _DEBUG
+#endif // _DEBUG || TDESKTOP_RELEASE_TEST_HARNESS

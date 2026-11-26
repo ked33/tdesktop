@@ -16,9 +16,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_user_names.h"
 #include "dialogs/dialogs_key.h"
 #include "base/flags.h"
+#include "base/weak_ptr.h"
 
 namespace Data {
 class Forum;
+class Thread;
 struct BotCommand;
 struct BusinessDetails;
 struct WalletCard;
@@ -69,6 +71,9 @@ struct BotInfo {
 	[[nodiscard]] Data::Forum *forum() const;
 	[[nodiscard]] std::unique_ptr<Data::Forum> takeForumData();
 
+	void setInlineReturnTo(Dialogs::EntryState state);
+	[[nodiscard]] Dialogs::EntryState inlineReturnTo() const;
+
 	QString description;
 	QString inlinePlaceholder;
 	std::vector<Data::BotCommand> commands;
@@ -86,7 +91,6 @@ struct BotInfo {
 	QColor botAppColorBodyNight = QColor(0, 0, 0, 0);
 
 	QString startToken;
-	Dialogs::EntryState inlineReturnTo;
 
 	ChatAdminRights groupAdminRights;
 	ChatAdminRights channelAdminRights;
@@ -106,6 +110,7 @@ struct BotInfo {
 	bool canManageEmojiStatus : 1 = false;
 	bool supportsBusiness : 1 = false;
 	bool hasMainApp : 1 = false;
+	bool hasPreviewMedias : 1 = false;
 	bool userCreatesTopics : 1 = false;
 	bool setBotPhotoHidden : 1 = false;
 	bool canManageBots : 1 = false;
@@ -114,6 +119,9 @@ struct BotInfo {
 
 private:
 	std::unique_ptr<Data::Forum> _forum;
+	Dialogs::EntryState _inlineReturnTo;
+	// A topic or sublist can be freed without a destroyed() event.
+	base::weak_ptr<Data::Thread> _inlineReturnThread;
 
 };
 
@@ -149,6 +157,7 @@ enum class UserDataFlag : uint32 {
 	HasActiveVideoStream = (1 << 28),
 	NoForwardsMyEnabled = (1 << 29),
 	NoForwardsPeerEnabled = (1 << 30),
+	CloseFriend = (1U << 31),
 };
 inline constexpr bool is_flag_type(UserDataFlag) { return true; };
 using UserDataFlags = base::flags<UserDataFlag>;
@@ -262,6 +271,8 @@ public:
 	[[nodiscard]] ContactStatus contactStatus() const;
 	[[nodiscard]] bool isContact() const;
 	void setIsContact(bool is);
+	[[nodiscard]] bool isCloseFriend() const;
+	void setIsCloseFriend(bool is);
 
 	[[nodiscard]] Data::LastseenStatus lastseen() const;
 	bool updateLastseen(Data::LastseenStatus value);

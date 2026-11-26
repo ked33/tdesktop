@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_scheduled_section.h"
 
 #include "history/view/controls/history_view_compose_controls.h"
+#include "history/view/history_view_chat_section.h"
 #include "history/view/history_view_empty_list_bubble.h"
 #include "history/view/history_view_top_bar_widget.h"
 #include "history/view/history_view_schedule_box.h"
@@ -35,10 +36,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/delete_messages_box.h"
 #include "boxes/send_files_box.h"
 #include "boxes/premium_limits_box.h"
+#include "window/window_controller.h"
 #include "window/window_session_controller.h"
 #include "window/window_peer_menu.h"
 #include "base/call_delayed.h"
 #include "base/qt/qt_key_modifiers.h"
+#include "core/application.h"
 #include "core/mime_type.h"
 #include "chat_helpers/message_field.h"
 #include "chat_helpers/tabbed_selector.h"
@@ -132,6 +135,14 @@ object_ptr<Window::SectionWidget> ScheduledMemento::createWidget(
 	if (column == Window::Column::Third) {
 		return nullptr;
 	}
+	if (_forumTopic
+		&& (_forumTopic->dying() || _forumTopic->creating())) {
+		// WHY: a back navigation inside a dying topic's destruction must not
+		// rebuild it, and a topic being created is discarded, without
+		// destroyed(), by the chat this section replaces.
+		auto memento = ChatMemento(ChatViewId{ .history = _history });
+		return memento.createWidget(parent, controller, column, geometry);
+	}
 	auto result = object_ptr<ScheduledWidget>(
 		parent,
 		controller,
@@ -139,6 +150,10 @@ object_ptr<Window::SectionWidget> ScheduledMemento::createWidget(
 		_forumTopic);
 	result->setInternalState(geometry, this);
 	return result;
+}
+
+Data::ForumTopic *ScheduledMemento::topicForRemoveRequests() const {
+	return _forumTopic;
 }
 
 ScheduledWidget::ScheduledWidget(
@@ -190,7 +205,7 @@ ScheduledWidget::ScheduledWidget(
 	if (_forumTopic) {
 		_forumTopic->destroyed(
 		) | rpl::on_next([=] {
-			controller->showBackFromStack();
+			topicDestroyed();
 		}, lifetime());
 	}
 
@@ -275,7 +290,22 @@ ScheduledWidget::ScheduledWidget(
 	Window::SetupSwipeBackSection(this, _scroll, _inner);
 }
 
-ScheduledWidget::~ScheduledWidget() = default;
+ScheduledWidget::~ScheduledWidget() {
+	if (const auto box = _sendFilesBox.data()) {
+		box->closeBox();
+	}
+	_composeControls->closeSendAsFileBox();
+}
+
+void ScheduledWidget::topicDestroyed() {
+	const auto window = &controller()->window();
+	const auto id = controller()->windowId();
+	if (id.chat() == _forumTopic) {
+		Core::App().closeWindow(window);
+		return;
+	}
+	showHistoryAfterThreadDestroyed(_history);
+}
 
 void ScheduledWidget::setupComposeControls() {
 	auto writeRestriction = _forumTopic
@@ -481,6 +511,8 @@ void ScheduledWidget::setupComposeControls() {
 		if (_composeControls->requestEditableMessageNavigation(e)) {
 			return;
 		}
+		_inner->sendingLandingUserScroll();
+		Tgw::ListScroll::Input(_inner.data());
 		_scroll->keyPressEvent(e);
 	}, lifetime());
 
@@ -489,7 +521,7 @@ void ScheduledWidget::setupComposeControls() {
 			ComposeControls::EditableMessageNavigationRequest request) {
 		using Request = ComposeControls::EditableMessageNavigationRequest;
 		if (request.mode == Request::Mode::Edit && !request.currentId) {
-			_inner->lastMessageEditRequestNotify();
+			*request.handled = _inner->lastMessageEditRequestNotify();
 			return;
 		}
 		const auto itemId = _inner->editableMessageIdByDirection(
@@ -500,7 +532,9 @@ void ScheduledWidget::setupComposeControls() {
 			: nullptr;
 		if (!item) {
 			return;
-		} else if (request.mode == Request::Mode::Edit) {
+		}
+		*request.handled = true;
+		if (request.mode == Request::Mode::Edit) {
 			_inner->editMessageRequestNotify(itemId);
 		} else {
 			_composeControls->setEditableMessageNavigationText(
@@ -642,6 +676,7 @@ bool ScheduledWidget::confirmSendingFiles(
 			? Api::SendType::ScheduledToUser
 			: Api::SendType::Scheduled),
 		SendMenu::Details());
+	_sendFilesBox = box.data();
 
 	box->setConfirmedCallback(crl::guard(this, [=](
 			std::shared_ptr<Ui::PreparedBundle> bundle,
@@ -822,6 +857,7 @@ void ScheduledWidget::sendVoice(
 		data.waveform,
 		data.duration,
 		data.video,
+		data.videoSource,
 		prepareSendAction(options));
 	_composeControls->clearListenState();
 }

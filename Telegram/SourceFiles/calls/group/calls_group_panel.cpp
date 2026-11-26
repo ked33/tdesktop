@@ -301,13 +301,11 @@ void Panel::minimize() {
 }
 
 void Panel::pinToTop(bool isPinned) {
-	if (isPinned) {
-		window()->setWindowFlags(Qt::WindowStaysOnTopHint);
-		window()->show();
-	} else {
-		window()->setWindowFlags((window()->windowFlags() & ~Qt::WindowStaysOnTopHint));
-		window()->show();
+	if (Platform::IsWayland()) {
+		return;
 	}
+	window()->setWindowFlag(Qt::WindowStaysOnTopHint, isPinned);
+	window()->show();
 }
 
 void Panel::close() {
@@ -412,7 +410,13 @@ void Panel::initWindow() {
 				toggleFullScreen();
 			}
 		} else if (type == QEvent::WindowStateChange) {
+			const auto was = static_cast<QWindowStateChangeEvent*>(
+				e.get())->oldState();
 			updateFullScreen();
+			if ((was & Qt::WindowFullScreen)
+				!= (window()->windowState() & Qt::WindowFullScreen)) {
+				updateControlsGeometry();
+			}
 		}
 		return base::EventFilterResult::Continue;
 	}, lifetime());
@@ -607,6 +611,12 @@ void Panel::initControls() {
 	createMessageButton();
 	refreshLeftButton();
 	refreshVideoButtons();
+	if (!Platform::IsWayland()) {
+		createPinOnTop();
+	}
+	if (_call->rtmp()) {
+		setupFullScreenBehavior();
+	}
 
 	rpl::combine(
 		_mode.value(),
@@ -1256,7 +1266,8 @@ void Panel::setupVideo(not_null<Viewport*> viewport) {
 			VideoTileTrack{ GroupCall::TrackPointer(track), row },
 			GroupCall::TrackSizeValue(track),
 			std::move(pinned),
-			self);
+			self,
+			_call->shownVideoTracks().contains(endpoint));
 	};
 	for (const auto &[endpoint, track] : _call->activeVideoTracks()) {
 		setupTile(endpoint, track);
@@ -1632,12 +1643,6 @@ void Panel::setupFullScreenBehavior() {
 }
 
 void Panel::refreshTopButton() {
-	if (!_pinOnTop) {
-		createPinOnTop();
-		if (_call->rtmp()) {
-			setupFullScreenBehavior();
-		}
-	}
 	if (_mode.current() == PanelMode::Wide) {
 		_menuToggle.destroy();
 		if (!_call->rtmp()) {
@@ -1979,10 +1984,12 @@ QRect Panel::computeTitleRect() const {
 			+ (_menuToggle ? _menuToggle->width() : 0)
 			+ custom));
 	const auto width = widget()->width();
-#ifdef Q_OS_MAC
-	const auto left = st::groupCallTitleLeftMac;
+#ifdef Q_OS_MACOS
+	const auto left = window()->isFullScreen()
+		? st::groupCallNarrowSkip
+		: st::groupCallTitleLeftMac;
 	return QRect(left, 0, width - remove - left, 28);
-#else // Q_OS_MAC
+#else // Q_OS_MACOS
 	const auto controls = _window->controlsGeometry();
 	const auto onTheLeft = (controls.center().x() < width / 2);
 	auto band = controls;
@@ -1993,7 +2000,7 @@ QRect Panel::computeTitleRect() const {
 	return onTheLeft
 		? QRect(right, 0, width - right - remove, band.height())
 		: QRect(remove, 0, band.x() - skip - remove, band.height());
-#endif // !Q_OS_MAC
+#endif // !Q_OS_MACOS
 }
 
 bool Panel::updateMode() {
@@ -2644,6 +2651,7 @@ void Panel::updateButtonsGeometry() {
 		const auto addSkip = st::callMuteButtonSmall.active.outerRadius;
 		const auto muteSize = _mute->innerSize().width() + 2 * addSkip;
 		const auto skip = st::groupCallButtonSkipSmall;
+		_mute->setLabelsMaxWidth(0);
 		const auto fullWidth = (rtmp
 			? (_settings->width() + skip)
 			: (_screenShare->width() + skip
@@ -2800,6 +2808,9 @@ void Panel::updateButtonsGeometry() {
 			? (nextButtonLeft + single + buttonSkip + addSkip)
 			: (nextButtonLeft + addSkip);
 		_mute->moveInner({ muteButtonLeft, muteTop });
+		_mute->setLabelsMaxWidth(muteSize
+			+ 2 * buttonSkip
+			- st::callMuteButton.labelAdditional);
 		toggle(_wideMenu, false);
 		toggle(_callShare, true);
 		if (_callShare) {

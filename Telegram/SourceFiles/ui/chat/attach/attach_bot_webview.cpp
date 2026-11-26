@@ -1707,7 +1707,7 @@ bool Panel::showWebview(Args &&args, const Webview::ThemeParams &params) {
 			}
 		},
 		.terms = [=] {
-			File::OpenUrl(tr::lng_mini_apps_tos_url(tr::now));
+			_delegate->botOpenTermsOfService();
 		},
 		.privacy = [=] {
 			_delegate->botOpenPrivacyPolicy();
@@ -2027,7 +2027,7 @@ void Panel::handleExternalShellMenuAction(const QString &id) {
 			}
 		},
 		.terms = [=] {
-			File::OpenUrl(tr::lng_mini_apps_tos_url(tr::now));
+			_delegate->botOpenTermsOfService();
 		},
 		.privacy = [=] {
 			_delegate->botOpenPrivacyPolicy();
@@ -2193,7 +2193,7 @@ void Panel::createWebviewBottom() {
 }
 
 bool Panel::createWebview(const Webview::ThemeParams &params) {
-	RpWidget *container = nullptr;
+	auto container = (RpWidget*)nullptr;
 	if (_externalShell) {
 		_externalWebviewParent = std::make_unique<RpWidget>();
 		container = _externalWebviewParent.get();
@@ -2273,12 +2273,12 @@ bool Panel::createWebview(const Webview::ThemeParams &params) {
 		return false;
 	}
 
-#if !defined Q_OS_WIN && !defined Q_OS_MAC
+#if !defined Q_OS_WIN && !defined Q_OS_MACOS
 	if (!_externalShell) {
 		_widget->allowChildFullScreenControls(
 			!raw->widget()->inherits("QWindowContainer"));
 	}
-#endif // !Q_OS_WIN && !Q_OS_MAC
+#endif // !Q_OS_WIN && !Q_OS_MACOS
 
 	raw->setInteractionHandler([=] {
 		_lastUserInteraction = crl::now();
@@ -2480,7 +2480,7 @@ bool Panel::createWebview(const Webview::ThemeParams &params) {
 		} else if (command == "web_app_open_scan_qr_popup") {
 			openScanQrPopup(arguments);
 		} else if (command == "web_app_share_to_story") {
-			openShareStory(arguments);
+			processShareToStory(arguments);
 		} else if (command == "web_app_request_write_access") {
 			requestWriteAccess();
 		} else if (command == "web_app_request_phone") {
@@ -2948,10 +2948,14 @@ void Panel::openExternalLink(const QJsonObject &args) {
 			File::OpenUrl(url);
 		}
 	};
+	requestOpenLink(url, open);
+}
+
+void Panel::requestOpenLink(const QString &url, Fn<void()> open) {
 	if (allowOpenLink()) {
 		open();
 	} else {
-		confirmExternalLink(url, open);
+		confirmExternalLink(url, std::move(open));
 	}
 }
 
@@ -3063,16 +3067,27 @@ void Panel::openScanQrPopup(const QJsonObject &args) {
 	}, [](Webview::PopupResult) {});
 }
 
-void Panel::openShareStory(const QJsonObject &args) {
-	showPopup({
-		.parent = webviewWindowForPopup(),
-		.text = tr::lng_bot_no_share_story(tr::now),
-		.buttons = { {
-			.id = "ok",
-			.text = tr::lng_box_ok(tr::now),
-			.type = Webview::PopupArgs::Button::Type::Ok,
-		}},
-	}, [](Webview::PopupResult) {});
+void Panel::processShareToStory(const QJsonObject &args) {
+	const auto mediaUrl = args["media_url"].toString();
+	const auto widget = args["widget_link"];
+	auto widgetLinkUrl = widget.isObject()
+		? widget["url"].toString()
+		: QString();
+	if (!widgetLinkUrl.startsWith(u"https://"_q, Qt::CaseInsensitive)) {
+		widgetLinkUrl = QString();
+	}
+	const auto widgetLinkName = widgetLinkUrl.isEmpty()
+		? QString()
+		: widget["name"].toString();
+	_delegate->botShareToStory({
+		.mediaUrl = mediaUrl,
+		.caption = {
+			args["text"].toString(),
+			TextWithTags::Tags(),
+		},
+		.widgetLinkUrl = std::move(widgetLinkUrl),
+		.widgetLinkName = widgetLinkName,
+	});
 }
 
 void Panel::requestWriteAccess() {

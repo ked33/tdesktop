@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_document.h"
 #include "data/data_changes.h"
 #include "data/data_channel.h"
+#include "data/data_chat.h"
 #include "data/data_file_origin.h"
 #include "data/data_media_preload.h"
 #include "data/data_photo.h"
@@ -29,17 +30,30 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/text_utilities.h"
 #include "ui/color_int_conversion.h"
 
+#include <cmath>
+
 namespace Data {
 
 StoryArea ParseArea(const MTPMediaAreaCoordinates &area) {
 	const auto &data = area.data();
+	const auto valid = [](float64 value) {
+		return (value >= 0.) && (value <= 100.);
+	};
+	if (!valid(data.vx().v)
+		|| !valid(data.vy().v)
+		|| !valid(data.vw().v)
+		|| !valid(data.vh().v)) {
+		return {};
+	}
 	const auto center = QPointF(data.vx().v, data.vy().v);
 	const auto size = QSizeF(data.vw().v, data.vh().v);
 	const auto corner = center - QPointF(size.width(), size.height()) / 2.;
+	const auto rotation = data.vrotation().v;
+	const auto radius = data.vradius().value_or_empty();
 	return {
 		.geometry = { corner / 100., size / 100. },
-		.rotation = data.vrotation().v,
-		.radius = data.vradius().value_or_empty(),
+		.rotation = std::isfinite(rotation) ? std::fmod(rotation, 360.) : 0.,
+		.radius = valid(radius) ? radius : 0.,
 	};
 }
 
@@ -78,26 +92,24 @@ using UpdateFlag = StoryUpdate::Flag;
 -> std::optional<StoryLocation> {
 	auto result = std::optional<StoryLocation>();
 	area.match([&](const MTPDmediaAreaVenue &data) {
-		data.vgeo().match([&](const MTPDgeoPoint &geo) {
+		if (const auto point = Data::LocationPoint::FromMTP(data.vgeo())) {
 			result.emplace(StoryLocation{
 				.area = ParseArea(data.vcoordinates()),
-				.point = Data::LocationPoint(geo),
+				.point = *point,
 				.title = qs(data.vtitle()),
 				.address = qs(data.vaddress()),
 				.provider = qs(data.vprovider()),
 				.venueId = qs(data.vvenue_id()),
 				.venueType = qs(data.vvenue_type()),
 			});
-		}, [](const MTPDgeoPointEmpty &) {
-		});
+		}
 	}, [&](const MTPDmediaAreaGeoPoint &data) {
-		data.vgeo().match([&](const MTPDgeoPoint &geo) {
+		if (const auto point = Data::LocationPoint::FromMTP(data.vgeo())) {
 			result.emplace(StoryLocation{
 				.area = ParseArea(data.vcoordinates()),
-				.point = Data::LocationPoint(geo),
+				.point = *point,
 			});
-		}, [](const MTPDgeoPointEmpty &) {
-		});
+		}
 	}, [&](const MTPDmediaAreaSuggestedReaction &data) {
 	}, [&](const MTPDmediaAreaChannelPost &data) {
 	}, [&](const MTPDmediaAreaUrl &data) {
@@ -251,6 +263,47 @@ using UpdateFlag = StoryUpdate::Flag;
 		return owner->peer(peerFromMTP(*from));
 	}
 	return nullptr;
+}
+
+void ParsePrivacyPeers(
+		Session &owner,
+		const MTPVector<MTPPrivacyRule> &rules,
+		std::vector<not_null<PeerData*>> &allowed,
+		std::vector<not_null<PeerData*>> &disallowed) {
+	const auto pushUsers = [&](
+			std::vector<not_null<PeerData*>> &to,
+			const QVector<MTPlong> &users) {
+		to.reserve(to.size() + users.size());
+		for (const auto &userId : users) {
+			to.push_back(owner.user(UserId(userId.v)));
+		}
+	};
+	const auto pushChats = [&](
+			std::vector<not_null<PeerData*>> &to,
+			const QVector<MTPlong> &chats) {
+		to.reserve(to.size() + chats.size());
+		for (const auto &chatId : chats) {
+			const auto chat = owner.chatLoaded(chatId);
+			const auto peer = chat
+				? static_cast<PeerData*>(chat)
+				: owner.channelLoaded(chatId);
+			if (peer) {
+				to.push_back(peer);
+			}
+		}
+	};
+	for (const auto &rule : rules.v) {
+		rule.match([&](const MTPDprivacyValueAllowUsers &data) {
+			pushUsers(allowed, data.vusers().v);
+		}, [&](const MTPDprivacyValueAllowChatParticipants &data) {
+			pushChats(allowed, data.vchats().v);
+		}, [&](const MTPDprivacyValueDisallowUsers &data) {
+			pushUsers(disallowed, data.vusers().v);
+		}, [&](const MTPDprivacyValueDisallowChatParticipants &data) {
+			pushChats(disallowed, data.vchats().v);
+		}, [](const auto &) {
+		});
+	}
 }
 
 } // namespace
@@ -420,6 +473,16 @@ StoryPrivacy Story::privacy() const {
 		: _privacySelectedContacts
 		? StoryPrivacy::SelectedContacts
 		: StoryPrivacy::Other;
+}
+
+auto Story::privacyAllowed() const
+-> const std::vector<not_null<PeerData*>> & {
+	return _privacyAllowed;
+}
+
+auto Story::privacyDisallowed() const
+-> const std::vector<not_null<PeerData*>> & {
+	return _privacyDisallowed;
 }
 
 bool Story::forbidsForward() const {
@@ -739,6 +802,14 @@ void Story::applyFields(
 		: StoryPrivacy::Other;
 	const auto noForwards = data.is_noforwards();
 	const auto out = data.is_min() ? _out : data.is_out();
+	auto privacyAllowed = std::vector<not_null<PeerData*>>();
+	auto privacyDisallowed = std::vector<not_null<PeerData*>>();
+	if (const auto rules = data.vprivacy()) {
+		ParsePrivacyPeers(owner(), *rules, privacyAllowed, privacyDisallowed);
+	} else if (data.is_min()) {
+		privacyAllowed = _privacyAllowed;
+		privacyDisallowed = _privacyDisallowed;
+	}
 	auto caption = TextWithEntities{
 		data.vcaption().value_or_empty(),
 		Api::EntitiesFromMTP(
@@ -809,6 +880,8 @@ void Story::applyFields(
 	_privacyCloseFriends = (privacy == StoryPrivacy::CloseFriends);
 	_privacyContacts = (privacy == StoryPrivacy::Contacts);
 	_privacySelectedContacts = (privacy == StoryPrivacy::SelectedContacts);
+	_privacyAllowed = std::move(privacyAllowed);
+	_privacyDisallowed = std::move(privacyDisallowed);
 	_edited = edited;
 	_inProfile = inProfile;
 	_noForwards = noForwards;

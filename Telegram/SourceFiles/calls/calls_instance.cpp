@@ -937,9 +937,11 @@ bool Instance::minimizeCurrentActiveCall() {
 }
 
 void Instance::setVoiceChatPinned(bool isPinned) {
-	if (inCall() && _currentCallPanel->isActive()) {
+	if (inCall() && _currentCallPanel && _currentCallPanel->isActive()) {
 		_currentCallPanel->pinToTop(isPinned);
-	} else if (inGroupCall() && _currentGroupCallPanel->isActive()) {
+	} else if (inGroupCall()
+		&& _currentGroupCallPanel
+		&& _currentGroupCallPanel->isActive()) {
 		_currentGroupCallPanel->pinToTop(isPinned);
 	}
 }
@@ -1056,13 +1058,6 @@ std::shared_ptr<tgcalls::VideoCaptureInterface> Instance::getVideoCapture(
 			startDeviceId.toStdString()));
 	_videoCapture = result;
 	return result;
-}
-
-const ConferenceInvites &Instance::conferenceInvites(
-		CallId conferenceId) const {
-	static const auto kEmpty = ConferenceInvites();
-	const auto i = _conferenceInvites.find(conferenceId);
-	return (i != end(_conferenceInvites)) ? i->second : kEmpty;
 }
 
 void Instance::registerConferenceInvite(

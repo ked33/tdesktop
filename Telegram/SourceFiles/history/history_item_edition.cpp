@@ -24,7 +24,11 @@ HistoryMessageEdition::HistoryMessageEdition(
 
 	auto peerId = message.vfrom_id() ? peerFromMTP(*message.vfrom_id()) : PeerId(0);
 	auto user = session->data().peerLoaded(message.vfrom_id() ? peerFromMTP(*message.vfrom_id()) : PeerId(0));
-	if ((GetEnhancedBool("blocked_user_spoiler_mode") && blockExist(peerId.value)) || (GetEnhancedBool("blocked_user_spoiler_mode") && user && user->isBlocked())) {
+	const auto media = message.vmedia();
+	const auto isWidget = media && media->type() == mtpc_messageMediaWidget;
+	if (!isWidget
+		&& GetEnhancedBool("blocked_user_spoiler_mode")
+		&& (blockExist(peerId.value) || (user && user->isBlocked()))) {
 		auto blkMsg = QString("[Blocked User Message]\n");
 		auto msg = blkMsg + qs(message.vmessage());
 		textWithEntities = TextWithEntities{
@@ -45,7 +49,7 @@ HistoryMessageEdition::HistoryMessageEdition(
 	}
 
 	replyMarkup = HistoryMessageMarkupData(message.vreply_markup());
-	mtpMedia = message.vmedia();
+	mtpMedia = media;
 	mtpReactions = message.vreactions();
 	mtpFactcheck = message.vfactcheck();
 	if (const auto data = message.vrich_message()) {

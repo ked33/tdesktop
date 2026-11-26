@@ -43,6 +43,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/fields/input_field.h"
 #include "ui/widgets/labels.h"
 #include "ui/wrap/slide_wrap.h"
+#include "ui/filter_title_icon.h"
+#include "ui/power_saving.h"
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
 #include "styles/style_boxes.h"
@@ -101,6 +103,8 @@ private:
 	Ui::Text::String _title;
 	QString _status;
 	Ui::FilterIcon _icon = Ui::FilterIcon();
+	Ui::FilterEmojiIconPaint _paintEmoji;
+	rpl::lifetime _titleIconLifetime;
 	std::optional<uint8> _colorIndex;
 	float64 _colorIndexProgress = 1.;
 
@@ -204,9 +208,24 @@ void FilterRowButton::updateData(
 	Expects(_session != nullptr);
 
 	const auto title = filter.title();
+	_titleIconLifetime.destroy();
+	const auto titleIcon = (_state == State::Suggested)
+		? Ui::FilterTitleIcon()
+		: Ui::ResolveFilterTitleIcon(
+			_session,
+			filter,
+			title,
+			this,
+			_titleIconLifetime,
+			[=] { updateData(filter, true); });
+	_paintEmoji = Ui::MakeFilterEmojiIcon(
+		this,
+		titleIcon,
+		title.isStatic,
+		[] { return On(PowerSaving::kEmojiChat); });
 	_title.setMarkedText(
 		st::contactsNameStyle,
-		title.text,
+		Ui::FilterTitleWithoutIcon(title.text, titleIcon),
 		kMarkupTextOptions,
 		Core::TextContext({
 			.session = _session,
@@ -217,6 +236,8 @@ void FilterRowButton::updateData(
 	_colorIndex = filter.colorIndex();
 	if (!ignoreCount) {
 		updateCount(filter);
+	} else {
+		update();
 	}
 }
 
@@ -334,6 +355,18 @@ void FilterRowButton::paintEvent(QPaintEvent *e) {
 
 	if (_state != State::Suggested) {
 		const auto icon = Ui::LookupFilterIcon(_icon).normal;
+		const auto color = (over
+			? st::activeButtonBgOver
+			: st::activeButtonBg)->c;
+		const auto size = st::settingsIconAdd.size();
+		const auto rect = myrtlrect(
+			st::settingsButtonActive.iconLeft,
+			(height() - size.height()) / 2,
+			size.width(),
+			size.height());
+		if (_paintEmoji && _paintEmoji(p, rect, color)) {
+			return;
+		}
 
 		auto hq = PainterHighQualityEnabler(p);
 		const auto iconWidth = icon->width() - style::ConvertScale(9);
@@ -349,9 +382,7 @@ void FilterRowButton::paintEvent(QPaintEvent *e) {
 			0,
 			0,
 			width(),
-			(over
-				? st::activeButtonBgOver
-				: st::activeButtonBg)->c);
+			color);
 	}
 }
 
@@ -363,6 +394,44 @@ struct FoldersState {
 	Ui::Animations::Simple tagsEnabledAnimation;
 	rpl::event_stream<bool> tagsButtonEnabled;
 };
+
+void SetupFilterRowButton(
+		not_null<Window::SessionController*> controller,
+		not_null<FoldersState*> state,
+		not_null<FilterRowButton*> button,
+		Fn<bool()> showLimitReached,
+		Fn<FilterRow*(not_null<FilterRowButton*>)> find) {
+	button->restoreRequests(
+	) | rpl::on_next([=] {
+		if (showLimitReached()) {
+			return;
+		}
+		button->setRemoved(false);
+		find(button)->removed = false;
+	}, button->lifetime());
+	button->setClickedCallback([=] {
+		const auto found = find(button);
+		if (found->removed) {
+			return;
+		}
+		const auto doneCallback = [=](const Data::ChatFilter &result) {
+			find(button)->filter = result;
+			button->updateData(result);
+		};
+		const auto saveAnd = [=](
+				const Data::ChatFilter &data,
+				Fn<void(Data::ChatFilter)> next) {
+			doneCallback(data);
+			state->save(button, next);
+		};
+		controller->window().show(Box(
+			EditFilterBox,
+			controller,
+			found->filter,
+			crl::guard(button, doneCallback),
+			crl::guard(button, saveAnd)));
+	});
+}
 
 not_null<Ui::VerticalLayout*> SetupFoldersList(
 		not_null<Window::SessionController*> controller,
@@ -471,36 +540,7 @@ not_null<Ui::VerticalLayout*> SetupFoldersList(
 		) | rpl::on_next([=] {
 			remove(button);
 		}, button->lifetime());
-		button->restoreRequests(
-		) | rpl::on_next([=] {
-			if (showLimitReached()) {
-				return;
-			}
-			button->setRemoved(false);
-			find(button)->removed = false;
-		}, button->lifetime());
-		button->setClickedCallback([=] {
-			const auto found = find(button);
-			if (found->removed) {
-				return;
-			}
-			const auto doneCallback = [=](const Data::ChatFilter &result) {
-				find(button)->filter = result;
-				button->updateData(result);
-			};
-			const auto saveAnd = [=](
-					const Data::ChatFilter &data,
-					Fn<void(Data::ChatFilter)> next) {
-				doneCallback(data);
-				state->save(button, next);
-			};
-			controller->window().show(Box(
-				EditFilterBox,
-				controller,
-				found->filter,
-				crl::guard(button, doneCallback),
-				crl::guard(button, saveAnd)));
-		});
+		SetupFilterRowButton(controller, state, button, showLimitReached, find);
 		state->rows.push_back({ button, filter });
 		state->count = state->rows.size();
 
@@ -811,36 +851,7 @@ void SetupRecommendedSection(
 			row->removed = true;
 			button->setRemoved(true);
 		}, button->lifetime());
-		button->restoreRequests(
-		) | rpl::on_next([=] {
-			if (showLimitReached()) {
-				return;
-			}
-			button->setRemoved(false);
-			find(button)->removed = false;
-		}, button->lifetime());
-		button->setClickedCallback([=] {
-			const auto found = find(button);
-			if (found->removed) {
-				return;
-			}
-			const auto doneCallback = [=](const Data::ChatFilter &result) {
-				find(button)->filter = result;
-				button->updateData(result);
-			};
-			const auto saveAnd = [=](
-					const Data::ChatFilter &data,
-					Fn<void(Data::ChatFilter)> next) {
-				doneCallback(data);
-				state->save(button, next);
-			};
-			controller->window().show(Box(
-				EditFilterBox,
-				controller,
-				found->filter,
-				crl::guard(button, doneCallback),
-				crl::guard(button, saveAnd)));
-		});
+		SetupFilterRowButton(controller, state, button, showLimitReached, find);
 		state->rows.push_back({ button, filter });
 		state->count = state->rows.size();
 

@@ -9,9 +9,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "api/api_peer_colors.h"
 #include "api/api_peer_photo.h"
+#include "api/api_statistics.h"
 #include "api/api_user_privacy.h"
 #include "apiwrap.h"
 #include "base/call_delayed.h"
+#include "base/event_filter.h"
 #include "base/timer_rpl.h"
 #include "base/timer.h"
 #include "base/unixtime.h"
@@ -48,11 +50,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "editor/photo_editor_layer_widget.h"
 #include "editor/video/video_editor_layer.h"
 #include "history/history.h"
+#include "info/channel_statistics/boosts/giveaway/boost_badge.h"
+#include "info/channel_statistics/boosts/info_boosts_widget.h"
 #include "info/info_memento.h"
 #include "info/profile/info_profile_badge.h"
-#include "info/profile/info_profile_balance_pill.h"
 #include "info/profile/info_profile_birthday_effect.h"
 #include "info/profile/info_profile_cover.h" // LargeCustomEmojiMargins
+#include "info/profile/info_profile_pills.h"
 #include "info/profile/info_profile_status_label.h"
 #include "info/profile/info_profile_top_bar_action_button.h"
 #include "info/profile/info_profile_values.h"
@@ -63,10 +67,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lottie/lottie_animation.h"
 #include "lottie/lottie_multi_player.h"
 #include "main/main_session.h"
+#include "mainwindow.h"
+#include "media/stories/media_stories_post.h"
 #include "menu/menu_mute.h"
 #include "settings/settings_credits_graphics.h"
-#include "settings/sections/settings_information.h"
 #include "settings/sections/settings_premium.h"
+#include "storage/storage_media_prepare.h"
 #include "ui/boxes/show_or_premium_box.h"
 #include "ui/color_contrast.h"
 #include "ui/controls/stars_rating.h"
@@ -98,13 +104,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/tooltip.h"
 #include "ui/wrap/fade_wrap.h"
-#include "wallet/wallet_card_view.h"
 #include "window/themes/window_theme.h"
 #include "window/window_peer_menu.h"
 #include "window/window_session_controller.h"
 #include "ui/toast/toast.h"
 #include "boxes/sticker_set_box.h"
 #include "styles/style_chat.h"
+#include "styles/style_chat_helpers.h"
 #include "styles/style_info.h"
 #include "styles/style_info_profile_top_bar.h"
 #include "styles/style_layers.h"
@@ -112,6 +118,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QGraphicsOpacityEffect>
 #include <QtGui/QClipboard>
+#include <QtGui/QDragMoveEvent>
 #include <QtGui/QGuiApplication>
 
 namespace Info::Profile {
@@ -159,6 +166,7 @@ constexpr auto kMinPatternRadius = 8;
 constexpr auto kStoryOutlineFadeEnd = 0.4;
 constexpr auto kStoryOutlineFadeRange = 1. - kStoryOutlineFadeEnd;
 constexpr auto kSwapMoveAmplitude = 0.3;
+constexpr auto kHiddenTopBarActionsPref = "profile-top-bar-hidden-actions"_cs;
 
 using AnimatedPatternPoint = TopBar::AnimatedPatternPoint;
 
@@ -333,6 +341,36 @@ struct PatternColors {
 	return points;
 }
 
+Ui::RpWidget *SetupTabBarBackground(
+		not_null<Ui::FadeWrap<Ui::RpWidget>*> bar,
+		const style::color &bg,
+		const bool &roundEdges) {
+	bar->setDuration(st::infoTopBarDuration);
+	bar->toggle(false, anim::type::instant);
+
+	const auto inner = bar->entity();
+	inner->paintRequest(
+	) | rpl::on_next([=, &bg, &roundEdges] {
+		auto p = QPainter(inner);
+		auto hq = PainterHighQualityEnabler(p);
+		const auto radius = roundEdges ? st::boxRadius : 0;
+		p.setPen(Qt::NoPen);
+		p.setBrush(bg);
+		p.drawRoundedRect(
+			inner->rect() + QMargins(0, 0, 0, radius),
+			radius,
+			radius);
+		const auto line = st::lineWidth;
+		p.fillRect(
+			0,
+			inner->height() - line,
+			inner->width(),
+			line,
+			st::shadowFg);
+	}, inner->lifetime());
+	return inner;
+}
+
 } // namespace
 
 TopBar::TopBar(
@@ -381,25 +419,15 @@ TopBar::TopBar(
 	nullptr,
 	_gifPausedChecker))
 , _hasActions(!_savedMessages
-	&& descriptor.source != Source::Stories
 	&& descriptor.source != Source::Preview
 	&& (_wrap.current() != Wrap::Side || !_peer->isNotificationsUser()))
-, _hasBalance(_peer->isUser()
-	&& !_savedMessages
-	&& !_topic
-	&& (_source == Source::Profile
-		|| (_source == Source::Stories && _peer->isSelf())))
-// Without the action buttons the pill fits the gap below the status.
-, _balanceReserve((_hasBalance && _hasActions)
-	? st::infoProfileTopBarBalanceReserve
-	: 0)
 , _minForProgress([&] {
 	QWidget::setMinimumHeight(st::infoLayerTopBarHeight);
-	QWidget::setMaximumHeight(_balanceReserve + (_savedMessages
+	QWidget::setMaximumHeight(_savedMessages
 		? st::infoLayerTopBarHeight
 		: _hasActions
 		? st::infoProfileTopBarHeightMax
-		: st::infoProfileTopBarNoActionsHeightMax));
+		: st::infoProfileTopBarNoActionsHeightMax);
 	return QWidget::minimumHeight()
 		+ (!_hasActions
 			? 0
@@ -497,19 +525,7 @@ TopBar::TopBar(
 	}
 
 	bindStatus();
-	if (_hasBalance) {
-		const auto user = _peer->asUser();
-		_balancePill = std::make_unique<BalancePill>(
-			this,
-			user,
-			_edgeColor.value());
-		const auto pill = _balancePill.get();
-		pill->setClickedCallback([=] {
-			if (pill->actionable()) {
-				Wallet::ShowCardView(controller, user, pill);
-			}
-		});
-	}
+	setupPills(controller, std::move(descriptor.showSavedMusic));
 
 	_title->setContextCopyText(tr::lng_profile_copy_fullname(tr::now));
 	_title->setSelectable(true);
@@ -546,11 +562,16 @@ TopBar::TopBar(
 	}, _title->lifetime());
 
 	setupChatId();
+	_boostsApi = lifetime().make_state<Api::Boosts>(_peer);
 	setupUniqueBadgeTooltip();
 	setupButtons(controller, descriptor.source);
 	setupSwipeBack(controller);
-	setupUserpicButton(controller);
-	if (_hasActions) {
+	auto chooseProfilePhoto = setupUserpicButton(controller);
+	if (_hasActions && _source == Source::Stories) {
+		setupMyProfileActions(
+			controller,
+			std::move(chooseProfilePhoto));
+	} else if (_hasActions) {
 		_peer->session().changes().peerFlagsValue(
 			_peer,
 			Data::PeerUpdate::Flag::FullInfo
@@ -853,6 +874,10 @@ void TopBar::updateCollectibleStatus() {
 		}
 		return std::nullopt;
 	}();
+	// Updating one badge can relayout neighbors that still use the old styles.
+	const auto oldBotVerifySt = std::move(_botVerifySt);
+	const auto oldBadgeSt = std::move(_badgeSt);
+	const auto oldVerifiedSt = std::move(_verifiedSt);
 	if (verifiedFg) {
 		const auto copyStVerified = [&](const style::InfoPeerBadge &st) {
 			auto result = std::make_unique<style::InfoPeerBadge>(
@@ -935,7 +960,10 @@ void TopBar::finalizeActions(
 		shadowRaw->update();
 	}, _actions->lifetime());
 	const auto padding = st::infoProfileTopBarActionButtonsPadding;
-	sizeValue() | rpl::on_next([=](const QSize &size) {
+	rpl::combine(
+		sizeValue(),
+		_pillsReserve.value()
+	) | rpl::on_next([=](const QSize &size, int reserve) {
 		const auto ratio = float64(size.height())
 			/ (st::infoProfileTopBarActionButtonsHeight
 				+ st::infoLayerTopBarHeight);
@@ -945,11 +973,18 @@ void TopBar::finalizeActions(
 			: (ratio <= 0.5)
 			? 0
 			: int(h * (ratio - 0.5) / 0.5);
+		const auto progress = progressForHeight(size.height());
+		const auto bottom = size.height()
+			- padding.bottom()
+			- int(base::SafeRound(reserve * progress));
 		_actions->setGeometry(
 			padding.left(),
-			size.height() - resultHeight - padding.bottom(),
+			bottom - resultHeight,
 			size.width() - rect::m::sum::h(padding),
 			resultHeight);
+		if (_pills) {
+			_pills->place(bottom + st::infoProfileTopBarPillsSkip, progress);
+		}
 	}, _actions->lifetime());
 	_actions->geometryValue() | rpl::on_next([=](QRect geometry) {
 		shadowRaw->setGeometry(geometry.marginsAdded(extend));
@@ -959,6 +994,79 @@ void TopBar::finalizeActions(
 	_actions->show();
 	_actions->raise();
 	shadowRaw->stackUnder(_actions.get());
+}
+
+void TopBar::setupStoryDrop(
+		not_null<TopBarActionButton*> button,
+		not_null<Window::SessionController*> controller) {
+	const auto peer = _peer;
+	const auto accepts = [=](not_null<const QMimeData*> data) {
+		return !GetEnhancedBool("hide_stories")
+			&& !button->isDisabled()
+			&& Storage::IsAcceptableStoryDragState(
+				Storage::ComputeMimeDataState(data));
+	};
+	button->setAcceptDrops(true);
+	base::install_event_filter(button, [=](not_null<QEvent*> e) {
+		if (e->type() == QEvent::DragEnter
+			|| e->type() == QEvent::DragMove) {
+			const auto event = static_cast<QDragMoveEvent*>(e.get());
+			const auto over = accepts(event->mimeData());
+			button->setDragHover(over);
+			if (over) {
+				event->setDropAction(Qt::CopyAction);
+				event->accept();
+			} else {
+				event->ignore();
+			}
+			return base::EventFilterResult::Cancel;
+		} else if (e->type() == QEvent::DragLeave) {
+			button->setDragHover(false);
+			return base::EventFilterResult::Cancel;
+		} else if (e->type() == QEvent::Drop) {
+			const auto event = static_cast<QDropEvent*>(e.get());
+			button->setDragHover(false);
+			if (!accepts(event->mimeData())) {
+				event->ignore();
+				return base::EventFilterResult::Cancel;
+			}
+			event->setDropAction(Qt::CopyAction);
+			event->accept();
+			::Media::Stories::PostStoryWithMimeData(
+				controller,
+				peer,
+				event->mimeData());
+			controller->widget()->raise();
+			controller->widget()->activateWindow();
+			return base::EventFilterResult::Cancel;
+		}
+		return base::EventFilterResult::Continue;
+	});
+}
+
+void TopBar::openBoostsSectionForStory(
+		not_null<Window::SessionController*> controller) {
+	const auto peer = _peer;
+	if (_boostsStatus) {
+		_storyBoostsLoading = false;
+		controller->showSection(Info::Boosts::Make(peer, *_boostsStatus));
+		return;
+	}
+	_boostsApi->request(
+	) | rpl::on_error_done([=](const QString &) {
+		_storyBoostsLoading = false;
+		controller->showSection(Info::Boosts::Make(peer));
+	}, [=] {
+		auto status = _boostsApi->boostStatus();
+		const auto complete = !status.link.isEmpty();
+		if (complete) {
+			_boostsStatus = std::move(status);
+		}
+		_storyBoostsLoading = false;
+		controller->showSection(complete
+			? Info::Boosts::Make(peer, *_boostsStatus)
+			: Info::Boosts::Make(peer));
+	}, lifetime());
 }
 
 void TopBar::searchInCommunity(
@@ -973,6 +1081,19 @@ void TopBar::searchInCommunity(
 	controller->searchInChat(history);
 }
 
+bool TopBarActionHidden(TopBarAction action) {
+	return (Core::App().settings().readPref<quint64>(kHiddenTopBarActionsPref)
+		& static_cast<quint64>(action)) != 0;
+}
+
+void SetTopBarActionHidden(TopBarAction action, bool hidden) {
+	auto &settings = Core::App().settings();
+	auto flags = settings.readPref<quint64>(kHiddenTopBarActionsPref);
+	const auto bit = static_cast<quint64>(action);
+	flags = hidden ? (flags | bit) : (flags & ~bit);
+	settings.writePref<quint64>(kHiddenTopBarActionsPref, flags);
+}
+
 void TopBar::setupActions(not_null<Window::SessionController*> controller) {
 	const auto peer = _peer;
 	const auto user = peer->asUser();
@@ -981,6 +1102,15 @@ void TopBar::setupActions(not_null<Window::SessionController*> controller) {
 	const auto topic = _key.topic();
 	const auto sublist = _key.sublist();
 	const auto isSide = (_wrap.current() == Wrap::Side);
+	const auto canAddStory = [=] {
+		return !GetEnhancedBool("hide_stories")
+			&& !topic
+			&& !sublist
+			&& channel
+			&& channel->amIn()
+			&& !channel->isMonoforum()
+			&& ::Media::Stories::CanPostStory(peer);
+	};
 
 	if (_source == Source::Community) {
 		_actions = base::make_unique_q<Ui::HorizontalFitContainer>(
@@ -1150,6 +1280,65 @@ void TopBar::setupActions(not_null<Window::SessionController*> controller) {
 				: &st::windowBoldFg);
 		}, notifications->lifetime());
 	}
+	if (canAddStory() && !TopBarActionHidden(TopBarAction::AddStory)) {
+		const auto story = Ui::CreateChild<TopBarActionButton>(
+			this,
+			tr::lng_story_add_button(tr::now),
+			st::infoProfileTopBarActionStory);
+		const auto loading = Info::Statistics::InfiniteRadialAnimationWidget(
+			story,
+			st::infoProfileTopBarActionButtonIconSize,
+			&st::editStickerSetNameLoading);
+		Info::Statistics::AddChildToWidgetCenter(story, loading);
+		loading->showOn(_storyBoostsLoading.value());
+		_storyBoostsLoading.value(
+		) | rpl::on_next([=](bool value) {
+			story->setDisabled(value);
+		}, story->lifetime());
+		story->setClickedCallback([=, window = controller] {
+			if (!canAddStory()) {
+				return;
+			}
+			::Media::Stories::PostStory(window, peer, {
+				.setLoading = crl::guard(this, [=](bool value) {
+					_storyBoostsLoading = value;
+				}),
+				.openBoosts = crl::guard(this, [=] {
+					openBoostsSectionForStory(window);
+				}),
+			});
+		});
+		story->setAccessibleName(tr::lng_story_add_button(tr::now));
+		setupStoryDrop(story, controller);
+		story->setAcceptBoth();
+		story->clicks(
+		) | rpl::filter([](Qt::MouseButton button) {
+			return (button == Qt::RightButton);
+		}) | rpl::on_next([=] {
+			auto context = base::make_unique_q<Ui::PopupMenu>(
+				this,
+				st::popupMenuWithIcons);
+			context->addAction(
+				tr::lng_translate_menu_hide(tr::now),
+				[=] {
+					SetTopBarActionHidden(TopBarAction::AddStory, true);
+					InvokeQueued(this, [=] { setupActions(controller); });
+				},
+				&st::menuIconStealth);
+			_actionContextMenu = std::move(context);
+			_actionContextMenu->setForcedOrigin(
+				Ui::PanelAnimation::Origin::TopLeft);
+			const auto extend = Ui::BoxShadow::ExtendFor(
+				_actionContextMenu->st().shadow);
+			_actionContextMenu->popup(Ui::PopupMenu::ConstrainToParentScreen(
+				_actionContextMenu.get(),
+				story->mapToGlobal(QPoint(
+					-extend.left(),
+					story->height() + st::infoProfileTopBarActionMenuSkip))));
+		}, story->lifetime());
+		buttons.push_back(story);
+		_actions->add(story);
+	}
 	if (chechMax()) {
 		return;
 	}
@@ -1213,6 +1402,37 @@ void TopBar::setupActions(not_null<Window::SessionController*> controller) {
 			}
 		});
 		manage->setAccessibleName(tr::lng_profile_action_short_manage(tr::now));
+		manage->setAcceptBoth();
+		manage->clicks(
+		) | rpl::filter([](Qt::MouseButton button) {
+			return (button == Qt::RightButton);
+		}) | rpl::on_next([=] {
+			if (!canAddStory()
+				|| !TopBarActionHidden(TopBarAction::AddStory)) {
+				return;
+			}
+			auto context = base::make_unique_q<Ui::PopupMenu>(
+				this,
+				st::popupMenuWithIcons);
+			context->addAction(
+				tr::lng_profile_action_return_story_button(tr::now),
+				[=] {
+					SetTopBarActionHidden(TopBarAction::AddStory, false);
+					InvokeQueued(this, [=] { setupActions(controller); });
+				},
+				&st::menuIconStoryPost);
+			_actionContextMenu = std::move(context);
+			_actionContextMenu->setForcedOrigin(
+				Ui::PanelAnimation::Origin::TopRight);
+			const auto extend = Ui::BoxShadow::ExtendFor(
+				_actionContextMenu->st().shadow);
+			_actionContextMenu->popup(Ui::PopupMenu::ConstrainToParentScreen(
+				_actionContextMenu.get(),
+				manage->mapToGlobal(QPoint(
+					manage->width() + extend.right(),
+					manage->height()
+						+ st::infoProfileTopBarActionMenuSkip))));
+		}, manage->lifetime());
 		buttons.push_back(manage);
 		_actions->add(manage);
 	}
@@ -1288,7 +1508,7 @@ void TopBar::setupActions(not_null<Window::SessionController*> controller) {
 	}
 }
 
-void TopBar::setupUserpicButton(
+Fn<void()> TopBar::setupUserpicButton(
 		not_null<Window::SessionController*> controller) {
 	_userpicButton = base::make_unique_q<Userpic>(
 		this,
@@ -1301,7 +1521,7 @@ void TopBar::setupUserpicButton(
 			_userpicUniqueKey = InMemoryKey();
 			update();
 		}, lifetime());
-		return;
+		return nullptr;
 	}
 
 	const auto openPhoto = [=, peer = _peer] {
@@ -1598,7 +1818,7 @@ void TopBar::setupUserpicButton(
 						ChosenType::Set,
 						tr::lng_profile_set_photo_for_from_clipboard);
 				}
-				if (controller && isUser) {
+				if (controller) {
 					const auto done = [=](UserpicBuilder::Result data) {
 						auto result = Api::PeerPhoto::UserPhoto{
 							base::take(data.image),
@@ -1612,10 +1832,12 @@ void TopBar::setupUserpicButton(
 					UserpicBuilder::AddEmojiBuilderAction(
 						controller,
 						menu->get(),
-						_peer->session().api().peerPhoto().emojiListValue(
-							Api::PeerPhoto::EmojiListType::Profile),
+						_peer->session().api().peerPhoto().emojiListValue(isUser
+							? Api::PeerPhoto::EmojiListType::Profile
+							: Api::PeerPhoto::EmojiListType::Group),
 						done,
-						false);
+						_peer->userpicShape()
+							== Ui::PeerUserpicShape::Forum);
 				}
 			}
 			if (!(*menu)->empty()) {
@@ -1661,6 +1883,8 @@ void TopBar::setupUserpicButton(
 			}
 		}
 	}, _userpicButton->lifetime());
+
+	return [=] { chooseFile(ChosenType::Set); };
 }
 
 void TopBar::startUploadOverlay() {
@@ -1940,9 +2164,6 @@ int TopBar::calculateRightButtonsWidth() const {
 	if (_close) {
 		width += _close->width();
 	}
-	if (_topBarButton) {
-		width += _topBarButton->width();
-	}
 	if (_tabMenuToggle && _tabMenuToggle->toggled()) {
 		width += _tabMenuToggle->width();
 	}
@@ -1959,16 +2180,7 @@ void TopBar::updateLabelsPosition() {
 	if (width() <= 0) {
 		return;
 	}
-	_progress = [&] {
-		const auto max = QWidget::maximumHeight();
-		const auto min = _minForProgress;
-		const auto p = _savedMessages
-			? 0.
-			: (max > min)
-			? ((height() - min) / float64(max - min))
-			: 1.;
-		return std::clamp(p, 0., 1.);
-	}();
+	_progress = progressForHeight(height());
 	const auto progressCurrent = _progress.current();
 
 	updateTitlePosition(progressCurrent);
@@ -1991,6 +2203,17 @@ void TopBar::updateLabelsPosition() {
 	updateTabSwapVisibility();
 	updateTabSelectionGeometry();
 	updateTabSearchGeometry();
+}
+
+float64 TopBar::progressForHeight(int height) const {
+	const auto max = QWidget::maximumHeight();
+	const auto min = _minForProgress;
+	const auto p = _savedMessages
+		? 0.
+		: (max > min)
+		? ((height - min) / float64(max - min))
+		: 1.;
+	return std::clamp(p, 0., 1.);
 }
 
 void TopBar::updateTitlePosition(float64 progressCurrent) {
@@ -2147,8 +2370,12 @@ void TopBar::updateStatusPosition(float64 progressCurrent) {
 		* std::clamp((progressCurrent) / 0.15, 0., 1.);
 
 	_status->moveToLeft(statusLeft + statusShift, statusTop);
-	if (_balancePill) {
-		_balancePill->place(width(), statusTop - swapShift, progressCurrent);
+	if (_pills && !_hasActions) {
+		_pills->place(
+			statusTop - swapShift
+				+ st::infoProfileTopBarBalanceSkip
+				+ st::infoProfileTopBarChatIdReserve,
+			progressCurrent);
 	}
 
 	if (_showLastSeen->toggled()) {
@@ -2343,29 +2570,7 @@ void TopBar::createTabSelectionBar() {
 		this,
 		object_ptr<Ui::RpWidget>(this));
 	const auto bar = _tabSelectionBar.data();
-	bar->setDuration(st::infoTopBarDuration);
-	bar->toggle(false, anim::type::instant);
-
-	const auto inner = bar->entity();
-	inner->paintRequest(
-	) | rpl::on_next([=] {
-		auto p = QPainter(inner);
-		auto hq = PainterHighQualityEnabler(p);
-		const auto radius = _roundEdges ? st::boxRadius : 0;
-		p.setPen(Qt::NoPen);
-		p.setBrush(_st.bg);
-		p.drawRoundedRect(
-			inner->rect() + QMargins(0, 0, 0, radius),
-			radius,
-			radius);
-		const auto line = st::lineWidth;
-		p.fillRect(
-			0,
-			inner->height() - line,
-			inner->width(),
-			line,
-			st::shadowFg);
-	}, inner->lifetime());
+	const auto inner = SetupTabBarBackground(bar, _st.bg, _roundEdges);
 
 	const auto forwardAction = [=](SelectionAction action) {
 		if (const auto onstack = _tabSelectionAction) {
@@ -2517,30 +2722,10 @@ void TopBar::showTabSearch() {
 		_tabSearchBar.create(
 			this,
 			object_ptr<Ui::RpWidget>(this));
-		const auto bar = _tabSearchBar.data();
-		bar->setDuration(st::infoTopBarDuration);
-		bar->toggle(false, anim::type::instant);
-
-		const auto inner = bar->entity();
-		inner->paintRequest(
-		) | rpl::on_next([=] {
-			auto p = QPainter(inner);
-			auto hq = PainterHighQualityEnabler(p);
-			const auto radius = _roundEdges ? st::boxRadius : 0;
-			p.setPen(Qt::NoPen);
-			p.setBrush(_st.bg);
-			p.drawRoundedRect(
-				inner->rect() + QMargins(0, 0, 0, radius),
-				radius,
-				radius);
-			const auto line = st::lineWidth;
-			p.fillRect(
-				0,
-				inner->height() - line,
-				inner->width(),
-				line,
-				st::shadowFg);
-		}, inner->lifetime());
+		const auto inner = SetupTabBarBackground(
+			_tabSearchBar.data(),
+			_st.bg,
+			_roundEdges);
 
 		_tabSearchField = Ui::CreateChild<Ui::InputField>(
 			inner,
@@ -2754,10 +2939,6 @@ void TopBar::updateRightButtonsPosition() {
 		_close->moveToRight(right, 0);
 		right += _close->width();
 	}
-	if (_topBarButton) {
-		_topBarButton->moveToRight(right, 0);
-		right += _topBarButton->width();
-	}
 	if (_tabMenuToggle && _tabMenuToggle->toggled()) {
 		_tabMenuToggle->moveToRight(right, 0);
 		right += _tabMenuToggle->width();
@@ -2944,7 +3125,7 @@ void TopBar::paintEvent(QPaintEvent *e) {
 	if (_hasGradientBg && _cachedGradient.isNull()) {
 		const auto collectible = effectiveCollectible();
 		const auto colorProfile = effectiveColorProfile();
-		const auto shift = _balanceReserve / 2 + (_hasActions
+		const auto shift = _pillsReserve.current() / 2 + (_hasActions
 			? st::infoProfileTopBarPhotoBgShift
 			: st::infoProfileTopBarPhotoBgNoActionsShift);
 		const auto offset = QPoint(0, -shift);
@@ -3123,38 +3304,10 @@ void TopBar::setupButtons(
 		updateTabSwapVisibility();
 		updateRightButtonsPosition();
 
-		if (wrap != Wrap::Side) {
-			if (source == Source::Stories) {
-				addTopBarEditButton(controller, wrap);
-			}
-		}
 		updateButtonsColorOverride();
 		raiseTabSearchOverlay();
 		raiseTabSelectionOverlay();
 	}, lifetime());
-}
-
-void TopBar::addTopBarEditButton(
-		not_null<Window::SessionController*> controller,
-		Wrap wrap) {
-	_topBarButton = base::make_unique_q<BackdropIconButton>(
-		this,
-		((wrap == Wrap::Layer)
-			? st::infoLayerTopBarBlackEdit
-			: st::infoTopBarBlackEdit));
-	_topBarButton->show();
-	_topBarButton->addClickHandler([=] {
-		controller->showSettings(::Settings::InformationId());
-	});
-	_topBarButton->setAccessibleName(tr::lng_settings_information(tr::now));
-
-	widthValue() | rpl::on_next([=] {
-		if (_close) {
-			_topBarButton->moveToRight(_close->width(), 0);
-		} else {
-			_topBarButton->moveToRight(0, 0);
-		}
-	}, _topBarButton->lifetime());
 }
 
 std::optional<QColor> TopBar::buttonsColorOverride() const {
@@ -3176,7 +3329,6 @@ void TopBar::updateButtonsColorOverride() {
 	apply(_tabMenuToggle ? _tabMenuToggle->entity() : nullptr);
 	apply(_tabSearchToggle ? _tabSearchToggle->entity() : nullptr);
 	apply(_tabGroupToggle ? _tabGroupToggle->entity() : nullptr);
-	apply(_topBarButton.get());
 }
 
 void TopBar::showTopBarMenu(
@@ -3967,7 +4119,15 @@ void TopBar::paintStoryOutline(QPainter &p, const QRect &geometry) {
 		padding + outlineWidth / 2,
 		padding + outlineWidth / 2);
 
-	Ui::PaintOutlineSegments(p, outlineRect, _storySegments);
+	if (_peer->isForum() || _source == Source::Community) {
+		const auto radius = geometry.width()
+			* Ui::ForumUserpicRadiusMultiplier()
+			+ padding
+			+ outlineWidth / 2;
+		Ui::PaintOutlineSegments(p, outlineRect, radius, _storySegments);
+	} else {
+		Ui::PaintOutlineSegments(p, outlineRect, _storySegments);
+	}
 
 	if (_hasLiveStories) {
 		const auto outline = _edgeColor.current().value_or(
@@ -4043,10 +4203,6 @@ void TopBar::setupChatId() {
 	_idOpacity = Ui::CreateChild<QGraphicsOpacityEffect>(_id.get());
 	_id->setGraphicsEffect(_idOpacity);
 	_idOpacity->setOpacity(0.);
-}
-
-rpl::producer<std::optional<QColor>> TopBar::edgeColor() const {
-	return _edgeColor.value();
 }
 
 const style::FlatLabel &TopBar::statusStyle() const {

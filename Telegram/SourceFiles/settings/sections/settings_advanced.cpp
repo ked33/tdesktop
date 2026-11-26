@@ -72,9 +72,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_menu_icons.h"
 #include "styles/style_settings.h"
 
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 #include "base/platform/mac/base_confirm_quit.h"
-#endif // Q_OS_MAC
+#endif // Q_OS_MACOS
 
 #ifndef TDESKTOP_DISABLE_SPELLCHECK
 #include "boxes/dictionaries_manager.h"
@@ -89,12 +89,12 @@ namespace {
 
 using namespace Builder;
 
-#if defined Q_OS_MAC && !defined OS_MAC_STORE
+#if defined Q_OS_MACOS && !defined OS_MAC_STORE
 [[nodiscard]] const QImage &IconMacRound() {
 	static const auto result = QImage(u":/gui/art/icon_round512@2x.png"_q);
 	return result;
 }
-#endif // Q_OS_MAC && !OS_MAC_STORE
+#endif // Q_OS_MACOS && !OS_MAC_STORE
 
 void BuildDataStorageSection(SectionBuilder &builder) {
 	const auto controller = builder.controller();
@@ -399,7 +399,7 @@ void BuildWindowTitleSection(SectionBuilder &builder) {
 	builder.addSkip();
 }
 
-#if !defined Q_OS_WIN && !defined Q_OS_MAC
+#if !defined Q_OS_WIN && !defined Q_OS_MACOS
 void BuildWindowCloseBehaviorSection(SectionBuilder &builder) {
 	using Behavior = Core::Settings::CloseBehavior;
 
@@ -461,7 +461,7 @@ void BuildWindowCloseBehaviorSection(SectionBuilder &builder) {
 		builder.addSkip();
 	}, std::move(shown));
 }
-#endif // !Q_OS_WIN && !Q_OS_MAC
+#endif // !Q_OS_WIN && !Q_OS_MACOS
 
 void BuildSystemIntegrationSection(SectionBuilder &builder) {
 	const auto controller = builder.controller();
@@ -568,7 +568,7 @@ void BuildSystemIntegrationSection(SectionBuilder &builder) {
 		}
 	}
 
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 	const auto warnBeforeQuit = builder.addCheckbox({
 		.id = u"advanced/warn_before_quit"_q,
 		.title = tr::lng_settings_mac_warn_before_quit(
@@ -632,7 +632,7 @@ void BuildSystemIntegrationSection(SectionBuilder &builder) {
 		}, roundIcon->lifetime());
 	}
 #endif // OS_MAC_STORE
-#elif defined Q_OS_WIN // Q_OS_MAC
+#elif defined Q_OS_WIN // Q_OS_MACOS
 	using Behavior = Core::Settings::CloseBehavior;
 
 	const auto container = builder.container();
@@ -668,7 +668,7 @@ void BuildSystemIntegrationSection(SectionBuilder &builder) {
 			Local::writeSettings();
 		}, closeToTaskbar->lifetime());
 	}
-#endif // Q_OS_MAC || Q_OS_WIN
+#endif // Q_OS_MACOS || Q_OS_WIN
 
 	if (Platform::AutostartSupported()) {
 		const auto minimizedToggled = [=] {
@@ -1051,6 +1051,106 @@ void BuildSpellcheckerSection(SectionBuilder &builder) {
 #endif // !TDESKTOP_DISABLE_SPELLCHECK
 }
 
+void ShowDownloadProgress(
+		not_null<rpl::event_stream<QString>*> texts,
+		not_null<rpl::event_stream<bool>*> downloading,
+		int64 ready,
+		int64 total,
+		bool preferPercent) {
+	const auto formatted = [&] {
+		if (!preferPercent) {
+			return Ui::FormatDownloadText(ready, total);
+		}
+		const auto percent = (total > 0)
+			? std::clamp((ready * 100) / float64(total), 0., 100.)
+			: 0.;
+		auto result = QString::number(percent, 'f', 2);
+		if (result.contains('.')) {
+			while (result.endsWith('0')) {
+				result.chop(1);
+			}
+			if (result.endsWith('.')) {
+				result.chop(1);
+			}
+		}
+		return result + '%';
+	}();
+	texts->fire(tr::lng_settings_downloading_update(
+		tr::now,
+		lt_progress,
+		formatted));
+	downloading->fire(true);
+}
+
+void SetDefaultStatus(
+		const Core::UpdateChecker &checker,
+		not_null<rpl::event_stream<QString>*> texts,
+		not_null<rpl::event_stream<bool>*> downloading,
+		not_null<Ui::SettingsButton*> update,
+		const QString &version) {
+	using State = Core::UpdateChecker::State;
+	const auto state = checker.state();
+	switch (state) {
+	case State::Download:
+		ShowDownloadProgress(
+			texts,
+			downloading,
+			checker.already(),
+			checker.size(),
+			checker.percent());
+		break;
+	case State::Ready:
+		texts->fire(tr::lng_settings_update_ready(tr::now));
+		update->show();
+		break;
+	default:
+		texts->fire(Core::UpdateRequiresManualInstall()
+			? tr::lng_settings_update_manual_required(tr::now)
+			: version);
+		break;
+	}
+}
+
+void SubscribeToUpdateChecker(
+		const Core::UpdateChecker &checker,
+		not_null<Ui::SlideWrap<Ui::VerticalLayout>*> options,
+		not_null<rpl::event_stream<QString>*> texts,
+		not_null<rpl::event_stream<bool>*> downloading,
+		not_null<Ui::SettingsButton*> update) {
+	checker.checking() | rpl::on_next([=] {
+		options->setAttribute(Qt::WA_TransparentForMouseEvents);
+		texts->fire(tr::lng_settings_update_checking(tr::now));
+		downloading->fire(false);
+	}, options->lifetime());
+	checker.isLatest() | rpl::on_next([=] {
+		options->setAttribute(Qt::WA_TransparentForMouseEvents, false);
+		texts->fire(tr::lng_settings_latest_installed(tr::now));
+		downloading->fire(false);
+	}, options->lifetime());
+	checker.progress(
+	) | rpl::on_next([=](Core::UpdateChecker::Progress progress) {
+		ShowDownloadProgress(
+			texts,
+			downloading,
+			progress.already,
+			progress.size,
+			progress.percent);
+	}, options->lifetime());
+	checker.failed() | rpl::on_next([=] {
+		options->setAttribute(Qt::WA_TransparentForMouseEvents, false);
+		texts->fire(Core::UpdateRequiresManualInstall()
+			? tr::lng_settings_update_manual_required(tr::now)
+			: tr::lng_settings_update_fail(tr::now));
+		downloading->fire(false);
+	}, options->lifetime());
+	checker.ready() | rpl::on_next([=] {
+		options->setAttribute(Qt::WA_TransparentForMouseEvents, false);
+		texts->fire(tr::lng_settings_update_ready(tr::now));
+		update->show();
+		downloading->fire(false);
+	}, options->lifetime());
+}
+
 void BuildUpdateSection(SectionBuilder &builder, bool atTop) {
 	if (!HasUpdate()) {
 		return;
@@ -1157,55 +1257,6 @@ void BuildUpdateSection(SectionBuilder &builder, bool atTop) {
 			update->moveToLeft(0, 0);
 		}, update->lifetime());
 
-		const auto showDownloadProgress = [=](
-				int64 ready,
-				int64 total,
-				bool preferPercent) {
-			const auto formatted = [&] {
-				if (!preferPercent) {
-					return Ui::FormatDownloadText(ready, total);
-				}
-				const auto percent = (total > 0)
-					? std::clamp((ready * 100) / float64(total), 0., 100.)
-					: 0.;
-				auto result = QString::number(percent, 'f', 2);
-				if (result.contains('.')) {
-					while (result.endsWith('0')) {
-						result.chop(1);
-					}
-					if (result.endsWith('.')) {
-						result.chop(1);
-					}
-				}
-				return result + '%';
-			}();
-			texts->fire(tr::lng_settings_downloading_update(
-				tr::now,
-				lt_progress,
-				formatted));
-			downloading->fire(true);
-		};
-		const auto setDefaultStatus = [=](
-				const Core::UpdateChecker &checker) {
-			using State = Core::UpdateChecker::State;
-			const auto state = checker.state();
-			switch (state) {
-			case State::Download:
-				showDownloadProgress(
-					checker.already(),
-					checker.size(),
-					checker.percent());
-				break;
-			case State::Ready:
-				texts->fire(tr::lng_settings_update_ready(tr::now));
-				update->show();
-				break;
-			default:
-				texts->fire_copy(version);
-				break;
-			}
-		};
-
 		toggle->toggledValue(
 		) | rpl::filter([](bool toggled) {
 			return (toggled != cAutoUpdate());
@@ -1217,7 +1268,7 @@ void BuildUpdateSection(SectionBuilder &builder, bool atTop) {
 				checker.start();
 			} else {
 				checker.stop();
-				setDefaultStatus(checker);
+				SetDefaultStatus(checker, texts, downloading, update, version);
 			}
 		}, toggle->lifetime());
 
@@ -1238,37 +1289,8 @@ void BuildUpdateSection(SectionBuilder &builder, bool atTop) {
 		}
 
 		Core::UpdateChecker checker;
-
-		checker.checking() | rpl::on_next([=] {
-			options->setAttribute(Qt::WA_TransparentForMouseEvents);
-			texts->fire(tr::lng_settings_update_checking(tr::now));
-			downloading->fire(false);
-		}, options->lifetime());
-		checker.isLatest() | rpl::on_next([=] {
-			options->setAttribute(Qt::WA_TransparentForMouseEvents, false);
-			texts->fire(tr::lng_settings_latest_installed(tr::now));
-			downloading->fire(false);
-		}, options->lifetime());
-		checker.progress(
-		) | rpl::on_next([=](Core::UpdateChecker::Progress progress) {
-			showDownloadProgress(
-				progress.already,
-				progress.size,
-				progress.percent);
-		}, options->lifetime());
-		checker.failed() | rpl::on_next([=] {
-			options->setAttribute(Qt::WA_TransparentForMouseEvents, false);
-			texts->fire(tr::lng_settings_update_fail(tr::now));
-			downloading->fire(false);
-		}, options->lifetime());
-		checker.ready() | rpl::on_next([=] {
-			options->setAttribute(Qt::WA_TransparentForMouseEvents, false);
-			texts->fire(tr::lng_settings_update_ready(tr::now));
-			update->show();
-			downloading->fire(false);
-		}, options->lifetime());
-
-		setDefaultStatus(checker);
+		SubscribeToUpdateChecker(checker, options, texts, downloading, update);
+		SetDefaultStatus(checker, texts, downloading, update, version);
 
 		update->setClickedCallback([] {
 			if (!Core::UpdaterDisabled()) {
@@ -1381,7 +1403,7 @@ const auto kMeta = BuildHelper({
 	BuildDataStorageSection(builder);
 	BuildAutoDownloadSection(builder);
 	BuildWindowTitleSection(builder);
-#if !defined Q_OS_WIN && !defined Q_OS_MAC
+#if !defined Q_OS_WIN && !defined Q_OS_MACOS
 	BuildWindowCloseBehaviorSection(builder);
 #endif
 	BuildSystemIntegrationSection(builder);
@@ -1511,54 +1533,6 @@ void SetupUpdate(not_null<Ui::VerticalLayout*> container) {
 	}, label->lifetime());
 	label->setAttribute(Qt::WA_TransparentForMouseEvents);
 
-	const auto showDownloadProgress = [=](
-			int64 ready,
-			int64 total,
-			bool preferPercent) {
-		const auto formatted = [&] {
-			if (!preferPercent) {
-				return Ui::FormatDownloadText(ready, total);
-			}
-			const auto percent = (total > 0)
-				? std::clamp((ready * 100) / float64(total), 0., 100.)
-				: 0.;
-			auto result = QString::number(percent, 'f', 2);
-			if (result.contains('.')) {
-				while (result.endsWith('0')) {
-					result.chop(1);
-				}
-				if (result.endsWith('.')) {
-					result.chop(1);
-				}
-			}
-			return result + '%';
-		}();
-		texts->fire(tr::lng_settings_downloading_update(
-			tr::now,
-			lt_progress,
-			formatted));
-		downloading->fire(true);
-	};
-	const auto setDefaultStatus = [=](const Core::UpdateChecker &checker) {
-		using State = Core::UpdateChecker::State;
-		const auto state = checker.state();
-		switch (state) {
-		case State::Download:
-			showDownloadProgress(
-				checker.already(),
-				checker.size(),
-				checker.percent());
-			break;
-		case State::Ready:
-			texts->fire(tr::lng_settings_update_ready(tr::now));
-			update->show();
-			break;
-		default:
-			texts->fire_copy(version);
-			break;
-		}
-	};
-
 	toggle->toggleOn(rpl::single(cAutoUpdate()));
 	toggle->toggledValue(
 	) | rpl::filter([](bool toggled) {
@@ -1572,7 +1546,7 @@ void SetupUpdate(not_null<Ui::VerticalLayout*> container) {
 			checker.start();
 		} else {
 			checker.stop();
-			setDefaultStatus(checker);
+			SetDefaultStatus(checker, texts, downloading, update, version);
 		}
 	}, toggle->lifetime());
 
@@ -1603,36 +1577,8 @@ void SetupUpdate(not_null<Ui::VerticalLayout*> container) {
 		return check && !downloading;
 	}));
 
-	checker.checking() | rpl::on_next([=] {
-		options->setAttribute(Qt::WA_TransparentForMouseEvents);
-		texts->fire(tr::lng_settings_update_checking(tr::now));
-		downloading->fire(false);
-	}, options->lifetime());
-	checker.isLatest() | rpl::on_next([=] {
-		options->setAttribute(Qt::WA_TransparentForMouseEvents, false);
-		texts->fire(tr::lng_settings_latest_installed(tr::now));
-		downloading->fire(false);
-	}, options->lifetime());
-	checker.progress(
-	) | rpl::on_next([=](Core::UpdateChecker::Progress progress) {
-		showDownloadProgress(
-			progress.already,
-			progress.size,
-			progress.percent);
-	}, options->lifetime());
-	checker.failed() | rpl::on_next([=] {
-		options->setAttribute(Qt::WA_TransparentForMouseEvents, false);
-		texts->fire(tr::lng_settings_update_fail(tr::now));
-		downloading->fire(false);
-	}, options->lifetime());
-	checker.ready() | rpl::on_next([=] {
-		options->setAttribute(Qt::WA_TransparentForMouseEvents, false);
-		texts->fire(tr::lng_settings_update_ready(tr::now));
-		update->show();
-		downloading->fire(false);
-	}, options->lifetime());
-
-	setDefaultStatus(checker);
+	SubscribeToUpdateChecker(checker, options, texts, downloading, update);
+	SetDefaultStatus(checker, texts, downloading, update, version);
 
 	check->addClickHandler([] {
 		Core::UpdateChecker checker;
@@ -1839,7 +1785,7 @@ void SetupSystemIntegrationContent(
 		}
 	}
 
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 	const auto warnBeforeQuit = addCheckbox(
 		tr::lng_settings_mac_warn_before_quit(
 			lt_text,
@@ -1877,7 +1823,7 @@ void SetupSystemIntegrationContent(
 		Core::App().saveSettings();
 	}, roundIcon->lifetime());
 #endif // OS_MAC_STORE
-#elif defined Q_OS_WIN // Q_OS_MAC
+#elif defined Q_OS_WIN // Q_OS_MACOS
 	using Behavior = Core::Settings::CloseBehavior;
 	const auto closeToTaskbar = addSlidingCheckbox(
 		tr::lng_settings_close_to_taskbar(),
@@ -1901,7 +1847,7 @@ void SetupSystemIntegrationContent(
 		settings->setCloseBehavior(value);
 		Local::writeSettings();
 	}, closeToTaskbar->lifetime());
-#endif // Q_OS_MAC || Q_OS_WIN
+#endif // Q_OS_MACOS || Q_OS_WIN
 
 	if (Platform::AutostartSupported() && controller) {
 		const auto minimizedToggled = [=] {

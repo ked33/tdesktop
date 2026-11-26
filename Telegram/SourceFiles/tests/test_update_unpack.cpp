@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QMap>
 #include <QtCore/QTemporaryDir>
 
 #include <cstring>
@@ -122,6 +123,37 @@ void Case(const char *name) {
 	return file.readAll();
 }
 
+[[nodiscard]] QMap<QString, QByteArray> Snapshot(const QString &directory) {
+	auto result = QMap<QString, QByteArray>();
+	const auto entries = QDir(directory).entryInfoList(
+		QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System);
+	for (const auto &entry : entries) {
+		const auto name = entry.fileName();
+		if (entry.isDir()) {
+			result.insert(name + '/', QByteArray());
+			const auto nested = Snapshot(entry.absoluteFilePath());
+			for (auto i = nested.begin(); i != nested.end(); ++i) {
+				result.insert(name + '/' + i.key(), i.value());
+			}
+		} else {
+			result.insert(name, Read(entry.absoluteFilePath()));
+		}
+	}
+	return result;
+}
+
+void CheckValidation(
+		const QByteArray &payload,
+		const QString &parent,
+		bool expected) {
+	const auto before = Snapshot(parent);
+	auto error = QString();
+	Check(ValidateUpdateFiles(payload, kSignedVersion, &error) == expected,
+		"read-only parser accepts exactly valid payloads");
+	Check(expected || !error.isEmpty(), "read-only rejection provides an error");
+	Check(Snapshot(parent) == before, "read-only parser leaves all files unchanged");
+}
+
 [[nodiscard]] QString NewDirectory(const QString &parent) {
 	static auto serial = 0;
 	const auto result = parent + '/' + QString::number(++serial);
@@ -135,6 +167,7 @@ void Reject(
 		const QString &sentinel,
 		const char *label) {
 	Case(label);
+	CheckValidation(payload, parent, false);
 	auto error = QString();
 	Check(!ExtractUpdateFiles(
 		payload,
@@ -162,13 +195,20 @@ void TestFiles(const QString &parent, const QString &sentinel) {
 		{ QString::fromLatin1("resources/empty"), QByteArray() },
 	};
 	const auto payload = Serialize(entries);
+	CheckValidation(payload, parent, true);
 	const auto directory = NewDirectory(parent);
 	auto verified = VerifiedUpdate();
 	verified.envelope.version = kSignedVersion;
 	verified.envelope.payload = Compress(payload);
 	auto error = QString();
 	const auto decoded = DecompressUpdatePayload(verified, &error);
+	const auto authenticated = DecompressAuthenticatedUpdatePayload(
+		verified.envelope.payload,
+		&error);
 	Check(decoded && *decoded == payload, "exact decompressed fixture bytes");
+	Check(authenticated && *authenticated == payload,
+		"authenticated payload entry returns exact fixture bytes");
+	Check(authenticated == decoded, "decompression entry points agree");
 	Check(decoded && ExtractUpdateFiles(
 		*decoded,
 		kSignedVersion,
@@ -269,10 +309,13 @@ void TestFiles(const QString &parent, const QString &sentinel) {
 	for (const auto &[first, second] : pairs) {
 		const auto duplicateDirectory = NewDirectory(parent);
 		Case("duplicate or conflicting file and directory names");
-		Check(!ExtractUpdateFiles(Serialize({
+		const auto conflicting = Serialize({
 			{ first, "first" },
 			{ second, "second" },
-		}), kSignedVersion, duplicateDirectory), "conflict rejected");
+		});
+		CheckValidation(conflicting, parent, false);
+		Check(!ExtractUpdateFiles(conflicting, kSignedVersion, duplicateDirectory),
+			"conflict rejected");
 		Check(Read(duplicateDirectory + '/' + first) == "first",
 			"conflict did not overwrite the first file");
 		Check(Read(sentinel) == "outside unchanged", "external sentinel unchanged");
@@ -293,12 +336,16 @@ void TestCompression() {
 	const auto compressed = Compress(plain);
 	const auto reject = [](QByteArray payload, const char *label) {
 		Case(label);
+		auto directError = QString();
+		Check(!DecompressAuthenticatedUpdatePayload(payload, &directError),
+			"authenticated payload entry rejects invalid compressed bytes");
 		auto verified = VerifiedUpdate();
 		verified.envelope.payload = std::move(payload);
 		auto error = QString();
 		Check(!DecompressUpdatePayload(verified, &error),
 			"invalid compressed payload rejected");
 		Check(!error.isEmpty(), "decompression error provided");
+		Check(directError == error, "decompression rejection errors agree");
 	};
 	reject(QByteArray(), "empty compressed payload");
 	reject(compressed.first(3), "truncated compression header");
@@ -334,6 +381,11 @@ int main() {
 	if (!temporary.isValid()) {
 		return 1;
 	}
+	const auto previousDirectory = QDir::currentPath();
+	if (!QDir::setCurrent(temporary.path())) {
+		Check(false, "temporary working directory selected");
+		return 1;
+	}
 	const auto sentinel = temporary.path() + QLatin1String("/sentinel");
 	{
 		auto file = QFile(sentinel);
@@ -343,6 +395,7 @@ int main() {
 	}
 	TestFiles(temporary.path(), sentinel);
 	TestCompression();
+	Check(QDir::setCurrent(previousDirectory), "original working directory restored");
 	std::cout << "Cases: " << TotalCases << ", checks: " << TotalChecks
 		<< ", failures: " << FailedChecks << std::endl;
 	return FailedChecks ? 1 : 0;

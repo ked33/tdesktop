@@ -194,10 +194,7 @@ void ClearPeerCloudDraft(
 }
 
 void SetChatLinkDraft(not_null<PeerData*> peer, TextWithEntities draft) {
-	static const auto kInlineStart = QRegularExpression("^@[a-zA-Z0-9_]");
-	if (kInlineStart.match(draft.text).hasMatch()) {
-		draft = TextWithEntities().append(' ').append(std::move(draft));
-	}
+	draft = PreventInlineBotQuery(std::move(draft));
 
 	const auto textWithTags = TextWithTags{
 		draft.text,

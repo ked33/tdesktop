@@ -30,6 +30,9 @@ private:
 		bool semiTransparent,
 		bool fillTransparentBackground,
 		int index = 0) override;
+	[[nodiscard]] const QImage &scaledStaticContent(
+		const QImage &image,
+		QSizeF size);
 	void paintTransformedImage(
 		const QImage &image,
 		QRect rect,
@@ -82,6 +85,9 @@ private:
 	QImage _brightnessCache;
 	qint64 _brightnessCacheKey = 0;
 	float64 _brightnessCacheFactor = 1.;
+
+	QImage _staticContentScaled;
+	qint64 _staticContentScaledKey = 0;
 
 	QImage _topShadowCache;
 	QColor _topShadowColor;

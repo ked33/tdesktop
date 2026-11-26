@@ -102,17 +102,18 @@ constexpr auto kVoiceBlobIdleLevel = 0.45;
 }
 
 [[nodiscard]] HistoryView::TtlPaintCallback CreateTtlPaintCallback(
-		std::shared_ptr<rpl::lifetime> lifetime,
+		rpl::producer<> stops,
 		Fn<void()> update) {
 	struct State final {
 		std::unique_ptr<Lottie::Icon> start;
 		std::unique_ptr<Lottie::Icon> idle;
 		bool started = false;
+		rpl::lifetime lifetime;
 	};
 	const auto iconSize = Size(std::min(
 		st::historyFileInPause.width(),
 		st::historyFileInPause.height()));
-	const auto state = lifetime->make_state<State>();
+	const auto state = std::make_shared<State>();
 	//state->start = Lottie::MakeIcon({
 	//	.name = u"voice_ttl_start"_q,
 	//	.color = &st::historyFileInIconFg,
@@ -123,10 +124,14 @@ constexpr auto kVoiceBlobIdleLevel = 0.45;
 		.color = &st::historyFileInIconFg,
 		.sizeOverride = iconSize,
 	});
+	std::move(stops) | rpl::on_next([raw = state.get()] {
+		raw->lifetime.destroy();
+		raw->start = nullptr;
+		raw->idle = nullptr;
+	}, state->lifetime);
 
-	const auto weak = std::weak_ptr(lifetime);
 	return [=](QPainter &p, QRect r, QColor c) {
-		if (weak.expired()) {
+		if (!state->idle && !state->start) {
 			return;
 		}
 		{
@@ -390,16 +395,11 @@ Document::Document(
 		&& media->ttlSeconds()) {
 		const auto fullId = _realParent->fullId();
 		if (_parent->delegate()->elementContext() == Context::TTLViewer) {
-			auto lifetime = std::make_shared<rpl::lifetime>();
-			TTLVoiceStops(fullId) | rpl::on_next([=]() mutable {
-				if (lifetime) {
-					base::take(lifetime)->destroy();
-				}
-			}, *lifetime);
-			_drawTtl = CreateTtlPaintCallback(lifetime, [=] { repaint(); });
+			_drawTtl = CreateTtlPaintCallback(
+				TTLVoiceStops(fullId),
+				[=] { repaint(); });
 		} else if (!_parent->data()->out()) {
 			const auto &data = &_parent->data()->history()->owner();
-			_parent->data()->removeFromSharedMediaIndex();
 			setDocumentLinks(_data, realParent, [=] {
 				_openl = nullptr;
 
@@ -1815,10 +1815,10 @@ bool Document::uploading() const {
 	return _data->uploading();
 }
 
-[[nodiscard]] int Document::thumbedLinkMaxWidth() const {
+int Document::thumbedLinkMaxWidth() const {
 	if (Has<HistoryDocumentThumbed>() && !hasImagePreview()) {
 		const auto w = [](const QString &text) {
-			return st::semiboldFont->width(text.toUpper());
+			return st::semiboldFont->width(Ui::Text::Upper(text));
 		};
 		return std::max({
 			w(tr::lng_media_download(tr::now)),
@@ -1842,15 +1842,15 @@ void Document::setStatusSize(int64 newSize, TimeId realDuration) const {
 		realDuration);
 	if (auto thumbed = Get<HistoryDocumentThumbed>()) {
 		if (_statusSize == Ui::FileStatusSizeReady) {
-			thumbed->link = tr::lng_media_download(tr::now).toUpper();
+			thumbed->link = tr::lng_media_download(tr::now, tr::upper);
 		} else if (_statusSize == Ui::FileStatusSizeLoaded) {
-			thumbed->link = tr::lng_media_open_with(tr::now).toUpper();
+			thumbed->link = tr::lng_media_open_with(tr::now, tr::upper);
 		} else if (_statusSize == Ui::FileStatusSizeFailed) {
-			thumbed->link = tr::lng_media_download(tr::now).toUpper();
+			thumbed->link = tr::lng_media_download(tr::now, tr::upper);
 		} else if (_statusSize >= 0) {
-			thumbed->link = tr::lng_media_cancel(tr::now).toUpper();
+			thumbed->link = tr::lng_media_cancel(tr::now, tr::upper);
 		} else {
-			thumbed->link = tr::lng_media_open_with(tr::now).toUpper();
+			thumbed->link = tr::lng_media_open_with(tr::now, tr::upper);
 		}
 		thumbed->linkw = st::semiboldFont->width(thumbed->link);
 	}

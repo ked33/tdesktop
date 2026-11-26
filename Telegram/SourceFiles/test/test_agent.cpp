@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "test/test_agent.h"
 
-#ifdef _DEBUG
+#if defined _DEBUG || defined TDESKTOP_RELEASE_TEST_HARNESS
 
 #include "test/test_log.h"
 #include "ui/style/style_core_scale.h"
@@ -17,11 +17,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QFile>
 #include <QtCore/QSaveFile>
 
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 // Keep last: <objc/objc.h> defines id, Class, BOOL, YES, NO, nil and Nil.
 #include <objc/message.h>
 #include <objc/runtime.h>
-#endif // Q_OS_MAC
+#endif // Q_OS_MACOS
 
 namespace Test {
 namespace {
@@ -117,7 +117,7 @@ const auto kGramAccountFile = u"test_gram_account.txt"_q;
 	return result;
 }
 
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 
 // NSActivityOptions values from Foundation's NSProcessInfo.h, which a C++
 // unit cannot include. NSActivityUserInitiatedAllowingIdleSystemSleep is
@@ -211,7 +211,7 @@ void ApplyAppNapHold() {
 	Note(report);
 }
 
-#endif // Q_OS_MAC
+#endif // Q_OS_MACOS
 
 } // namespace
 
@@ -243,9 +243,9 @@ void ApplyStartupOverrides() {
 			QString::number(selectedScale),
 			source);
 	Note(report);
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 	ApplyAppNapHold();
-#endif // Q_OS_MAC
+#endif // Q_OS_MACOS
 }
 
 void Fire(const QString &event) {
@@ -363,7 +363,7 @@ bool RestoreGramAccountLiveWords(
 
 } // namespace Test
 
-#else // _DEBUG
+#else // _DEBUG || TDESKTOP_RELEASE_TEST_HARNESS
 
 namespace Test {
 
@@ -421,4 +421,4 @@ bool RestoreGramAccountLiveWords(
 
 } // namespace Test
 
-#endif // _DEBUG
+#endif // _DEBUG || TDESKTOP_RELEASE_TEST_HARNESS

@@ -16,12 +16,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "gram/api/gram_api_account.h"
 #include "gram/api/gram_api_nft.h"
 #include "mtproto/sender.h"
-#include "wallet/wallet_address.h"
 #include "wallet/wallet_api.h"
 #include "wallet/wallet_collectible_record.h"
 #include "wallet/wallet_custody.h"
-#include "wallet/wallet_engine.h"
-#include "wallet/wallet_stream.h"
 #include "wallet/wallet_transfer_store.h"
 #include "wallet/wallet_unlock.h"
 
@@ -49,8 +46,15 @@ class Engine;
 class Onramp;
 class OwnCard;
 class Rates;
+enum class SecretReadFailure : uchar;
+struct ServedAnswer;
+class ServedClaims;
+struct ServedOperation;
+struct ServedResult;
 class Session;
 struct ShareFetch;
+class Stream;
+struct StreamRefresh;
 class TonConnect;
 enum class TonConnectAccess : uchar;
 struct TonConnectAppRequest;
@@ -152,6 +156,9 @@ enum class SendError {
 	// been delivered. The engine's resolver settles it later; a
 	// surface presents it as pending, never as sent, never as failed.
 	SubmissionUnknown,
+	NoWallet,
+	WalletNotReady,
+	UnsupportedSendMode,
 };
 
 enum class CommentRecipient {
@@ -187,6 +194,34 @@ struct BackupDisableApproval {
 	int networkGeneration = 0;
 };
 
+enum class TransferOnchainGift : uchar {
+	None,
+	Buy,
+	List,
+	Delist,
+	Reprice,
+	OfferCreate,
+	OfferAcceptBuyer,
+	OfferAcceptSeller,
+	OfferCancel,
+	OfferDecline,
+	OfferExpire,
+};
+
+struct TransferOnchainOffer {
+	std::optional<int64> priceNano;
+	std::optional<int64> oldPriceNano;
+	std::optional<int64> fundingNano;
+	std::optional<int64> serviceFeeNano;
+	std::optional<int64> refundNano;
+	std::optional<int64> fineNano;
+	std::optional<TimeId> expiresAt;
+
+	friend bool operator==(
+		const TransferOnchainOffer &,
+		const TransferOnchainOffer &) = default;
+};
+
 struct TransferItem {
 	enum class Source {
 		Unknown,
@@ -217,6 +252,8 @@ struct TransferItem {
 	Kind kind = Kind::Transfer;
 	bool incoming = false;
 	TransferGiftMove giftMove = TransferGiftMove::None;
+	TransferOnchainGift onchainGift = TransferOnchainGift::None;
+	TransferOnchainOffer onchainOffer;
 	QString counterparty;
 	bool counterpartyBounceable = false; // as served or as sent, raw is UQ
 	QString counterpartyName;
@@ -331,8 +368,10 @@ struct GaslessTerms {
 struct PreparedSend;
 
 struct FeeResult {
+	// Served: both fees are the whole spend beyond the value; else the fee.
 	int64 feeNano = 0;
 	SendError error = SendError::None;
+	std::optional<int64> shortfallFeeNano;
 	// Null for a private comment priced without the key: a fee, no transfer.
 	std::shared_ptr<const PreparedSend> prepared;
 	std::shared_ptr<const TonConnectEmulation> emulation;
@@ -393,11 +432,21 @@ struct TransferReceipt {
 struct TonConnectSendResult {
 	QString signedBoc;
 	SendError error = SendError::None;
+	QByteArray messageHash;
 };
 
 struct TonConnectSendLink {
 	std::string operationId;
 	Fn<bool(const QString &signedBoc)> handoff;
+};
+
+struct TonConnectSignature {
+	QByteArray body;
+	QByteArray signature;
+	QByteArray publicKey;
+	QString address;
+	QByteArray stateInit;
+	TimeId timestamp = 0;
 };
 
 enum class TonConnectSendFate : uchar {
@@ -738,13 +787,14 @@ public:
 		TonConnectResponse response,
 		Fn<void(QByteArray)> done,
 		Fn<void()> fail);
+	// An empty key (no dApp session) names the wallet; null data signs nothing.
 	void signTonConnectData(
 		KeyAuthorization auth,
 		TonConnectKey key,
 		QString requestId,
 		std::shared_ptr<const TonConnectSignData> data,
 		QString domain,
-		Fn<void(QByteArray)> done,
+		Fn<void(TonConnectSignature)> done,
 		Fn<void(TonConnectKeyError)> fail);
 	[[nodiscard]] bool rotationOffered();
 	void quoteRotationFee(KeyAuthorization auth, Fn<void(FeeResult)> done);
@@ -852,6 +902,10 @@ public:
 		uint64 owner,
 		std::shared_ptr<const TonConnectTransfer> transfer,
 		Fn<void(FeeResult)> done);
+	void estimateServed(
+		uint64 owner,
+		const ServedOperation &operation,
+		Fn<void(FeeResult)> done);
 	// |started| fires as the transfer leaves, with its chat message if any.
 	void send(
 		KeyAuthorization auth,
@@ -868,6 +922,10 @@ public:
 		TonConnectSendLink link,
 		Fn<void(TonConnectSendResult)> done,
 		Fn<void(SendError)> settled = nullptr);
+	void sendServed(
+		KeyAuthorization auth,
+		std::shared_ptr<const PreparedSend> prepared,
+		Fn<void(ServedResult)> done);
 	[[nodiscard]] SendState sendState() const;
 	[[nodiscard]] rpl::producer<SendState> sendStateValue() const;
 	[[nodiscard]] std::optional<PendingSendInfo> pendingSend() const;
@@ -1138,7 +1196,8 @@ private:
 		Fn<void(SendError)> done,
 		Fn<void(SendStarted)> started,
 		Fn<void(TonConnectSendResult)> tonConnect,
-		TonConnectSendLink tonConnectLink);
+		TonConnectSendLink tonConnectLink,
+		std::shared_ptr<ServedAnswer> servedAnswer = nullptr);
 	[[nodiscard]] bool submissionCurrent(
 		const std::string &operationId,
 		const std::shared_ptr<const PreparedSend> &prepared) const;
@@ -1355,6 +1414,7 @@ private:
 		Fn<void(SendStarted)> started;
 		Fn<void(TonConnectSendResult)> tonConnect;
 		Fn<bool(const QString &)> tonConnectHandoff;
+		std::shared_ptr<ServedAnswer> served;
 		FullMsgId draft;
 		QByteArray normal;
 		TimeId posted = 0;
@@ -1366,6 +1426,7 @@ private:
 		TransferSubmissionState &submission,
 		SendError error);
 	std::optional<TransferSubmissionState> _submission;
+	const std::unique_ptr<ServedClaims> _servedClaims;
 	std::optional<SubmittedTransferStore> _submittedTransferStore;
 	bool _submittedTransfersDirty = false;
 	std::vector<SubmittedTransfer> _submitted;

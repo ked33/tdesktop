@@ -122,6 +122,7 @@ private:
 	void createAboutArchive();
 
 	void startTop();
+	[[nodiscard]] object_ptr<Ui::SlideWrap<>> makePostButton();
 	[[nodiscard]] object_ptr<Ui::SlideWrap<>> makeArchiveButton();
 	[[nodiscard]] object_ptr<Ui::SlideWrap<>> makeRecentButton();
 	[[nodiscard]] object_ptr<Ui::SlideWrap<>> makeGiftsButton();
@@ -171,7 +172,6 @@ private:
 	rpl::variable<bool> _backToggles;
 	rpl::event_stream<> _backClicks;
 	rpl::event_stream<> _showFinished;
-	rpl::variable<std::optional<QColor>> _topBarColor;
 
 	Ui::VisibleRange _visibleRange;
 

@@ -40,7 +40,7 @@ public:
 	[[nodiscard]] QByteArray serialize() const;
 	[[nodiscard]] QJsonObject exportBackup();
 	[[nodiscard]] bool importBackup(const QJsonObject &data, bool apply);
-	void addFromSerialized(const QByteArray &serialized);
+	void addFromSerialized(const QByteArray &serialized, int writerVersion);
 
 	void setSupportSwitch(Support::SwitchSettings value) {
 		_supportSwitch = value;

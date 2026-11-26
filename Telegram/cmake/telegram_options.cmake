@@ -61,6 +61,16 @@ if (DESKTOP_APP_SPECIAL_TARGET)
     target_compile_definitions(Telegram PRIVATE TDESKTOP_ALLOW_CLOSED_ALPHA)
 endif()
 
+option(TDESKTOP_RELEASE_TEST_HARNESS "Compile the -testagent test harness into Release builds, for local measurements only." OFF)
+if (TDESKTOP_RELEASE_TEST_HARNESS)
+    if (DESKTOP_APP_ENABLE_LTO)
+        message(FATAL_ERROR "TDESKTOP_RELEASE_TEST_HARNESS can't be combined with DESKTOP_APP_ENABLE_LTO, the official release builds' setting: the test harness must never ship.")
+    endif()
+    target_compile_definitions(Telegram PRIVATE $<$<CONFIG:Release>:TDESKTOP_RELEASE_TEST_HARNESS>)
+endif()
+
+set(TDESKTOP_L10N_CAPTURE "" CACHE PATH "Path to an l10n-tdesktop checkout, compiles its localization capture into the -testagent harness.")
+
 option(DESKTOP_APP_DISABLE_SWIFT6 "Disable local on-device translation (build without Swift 6 on macOS)." OFF)
 if (DESKTOP_APP_DISABLE_SWIFT6)
     target_compile_definitions(Telegram PRIVATE TDESKTOP_DISABLE_SWIFT6)
@@ -164,3 +174,20 @@ if (NOT tdesktop_git_commit_content STREQUAL tdesktop_git_commit_existing)
 endif()
 target_sources(Telegram PRIVATE ${tdesktop_git_commit_header})
 target_include_directories(Telegram PRIVATE ${tdesktop_git_commit_dir})
+
+if (APPLE)
+    # lib_base still calls deprecated launch-services and IOKit APIs.
+    target_compile_options(lib_base PRIVATE -Wno-error=deprecated-declarations)
+    # lib_webrtc still lists capture devices with deprecated AVFoundation calls.
+    target_compile_options(lib_webrtc PRIVATE -Wno-error=deprecated-declarations)
+    # rpl::variable's [this] capture goes unused in some instantiations.
+    target_compile_options(lib_rpl INTERFACE -Wno-error=unused-lambda-capture)
+    # These macOS integration sources still call deprecated system APIs.
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/SourceFiles/platform/mac/current_geo_location_mac.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/SourceFiles/platform/mac/file_utilities_mac.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/SourceFiles/platform/mac/notifications_manager_mac.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/SourceFiles/platform/mac/notifications_manager_mac_un.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/SourceFiles/platform/mac/specific_mac.mm
+        PROPERTIES COMPILE_OPTIONS -Wno-error=deprecated-declarations)
+endif()

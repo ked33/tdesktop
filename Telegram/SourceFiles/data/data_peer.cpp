@@ -833,7 +833,9 @@ void PeerData::clearBusinessBot() {
 	if (const auto details = _barDetails.get()) {
 		if (details->requestChatDate
 			|| details->paysPerMessage
-			|| !details->phoneCountryCode.isEmpty()) {
+			|| !details->phoneCountryCode.isEmpty()
+			|| details->botInviter
+			|| details->botOwner) {
 			details->businessBot = nullptr;
 			details->businessBotManageUrl = QString();
 		} else {
@@ -876,14 +878,19 @@ void PeerData::saveTranslationDisabled(bool disabled) {
 
 void PeerData::setBarSettings(const MTPPeerSettings &data) {
 	data.match([&](const MTPDpeerSettings &data) {
+		const auto wasSettings = _barSettings.current();
 		const auto wasPaysPerMessage = paysPerMessage();
+		const auto wasBotInviter = botInviter();
+		const auto wasBotOwner = botOwner();
 		if (!data.vbusiness_bot_id()
 			&& !data.vrequest_chat_title()
 			&& !data.vcharge_paid_message_stars()
 			&& !data.vphone_country()
 			&& !data.vregistration_month()
 			&& !data.vname_change_date()
-			&& !data.vphoto_change_date()) {
+			&& !data.vphoto_change_date()
+			&& !data.vbot_inviter_id()
+			&& !data.vbot_owner_id()) {
 			_barDetails = nullptr;
 		} else if (!_barDetails) {
 			_barDetails = std::make_unique<PeerBarDetails>();
@@ -908,6 +915,12 @@ void PeerData::setBarSettings(const MTPPeerSettings &data) {
 				= qs(data.vbusiness_bot_manage_url().value_or_empty());
 			_barDetails->paysPerMessage
 				= data.vcharge_paid_message_stars().value_or_empty();
+			_barDetails->botInviter = data.vbot_inviter_id()
+				? _owner->user(data.vbot_inviter_id()->v).get()
+				: nullptr;
+			_barDetails->botOwner = data.vbot_owner_id()
+				? _owner->user(data.vbot_owner_id()->v).get()
+				: nullptr;
 		}
 		using Flag = PeerBarSetting;
 		setBarSettings((data.is_add_contact() ? Flag::AddContact : Flag())
@@ -930,7 +943,12 @@ void PeerData::setBarSettings(const MTPPeerSettings &data) {
 				: Flag())
 			| (data.is_business_bot_can_reply()
 				? Flag::BusinessBotCanReply
-				: Flag()));
+				: Flag())
+			| (data.vbot_inviter_id() ? Flag::HasBotInviter : Flag()));
+		if (_barSettings.current() == wasSettings
+			&& (wasBotInviter != botInviter() || wasBotOwner != botOwner())) {
+			session().changes().peerUpdated(this, UpdateFlag::BarSettings);
+		}
 		if (wasPaysPerMessage != paysPerMessage()) {
 			session().changes().peerUpdated(
 				this,
@@ -940,6 +958,7 @@ void PeerData::setBarSettings(const MTPPeerSettings &data) {
 }
 
 void PeerData::setBarSettings(PeerBarSettings which) {
+	const auto wasSettings = _barSettings.current();
 	const auto was = hideLinks();
 	_barSettings.set(which);
 	if (was && !hideLinks()) {
@@ -956,6 +975,9 @@ void PeerData::setBarSettings(PeerBarSettings which) {
 			}
 		}
 	}
+	if (_barSettings.current() != wasSettings) {
+		session().changes().peerUpdated(this, UpdateFlag::BarSettings);
+	}
 }
 
 int PeerData::paysPerMessage() const {
@@ -967,7 +989,9 @@ void PeerData::clearPaysPerMessage() {
 		if (details->paysPerMessage) {
 			if (details->businessBot
 				|| details->requestChatDate
-				|| !details->phoneCountryCode.isEmpty()) {
+				|| !details->phoneCountryCode.isEmpty()
+				|| details->botInviter
+				|| details->botOwner) {
 				details->paysPerMessage = 0;
 			} else {
 				_barDetails = nullptr;
@@ -990,6 +1014,14 @@ bool PeerData::hideLinks() const {
 	return !settings || (*settings & PeerBarSetting::ReportSpam);
 }
 
+bool PeerData::hideEmojiStatus() const {
+	if (const auto to = migrateTo()) {
+		return to->hideEmojiStatus();
+	}
+	const auto settings = barSettings();
+	return settings && (*settings & PeerBarSetting::ReportSpam);
+}
+
 QString PeerData::requestChatTitle() const {
 	return _barDetails ? _barDetails->requestChatTitle : QString();
 }
@@ -1004,6 +1036,14 @@ UserData *PeerData::businessBot() const {
 
 QString PeerData::businessBotManageUrl() const {
 	return _barDetails ? _barDetails->businessBotManageUrl : QString();
+}
+
+UserData *PeerData::botInviter() const {
+	return _barDetails ? _barDetails->botInviter : nullptr;
+}
+
+UserData *PeerData::botOwner() const {
+	return _barDetails ? _barDetails->botOwner : nullptr;
 }
 
 QString PeerData::phoneCountryCode() const {

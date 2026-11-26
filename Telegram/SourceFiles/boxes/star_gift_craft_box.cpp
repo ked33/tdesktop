@@ -673,7 +673,8 @@ void ShowSelectGiftBox(
 		Fn<void(GiftForCraft)> chosen,
 		std::vector<GiftForCraft> selected,
 		Fn<void()> boxClosed,
-		bool firstSlot) {
+		bool firstSlot,
+		bool allowResale = true) {
 	struct Entry {
 		Data::SavedStarGift gift;
 		GiftButton *button = nullptr;
@@ -683,6 +684,7 @@ void ShowSelectGiftBox(
 
 		Data::CraftGiftsDescriptor craft;
 		Data::ResaleGiftsDescriptor resale;
+		int pending = 0;
 
 		rpl::lifetime craftLifetime;
 		rpl::lifetime resaleLifetime;
@@ -690,6 +692,7 @@ void ShowSelectGiftBox(
 
 	const auto session = &controller->session();
 	const auto state = std::make_shared<State>();
+	const auto resaleOptions = LookupResaleGiftsOptions(session->user(), true);
 
 	const auto make = [=](not_null<GenericBox*> box) {
 		box->setTitle(tr::lng_gift_craft_select_title());
@@ -719,21 +722,20 @@ void ShowSelectGiftBox(
 			selected,
 			got);
 
-		if (const auto count = state->resale.count) {
+		if (ShouldShowResaleGifts(resaleOptions, state->resale)) {
 			AddSubsectionTitle(
 				box->verticalLayout(),
 				tr::lng_gift_craft_select_market(
 					lt_count,
-					rpl::single(count * 1.)));
+					rpl::single(state->resale.count * 1.)));
 
 			AddResaleGiftsList(
 				controller,
 				session->user(),
 				box->verticalLayout(),
 				state->resale,
-				nullptr,
-				got,
-				true);
+				resaleOptions,
+				got);
 		}
 
 		box->addButton(tr::lng_box_ok(), [=] {
@@ -745,6 +747,7 @@ void ShowSelectGiftBox(
 		controller->show(Box(make));
 	});
 
+	state->pending = allowResale ? 2 : 1;
 	state->craftLifetime = Data::CraftGiftsSlice(
 		session,
 		giftId
@@ -752,20 +755,24 @@ void ShowSelectGiftBox(
 		state->craftLifetime.destroy();
 
 		state->craft = std::move(info);
-		if (state->resale.giftId) {
+		if (!--state->pending) {
 			show();
 		}
 	});
 
+	if (!allowResale) {
+		return;
+	}
+
 	state->resaleLifetime = Data::ResaleGiftsSlice(
 		session,
 		giftId,
-		{ .forCraft = true }
+		resaleOptions.filter
 	) | rpl::on_next([=](Data::ResaleGiftsDescriptor &&info) {
 		state->resaleLifetime.destroy();
 
 		state->resale = std::move(info);
-		if (state->craft.giftId) {
+		if (!--state->pending) {
 			show();
 		}
 	});
@@ -1164,7 +1171,6 @@ void Craft(
 			inputs.push_back(
 				Api::InputSavedStarGiftId(gift.manageId, gift.unique));
 		}
-		const auto weak = base::make_weak(controller);
 		const auto session = &controller->session();
 		session->api().request(MTPpayments_CraftStarGift(
 			MTP_vector<MTPInputSavedStarGift>(inputs)
@@ -1177,7 +1183,7 @@ void Craft(
 				const auto action = (slug == input.unique->slug)
 					? Data::GiftUpdate::Action::Upgraded
 					: Data::GiftUpdate::Action::Delete;
-				controller->session().data().notifyGiftUpdate({
+				session->data().notifyGiftUpdate({
 					.id = input.manageId,
 					.slug = input.unique->slug,
 					.action = action,
@@ -1695,10 +1701,24 @@ void ShowGiftCraftInfoBox(
 		box->addButton(tr::lng_gift_craft_start_button(), [=] {
 			const auto auctions = &controller->session().giftAuctions();
 			const auto show = crl::guard(box, [=] {
-				ShowGiftCraftBox(
-					controller,
-					{ GiftForCraft{ gift, savedId } },
-					false);
+				const auto initial = GiftForCraft{ gift, savedId };
+				if (gift->giftAddress.isEmpty()) {
+					ShowGiftCraftBox(controller, { initial }, false);
+				} else {
+					ShowSelectGiftBox(
+						controller,
+						gift->initialGiftId,
+						crl::guard(controller, [=](GiftForCraft primary) {
+							ShowGiftCraftBox(
+								controller,
+								{ primary, initial },
+								false);
+						}),
+						{ initial },
+						[] {},
+						true,
+						false);
+				}
 				box->closeBox();
 			});
 			if (auctions->attributes(gift->initialGiftId)) {

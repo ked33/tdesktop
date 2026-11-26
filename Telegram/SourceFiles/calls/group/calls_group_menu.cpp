@@ -8,6 +8,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <core/application.h>
 #include "calls/group/calls_group_menu.h"
 
+#include "base/platform/base_platform_info.h"
+
 #include "calls/calls_instance.h"
 #include "calls/group/calls_group_call.h"
 #include "calls/group/calls_group_settings.h"
@@ -582,10 +584,16 @@ void FillMenu(
 			showBox(Box(SettingsBox, strong));
 		}
 	});
-	menu->addAction(cVoiceChatPinned() ? tr::lng_settings_unpin_voice_chat(tr::now) : tr::lng_settings_pin_voice_chat(tr::now), [=] {
-		cSetVoiceChatPinned(!cVoiceChatPinned());
-		Core::App().calls().setVoiceChatPinned(cVoiceChatPinned());
-	});
+	if (!Platform::IsWayland()) {
+		menu->addAction(
+			cVoiceChatPinned()
+				? tr::lng_settings_unpin_voice_chat(tr::now)
+				: tr::lng_settings_pin_voice_chat(tr::now),
+			[=] {
+				cSetVoiceChatPinned(!cVoiceChatPinned());
+				Core::App().calls().setVoiceChatPinned(cVoiceChatPinned());
+			});
+	}
 	const auto finish = [=] {
 		if (const auto strong = weak.get()) {
 			showBox(Box(

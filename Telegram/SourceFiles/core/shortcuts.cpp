@@ -15,7 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/qt/qt_possible_keys.h"
 #include "core/application.h"
 #include "core/version.h"
-#include "data/data_peer_id.h"
+#include "lang/lang_keys.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
 #include "window/window_controller.h"
@@ -212,6 +212,10 @@ public:
 		Command command,
 		std::optional<Command> restore);
 	void resetToDefaults();
+	void restoreDefaultFor(
+		QKeySequence was,
+		QKeySequence now,
+		Command command);
 
 private:
 	void fillDefaults();
@@ -292,7 +296,7 @@ void WriteDefaultCustomFile() {
 	auto output = QFile(path);
 	if (input.open(QIODevice::ReadOnly)
 		&& output.open(QIODevice::WriteOnly)) {
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 		auto text = qs(input.readAll());
 		const auto note = R"(
 // Note:
@@ -307,7 +311,7 @@ void WriteDefaultCustomFile() {
 		output.write(text.toUtf8());
 #else
 		output.write(input.readAll());
-#endif // !Q_OS_MAC
+#endif // !Q_OS_MACOS
 	}
 }
 
@@ -385,6 +389,27 @@ void Manager::resetToDefaults() {
 		for (const auto command : commands) {
 			set(sequence, command, false);
 		}
+	}
+	syncCustomChatShortcutSuppression();
+	writeCustomFile();
+}
+
+void Manager::restoreDefaultFor(
+		QKeySequence was,
+		QKeySequence now,
+		Command command) {
+	if (!was.isEmpty()) {
+		remove(was, command);
+	}
+	if (now.isEmpty()) {
+		syncCustomChatShortcutSuppression();
+		writeCustomFile();
+		return;
+	}
+	if (_shortcuts.contains(now)) {
+		set(now, command, false);
+	} else {
+		set(now, command, true);
 	}
 	syncCustomChatShortcutSuppression();
 	writeCustomFile();
@@ -485,9 +510,7 @@ void Manager::syncCustomChatShortcutSuppression() {
 		}
 	}
 	for (const auto &keys : desired) {
-		if (!_suppressedDefaultShortcuts.contains(keys)) {
-			setBaseShortcutSuppressed(keys, true);
-		}
+		setBaseShortcutSuppressed(keys, true);
 	}
 	_suppressedDefaultShortcuts = std::move(desired);
 }
@@ -852,8 +875,10 @@ void Manager::set(
 			_supportShortcuts.emplace(i->second.get());
 		}
 		pruneListened();
-		for (const auto &widget : _listened) {
-			widget->addAction(i->second.get());
+		if (!_customChatShortcuts.contains(keys)) {
+			for (const auto &widget : _listened) {
+				widget->addAction(i->second.get());
+			}
 		}
 	}
 }
@@ -1318,6 +1343,13 @@ void ResetToDefaults() {
 	Data.resetToDefaults();
 }
 
+void RestoreDefaultFor(
+		QKeySequence was,
+		QKeySequence now,
+		Command command) {
+	Data.restoreDefaultFor(was, now, command);
+}
+
 bool MatchesCommand(not_null<QKeyEvent*> event, Command command) {
 	return Data.matchesCommand(event, command);
 }
@@ -1356,7 +1388,28 @@ bool AllowWithoutModifiers(int key) {
 }
 
 QString ToDisplayString(const QKeySequence &sequence) {
-	auto result = sequence.toString();
+	static const auto names = QRegularExpression(
+		u"(?<=^|[+ ])(Up|Down|Left|Right|Space)(?=$|[+,])"_q);
+	auto result = QString();
+	const auto text = sequence.toString();
+	auto from = 0;
+	auto matches = names.globalMatch(text);
+	while (matches.hasNext()) {
+		const auto match = matches.next();
+		const auto name = match.capturedView(1);
+		result += QStringView(text).mid(from, match.capturedStart() - from);
+		result += (name == u"Up"_q)
+			? QString(QChar(0x2191))
+			: (name == u"Down"_q)
+			? QString(QChar(0x2193))
+			: (name == u"Left"_q)
+			? QString(QChar(0x2190))
+			: (name == u"Right"_q)
+			? QString(QChar(0x2192))
+			: tr::lng_keys_legend_space(tr::now);
+		from = match.capturedEnd();
+	}
+	result += QStringView(text).mid(from);
 	if (!Platform::IsMac()) {
 		return result;
 	}

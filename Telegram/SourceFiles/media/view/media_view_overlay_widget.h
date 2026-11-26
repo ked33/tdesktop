@@ -280,6 +280,8 @@ private:
 	void smtcNext() override;
 	void smtcPrevious() override;
 	void smtcSeek(crl::time position) override;
+	void smtcSetVolume(float64 volume) override;
+	void smtcSetSpeed(float64 speed) override;
 
 	void playbackPauseResume();
 	void playbackToggleFullScreen(bool allowBeforeReady = false);
@@ -614,6 +616,7 @@ private:
 	void validatePhotoImage(Image *image, bool blurred);
 	void validatePhotoCurrentImage();
 	void tryStartTextRecognition();
+	void refreshRecognitionResult();
 
 	[[nodiscard]] bool hasCopyMediaRestriction(
 		bool skipPremiumCheck = false) const;
@@ -686,6 +689,7 @@ private:
 	base::weak_ptr<Window::Controller> _openedFrom;
 	Main::Session *_session = nullptr;
 	rpl::lifetime _sessionLifetime;
+	rpl::lifetime _screenshotProtectionLifetime;
 	PhotoData *_photo = nullptr;
 	DocumentData *_document = nullptr;
 	DocumentData *_chosenQuality = nullptr;
@@ -723,6 +727,8 @@ private:
 	bool _shareVisible = false;
 	bool _rotateVisible = false;
 	bool _drawButtonEnabled = true;
+	Data::FileOrigin _openFileOrigin;
+	std::shared_ptr<const StandaloneGallery> _gallery;
 	bool _drawVisible = false;
 	bool _recognizeVisible = false;
 	bool _headerHasLink = false;
@@ -900,7 +906,8 @@ private:
 	std::unique_ptr<Ui::ImportantTooltip> _ttlTooltip;
 	FullMsgId _ttlBadgeItem;
 	TimeId _ttlBadgeDestroyAt = 0;
-	bool _ttlDeferredClose = false;
+	std::optional<uint64> _ttlDeferredClose;
+	uint64 _displayGeneration = 0;
 
 	QString _chapterText;
 	QRect _chapterRect;

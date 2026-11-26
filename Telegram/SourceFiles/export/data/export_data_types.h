@@ -452,6 +452,9 @@ struct Image {
 	File file;
 };
 
+// td_export does not link lib_ui, so the svg/svgz reader guard lives here.
+[[nodiscard]] bool IsSvgFormat(const QByteArray &format);
+
 std::pair<QString, QSize> WriteImageThumb(
 	const QString &basePath,
 	const QString &largePath,
@@ -1115,6 +1118,7 @@ struct ActionGramTransfer {
 	Utf8String peerAddress;
 	Utf8String transactionId;
 	Utf8String comment;
+	Utf8String onrampProviderName;
 	bool commentEncrypted = false;
 };
 
@@ -1128,6 +1132,10 @@ struct ActionWalletTonConnectRequest {
 };
 
 struct ActionNoPaidMessagesTokenUsed {
+};
+
+struct ActionBotInvite {
+	UserId inviterId = 0;
 };
 
 struct ServiceAction {
@@ -1194,7 +1202,8 @@ struct ServiceAction {
 		ActionManagedBotCreated,
 		ActionGramTransfer,
 		ActionWalletTonConnectRequest,
-		ActionNoPaidMessagesTokenUsed> content;
+		ActionNoPaidMessagesTokenUsed,
+		ActionBotInvite> content;
 };
 
 ServiceAction ParseServiceAction(

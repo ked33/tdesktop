@@ -4170,19 +4170,6 @@ void Account::readPrefs() {
 	_prefs = std::move(map);
 }
 
-template <>
-std::optional<QByteArray> Account::readPrefImpl<QByteArray>(
-		std::string_view key) {
-	return readPrefGeneric(key);
-}
-
-template <>
-void Account::writePrefImpl<QByteArray>(
-		std::string_view key,
-		QByteArray value) {
-	writePrefGeneric(key, value);
-}
-
 // Define your own pref types in the similar way.
 template <>
 std::optional<bool> Account::readPrefImpl<bool>(std::string_view key) {
@@ -4211,6 +4198,19 @@ void Account::writePrefImpl<QString>(
 		std::string_view key,
 		QString value) {
 	writePrefGeneric(key, value.toUtf8());
+}
+
+template <>
+std::optional<QByteArray> Account::readPrefImpl<QByteArray>(
+		std::string_view key) {
+	return readPrefGeneric(key);
+}
+
+template <>
+void Account::writePrefImpl<QByteArray>(
+		std::string_view key,
+		QByteArray value) {
+	writePrefGeneric(key, std::move(value));
 }
 
 } // namespace Storage

@@ -83,6 +83,7 @@ namespace Dialogs {
 
 extern const char kOptionForumHideChatsList[];
 
+class BottomButton;
 struct RowDescriptor;
 class Row;
 class BasicRow;
@@ -172,6 +173,11 @@ protected:
 	void paintEvent(QPaintEvent *e) override;
 
 private:
+	[[nodiscard]] bool updateStoriesDrag(not_null<QDragMoveEvent*> e);
+	[[nodiscard]] bool addStoryDragAccepted(
+		not_null<QDropEvent*> e) const;
+	[[nodiscard]] bool updateAddStoryDrag(not_null<QDragMoveEvent*> e);
+	void addStoryDragLeft();
 	struct SearchProcessState {
 		base::flat_map<QString, MTPmessages_Messages> cache;
 		base::flat_map<mtpRequestId, QString> queries;
@@ -246,6 +252,7 @@ private:
 	void setupDownloadBar();
 	void setupShortcuts();
 	void setupStories();
+	void setupAddStory();
 	void setupSwipeBack();
 	void setupTopBarSuggestions();
 #ifdef _DEBUG
@@ -260,6 +267,7 @@ private:
 
 	// Child list may be unable to set specific search state.
 	bool applySearchState(SearchState state);
+	void trackSearchInChatDestroyed();
 
 	void showCalendar();
 	void showSearchFrom();
@@ -273,10 +281,12 @@ private:
 	[[nodiscard]] bool communityOverlaysShown() const;
 	void updateFrozenAccountBar();
 	void updateControlsVisibility(bool fast = false);
-	void updateLockUnlockVisibility(
-		anim::type animated = anim::type::instant);
+	[[nodiscard]] bool showingSuggestionsDuringWidthAnimation() const;
+	[[nodiscard]] bool searchHidesTopBarContent() const;
+	void updateTopBarActionsVisibility(anim::type animated);
 	void updateLoadMoreChatsVisibility();
-	void updateStoriesVisibility();
+	void updateStoriesVisibility(anim::type animated
+		= anim::type::normal);
 	void updateStoriesTitleShown();
 	void updateJumpToDateVisibility(bool fast = false);
 	void updateSearchFromVisibility(bool fast = false);
@@ -333,10 +343,11 @@ private:
 	void startScrollDownButtonAnimation(bool shown);
 	void startScrollToCurrentButtonAnimation(bool shown);
 	void updateScrollButtonsPosition();
-	void updateLockUnlockPosition();
+	void updateTopBarActionsPosition();
 	void updateSuggestions(anim::type animated);
 	void processSearchFocusChange();
 	void closeSuggestions();
+	[[nodiscard]] bool suggestionsCoverList() const;
 	[[nodiscard]] bool searchActive() const;
 
 	void setupShortcuts(not_null<Window::SessionController *> controller);
@@ -347,8 +358,10 @@ private:
 	struct CancelSearchOptions {
 		bool forceFullCancel = false;
 		bool jumpBackToSearchedChat = false;
+		bool leaveSearch = false;
 	};
 	bool cancelSearch(CancelSearchOptions options);
+	void escape(CancelSearchOptions options);
 
 	MTP::Sender _api;
 
@@ -377,6 +390,7 @@ private:
 	object_ptr<Ui::FadeWrapScaled<Ui::IconButton>> _jumpToDate;
 	object_ptr<Ui::CrossButton> _cancelSearch;
 	object_ptr<Ui::FadeWrapScaled<Ui::IconButton>> _lockUnlock;
+	object_ptr<Ui::FadeWrapScaled<Ui::IconButton>> _addStory;
 
 	std::unique_ptr<Ui::MoreChatsBar> _moreChatsBar;
 
@@ -402,13 +416,13 @@ private:
 	rpl::event_stream<bool> _searchStateForTopBarSuggestion;
 	rpl::event_stream<> _prepareTopBarSnapshot;
 	rpl::variable<bool> _openedFolderOrForum;
+	rpl::variable<FilterId> _chatsFilterForTopBarSuggestion;
 
 	object_ptr<Ui::ElasticScroll> _scroll;
 	Ui::VerticalLayout *_innerList = nullptr;
 	InnerWidget *_inner = nullptr;
 	std::unique_ptr<Suggestions> _suggestions;
 	std::vector<std::unique_ptr<Suggestions>> _hidingSuggestions;
-	class BottomButton;
 	object_ptr<BottomButton> _updateTelegram = { nullptr };
 	object_ptr<BottomButton> _loadMoreChats = { nullptr };
 	std::unique_ptr<Ui::DownloadBar> _downloadBar;
@@ -438,6 +452,7 @@ private:
 	SearchState _searchState;
 	History *_searchInMigrated = nullptr;
 	rpl::lifetime _searchTagsLifetime;
+	rpl::lifetime _searchInChatLifetime;
 	QString _lastSearchText;
 	bool _searchSuggestionsLocked = false;
 	bool _searchHasFocus = false;
@@ -486,6 +501,7 @@ private:
 	bool _chatsFilterSwipeSwitch = false;
 	bool _swipeBackMirrored = false;
 	bool _swipeBackIconMirrored = false;
+	bool _swipeSearchTabs = false;
 
 	SearchProcessState _searchProcess;
 	Api::PornSearch::QueryId _pornSearchQuery = 0;
@@ -493,6 +509,7 @@ private:
 	bool _pornSearchMore = false;
 	SearchProcessState _migratedProcess;
 	SearchProcessState _postsProcess;
+	uint64 _searchGeneration = 0;
 	int _historiesRequest = 0; // Not real mtpRequestId.
 
 	Api::PeerSearch _peerSearch;

@@ -130,4 +130,10 @@ private:
 
 };
 
+[[nodiscard]] std::unique_ptr<BaseLayout> CreateLayout(
+	not_null<Overview::Layout::Delegate*> delegate,
+	not_null<HistoryItem*> item,
+	Type type,
+	bool globalSearch = false);
+
 } // namespace Info::Media

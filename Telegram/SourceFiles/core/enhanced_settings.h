@@ -59,6 +59,8 @@ namespace EnhancedSettings {
 	void SetDownloadLimitToastsEnabled(bool enabled);
 	[[nodiscard]] bool MediaLoadDebugLogsEnabled();
 	[[nodiscard]] rpl::producer<bool> MediaLoadDebugLogsChanges();
+	[[nodiscard]] rpl::producer<> BlockedUserSpoilerModeChanges();
+	void NotifyBlockedUserSpoilerModeChanged();
 	void SetMediaLoadDebugLogsEnabled(bool enabled);
 
 	struct SearchOptions {

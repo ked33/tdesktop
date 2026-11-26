@@ -15,11 +15,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/crash_reports.h"
 #include "base/debug_log.h"
 
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 #include "media/streaming/media_streaming_native_frame_mac.h"
 
 #include <CoreVideo/CoreVideo.h>
-#endif // Q_OS_MAC
+#endif // Q_OS_MACOS
 #if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
 #include "media/streaming/media_streaming_d3d11_frame.h"
 #endif // Q_OS_WIN && Qt >= 6.7
@@ -301,7 +301,7 @@ int VideoTrackObject::durationByPacket(const FFmpeg::Packet &packet) {
 
 void VideoTrackObject::queueReadFrames(crl::time delay) {
 	if (delay > 0) {
-		_readFramesTimer.callOnce(delay);
+		_readFramesTimer.callOnce(std::min(delay, kDurationMax - 1));
 	} else if (!_queued) {
 		_queued = true;
 		_weak.with([](VideoTrackObject &that) {
@@ -491,7 +491,7 @@ void VideoTrackObject::rasterizeFrame(not_null<Frame*> frame) {
 #endif // Q_OS_WIN && Qt >= 6.7
 	frame->nativeFrame = NativeFrame();
 	if (frame->decoded->hw_frames_ctx) {
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 		const auto hwFormat = frame->decoded->format;
 		const auto wantARGB = requireARGB32();
 		const auto isVT = (hwFormat == AV_PIX_FMT_VIDEOTOOLBOX);
@@ -524,7 +524,7 @@ void VideoTrackObject::rasterizeFrame(not_null<Frame*> frame) {
 				}
 				return;
 		}
-#endif // Q_OS_MAC
+#endif // Q_OS_MACOS
 #if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
 		if (!requireARGB32()
 			&& frame->decoded->format == AV_PIX_FMT_D3D11
@@ -830,7 +830,9 @@ bool VideoTrackObject::processFirstFrame() {
 
 crl::time VideoTrackObject::currentFramePosition() const {
 	const auto position = FramePosition(_stream);
-	if (position == kTimeUnknown || position == kFinishedPosition) {
+	if (position == kTimeUnknown
+		|| position == kFinishedPosition
+		|| position > kDurationMax) {
 		return kTimeUnknown;
 	}
 	return _loopingShift + std::clamp(
@@ -1366,10 +1368,10 @@ QImage VideoTrack::frameImage(
 		if (frame->format == FrameFormat::YUV420
 			|| frame->format == FrameFormat::NV12) {
 			frame->original = ConvertToARGB32(frame->format, frame->yuv);
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 		} else if (frame->format == FrameFormat::NativeTexture) {
 			frame->original = ConvertNativeFrameToARGB32(frame->nativeFrame);
-#endif // Q_OS_MAC
+#endif // Q_OS_MACOS
 #if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
 		} else if (frame->format == FrameFormat::NativeTexture) {
 			frame->original = ReadD3D11Frame(frame->nativeFrame);
@@ -1416,10 +1418,10 @@ QImage VideoTrack::currentFrameImage() {
 		if (frame->format == FrameFormat::YUV420
 			|| frame->format == FrameFormat::NV12) {
 			frame->original = ConvertToARGB32(frame->format, frame->yuv);
-#ifdef Q_OS_MAC
+#ifdef Q_OS_MACOS
 		} else if (frame->format == FrameFormat::NativeTexture) {
 			frame->original = ConvertNativeFrameToARGB32(frame->nativeFrame);
-#endif // Q_OS_MAC
+#endif // Q_OS_MACOS
 #if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
 		} else if (frame->format == FrameFormat::NativeTexture) {
 			frame->original = ReadD3D11Frame(frame->nativeFrame);

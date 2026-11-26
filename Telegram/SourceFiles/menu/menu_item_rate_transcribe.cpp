@@ -40,8 +40,6 @@ RateTranscribe::RateTranscribe(
 	st::defaultRippleAnimation)) {
 	setAcceptBoth(true);
 
-	fitToMenuWidth();
-
 	enableMouseSelecting();
 
 	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
@@ -55,8 +53,8 @@ RateTranscribe::RateTranscribe(
 			st::boxDividerLabel),
 		style::margins(),
 		style::al_top);
-	setMinWidth(
-		label->st().style.font->width(
+	setMinWidth(2 * st.itemPadding.right()
+		+ label->st().style.font->width(
 			tr::lng_context_rate_transcription(tr::now)));
 	widthValue() | rpl::on_next([=, menu = popupMenu->menu()](int w) {
 		content->resizeToWidth(menu->width());
@@ -160,6 +158,8 @@ RateTranscribe::RateTranscribe(
 			_selectedButton = SelectedButton::None;
 		}
 	}, lifetime());
+
+	fitToMenuWidth();
 }
 
 not_null<QAction*> RateTranscribe::action() const {

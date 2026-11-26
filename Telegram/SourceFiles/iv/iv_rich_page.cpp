@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/qthelp_url.h"
 #include "base/unixtime.h"
 #include "data/data_document.h"
+#include "data/data_location.h"
 #include "data/data_peer.h"
 #include "data/data_photo.h"
 #include "data/data_premium_limits.h"
@@ -1781,6 +1782,7 @@ void AppendBlock(
 		result->push_back(std::move(parsed));
 	}, [&](const MTPDpageBlockBlockquoteBlocks &data) {
 		auto parsed = MakeBlock(BlockKind::Quote);
+		parsed.collapsed = data.is_collapsed();
 		{
 			const auto children = RichQuoteScope::BlockChildren(quote, index);
 			AppendBlocks(data.vblocks().v, &parsed.blocks, context);
@@ -2120,13 +2122,12 @@ void AppendBlock(
 		auto parsed = MakeBlock(BlockKind::Map);
 		parsed.width = NonZeroMapWidth(data.vw().v);
 		parsed.height = NonZeroMapHeight(data.vh().v);
-		parsed.zoom = data.vzoom().v;
-		data.vgeo().match([&](const MTPDgeoPoint &row) {
-			parsed.latitude = row.vlat().v;
-			parsed.longitude = row.vlong().v;
-			parsed.accessHash = row.vaccess_hash().v;
-		}, [](const auto &) {
-		});
+		if (const auto point = ::Data::LocationPoint::FromMTP(data.vgeo())) {
+			parsed.zoom = data.vzoom().v;
+			parsed.latitude = point->lat();
+			parsed.longitude = point->lon();
+			parsed.accessHash = point->accessHash();
+		}
 		parsed.caption = ParseCaption(data.vcaption(), context, index);
 		AdoptAnchor(&parsed.anchorId, &parsed.caption);
 		result->push_back(std::move(parsed));
@@ -2333,13 +2334,13 @@ bool AppendSimpleBlock(
 		EntityType wrap = EntityType::Invalid,
 		const QString &wrapData = QString(),
 		int emptyLinesBefore = 0) {
-	TextUtilities::Trim(block);
-	if (block.empty()) {
-		return false;
-	}
 	if (wrap != EntityType::Invalid) {
 		block.entities.push_back(
 			EntityInText(wrap, 0, int(block.text.size()), wrapData));
+	}
+	TextUtilities::Trim(block);
+	if (block.empty()) {
+		return false;
 	}
 	if (!result->empty()) {
 		result->append(QString(1 + emptyLinesBefore, QChar('\n')));
@@ -2352,7 +2353,9 @@ bool AppendSimpleBlock(
 // without copying or mutating anything. Must mirror Trim() exactly: right
 // trim by IsTrimmed(), then left trim stopping at the first monospace
 // entity offset (leading whitespace inside inline code is preserved).
-[[nodiscard]] int TrimmedLength(const TextWithEntities &text) {
+[[nodiscard]] int TrimmedLength(
+		const TextWithEntities &text,
+		EntityType wrap = EntityType::Invalid) {
 	const auto begin = text.text.constData();
 	auto end = begin + text.text.size();
 	while (end != begin && Ui::Text::IsTrimmed(*(end - 1))) {
@@ -2361,9 +2364,11 @@ bool AppendSimpleBlock(
 	if (end == begin) {
 		return 0;
 	}
-	const auto firstMonospaceOffset = EntityInText::FirstMonospaceOffset(
-		text.entities,
-		int(end - begin));
+	const auto firstMonospaceOffset = (wrap == EntityType::Pre)
+		? 0
+		: EntityInText::FirstMonospaceOffset(
+			text.entities,
+			int(end - begin));
 	auto start = begin;
 	while ((start - begin) != firstMonospaceOffset
 		&& Ui::Text::IsTrimmed(*start)) {
@@ -2419,9 +2424,9 @@ struct SimpleTextCounter {
 
 	void append(
 			const TextWithEntities &text,
-			EntityType = EntityType::Invalid,
+			EntityType wrap = EntityType::Invalid,
 			const QString & = QString()) {
-		appendLength(TrimmedLength(text));
+		appendLength(TrimmedLength(text, wrap));
 	}
 	void appendQuote(SimpleTextCounter &&body, bool) {
 		appendLength(body.result);
@@ -2504,9 +2509,7 @@ template <typename Accumulator>
 			if (!CollectSimpleQuote(block, body)) {
 				return false;
 			}
-			to.appendQuote(
-				std::move(body),
-				block.collapsed && RichBlockquoteIsCollapsible(block));
+			to.appendQuote(std::move(body), block.collapsed);
 			break;
 		}
 		default:
@@ -3194,7 +3197,7 @@ TextWithEntities FlattenRichPageSummary(
 		bool emptyFallback) {
 	auto result = tr::marked();
 	auto contributionCount = 0;
-	const Block *soleTable = nullptr;
+	auto soleTable = (const Block*)nullptr;
 	for (const auto &block : page.blocks) {
 		const auto previousSize = result.text.size();
 		AppendSummaryBlock(&result, block, true);
@@ -3394,8 +3397,8 @@ RichPage SplitTextIntoRichPage(TextWithEntities text) {
 		}
 		emitParagraph(cursor, segment.offset);
 		auto body = Ui::Text::Mid(text, segment.offset, segment.length);
-		stripBlockEntities(body);
 		TextUtilities::Trim(body);
+		stripBlockEntities(body);
 		cursor = segment.offset + segment.length;
 		if (body.empty()) {
 			continue;

@@ -188,10 +188,10 @@ QByteArray SerializeString(const QByteArray &value) {
 		} else if (ch == char(0xE2)
 			&& (p + 2 < end)
 			&& *(p + 1) == char(0x80)) {
-			if (*(p + 2) == char(0xA8)) { // Line separator.
+			if (*(p + 2) == char(0xA8) // Line separator.
+				|| *(p + 2) == char(0xA9)) { // Paragraph separator.
 				result.append("<br>", 4);
-			} else if (*(p + 2) == char(0xA9)) { // Paragraph separator.
-				result.append("<br>", 4);
+				p += 2;
 			} else {
 				result.append(ch);
 			}
@@ -4414,6 +4414,12 @@ auto HtmlWriter::Wrap::pushMessage(
 				+ " to "
 				+ peers.wrapPeerName(dialog.peerId)
 				+ address)
+			: !data.onrampProviderName.isEmpty()
+			? ("You topped up "
+				+ amount
+				+ " via "
+				+ SerializeString(data.onrampProviderName)
+				+ address)
 			: (sender + address + " sent you " + amount);
 		if (!data.transactionId.isEmpty()) {
 			result += ", transaction "
@@ -4445,6 +4451,13 @@ auto HtmlWriter::Wrap::pushMessage(
 			: ("You received a TON Connect request" + topic + ".");
 	}, [&](const ActionNoPaidMessagesTokenUsed &data) {
 		return serviceFrom + " started a chat via a free messages link";
+	}, [&](const ActionBotInvite &data) {
+		return (dialog.type == DialogType::Bot)
+			? (peers.wrapUserName(data.inviterId)
+				+ " invited you to this bot")
+			: (serviceFrom
+				+ " was invited by "
+				+ peers.wrapUserName(data.inviterId));
 	}, [](v::null_t) { return QByteArray(); });
 
 	if (!serviceText.isEmpty()) {
@@ -5102,7 +5115,9 @@ QByteArray HtmlWriter::Wrap::pushRichVideoMedia(
 	const auto &thumbPath = presentation.thumb.file.relativePath;
 	if (!thumbPath.isEmpty()) {
 		QImageReader reader(basePath + thumbPath);
-		if (!reader.canRead() || reader.read().isNull()) {
+		if (!reader.canRead()
+			|| Data::IsSvgFormat(reader.format())
+			|| reader.read().isNull()) {
 			presentation.thumb.file.relativePath.clear();
 		}
 	}
@@ -5686,7 +5701,9 @@ QByteArray HtmlWriter::Wrap::composeStart() {
 }
 
 HtmlWriter::Wrap::~Wrap() {
-	(void)close();
+	if (const auto closed = close(); !closed) {
+		LOG(("Export Error: Failed to close '%1'.").arg(closed.path));
+	}
 }
 
 HtmlWriter::HtmlWriter() = default;

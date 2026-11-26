@@ -349,6 +349,64 @@ struct DecodeOptionsResult {
 	return result;
 }
 
+enum class ImportResult {
+	Done,
+	Invalid,
+	Unsupported,
+};
+
+[[nodiscard]] ImportResult ImportOptions(const QString &text) {
+	const auto decoded = DecodeOptionsFromText(text.trimmed());
+	if (!decoded.ok) {
+		return ImportResult::Invalid;
+	}
+	return base::options::deserialize(
+		Core::MigrateExperimentalOptions(decoded.json))
+		? ImportResult::Done
+		: ImportResult::Unsupported;
+}
+
+void ImportOptionsBox(
+		not_null<Ui::GenericBox*> box,
+		not_null<Window::Controller*> window,
+		Fn<void()> imported) {
+	box->setTitle(tr::lng_settings_experimental_import_title());
+
+	const auto field = box->addRow(object_ptr<Ui::InputField>(
+		box,
+		st::defaultInputField,
+		Ui::InputField::Mode::NoNewlines,
+		tr::lng_settings_experimental_import_code()));
+
+	const auto save = [=] {
+		const auto result = ImportOptions(field->getLastText());
+		if (result == ImportResult::Invalid) {
+			field->showError();
+			box->showToast(
+				tr::lng_settings_experimental_import_code_invalid(tr::now));
+			return;
+		} else if (result == ImportResult::Unsupported) {
+			field->showError();
+			box->showToast(
+				tr::lng_settings_experimental_import_unsupported(tr::now));
+			return;
+		}
+		imported();
+		box->closeBox();
+		window->showToast(
+			tr::lng_settings_experimental_import_applied(tr::now));
+	};
+	field->submits() | rpl::on_next(save, field->lifetime());
+
+	box->addButton(tr::lng_settings_save(), save);
+	box->addButton(tr::lng_cancel(), [=] {
+		box->closeBox();
+	});
+	box->setFocusCallback([=] {
+		field->setFocusFast();
+	});
+}
+
 void SetupCopyDeepLink(
 		not_null<Window::Controller*> window,
 		not_null<Button*> button,
@@ -386,7 +444,10 @@ void SetupCopyDeepLink(
 		not_null<Ui::VerticalLayout*> container,
 		const QString &name,
 		const QString &description,
-		const style::SettingsButton &st) {
+		bool relevant) {
+	const auto &st = relevant
+		? st::settingsButtonNoIcon
+		: st::settingsOptionDisabled;
 	if (description.isEmpty()) {
 		return container->add(object_ptr<Button>(
 			container,
@@ -403,7 +464,9 @@ void SetupCopyDeepLink(
 		object_ptr<Ui::FlatLabel>(
 			container,
 			name,
-			st::settingsExperimentalTitle),
+			(relevant
+				? st::settingsExperimentalTitle
+				: st::settingsExperimentalTitleDisabled)),
 		titlePadding);
 	const auto about = container->add(
 		object_ptr<Ui::FlatLabel>(
@@ -467,9 +530,7 @@ QString AddOption(
 		inner,
 		name,
 		description,
-		(option.relevant()
-			? st::settingsButtonNoIcon
-			: st::settingsOptionDisabled)
+		option.relevant()
 	)->toggleOn(toggles->events_starting_with(option.value()));
 
 	if (registerHighlight) {
@@ -842,27 +903,23 @@ void Experimental::fillTopBarMenu(const Ui::Menu::MenuCallback &addAction) {
 			});
 		},
 		&st::menuIconCopy);
-	if (!DecodeOptionsFromText(QGuiApplication::clipboard()->text()).ok) {
-		return;
-	}
+	const auto reload = [=] {
+		_reloadOptionsRequests.fire({});
+	};
 	addAction(
 		tr::lng_settings_experimental_import(tr::now),
 		[=] {
-			const auto decoded = DecodeOptionsFromText(
+			const auto result = ImportOptions(
 				QGuiApplication::clipboard()->text());
-			if (!decoded.ok) {
+			if (result == ImportResult::Invalid) {
+				window->show(Box(ImportOptionsBox, window, reload));
+				return;
+			} else if (result == ImportResult::Unsupported) {
 				window->showToast(
-					tr::lng_settings_experimental_import_invalid(tr::now));
+					tr::lng_settings_experimental_import_unsupported(tr::now));
 				return;
 			}
-			if (!base::options::deserialize(
-					Core::MigrateExperimentalOptions(decoded.json))) {
-				window->showToast(
-					tr::lng_settings_experimental_import_unsupported(
-						tr::now));
-				return;
-			}
-			_reloadOptionsRequests.fire({});
+			reload();
 			window->showToast(
 				tr::lng_settings_experimental_import_done(tr::now));
 		},

@@ -31,6 +31,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/notifications_manager.h"
 #include "history/history.h"
 #include "history/history_item.h"
+#include "history/history_item_components.h"
 #include "history/history_item_helpers.h"
 #include "history/view/history_view_element.h"
 #include "iv/iv_rich_page.h"
@@ -538,6 +539,7 @@ void Histories::applyPeerDialogs(const MTPmessages_PeerDialogs &dialogs) {
 	const auto &data = dialogs.c_messages_peerDialogs();
 	_owner->processUsers(data.vusers());
 	_owner->processChats(data.vchats());
+	ApplyResponseTopics(_owner, data.vtopics(), data.vmessages().v);
 	_owner->processMessages(data.vmessages(), NewMessageType::Last);
 	for (const auto &dialog : data.vdialogs().v) {
 		dialog.match([&](const MTPDdialog &data) {
@@ -1288,10 +1290,7 @@ void Histories::sendCreateTopicRequest(
 			_creatingTopics.erase(i);
 			for (auto &entry : pending) {
 				_creatingTopicRequests.erase(entry.requestId);
-				if (entry.progress) {
-					entry.progress->fail(error);
-				}
-				entry.fail(error, MTP::Response());
+				failDelayedMessage(std::move(entry), error);
 			}
 		}
 	}).send();
@@ -1342,6 +1341,46 @@ int Histories::sendPreparedMessage(
 	};
 	realReplyTo.messageId = topicReplyToId(replyTo.messageId);
 	realReplyTo.topicRootId = topicReplyToId(replyTo.topicRootId);
+	if (IsClientMsgId(realReplyTo.topicRootId)) {
+		discardCreatingTopic(history, realReplyTo.topicRootId);
+		failDelayedMessage({
+			.randomId = randomId,
+			.fail = std::move(fail),
+			.progress = std::move(progress),
+			.completeProgress = completeProgress,
+		}, MTP::Error::Local(
+			u"TOPIC_CANCELLED"_q,
+			u"The topic is no longer available."_q));
+		return 0;
+	}
+	const auto targetId = realReplyTo.messageId;
+	if (IsClientMsgId(targetId.msg) && targetId.peer == history->peer->id) {
+		const auto target = _owner->message(targetId);
+		if (target && target->isSending()) {
+			const auto id = ++_requestAutoincrement;
+			_delayedByReplyTarget[targetId].push_back({
+				.randomId = randomId,
+				.replyTo = std::move(replyTo),
+				.message = std::move(message),
+				.done = std::move(done),
+				.fail = std::move(fail),
+				.progress = std::move(progress),
+				.completeProgress = completeProgress,
+				.requestId = id,
+			});
+			_delayedReplyRequests.emplace(id);
+			return id;
+		}
+		failDelayedMessage({
+			.randomId = randomId,
+			.fail = std::move(fail),
+			.progress = std::move(progress),
+			.completeProgress = completeProgress,
+		}, MTP::Error::Local(
+			u"REPLY_TARGET_CANCELLED"_q,
+			u"The pending reply target is no longer available."_q));
+		return 0;
+	}
 	return v::match(message(history, realReplyTo), [&](const auto &request) {
 		const auto type = RequestType::Send;
 		return sendRequest(history, type, [=](Fn<void()> finish) {
@@ -1421,6 +1460,69 @@ void Histories::checkTopicCreated(FullMsgId rootId, MsgId realRoot) {
 	}
 }
 
+void Histories::checkReplyTargetSent(FullMsgId localId, MsgId realId) {
+	const auto i = _delayedByReplyTarget.find(localId);
+	if (i == end(_delayedByReplyTarget)) {
+		return;
+	}
+	auto delayed = base::take(i->second);
+	_delayedByReplyTarget.erase(i);
+
+	const auto history = _owner->history(localId.peer);
+	for (auto &entry : delayed) {
+		_delayedReplyRequests.remove(entry.requestId);
+		const auto itemId = _owner->messageIdByRandomId(entry.randomId);
+		const auto item = itemId ? _owner->message(itemId) : nullptr;
+		if (!realId || (itemId && !item)) {
+			failDelayedMessage(
+				std::move(entry),
+				MTP::Error::Local(
+					u"REPLY_TARGET_CANCELLED"_q,
+					u"The pending reply target is no longer available."_q));
+			continue;
+		} else if (item) {
+			const auto reply = item->Get<HistoryMessageReply>();
+			item->setReplyFields(
+				realId,
+				item->topicRootId(),
+				reply && reply->topicPost());
+		}
+		entry.replyTo.messageId.msg = realId;
+		sendPreparedMessage(
+			history,
+			std::move(entry.replyTo),
+			entry.randomId,
+			std::move(entry.message),
+			std::move(entry.done),
+			std::move(entry.fail),
+			std::move(entry.progress),
+			entry.completeProgress);
+	}
+}
+
+void Histories::discardCreatingTopic(
+		not_null<History*> history,
+		MsgId rootId) {
+	const auto i = _creatingTopics.find({ history->peer->id, rootId });
+	if (i != end(_creatingTopics)) {
+		auto discarded = base::take(i->second);
+		_creatingTopics.erase(i);
+		for (auto &entry : discarded) {
+			_creatingTopicRequests.remove(entry.requestId);
+			failDelayedMessage(
+				std::move(entry),
+				MTP::Error::Local(
+					u"TOPIC_CANCELLED"_q,
+					u"The topic is no longer available."_q));
+		}
+	}
+	// WHY: discards run inside ~ChatWidget() or a history switch, where
+	// removing items would notify the topic's half-destroyed chat.
+	crl::on_main(&session(), [=] {
+		history->destroyMessagesByTopic(rootId);
+	});
+}
+
 FullMsgId Histories::convertTopicReplyToId(
 		not_null<History*> history,
 		FullMsgId replyToId) const {
@@ -1452,6 +1554,9 @@ void Histories::cancelRequest(int id) {
 	} else if (_creatingTopicRequests.contains(id)) {
 		cancelDelayedByTopicRequest(id);
 		return;
+	} else if (_delayedReplyRequests.contains(id)) {
+		cancelDelayedByReplyRequest(id);
+		return;
 	}
 	const auto history = _historyByRequest.take(id);
 	if (!history) {
@@ -1466,12 +1571,66 @@ void Histories::cancelRequest(int id) {
 }
 
 void Histories::cancelDelayedByTopicRequest(int id) {
-	for (auto &[rootId, messages] : _creatingTopics) {
-		messages.erase(
-			ranges::remove(messages, id, &DelayedByTopicMessage::requestId),
-			end(messages));
-	}
 	_creatingTopicRequests.remove(id);
+	for (auto &[rootId, messages] : _creatingTopics) {
+		const auto i = ranges::find(
+			messages,
+			id,
+			&DelayedByTopicMessage::requestId);
+		if (i != end(messages)) {
+			auto entry = std::move(*i);
+			messages.erase(i);
+			failDelayedMessage(
+				std::move(entry),
+				MTP::Error::Local(
+					u"REQUEST_CANCELLED"_q,
+					u"The pending message was cancelled."_q));
+			return;
+		}
+	}
+}
+
+void Histories::cancelDelayedByReplyRequest(int id) {
+	_delayedReplyRequests.remove(id);
+	for (auto &[targetId, messages] : _delayedByReplyTarget) {
+		const auto i = ranges::find(
+			messages,
+			id,
+			&DelayedByTopicMessage::requestId);
+		if (i != end(messages)) {
+			auto entry = std::move(*i);
+			messages.erase(i);
+			failDelayedMessage(
+				std::move(entry),
+				MTP::Error::Local(
+					u"REQUEST_CANCELLED"_q,
+					u"The pending message was cancelled."_q));
+			return;
+		}
+	}
+}
+
+void Histories::failDelayedMessage(
+		DelayedByTopicMessage entry,
+		const MTP::Error &error) {
+	crl::on_main(&session(), [=, entry = std::move(entry)] {
+		if (entry.randomId) {
+			const auto itemId = _owner->messageIdByRandomId(entry.randomId);
+			if (itemId) {
+				checkReplyTargetSent(itemId, MsgId());
+			}
+			_owner->unregisterMessageRandomId(entry.randomId);
+			if (const auto item = itemId ? _owner->message(itemId) : nullptr) {
+				item->destroy();
+			}
+		}
+		if (entry.progress && entry.completeProgress) {
+			entry.progress->fail(error);
+		}
+		if (entry.fail) {
+			entry.fail(error, MTP::Response());
+		}
+	});
 }
 
 void Histories::finishSentRequest(

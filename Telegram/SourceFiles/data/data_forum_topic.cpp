@@ -18,15 +18,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/stickers/data_custom_emoji.h"
 #include "dialogs/dialogs_main_list.h"
 #include "dialogs/ui/dialogs_layout.h"
-#include "core/application.h"
-#include "core/core_settings.h"
 #include "apiwrap.h"
 #include "api/api_unread_things.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/history_unread_things.h"
 #include "history/view/history_view_item_preview.h"
-#include "history/view/history_view_chat_section.h"
+#include "history/view/history_view_list_widget.h"
 #include "main/main_session.h"
 #include "base/unixtime.h"
 #include "ui/painter.h"
@@ -188,15 +186,6 @@ int32 ForumGeneralIconColor(const QColor &color) {
 		| (uint32(color.alpha() == 255 ? 0 : color.alpha()) << 24));
 }
 
-QColor ParseForumGeneralIconColor(int32 value) {
-	const auto alpha = uint32(value) >> 24;
-	return QColor(
-		(value >> 16) & 0xFF,
-		(value >> 8) & 0xFF,
-		value & 0xFF,
-		alpha ? alpha : 255);
-}
-
 QString TopicIconEmojiEntity(TopicIconDescriptor descriptor) {
 	return IsForumGeneralIconTitle(descriptor.title)
 		? u"topic_general:"_q + QString::number(uint32(descriptor.colorId))
@@ -339,6 +328,12 @@ bool ForumTopic::canTogglePinned() const {
 	return !creating() && peer()->canManageTopics();
 }
 
+bool ForumTopic::dying() const {
+	const auto botGeneral = isGeneral() && peer()->isBot();
+	return (peer()->forum() != _forum)
+		|| (!botGeneral && _forum->topicDeleted(_rootId));
+}
+
 bool ForumTopic::creating() const {
 	return _forum->creating(_rootId);
 }
@@ -353,7 +348,8 @@ void ForumTopic::setRealRootId(MsgId realId) {
 	if (_rootId != realId) {
 		_rootId = realId;
 		_lastKnownServerMessageId = realId;
-		_replies = std::make_shared<RepliesList>(history(), _rootId);
+		_replies = std::make_shared<RepliesList>(history(), _rootId, this);
+		_replies->markJustCreated();
 		if (_sendActionPainter) {
 			_sendActionPainter->setTopic(nullptr);
 		}
@@ -407,6 +403,7 @@ void ForumTopic::applyTopic(const MTPDforumTopic &data) {
 
 	applyIsMy(data.is_my());
 	setClosed(data.is_closed());
+	setHidden(data.is_hidden());
 
 	if (!min) {
 		owner().setPinnedFromEntryList(this, data.is_pinned());
@@ -790,7 +787,9 @@ void ForumTopic::applyTitle(const QString &title) {
 	_title = title;
 	invalidateTitleWithIcon();
 	_defaultIcon = QImage();
+	const auto oldFirstLetters = base::take(_titleFirstLetters);
 	indexTitleParts();
+	_list->indexed()->entryNameChanged(FilterId(), this, oldFirstLetters);
 	updateChatListEntry();
 	session().changes().topicUpdated(this, UpdateFlag::Title);
 }
@@ -832,6 +831,8 @@ int32 ForumTopic::colorId() const {
 void ForumTopic::applyColorId(int32 colorId) {
 	if (_colorId != colorId) {
 		_colorId = colorId;
+		_defaultIcon = QImage();
+		updateChatListEntry();
 		session().changes().topicUpdated(this, UpdateFlag::ColorId);
 	}
 }

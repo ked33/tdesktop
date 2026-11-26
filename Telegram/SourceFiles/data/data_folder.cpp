@@ -20,13 +20,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/text_utilities.h"
 #include "lang/lang_keys.h"
 #include "storage/storage_facade.h"
-#include "core/application.h"
-#include "core/core_settings.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
 #include "mtproto/mtproto_config.h"
 #include "apiwrap.h"
-#include "mainwidget.h"
 #include "styles/style_dialogs.h"
 
 namespace Data {
@@ -143,6 +140,13 @@ Folder::Folder(not_null<Session*> owner, FolderId id)
 	) | rpl::on_next([=] {
 		updateChatListEntryPostponed();
 	}, _lifetime);
+
+	Lang::Updated(
+	) | rpl::on_next([=] {
+		_name = tr::lng_archived_name(tr::now);
+		++_nameVersion;
+		updateChatListEntry();
+	}, _lifetime);
 }
 
 FolderId Folder::id() const {
@@ -173,7 +177,7 @@ void Folder::unregisterOne(not_null<History*> history) {
 }
 
 int Folder::chatListNameVersion() const {
-	return 1;
+	return _nameVersion;
 }
 
 void Folder::oneListMessageChanged(HistoryItem *from, HistoryItem *to) {

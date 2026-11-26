@@ -5,7 +5,7 @@ the official desktop application for the Telegram messaging service.
 For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
-#ifdef _DEBUG
+#if defined _DEBUG || defined TDESKTOP_RELEASE_TEST_HARNESS
 
 #include "test/test_secrecy_scan.h"
 
@@ -4327,16 +4327,18 @@ void CheckTransportSweep() {
 			}
 			const auto c = ScanTransportLine(text, TransportSecrets());
 			const auto site = TransportSite(head, line.slots[j].name);
+			auto expect = TransportExpect();
 			if (TransportGlued(line.format, j)) {
 				++glued;
-				ok = ok && TransportReads(c, { .embedded = 1 });
+				expect.embedded = 1;
 			} else if (line.slots[j].computed) {
 				++computed;
-				ok = ok && TransportReads(c, { .computed = { { site, 1 } } });
+				expect.computed = { { site, 1 } };
 			} else {
 				++received;
-				ok = ok && TransportReads(c, { .plain = { { site, 1 } } });
+				expect.plain = { { site, 1 } };
 			}
+			ok = ok && TransportReads(c, expect);
 			++slots;
 			if (!ok) {
 				failing.push_back(u"%1.%2"_q.arg(i).arg(j));
@@ -5706,4 +5708,4 @@ void AppendSecrecyScanSelfTest(not_null<Runner*> runner) {
 
 } // namespace Test
 
-#endif // _DEBUG
+#endif // _DEBUG || TDESKTOP_RELEASE_TEST_HARNESS

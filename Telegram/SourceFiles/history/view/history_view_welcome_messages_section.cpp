@@ -214,6 +214,10 @@ WelcomeMessagesWidget::WelcomeMessagesWidget(
 }
 
 WelcomeMessagesWidget::~WelcomeMessagesWidget() {
+	if (const auto box = _sendFilesBox.data()) {
+		box->closeBox();
+	}
+	_composeControls->closeSendAsFileBox();
 	if (_notice) {
 		_notice->destroy();
 	}
@@ -337,6 +341,8 @@ void WelcomeMessagesWidget::setupComposeControls() {
 		if (_composeControls->requestEditableMessageNavigation(e)) {
 			return;
 		}
+		_inner->sendingLandingUserScroll();
+		Tgw::ListScroll::Input(_inner.data());
 		_scroll->keyPressEvent(e);
 	}, lifetime());
 
@@ -345,7 +351,7 @@ void WelcomeMessagesWidget::setupComposeControls() {
 			ComposeControls::EditableMessageNavigationRequest request) {
 		using Request = ComposeControls::EditableMessageNavigationRequest;
 		if (request.mode == Request::Mode::Edit && !request.currentId) {
-			_inner->lastMessageEditRequestNotify();
+			*request.handled = _inner->lastMessageEditRequestNotify();
 			return;
 		}
 		const auto itemId = _inner->editableMessageIdByDirection(
@@ -356,7 +362,9 @@ void WelcomeMessagesWidget::setupComposeControls() {
 			: nullptr;
 		if (!item) {
 			return;
-		} else if (request.mode == Request::Mode::Edit) {
+		}
+		*request.handled = true;
+		if (request.mode == Request::Mode::Edit) {
 			_inner->editMessageRequestNotify(itemId);
 		} else {
 			_composeControls->setEditableMessageNavigationText(
@@ -466,6 +474,7 @@ bool WelcomeMessagesWidget::confirmSendingFiles(
 		.cancelled = _composeControls->restoreTextCallback(
 			insertTextOnCancel),
 	});
+	_sendFilesBox = box.data();
 	box->takeTextWithTagsRequests(
 	) | rpl::on_next([=](TextWithTags &&text) {
 		_composeControls->setText(std::move(text));

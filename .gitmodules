@@ -33,7 +33,7 @@
 	url = https://github.com/ked33/lib_spellcheck.git
 [submodule "Telegram/lib_storage"]
 	path = Telegram/lib_storage
-	url = https://github.com/TDesktop-x64/lib_storage.git
+	url = https://github.com/ked33/lib_storage.git
 [submodule "cmake"]
 	path = cmake
 	url = https://github.com/TDesktop-x64/cmake_helpers.git
@@ -106,3 +106,12 @@
 [submodule "Telegram/ThirdParty/zxcvbn"]
 	path = Telegram/ThirdParty/zxcvbn
 	url = https://github.com/tsyrogit/zxcvbn-c.git
+[submodule "Telegram/ThirdParty/twidget"]
+	path = Telegram/ThirdParty/twidget
+	url = https://github.com/TelegramMessenger/twidget.git
+[submodule "Telegram/ThirdParty/widget-sandbox"]
+	path = Telegram/ThirdParty/widget-sandbox
+	url = https://github.com/TelegramMessenger/widget-sandbox.git
+[submodule "Telegram/ThirdParty/nova-safe"]
+	path = Telegram/ThirdParty/nova-safe
+	url = https://github.com/TelegramMessenger/nova-safe.git
