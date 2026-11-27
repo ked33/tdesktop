@@ -79,14 +79,15 @@ FilteredCommandLineArguments::FilteredCommandLineArguments(
 		pushArgument(argv[i]);
 	}
 
-#if defined Q_OS_WIN || defined Q_OS_MACOS
+#ifdef Q_OS_WIN
+	pushArgument("-platform");
+	pushArgument((OptionFreeType.value() || OptionHighDpiDownscale.value())
+		? "windows:fontengine=freetype"
+		: "windows:fontengine=gdi");
+#elif defined Q_OS_MACOS
 	if (OptionFreeType.value() || OptionHighDpiDownscale.value()) {
 		pushArgument("-platform");
-#ifdef Q_OS_WIN
-		pushArgument("windows:fontengine=freetype");
-#else // Q_OS_WIN
 		pushArgument("cocoa:fontengine=freetype");
-#endif // !Q_OS_WIN
 	}
 #endif // Q_OS_WIN || Q_OS_MACOS
 
