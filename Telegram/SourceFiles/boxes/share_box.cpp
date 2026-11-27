@@ -552,6 +552,7 @@ void ShareBox::prepare() {
 				scrollToY(0);
 			},
 			Window::GifPauseReason::Layer);
+		_chatsFilters = chatsFilters;
 		chatsFilters->lower();
 		chatsFilters->heightValue() | rpl::on_next([this](int h) {
 			updateScrollSkips();
@@ -560,7 +561,6 @@ void ShareBox::prepare() {
 		_select->heightValue() | rpl::on_next([=](int h) {
 			chatsFilters->moveToLeft(0, h);
 		}, chatsFilters->lifetime());
-		_chatsFilters = chatsFilters;
 	}
 }
 
