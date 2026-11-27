@@ -236,11 +236,20 @@ private:
 	void setupWindow();
 	void orderWidgets();
 	void showAndActivate();
-	void handleMousePress(QPoint position, Qt::MouseButton button);
+	void handleMousePress(
+		QPoint position,
+		Qt::MouseButton button,
+		Qt::MouseButtons buttons = Qt::NoButton);
 	void handleMouseRelease(QPoint position, Qt::MouseButton button);
-	void handleMouseMove(QPoint position);
+	void handleMouseMove(
+		QPoint position,
+		Qt::MouseButtons buttons = Qt::NoButton);
 	bool handleContextMenu(std::optional<QPoint> position);
-	bool handleDoubleClick(QPoint position, Qt::MouseButton button);
+	bool handleDoubleClick(
+		QPoint position,
+		Qt::MouseButton button,
+		Qt::MouseButtons buttons);
+	bool startContentPan(QPoint position, Qt::MouseButtons buttons);
 	bool handleTouchEvent(not_null<QTouchEvent*> e);
 	void handleWheelEvent(not_null<QWheelEvent*> e);
 	bool handleNativeGesture(not_null<QNativeGestureEvent*> e);
@@ -470,7 +479,7 @@ private:
 
 	void updateCursor();
 	void setZoomLevel(
-		int newZoom,
+		float64 newZoom,
 		bool force = false,
 		std::optional<QPoint> anchor = std::nullopt);
 
@@ -543,9 +552,10 @@ private:
 
 	void zoomIn(std::optional<QPoint> anchor = std::nullopt);
 	void zoomOut(std::optional<QPoint> anchor = std::nullopt);
+	void zoomBy(float64 delta, QPoint anchor);
 	void zoomReset();
 	void zoomUpdate(
-		int32 &newZoom,
+		float64 newZoom,
 		std::optional<QPoint> anchor = std::nullopt);
 	[[nodiscard]] QPoint zoomAnchor(QPointF globalPosition) const;
 
@@ -748,7 +758,7 @@ private:
 
 	bool _streamingStartPaused = false;
 	bool _fullScreenVideo = false;
-	int _fullScreenZoomCache = 0;
+	float64 _fullScreenZoomCache = 0.;
 	float64 _lastPositiveVolume = 1.;
 
 	std::unique_ptr<GroupThumbs> _groupThumbs;
@@ -775,7 +785,7 @@ private:
 	int _x = 0, _y = 0, _w = 0, _h = 0;
 	bool _photoRedisplayQueued = false;
 	int _xStart = 0, _yStart = 0;
-	int _zoom = 0; // < 0 - out, 0 - none, > 0 - in
+	float64 _zoom = 0.; // < 0 - out, 0 - none, > 0 - in
 	float64 _zoomToScreen = 0.; // for documents
 	float64 _zoomToDefault = 0.;
 	QPoint _mStart;

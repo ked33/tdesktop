@@ -9663,7 +9663,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_preview_brightness_title" = "Preview brightness";
 "lng_settings_preview_brightness_percent" = "{percent}%";
 "lng_settings_media_wheel_control" = "Enhanced media viewer wheel control";
-"lng_settings_media_wheel_control_desc" = "Divides the viewer into 3 columns. Top-left scroll adjusts brightness, bottom-left adjusts volume, middle switches media, right seeks the video. Hold Ctrl or mouse side button X1 (Mouse Button 4) while scrolling to zoom photos and videos.";
+"lng_settings_media_wheel_control_desc" = "Divides the viewer into 3 columns. Top-left scroll adjusts brightness, bottom-left adjusts volume, middle switches media, right seeks the video. Hold Ctrl or mouse side button X1 (Mouse Button 4) while scrolling to zoom photos and videos: each notch adds 20 percentage points or subtracts 10. Hold X1 and the left mouse button to drag the image or video.";
 "lng_settings_chat_switch_shortcut_title" = "Persistent recent chats shortcut";
 "lng_settings_chat_switch_shortcut_placeholder" = "Example: Ctrl+Alt+P, leave empty to disable";
 "lng_settings_chat_switch_shortcut_disabled" = "Disabled";

@@ -151,6 +151,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <kurlmimedata.h>
 
+#include <algorithm>
+#include <cmath>
+
 namespace Media {
 namespace View {
 namespace {
@@ -220,6 +223,7 @@ namespace {
 constexpr auto kPreloadCount = 3;
 constexpr auto kMaxZoomLevel = 7; // x8
 constexpr auto kZoomToScreenLevel = 1024;
+constexpr auto kSideButtonDrag = 2;
 constexpr auto kPinchZoomStep = 0.25;
 constexpr auto kOverlayLoaderPriority = 2;
 constexpr auto kSeekTimeMs = 5 * crl::time(1000);
@@ -850,6 +854,9 @@ OverlayWidget::OverlayWidget()
 			return base::EventFilterResult::Cancel;
 		} else if (type == QEvent::WindowDeactivate) {
 			cancelPlaybackHolds();
+			if (_dragging == kSideButtonDrag) {
+				clearControlsState();
+			}
 		} else if (type == QEvent::ThemeChange && Platform::IsLinux()) {
 			_window->setWindowIcon(Window::CreateIcon(_session));
 		} else if (type == QEvent::ContextMenu) {
@@ -938,16 +945,22 @@ OverlayWidget::OverlayWidget()
 				updateOverState(Over::None);
 			}
 		} else if (type == QEvent::MouseButtonPress) {
-			handleMousePress(mousePosition(e), mouseButton(e));
+			handleMousePress(
+				mousePosition(e),
+				mouseButton(e),
+				static_cast<QMouseEvent*>(e.get())->buttons());
 		} else if (type == QEvent::MouseButtonRelease) {
 			handleMouseRelease(mousePosition(e), mouseButton(e));
 		} else if (type == QEvent::MouseMove) {
-			handleMouseMove(mousePosition(e));
+			handleMouseMove(
+				mousePosition(e),
+				static_cast<QMouseEvent*>(e.get())->buttons());
 		} else if (type == QEvent::MouseButtonDblClick) {
-			if (handleDoubleClick(mousePosition(e), mouseButton(e))) {
+			const auto buttons = static_cast<QMouseEvent*>(e.get())->buttons();
+			if (handleDoubleClick(mousePosition(e), mouseButton(e), buttons)) {
 				return base::EventFilterResult::Cancel;
 			} else {
-				handleMousePress(mousePosition(e), mouseButton(e));
+				handleMousePress(mousePosition(e), mouseButton(e), buttons);
 			}
 		} else if (type == QEvent::TouchBegin
 			|| type == QEvent::TouchUpdate
@@ -974,14 +987,14 @@ OverlayWidget::OverlayWidget()
 		const auto type = e->type();
 		const auto position = e->pos();
 		if (type == QEvent::MouseButtonPress) {
-			handleMousePress(position, e->button());
+			handleMousePress(position, e->button(), e->buttons());
 		} else if (type == QEvent::MouseButtonRelease) {
 			handleMouseRelease(position, e->button());
 		} else if (type == QEvent::MouseMove) {
-			handleMouseMove(position);
+			handleMouseMove(position, e->buttons());
 		} else if (type == QEvent::MouseButtonDblClick) {
-			if (!handleDoubleClick(position, e->button())) {
-				handleMousePress(position, e->button());
+			if (!handleDoubleClick(position, e->button(), e->buttons())) {
+				handleMousePress(position, e->button(), e->buttons());
 			}
 		}
 	}, lifetime());
@@ -3051,7 +3064,9 @@ void OverlayWidget::waitingAnimationCallback() {
 }
 
 void OverlayWidget::updateCursor() {
-	setCursor((_clickHandlerActive || _clickHandlerPressed)
+	setCursor((_dragging == kSideButtonDrag && _pressed)
+		? style::cur_sizeall
+		: (_clickHandlerActive || _clickHandlerPressed)
 		? style::cur_pointer
 		: (_controlsState == ControlsHidden)
 		? Qt::BlankCursor
@@ -3350,15 +3365,16 @@ bool OverlayWidget::radialAnimationCallback(crl::time now) {
 void OverlayWidget::zoomIn(std::optional<QPoint> anchor) {
 	auto newZoom = _zoom;
 	const auto full = _fullScreenVideo ? _zoomToScreen : _zoomToDefault;
+	const auto next = std::floor(newZoom) + 1.;
 	if (newZoom == kZoomToScreenLevel) {
 		if (int(std::ceil(full)) <= kMaxZoomLevel) {
 			newZoom = int(std::ceil(full));
 		}
 	} else {
-		if (newZoom < full && (newZoom + 1 > full || (full > kMaxZoomLevel && newZoom == kMaxZoomLevel))) {
+		if (newZoom < full && (next > full || (full > kMaxZoomLevel && newZoom == kMaxZoomLevel))) {
 			newZoom = kZoomToScreenLevel;
 		} else if (newZoom < kMaxZoomLevel) {
-			++newZoom;
+			newZoom = next;
 		}
 	}
 	zoomUpdate(newZoom, anchor);
@@ -3367,18 +3383,35 @@ void OverlayWidget::zoomIn(std::optional<QPoint> anchor) {
 void OverlayWidget::zoomOut(std::optional<QPoint> anchor) {
 	auto newZoom = _zoom;
 	const auto full = _fullScreenVideo ? _zoomToScreen : _zoomToDefault;
+	const auto next = std::ceil(newZoom) - 1.;
 	if (newZoom == kZoomToScreenLevel) {
 		if (int(std::floor(full)) >= -kMaxZoomLevel) {
 			newZoom = int(std::floor(full));
 		}
 	} else {
-		if (newZoom > full && (newZoom - 1 < full || (full < -kMaxZoomLevel && newZoom == -kMaxZoomLevel))) {
+		if (newZoom > full && (next < full || (full < -kMaxZoomLevel && newZoom == -kMaxZoomLevel))) {
 			newZoom = kZoomToScreenLevel;
 		} else if (newZoom > -kMaxZoomLevel) {
-			--newZoom;
+			newZoom = next;
 		}
 	}
 	zoomUpdate(newZoom, anchor);
+}
+
+void OverlayWidget::zoomBy(float64 delta, QPoint anchor) {
+	const auto full = _fullScreenVideo ? _zoomToScreen : _zoomToDefault;
+	const auto level = (_zoom == kZoomToScreenLevel) ? full : _zoom;
+	const auto scale = (level >= 0.) ? (level + 1.) : (1. / (1. - level));
+	const auto next = std::clamp(
+		scale + delta,
+		std::min(scale, 1. / (kMaxZoomLevel + 1.)),
+		std::max(scale, kMaxZoomLevel + 1.));
+	zoomUpdate((next >= 1.) ? (next - 1.) : (1. - 1. / next), anchor);
+	if (_dragging == kSideButtonDrag) {
+		_mStart = anchor;
+		_xStart = _x;
+		_yStart = _y;
+	}
 }
 
 void OverlayWidget::zoomReset() {
@@ -3415,8 +3448,12 @@ void OverlayWidget::zoomReset() {
 }
 
 void OverlayWidget::zoomUpdate(
-		int32 &newZoom,
+		float64 newZoom,
 		std::optional<QPoint> anchor) {
+	const auto rounded = std::round(newZoom);
+	if (qFuzzyIsNull(newZoom - rounded)) {
+		newZoom = rounded;
+	}
 	if (newZoom != kZoomToScreenLevel) {
 		while ((newZoom < 0 && (-newZoom + 1) > _w) || (-newZoom + 1) > _h) {
 			++newZoom;
@@ -8484,7 +8521,7 @@ void OverlayWidget::handleWheelEvent(not_null<QWheelEvent*> e) {
 		_verticalWheelDelta += up ? -step : step;
 
 		if (zoom) {
-			up ? zoomIn(anchor) : zoomOut(anchor);
+			zoomBy(up ? 0.2 : -0.1, anchor);
 			continue;
 		}
 		if (!enhanced) {
@@ -8600,7 +8637,7 @@ QPoint OverlayWidget::zoomAnchor(QPointF globalPosition) const {
 }
 
 void OverlayWidget::setZoomLevel(
-		int newZoom,
+		float64 newZoom,
 		bool force,
 		std::optional<QPoint> anchor) {
 	if (_stories
@@ -9022,10 +9059,50 @@ void OverlayWidget::preloadData(int delta) {
 	_preloadDocuments = std::move(documents);
 }
 
+bool OverlayWidget::startContentPan(
+		QPoint position,
+		Qt::MouseButtons buttons) {
+	if (_menu
+		|| !_receiveMouse
+		|| _stories
+		|| _themePreviewShown
+		|| !contentShown()
+		|| !GetEnhancedBool("media_viewer_wheel_control_enabled")
+		|| !buttons.testFlag(Qt::XButton1)
+		|| !buttons.testFlag(Qt::LeftButton)
+		|| !finalContentRect().contains(position)) {
+		return false;
+	}
+	cancelPlaybackHolds();
+	ClickHandler::unpressed();
+	_recognition.setSelecting(false);
+	_recognition.setDragged(false);
+	_videoPlaybackToggledOnLastRelease = false;
+	_down = Over::None;
+	_pressed = true;
+	_dragging = kSideButtonDrag;
+	_mStart = position;
+	_xStart = _x;
+	_yStart = _y;
+	_geometryAnimation.stop();
+	activateControls();
+	updateCursor();
+	update();
+	return true;
+}
+
 void OverlayWidget::handleMousePress(
 		QPoint position,
-		Qt::MouseButton button) {
+		Qt::MouseButton button,
+		Qt::MouseButtons buttons) {
 	updateOver(position);
+	if ((button == Qt::LeftButton || button == Qt::XButton1)
+		&& startContentPan(position, buttons)) {
+		return;
+	}
+	if (_dragging == kSideButtonDrag) {
+		return;
+	}
 	if (button == Qt::XButton1
 		&& !_stories
 		&& GetEnhancedBool("media_viewer_wheel_control_enabled")) {
@@ -9102,8 +9179,13 @@ void OverlayWidget::handleMousePress(
 
 bool OverlayWidget::handleDoubleClick(
 		QPoint position,
-		Qt::MouseButton button) {
+		Qt::MouseButton button,
+		Qt::MouseButtons buttons) {
 	updateOver(position);
+	if ((button == Qt::LeftButton || button == Qt::XButton1)
+		&& startContentPan(position, buttons)) {
+		return true;
+	}
 
 	if (_over != Over::Video
 		|| button != Qt::LeftButton
@@ -9239,7 +9321,28 @@ bool OverlayWidget::copyRecognitionSelection() {
 	return true;
 }
 
-void OverlayWidget::handleMouseMove(QPoint position) {
+void OverlayWidget::handleMouseMove(
+		QPoint position,
+		Qt::MouseButtons buttons) {
+	if (_dragging == kSideButtonDrag) {
+		if (!buttons.testFlag(Qt::LeftButton)) {
+			_pressed = false;
+			_dragging = 0;
+			updateCursor();
+		} else if (!buttons.testFlag(Qt::XButton1)) {
+			_pressed = false;
+			updateCursor();
+		} else if (_pressed) {
+			_x = _xStart + (position - _mStart).x();
+			_y = _yStart + (position - _mStart).y();
+			snapXY();
+			_mStart = position;
+			_xStart = _x;
+			_yStart = _y;
+			update();
+		}
+		return;
+	}
 	if (_speedBoostFromMouse && !_speedBoostActive) {
 		if (_speedBoostHoldTimer.isActive()) {
 			_speedBoostDragAccum = position.x();
@@ -9570,6 +9673,17 @@ void OverlayWidget::handleMouseRelease(
 		QPoint position,
 		Qt::MouseButton button) {
 	updateOver(position);
+	if (_dragging == kSideButtonDrag) {
+		if (button == Qt::LeftButton || button == Qt::XButton1) {
+			_pressed = false;
+			if (button == Qt::LeftButton) {
+				_dragging = 0;
+			}
+			activateControls();
+			updateCursor();
+		}
+		return;
+	}
 	if (button == Qt::XButton1
 		&& !_stories
 		&& GetEnhancedBool("media_viewer_wheel_control_enabled")) {
@@ -9905,11 +10019,9 @@ bool OverlayWidget::filterApplicationEvent(
 			if (activate) {
 				_lastMouseMovePos = mousePosition;
 			}
-			if (type == QEvent::MouseButtonPress) {
-				_mousePressed = true;
-				activate = true;
-			} else if (type == QEvent::MouseButtonRelease) {
-				_mousePressed = false;
+			if (type == QEvent::MouseButtonPress
+				|| type == QEvent::MouseButtonRelease) {
+				_mousePressed = mouseEvent->buttons() != Qt::NoButton;
 				activate = true;
 			}
 			updateBottomBarVisibility(mousePosition);
@@ -9991,6 +10103,9 @@ Window::SessionController *OverlayWidget::findWindow(bool switchTo) const {
 
 // #TODO unite and check
 void OverlayWidget::clearBeforeHide() {
+	if (_dragging == kSideButtonDrag) {
+		clearControlsState();
+	}
 	Test::VideoScrollViewer(Test::VideoScrollViewerEvent::Closing, _window);
 	_screenshotProtectionLifetime.destroy();
 	checkSingleViewMediaBurn();
