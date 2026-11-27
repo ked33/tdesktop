@@ -8469,9 +8469,10 @@ void OverlayWidget::handleWheelEvent(not_null<QWheelEvent*> e) {
 			|| (e->source() == Qt::MouseEventSynthesizedBySystem));
 	const auto anchor = zoomAnchor(e->globalPosition());
 	const auto ctrl = e->modifiers().testFlag(Qt::ControlModifier);
-	const auto enhanced = !ctrl
-		&& !_stories
+	const auto enhanced = !_stories
 		&& GetEnhancedBool("media_viewer_wheel_control_enabled");
+	const auto zoom = ctrl
+		|| (enhanced && e->buttons().testFlag(Qt::XButton1));
 	const auto pos = e->position().toPoint();
 	const auto w = width();
 	const auto h = height();
@@ -8482,7 +8483,7 @@ void OverlayWidget::handleWheelEvent(not_null<QWheelEvent*> e) {
 		const auto up = (_verticalWheelDelta > 0);
 		_verticalWheelDelta += up ? -step : step;
 
-		if (ctrl) {
+		if (zoom) {
 			up ? zoomIn(anchor) : zoomOut(anchor);
 			continue;
 		}
@@ -9025,6 +9026,11 @@ void OverlayWidget::handleMousePress(
 		QPoint position,
 		Qt::MouseButton button) {
 	updateOver(position);
+	if (button == Qt::XButton1
+		&& !_stories
+		&& GetEnhancedBool("media_viewer_wheel_control_enabled")) {
+		return;
+	}
 	if (_menu || !_receiveMouse) {
 		return;
 	}
@@ -9564,6 +9570,11 @@ void OverlayWidget::handleMouseRelease(
 		QPoint position,
 		Qt::MouseButton button) {
 	updateOver(position);
+	if (button == Qt::XButton1
+		&& !_stories
+		&& GetEnhancedBool("media_viewer_wheel_control_enabled")) {
+		return;
+	}
 
 	if (const auto activated = ClickHandler::unpressed()) {
 		if (activated->url() == u"internal:show_saved_message"_q) {

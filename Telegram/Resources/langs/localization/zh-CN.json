@@ -141,7 +141,7 @@
     "lng_settings_preview_brightness_value": "亮度等级",
     "lng_settings_preview_brightness_title": "预览图亮度",
     "lng_settings_media_wheel_control": "增强媒体查看器滚轮控制",
-    "lng_settings_media_wheel_control_desc": "将查看器水平分为三等分：左上滚动调节亮度，左下调节音量，中间切换媒体，右侧调整视频进度。",
+    "lng_settings_media_wheel_control_desc": "将查看器水平分为三等分：左上滚动调节亮度，左下调节音量，中间切换媒体，右侧调整视频进度。按住 Ctrl 或鼠标侧键 X1（Mouse Button 4）滚动滚轮，可缩放图片和视频。",
     "lng_media_viewer_brightness_osd": "亮度 {percent}%",
     "lng_media_viewer_volume_osd": "音量 {percent}%",
     "lng_settings_screen_shot_mode": "截图模式",
