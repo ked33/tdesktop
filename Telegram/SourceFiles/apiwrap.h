@@ -9,10 +9,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "api/api_common.h"
 #include "base/timer.h"
+#include "data/stickers/data_stickers_set.h"
 #include "mtproto/core_types.h"
 #include "mtproto/sender.h"
 #include "scheme.h"
-#include "data/stickers/data_stickers_set.h"
 
 class TaskQueue;
 class HistoryItem;

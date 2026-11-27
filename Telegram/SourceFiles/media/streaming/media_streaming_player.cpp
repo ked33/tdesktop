@@ -7,18 +7,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/streaming/media_streaming_player.h"
 
+#include "data/data_document.h" // for DocumentData::duration()
+#include "media/audio/media_audio.h" // for SupportsSpeedControl()
+#include "media/streaming/media_streaming_audio_track.h"
 #include "media/streaming/media_streaming_boost.h"
 #include "media/streaming/media_streaming_debug.h"
 #include "media/streaming/media_streaming_diagnostics.h"
 #include "media/streaming/media_streaming_file.h"
 #include "media/streaming/media_streaming_loader.h"
 #include "media/streaming/media_streaming_startup.h"
-#include "media/streaming/media_streaming_audio_track.h"
 #include "media/streaming/media_streaming_video_track.h"
-#include "media/audio/media_audio.h" // for SupportsSpeedControl()
 #include "media/media_common.h"
-#include "data/data_document.h" // for DocumentData::duration()
 #include "settings.h"
+
 
 namespace Media {
 namespace Streaming {
@@ -1025,7 +1026,7 @@ void Player::play(const PlaybackOptions &options) {
 		return;
 	}
 
-	stop(true);
+	stop(!finished());
 	const auto trackGeneration = startTrackGeneration();
 	if (notifySeek) {
 		_file->notifySmartStreamingSeek();

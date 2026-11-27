@@ -7,11 +7,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "base/timer.h"
+#include "base/weak_ptr.h"
 #include "media/streaming/media_streaming_common.h"
 #include "media/streaming/media_streaming_file_delegate.h"
 #include "media/streaming/media_streaming_source.h"
-#include "base/weak_ptr.h"
-#include "base/timer.h"
+
 
 namespace Media {
 namespace Player {

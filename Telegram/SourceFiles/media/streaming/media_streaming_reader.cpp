@@ -1609,7 +1609,7 @@ void Reader::stopStreaming(bool stillActive) {
 	_diagnostics->readStopped();
 	_stopStreamingAsync = false;
 	_waiting.store(nullptr, std::memory_order_release);
-	if (_cacheHelper && _cacheHelper->waiting != nullptr) {
+	if (_cacheHelper) {
 		QMutexLocker lock(&_cacheHelper->mutex);
 		_cacheHelper->waiting.store(nullptr, std::memory_order_release);
 	}
@@ -1674,6 +1674,7 @@ void Reader::stopStreaming(bool stillActive) {
 		_seekCancelGeneration.fetch_add(1, std::memory_order_release);
 		refreshLoaderPriority();
 		cancelStreamingLoads();
+		_loadedParts.take();
 		_seekCancellationOffsets.clear();
 		_diagnostics->report("streaming-stopped");
 		processDownloaderRequests();
@@ -2186,9 +2187,7 @@ Reader::FillState Reader::fill(
 
 	checkForSomethingMoreReceived();
 	if (_streamingError) {
-		_loader->setStreamingReadRange(-1, 0);
-		_diagnostics->readStopped();
-		return FillState::Failed;
+		return failed();
 	}
 
 	auto lastResult = FillState();
@@ -2198,7 +2197,7 @@ Reader::FillState Reader::fill(
 			return done();
 		}
 		startWaiting();
-	} while (checkForSomethingMoreReceived());
+	} while (checkForSomethingMoreReceived() && !_streamingError);
 
 	if (_streamingError) {
 		return failed();
@@ -3434,6 +3433,7 @@ bool Reader::processLoadedParts() {
 			= _seekCancellationOffsets.remove(part.offset);
 		if (!part.valid(size())) {
 			_streamingError = Error::LoadFailed;
+			finalizeCache(); // a retry's new reader will share these keys
 			return false;
 		} else if (!_loadingOffsets.remove(part.offset)) {
 			continue;
@@ -3503,13 +3503,15 @@ void Reader::finalizeCache() {
 		putToCache(std::move(toCache));
 		toCache = _slices.unloadToCache();
 	}
-	_cache->sync();
 }
 
 Reader::~Reader() {
 	_diagnostics->readStopped();
 	_diagnostics->report("reader-destroyed");
 	finalizeCache();
+	if (_cacheHelper) {
+		_cache->sync();
+	}
 }
 
 QByteArray SerializeComplexPartsMap(

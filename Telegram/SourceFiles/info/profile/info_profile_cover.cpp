@@ -5,24 +5,25 @@ the official desktop application for the Telegram messaging service.
 For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
+#include <QtGui/QClipboard>
+#include <QtGui/QGuiApplication>
 #include <ui/toast/toast.h>
 #include "info/profile/info_profile_cover.h"
 
-#include "main/main_session.h"
-#include "data/data_forum_topic.h"
+#include "chat_helpers/stickers_lottie.h"
+#include "data/stickers/data_custom_emoji.h"
 #include "data/data_document.h"
 #include "data/data_document_media.h"
+#include "data/data_forum_topic.h"
 #include "data/data_session.h"
-#include "data/stickers/data_custom_emoji.h"
 #include "history/view/media/history_view_sticker_player.h"
 #include "info/profile/info_profile_values.h"
-#include "chat_helpers/stickers_lottie.h"
-#include "window/window_session_controller.h"
+#include "main/main_session.h"
 #include "ui/painter.h"
-#include "styles/style_info.h"
+#include "window/window_session_controller.h"
+
 #include "styles/style_dialogs.h"
-#include <QtGui/QGuiApplication>
-#include <QtGui/QClipboard>
+#include "styles/style_info.h"
 
 namespace Info::Profile {
 

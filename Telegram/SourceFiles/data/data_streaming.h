@@ -63,6 +63,11 @@ public:
 	void keepAlive(not_null<PhotoData*> photo);
 	[[nodiscard]] int releaseIdleMemory();
 
+	void forgetFailed(
+		not_null<DocumentData*> document,
+		not_null<const Document*> shared,
+		const Reader *reader);
+
 private:
 	void clearKeptAlive();
 

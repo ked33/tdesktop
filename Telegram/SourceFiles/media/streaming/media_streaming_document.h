@@ -7,10 +7,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "media/streaming/media_streaming_player.h"
-#include "ui/effects/radial_animation.h"
-#include "ui/effects/animations.h"
 #include "base/timer.h"
+#include "media/streaming/media_streaming_player.h"
+#include "ui/effects/animations.h"
+#include "ui/effects/radial_animation.h"
 
 class DocumentData;
 
@@ -65,7 +65,8 @@ private:
 		std::shared_ptr<FileSource> source,
 		DocumentData *document,
 		PhotoData *photo,
-		std::vector<QualityDescriptor> otherQualities);
+		std::vector<QualityDescriptor> otherQualities,
+		const Reader *reader = nullptr);
 	Document(
 		std::shared_ptr<Reader> reader,
 		DocumentData *document,
@@ -94,6 +95,7 @@ private:
 
 	DocumentData *_document = nullptr;
 	PhotoData *_photo = nullptr;
+	const Reader * const _reader;
 	Player _player;
 	Information _info;
 

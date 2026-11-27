@@ -7,43 +7,42 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "storage/localstorage.h"
 
-#include <QtCore/QJsonObject>
-#include <QtGui/QImageReader>
-#include "window/themes/window_themes_chat.h"
-#include "main/main_domain.h"
-#include "main/main_account.h"
-#include "main/main_session.h"
-
-#include "storage/serialize_common.h"
-#include "storage/settings_backup.h"
-#include "storage/storage_account.h"
-#include "storage/details/storage_file_utilities.h"
-#include "storage/details/storage_settings_scheme.h"
-#include "core/enhanced_settings.h"
-#include "data/data_session.h"
-#include "data/data_document.h"
-#include "data/data_document_media.h"
 #include "base/platform/base_platform_info.h"
 #include "base/random.h"
-#include "ui/power_saving.h"
-#include "core/update_checker.h"
-#include "core/file_location.h"
 #include "core/application.h"
 #include "core/core_settings.h"
+#include "core/enhanced_settings.h"
+#include "core/file_location.h"
+#include "core/update_checker.h"
 #include "core/version.h"
+#include "data/data_document.h"
+#include "data/data_document_media.h"
+#include "data/data_session.h"
+#include "lang/lang_instance.h"
+#include "main/main_account.h"
+#include "main/main_domain.h"
+#include "main/main_session.h"
 #include "media/audio/media_audio.h"
 #include "mtproto/mtproto_config.h"
 #include "mtproto/mtproto_dc_options.h"
+#include "storage/details/storage_file_utilities.h"
+#include "storage/details/storage_settings_scheme.h"
+#include "storage/serialize_common.h"
+#include "storage/settings_backup.h"
+#include "storage/storage_account.h"
+#include "ui/power_saving.h"
 #include "window/themes/window_theme.h"
+#include "window/themes/window_themes_chat.h"
 #include "window/window_saved_windows.h"
-#include "lang/lang_instance.h"
 
 #include <QtCore/QDirIterator>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonArray>
+#include <QtCore/QJsonObject>
 #include <QtCore/QJsonValue>
 #include <QtCore/QStringList>
 #include <QtCore/QSaveFile>
+#include <QtGui/QImageReader>
 
 #ifndef Q_OS_WIN
 #include <unistd.h>

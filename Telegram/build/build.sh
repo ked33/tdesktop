@@ -328,6 +328,7 @@ if [ "$BuildTarget" == "linux" ]; then
 
   echo "Stripping the executable.."
   "$FullScriptPath/minidebug.sh" "$ReleasePath/$BinaryName"
+  strip -s "$ReleasePath/Updater"
   echo "Done!"
 
   echo "Preparing version $AppVersionStrFull, executing Packer.."

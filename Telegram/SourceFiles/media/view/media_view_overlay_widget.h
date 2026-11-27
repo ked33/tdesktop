@@ -8,21 +8,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/timer.h"
-#include "ui/rp_widget.h"
-#include "ui/gl/gl_surface.h"
-#include "ui/effects/animations.h"
-#include "ui/effects/radial_animation.h"
+#include "data/data_cloud_themes.h" // Data::CloudTheme.
 #include "data/data_shared_media.h"
 #include "data/data_user_photos.h"
 #include "data/data_web_page.h"
-#include "data/data_cloud_themes.h" // Data::CloudTheme.
 #include "media/stories/media_stories_delegate.h"
-#include "media/view/media_view_playback_controls.h"
 #include "media/view/media_view_open_common.h"
+#include "media/view/media_view_playback_controls.h"
 #include "media/view/media_view_recognition_selection.h"
 #include "media/media_common.h"
 #include "media/system_media_controls_video.h"
 #include "platform/platform_text_recognition.h"
+#include "ui/effects/animations.h"
+#include "ui/effects/radial_animation.h"
+#include "ui/gl/gl_surface.h"
+#include "ui/rp_widget.h"
 
 class History;
 struct PollAnswer;
@@ -292,6 +292,7 @@ private:
 	[[nodiscard]] int topNotchSkip() const;
 
 	not_null<Ui::RpWidget*> storiesWrap() override;
+	not_null<Ui::RpWidget*> storiesAreaWrap() override;
 	std::shared_ptr<ChatHelpers::Show> storiesShow() override;
 	auto storiesStickerOrEmojiChosen()
 		-> rpl::producer<ChatHelpers::FileChosen> override;
@@ -300,6 +301,7 @@ private:
 		not_null<Main::Session*> session,
 		FullStoryId id,
 		Data::StoriesContext context) override;
+	void storiesJumpToPreview(int index) override;
 	void storiesClose() override;
 	bool storiesPaused() override;
 	rpl::producer<bool> storiesLayerShown() override;
@@ -390,6 +392,7 @@ private:
 		not_null<PeerData*>,
 		StoriesContext> context);
 	void setStoriesPeer(PeerData *peer);
+	void prepareBotPreview(int index);
 
 	void refreshLang();
 	void showSaveMsgFile();
@@ -485,6 +488,8 @@ private:
 
 	bool initStreaming(
 		const StartStreaming &startStreaming = StartStreaming());
+	bool prepareStreaming();
+	void restartFailedStreamingAt(crl::time position);
 	void startStreamingPlayer(const StartStreaming &startStreaming);
 	void initStreamingThumbnail();
 	void markStreamedReady();
@@ -570,6 +575,9 @@ private:
 		QRect clip,
 		float64 opacity);
 	[[nodiscard]] QRect captionGeometry() const;
+	void setupStoryCaptionLayer();
+	void updateStoryCaptionLayer();
+	[[nodiscard]] QRect storyCaptionShadow() const;
 	void paintGroupThumbsContent(
 		Painter &p,
 		QRect outer,
@@ -658,6 +666,7 @@ private:
 	[[nodiscard]] bool canInitStreaming() const;
 	[[nodiscard]] bool saveControlLocked() const;
 	void applyVideoQuality(VideoQuality value);
+	void restoreReplacedStreaming(bool wasFullScreen);
 
 	[[nodiscard]] bool topShadowOnTheRight() const;
 	void applyHideWindowWorkaround();
@@ -678,6 +687,8 @@ private:
 	const std::unique_ptr<Ui::RpWidget> _titleBugWorkaround;
 	const std::unique_ptr<Ui::RpWidgetWrap> _surface;
 	const not_null<QWidget*> _widget;
+	const std::unique_ptr<Ui::RpWidget> _storyAreaLayer;
+	const std::unique_ptr<Ui::RpWidget> _storyCaptionLayer;
 	QRect _normalGeometry;
 	bool _wasWindowedMode = false;
 	bool _restoreFromSystemNormal = false;
@@ -728,7 +739,7 @@ private:
 	bool _rotateVisible = false;
 	bool _drawButtonEnabled = true;
 	Data::FileOrigin _openFileOrigin;
-	std::shared_ptr<const StandaloneGallery> _gallery;
+	std::shared_ptr<const BotPreviewGallery> _gallery;
 	bool _drawVisible = false;
 	bool _recognizeVisible = false;
 	bool _headerHasLink = false;

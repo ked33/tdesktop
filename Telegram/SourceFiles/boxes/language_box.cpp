@@ -18,6 +18,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "lang/translate_backend.h"
 #include "main/main_session.h"
+#include "mainwidget.h"
+#include "mainwindow.h"
 #include "platform/platform_translate_provider.h"
 #include "settings/settings_common.h"
 #include "spellcheck/spellcheck_types.h"
@@ -44,8 +46,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/vertical_list.h"
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
-#include "mainwidget.h"
-#include "mainwindow.h"
 
 #include "styles/style_boxes.h"
 #include "styles/style_chat_helpers.h"

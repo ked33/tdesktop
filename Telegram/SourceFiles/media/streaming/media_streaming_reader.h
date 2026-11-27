@@ -7,15 +7,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "base/bytes.h"
+#include "base/thread_safe_wrap.h"
+#include "base/timer.h"
+#include "base/weak_ptr.h"
 #include "media/streaming/media_streaming_boost.h"
 #include "media/streaming/media_streaming_common.h"
 #include "media/streaming/media_streaming_loader.h"
 #include "media/streaming/media_streaming_mp4_header.h"
 #include "media/streaming/media_streaming_source.h"
-#include "base/bytes.h"
-#include "base/timer.h"
-#include "base/weak_ptr.h"
-#include "base/thread_safe_wrap.h"
 
 #include <mutex>
 

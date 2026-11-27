@@ -76,6 +76,7 @@ private:
 
 	void cancelForOffset(int64 offset);
 	void addToQueueWithPriority();
+	[[nodiscard]] bool havePendingWork() const;
 
 	void finishStats(int64 offset, int64 received);
 	void clearStats();

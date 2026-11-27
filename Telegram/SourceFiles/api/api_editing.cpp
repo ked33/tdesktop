@@ -7,12 +7,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_editing.h"
 
-#include "apiwrap.h"
 #include "api/api_media.h"
 #include "api/api_text_entities.h"
+#include "apiwrap.h"
 #include "base/random.h"
+#include "boxes/abstract_box.h" // Ui::show().
 #include "core/application.h"
-#include "ui/boxes/confirm_box.h"
 #include "data/business/data_shortcut_messages.h"
 #include "data/components/scheduled_messages.h"
 #include "data/components/welcome_messages.h"
@@ -32,7 +32,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "storage/storage_account.h"
 #include "mtproto/mtproto_response.h"
-#include "boxes/abstract_box.h" // Ui::show().
+#include "ui/boxes/confirm_box.h"
 
 namespace Api {
 namespace {

@@ -7,18 +7,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/streaming/media_streaming_document.h"
 
-#include "media/streaming/media_streaming_instance.h"
+#include "data/data_document.h"
+#include "data/data_document_media.h"
+#include "data/data_file_origin.h"
+#include "data/data_photo.h"
+#include "data/data_session.h"
+#include "data/data_streaming.h"
+#include "main/main_session.h"
 #include "media/streaming/media_streaming_debug.h"
+#include "media/streaming/media_streaming_instance.h"
 #include "media/streaming/media_streaming_loader.h"
 #include "media/streaming/media_streaming_reader.h"
 #include "media/streaming/media_streaming_source.h"
-#include "data/data_session.h"
-#include "data/data_document.h"
-#include "data/data_photo.h"
-#include "data/data_document_media.h"
-#include "data/data_file_origin.h"
-#include "main/main_session.h"
 #include "storage/file_download.h" // Storage::kMaxFileInMemory.
+
 #include "styles/style_widgets.h"
 
 #include <QtCore/QBuffer>
@@ -45,20 +47,13 @@ Document::Document(
 	std::shared_ptr<FileSource> source,
 	std::vector<QualityDescriptor> otherQualities)
 : Document(std::move(source), document, {}, std::move(otherQualities)) {
-	_player.fullInCache(
-	) | rpl::on_next([=](bool fullInCache) {
-		_document->setLoadedInMediaCache(fullInCache);
-	}, _player.lifetime());
 }
 
 Document::Document(
 	not_null<DocumentData*> document,
 	std::shared_ptr<Reader> reader,
 	std::vector<QualityDescriptor> otherQualities)
-: Document(
-	document,
-	MakeFileSource(std::move(reader)),
-	std::move(otherQualities)) {
+: Document(std::move(reader), document, {}, std::move(otherQualities)) {
 }
 
 Document::Document(
@@ -72,7 +67,7 @@ Document::Document(
 	not_null<PhotoData*> photo,
 	std::shared_ptr<Reader> reader,
 	std::vector<QualityDescriptor> otherQualities)
-: Document(photo, MakeFileSource(std::move(reader)), std::move(otherQualities)) {
+: Document(std::move(reader), {}, photo, std::move(otherQualities)) {
 }
 
 Document::Document(std::unique_ptr<Loader> loader)
@@ -83,15 +78,23 @@ Document::Document(
 	std::shared_ptr<FileSource> source,
 	DocumentData *document,
 	PhotoData *photo,
-	std::vector<QualityDescriptor> otherQualities)
+	std::vector<QualityDescriptor> otherQualities,
+	const Reader *reader)
 : _document(document)
 , _photo(photo)
+, _reader(reader)
 , _player(std::move(source))
 , _radial(
 	[=] { waitingCallback(); },
 	st::defaultInfiniteRadialAnimation)
 , _otherQualities(std::move(otherQualities)) {
 	resubscribe();
+	if (_document) {
+		_player.fullInCache(
+		) | rpl::on_next([=](bool fullInCache) {
+			_document->setLoadedInMediaCache(fullInCache);
+		}, _player.lifetime());
+	}
 }
 
 Document::Document(
@@ -100,10 +103,11 @@ Document::Document(
 	PhotoData *photo,
 	std::vector<QualityDescriptor> otherQualities)
 : Document(
-	MakeFileSource(std::move(reader)),
+	MakeFileSource(reader),
 	document,
 	photo,
-	std::move(otherQualities)) {
+	std::move(otherQualities),
+	reader.get()) {
 }
 
 void Document::resubscribe() {
@@ -414,6 +418,12 @@ void Document::handleError(Error &&error) {
 	if (_document) {
 		if (error == Error::OpenFailed) {
 			_document->setInappPlaybackFailed();
+		} else if (error == Error::LoadFailed) {
+			// The reader keeps its error, so a retry needs a new one.
+			_document->owner().streaming().forgetFailed(
+				_document,
+				this,
+				_reader);
 		}
 	} else if (_photo) {
 		if (error == Error::NotStreamable || error == Error::OpenFailed) {

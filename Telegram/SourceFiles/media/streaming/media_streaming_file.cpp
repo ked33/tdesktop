@@ -18,7 +18,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_startup.h"
 
 #include <QtCore/QtEndian>
-
 #include <algorithm>
 #include <cstring>
 #include <limits>
@@ -1608,20 +1607,21 @@ Stream File::Context::initStream(
 			.arg(options.hwAllow ? 1 : 0)
 			.arg(info->codecpar ? info->codecpar->width : 0)
 			.arg(info->codecpar ? info->codecpar->height : 0));
-		auto descriptor = FFmpeg::CodecDescriptor{
-			.stream = info,
+		result.codec = FFmpeg::MakeCodecPointer({
+			.parameters = info->codecpar,
+			.timeBase = info->time_base,
 			.hwAllowed = options.hwAllow,
 			.videoMaxArea = kMaxFrameArea,
-		};
-		result.codec = FFmpeg::MakeCodecPointer(descriptor);
+		});
 		if (!result.codec) {
 			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream codec failed "
 				"type=%1 index=%2.").arg(int(type)).arg(index));
 			return result;
 		} else if (result.codec->codec
 			!= FFmpeg::FindDecoder(result.codec.get())) {
-			descriptor.hwAllowed = false;
-			result.softwareFallback = descriptor;
+			result.parameters = FFmpeg::CopyCodecParameters(
+				info->codecpar);
+			result.softwareFallback = bool(result.parameters);
 		}
 		result.rotation = FFmpeg::ReadRotationFromMetadata(info);
 		result.aspect = FFmpeg::ValidateAspectRatio(
@@ -1638,7 +1638,10 @@ Stream File::Context::initStream(
 		if (!result.frequency) {
 			return result;
 		}
-		result.codec = FFmpeg::MakeCodecPointer({ .stream = info });
+		result.codec = FFmpeg::MakeCodecPointer({
+			.parameters = info->codecpar,
+			.timeBase = info->time_base,
+		});
 		if (!result.codec) {
 			VIDEO_PLAYBACK_DEBUG_LOG(("Video Playback: initStream codec failed "
 				"type=%1 index=%2.").arg(int(type)).arg(index));

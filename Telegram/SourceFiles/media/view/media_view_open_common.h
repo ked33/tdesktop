@@ -33,7 +33,8 @@ using GalleryMedia = std::variant<
 	not_null<PhotoData*>,
 	not_null<DocumentData*>>;
 
-struct StandaloneGallery {
+struct BotPreviewGallery {
+	not_null<PeerData*> bot;
 	std::vector<GalleryMedia> media;
 	Fn<void(GalleryMedia)> edit;
 	Fn<void(GalleryMedia)> remove;
@@ -69,7 +70,7 @@ public:
 	}
 	OpenRequest(
 		Window::SessionController *controller,
-		StandaloneGallery gallery,
+		BotPreviewGallery gallery,
 		int index,
 		Data::FileOrigin origin);
 
@@ -185,6 +186,9 @@ public:
 	[[nodiscard]] const auto &gallery() const {
 		return _gallery;
 	}
+	[[nodiscard]] int galleryIndex() const {
+		return _galleryIndex;
+	}
 
 private:
 	Window::SessionController *_controller = nullptr;
@@ -201,7 +205,8 @@ private:
 	crl::time _startTime = 0;
 	bool _showDrawButton = false;
 	Data::FileOrigin _fileOrigin;
-	std::shared_ptr<const StandaloneGallery> _gallery;
+	std::shared_ptr<const BotPreviewGallery> _gallery;
+	int _galleryIndex = 0;
 
 	std::shared_ptr<Data::GroupCall> _call;
 	QString _callLinkSlug;

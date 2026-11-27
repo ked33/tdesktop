@@ -520,16 +520,15 @@ CodecPointer MakeCodecPointer(CodecDescriptor descriptor) {
 		LogError(u"avcodec_alloc_context3"_q);
 		return {};
 	}
-	const auto stream = descriptor.stream;
 	DEBUG_LOG(("Video Playback: MakeCodecPointer enter codecId=%1 hwAllowed=%2.")
-		.arg(int(stream->codecpar ? stream->codecpar->codec_id : AV_CODEC_ID_NONE))
+		.arg(int(descriptor.parameters->codec_id))
 		.arg(descriptor.hwAllowed ? 1 : 0));
-	error = avcodec_parameters_to_context(context, stream->codecpar);
+	error = avcodec_parameters_to_context(context, descriptor.parameters);
 	if (error) {
 		LogError(u"avcodec_parameters_to_context"_q, error);
 		return {};
 	}
-	context->pkt_timebase = stream->time_base;
+	context->pkt_timebase = descriptor.timeBase;
 	if ((descriptor.videoMaxArea > 0)
 		&& (context->codec_type == AVMEDIA_TYPE_VIDEO)) {
 		context->max_pixels = MaxPixelsForAreaLimit(
@@ -554,6 +553,9 @@ CodecPointer MakeCodecPointer(CodecDescriptor descriptor) {
 		.arg(codec->name ? QString::fromLatin1(codec->name) : QStringLiteral("null"))
 		.arg(descriptor.hwAllowed ? 1 : 0));
 
+	const auto software = descriptor.hwAllowed
+		? FindDecoder(context)
+		: codec;
 	if (descriptor.hwAllowed) {
 		context->get_format = GetHwFormat;
 		context->opaque = context;
@@ -567,11 +569,38 @@ CodecPointer MakeCodecPointer(CodecDescriptor descriptor) {
 		.arg(descriptor.hwAllowed ? 1 : 0));
 	if ((error = avcodec_open2(context, codec, nullptr))) {
 		LogError(u"avcodec_open2"_q, error);
+		if (software && software != codec) {
+			descriptor.hwAllowed = false;
+			return MakeCodecPointer(descriptor);
+		}
 		return {};
 	}
 	DEBUG_LOG(("Video Playback: MakeCodecPointer opened codecId=%1 hwAllowed=%2.")
 		.arg(int(context->codec_id))
 		.arg(descriptor.hwAllowed ? 1 : 0));
+	return result;
+}
+
+void CodecParametersDeleter::operator()(AVCodecParameters *value) {
+	if (value) {
+		avcodec_parameters_free(&value);
+	}
+}
+
+CodecParametersPointer CopyCodecParameters(
+		not_null<const AVCodecParameters*> parameters) {
+	CodecParametersPointer result(avcodec_parameters_alloc());
+	if (!result) {
+		LogError(u"avcodec_parameters_alloc"_q);
+		return {};
+	}
+	const AvErrorWrap error(avcodec_parameters_copy(
+		result.get(),
+		parameters));
+	if (error) {
+		LogError(u"avcodec_parameters_copy"_q, error);
+		return {};
+	}
 	return result;
 }
 
