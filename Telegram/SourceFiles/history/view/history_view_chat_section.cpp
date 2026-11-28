@@ -6200,6 +6200,20 @@ base::unique_qptr<Ui::PopupMenu> ChatWidget::listFillSenderUserpicMenu(
 	return menu->empty() ? nullptr : std::move(menu);
 }
 
+bool ChatWidget::listFillBackgroundMenu(not_null<Ui::PopupMenu*> menu) {
+	if (mode() != Mode::History || _topic) {
+		return false;
+	}
+	Window::FillHistoryBackgroundMenu(
+		controller(),
+		Dialogs::EntryState{
+			.key = _history,
+			.section = Dialogs::EntryState::Section::History,
+		},
+		Ui::Menu::CreateAddActionCallback(menu));
+	return true;
+}
+
 Ui::ElasticScroll *ChatWidget::listScrollArea() const {
 	return _scroll.get();
 }

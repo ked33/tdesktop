@@ -55,6 +55,7 @@ struct ContextMenuRequest {
 	SelectedQuote quote;
 	TextSelection editSelection;
 	bool overSelection = false;
+	bool overBackground = false;
 	bool showSpecialMpv = false;
 	PointState pointState = PointState();
 };

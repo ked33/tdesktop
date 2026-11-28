@@ -239,6 +239,9 @@ public:
 		const Data::ReactionId &id) = 0;
 	virtual base::unique_qptr<Ui::PopupMenu> listFillSenderUserpicMenu(
 		PeerId userpicPeerId) = 0;
+	virtual bool listFillBackgroundMenu(not_null<Ui::PopupMenu*>) {
+		return false;
+	}
 	virtual void listWindowSetInnerFocus() = 0;
 	virtual bool listAllowsDragForward() = 0;
 	virtual void listLaunchDrag(

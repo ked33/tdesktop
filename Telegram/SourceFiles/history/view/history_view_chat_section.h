@@ -258,6 +258,7 @@ public:
 		Ui::ChatPaintContextArgs &&args) override;
 	base::unique_qptr<Ui::PopupMenu> listFillSenderUserpicMenu(
 		PeerId userpicPeerId) override;
+	bool listFillBackgroundMenu(not_null<Ui::PopupMenu*> menu) override;
 	Ui::ElasticScroll *listScrollArea() const override;
 	bool listShowForumThreadBars() const override;
 

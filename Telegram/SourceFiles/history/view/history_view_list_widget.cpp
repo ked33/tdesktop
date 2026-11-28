@@ -4915,6 +4915,13 @@ void ListWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		|| !request.selectedText.empty();
 	request.overSelection = (showFromTouch && hasSelection)
 		|| insideSelection;
+	request.overBackground = (e->reason() == QContextMenuEvent::Mouse)
+		&& !showFromTouch
+		&& !link
+		&& (request.pointState == PointState::Outside)
+		&& !hasSelection
+		&& !_widgetSelection->has()
+		&& getSelectedText().empty();
 
 	_menu = FillContextMenu(this, request);
 	if (_menu->empty()) {

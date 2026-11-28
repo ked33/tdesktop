@@ -2548,7 +2548,8 @@ bool AddClearSelectionAction(
 bool AddSelectMessageAction(
 			not_null<Ui::PopupMenu*> menu,
 			const ContextMenuRequest &request,
-			not_null<ListWidget*> list) {
+			not_null<ListWidget*> list,
+			bool separate = false) {
 		if (!GetEnhancedBool("show_message_context_select")) {
 			return false;
 		}
@@ -2565,6 +2566,9 @@ bool AddSelectMessageAction(
 	const auto owner = &item->history()->owner();
 	const auto itemId = item->fullId();
 	const auto asGroup = (request.pointState != PointState::GroupPart);
+	if (separate && !menu->empty()) {
+		menu->addSeparator(&st::expandedMenuSeparator);
+	}
 	menu->addAction(tr::lng_context_select_msg(tr::now), [=] {
 		if (const auto item = owner->message(itemId)) {
 			if (asGroup) {
@@ -3278,6 +3282,12 @@ base::unique_qptr<Ui::PopupMenu> FillContextMenu(
 	auto result = base::make_unique_q<Ui::PopupMenu>(
 		list,
 		st::popupMenuWithIcons);
+
+	if (request.overBackground
+		&& list->delegate()->listFillBackgroundMenu(result)) {
+		AddSelectMessageAction(result, request, list, true);
+		return result;
+	}
 
 	// Build the full message menu.
 	FillContextMenuItems(result, list, request, hasPollOption);
